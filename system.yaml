@@ -42,9 +42,9 @@ components:
         look the same — they are both at the bottom.
       tank_top_port:
         physical_height: 0cm (bottom of tank)
-        internal_reach: top of water column (~190cm inside)
+        internal_reach: top of water column (~185cm inside)
         type: internal dip tube
-        used_for: drawing hot water (greenhouse heating)
+        used_for: connects to reservoir (pipe runs UP to reservoir at ~200cm)
       tank_bottom_port:
         physical_height: 0cm (bottom of tank)
         internal_reach: bottom of tank
@@ -55,20 +55,40 @@ components:
       use: optional backup
 
   reservoir:
-    type: open vented container
+    type: open vented container (acts as air separator)
     position: on top of Jäspi tank
     height: 200–220cm
     volume: 20–50L (TBD)
+    connections:
+      top_mid_inlet_1:
+        pipe_from: dip tube port (0cm) — pipe runs UP from tank to reservoir
+        purpose: >
+          Hot water from tank top exits via dip tube, travels up to reservoir.
+          Any trapped gas from the tank separates here and vents to atmosphere.
+      top_mid_inlet_2:
+        pipe_from: V_ret (collector return)
+        purpose: hot water returning from solar collectors
+      bottom_outlet:
+        pipe_to: VI-top valve → pump input manifold
+        purpose: >
+          Clean, de-aired water feeds the pump by gravity (~200cm head).
+          Pump always draws gas-free water from the reservoir bottom.
+      open_top:
+        purpose: gas vents to atmosphere
     connection_to_tank: >
-      Pipe runs from reservoir (200cm) DOWN to tank bottom port (0cm).
-      Hot water returning from collectors enters reservoir, then flows
-      down this pipe to the tank bottom. Inside the tank, hot water
-      naturally rises to the top (thermal stratification).
+      Pipe runs from dip tube port (0cm, bottom of tank) UP to reservoir
+      top/mid level (~200cm). This is the REVERSE of the old bottom-port
+      routing. Water from the tank top (via internal dip tube) flows up to
+      the reservoir, where gas separates and vents. During solar charging,
+      hot return water enters the reservoir from V_ret and flows down
+      through the dip tube pipe into the tank top (~185cm inside) —
+      excellent stratification.
     purpose:
-      - drainback buffer
+      - air separator (gas from tank top vents here before reaching pump)
+      - drainback buffer (collector water volume during drain)
       - expansion volume
       - fill point
-      - air separation
+      - gravity feed to pump (ensures pump never loses prime)
 
   pump:
     model: Wilo Star Z20/4
@@ -125,8 +145,8 @@ valves:
       type: motorized on/off ball valve
       size: DN15
       actuator: 230V
-      source: tank top connection (via internal dip tube)
-      purpose: draw hot water from tank top (for greenhouse heating)
+      source: reservoir bottom outlet (fed by tank dip tube)
+      purpose: draw de-aired hot water for greenhouse heating (pump always primed)
 
     vi_coll:
       type: motorized on/off ball valve
@@ -211,7 +231,8 @@ piping:
   adapters: 22mm PEX → threaded adapter → valve
   insulation: "yes — all outdoor pipes insulated"
   typical_flow: 4–10 L/min
-  radiator_return: tee fitting at tank bottom, shared with VI-btm pipe
+  radiator_return: pipe to tank bottom port (direct)
+  reservoir_to_tank: pipe from reservoir top/mid (200cm) DOWN to dip tube port (0cm) — then UP through internal dip tube to ~185cm
 
 # =============================================================================
 # SENSORS
@@ -257,38 +278,117 @@ sensors:
 
 control:
   hardware:
-    main_controller: Shelly Pro 4PM
-    additional_relays: Shelly Pro 2PM or Pro 3 (×2 if needed)
-    sensor_hub: Shelly Plus 1 + Add-on
     communication: HTTP RPC (local network), optionally MQTT
+    scripting: Shelly scripting on Pro 4PM (main brain)
 
-  relay_assignments:
-    note: 8 motorized valves + pump + fan + heaters = 12 outputs needed
+  shelly_components:
+    note: >
+      12 relay outputs needed: 8 motorized valves + pump + fan + 2 heaters.
+      5–7 DS18B20 temperature sensors on 1-Wire bus via Add-on.
+
     shelly_pro_4pm:
-      O1: pump
-      O2: radiator fan
-      O3: immersion heater contactor (optional)
-      O4: space heater
-    shelly_pro_2pm_1:
-      O1: vi_btm
-      O2: vi_top
-    shelly_pro_2pm_2:
-      O1: vi_coll
-      O2: vo_coll
-    shelly_pro_2pm_3:
-      O1: vo_rad
-      O2: vo_tank
-    shelly_plus_1:
-      O1: v_ret
-      note: v_air can be normally-open (opens when power lost) for fail-safe
+      quantity: 1
+      role: main controller + high-power actuator outputs
+      scripting: true (runs control logic)
+      relay_outputs: 4
+      outputs:
+        O1: pump (Wilo Star Z20/4, 71W max)
+        O2: radiator fan (230V)
+        O3: immersion heater contactor (optional)
+        O4: space heater (2kW)
+      note: >
+        Power monitoring on all channels — useful for verifying pump is
+        actually running and detecting stuck/stalled conditions.
+
+    shelly_pro_2pm:
+      quantity: 4
+      role: motorized valve control (2 valves per unit)
+      relay_outputs_each: 2
+      relay_outputs_total: 8
+      units:
+        unit_1:
+          location: input manifold (ground level)
+          O1: vi_btm (tank bottom → pump)
+          O2: vi_top (reservoir bottom → pump)
+        unit_2:
+          location: input manifold + output manifold (ground level)
+          O1: vi_coll (collector bottom → pump, drain mode)
+          O2: vo_coll (pump → collector bottom, charging mode)
+        unit_3:
+          location: output manifold (ground level)
+          O1: vo_rad (pump → radiator)
+          O2: vo_tank (pump → tank, drain mode)
+        unit_4:
+          location: collector top (~280cm, needs weatherproofing or long cable runs)
+          O1: v_ret (collector top → reservoir, return path)
+          O2: v_air (collector top → open air, drain air intake)
+          note: >
+            V_air wired as normally-open (spring-return valve): relay ON = valve
+            CLOSED (normal), relay OFF / power loss = valve OPEN (collectors
+            drain automatically as fail-safe).
+
+    shelly_plus_1_addon:
+      quantity: 1
+      role: temperature sensor hub
+      addon: Shelly Plus Add-on (1-Wire interface)
+      sensors_connected:
+        - t_collector (collector outlet, 280cm)
+        - t_tank_top (tank upper region)
+        - t_tank_bottom (tank lower region)
+        - t_greenhouse (greenhouse air)
+        - t_outdoor (outside, shaded)
+      optional_sensors:
+        - t_radiator_in (radiator inlet)
+        - t_radiator_out (radiator outlet)
+      note: >
+        DS18B20 sensors share a single 1-Wire bus. Add-on supports up to 5
+        sensors natively. If 7 sensors are needed, a second Add-on may be
+        required or sensors can be split across two hubs.
+
+    flow_sensor:
+      connection: to any Shelly with a digital input (Plus 1 Add-on or Pro 4PM input)
+      purpose: detect empty collectors during drain, stop pump
+
+  shopping_list:
+    - item: Shelly Pro 4PM
+      qty: 1
+      est_price: ~60€
+    - item: Shelly Pro 2PM
+      qty: 4
+      est_price: ~45€ each, ~180€ total
+    - item: Shelly Plus 1
+      qty: 1
+      est_price: ~15€
+    - item: Shelly Plus Add-on
+      qty: 1
+      est_price: ~15€
+    - item: DS18B20 temperature sensors
+      qty: 5–7
+      est_price: ~5€ each, ~25–35€ total
+    - item: DIN rail (optional, for tidy enclosure)
+      qty: 1
+      est_price: ~10€
+    - item: Total Shelly + sensors estimate
+      est_price: ~305–315€
 
   air_management:
-    method: automatic air vent at collector top (highest point)
-    backup: open reservoir acts as air separator
+    collector_loop: automatic air vent at collector top (highest point)
+    tank_gas_venting: >
+      Reservoir acts as primary air separator. Water from the tank top
+      (via dip tube) enters the reservoir at top/mid level. Trapped gas
+      from the tank separates here and vents to atmosphere through the
+      open reservoir. Clean, de-aired water exits the reservoir bottom
+      to the pump. The pump ALWAYS draws from the reservoir bottom,
+      never directly from the dip tube — so it never encounters trapped gas.
+    radiator_gas_clearing: >
+      Pump pushes pressurized water through the radiator (Option A topology).
+      Positive pressure clears gas from the radiator's small parallel channels
+      more effectively than suction would. Any gas pushed through the radiator
+      returns to the tank bottom and eventually rises to the dip tube level.
     note: >
-      No flow restrictor needed. Water flows upward through collectors,
-      carrying air bubbles to the top where they are vented.
-      The pump provides sufficient head (~4m max) to clear any air pockets.
+      No flow restrictor needed. The reservoir is the key air management
+      component — it separates gas from the tank, provides gravity feed to
+      the pump, and acts as the expansion/drainback buffer.
 
 # =============================================================================
 # OPERATING MODES
@@ -312,7 +412,7 @@ modes:
       fan: OFF
     flow_path:
       supply: tank bottom port (0cm) → VI-btm → pump → VO-coll → collector bottom → up through panels
-      return: collector top → V_ret → reservoir (200cm) → pipe down to tank bottom port (0cm) → hot water rises inside tank
+      return: collector top → V_ret → reservoir top (200cm) → dip tube pipe down to 0cm → up through internal dip tube → exits at ~185cm inside tank (enters at TOP = excellent stratification)
 
   greenhouse_heating:
     description: Use stored heat to warm greenhouse
@@ -330,8 +430,8 @@ modes:
       pump: ON
       fan: ON
     flow_path:
-      supply: tank top port (0cm, dip tube draws from top of water column) → VI-top → pump → VO-rad → radiator
-      return: radiator → tee at tank bottom port (0cm) → enters tank at bottom
+      supply: tank top water → dip tube → exits at 0cm → pipe UP to reservoir top (~200cm) → gas separates and vents → reservoir bottom → VI-top → pump → VO-rad → radiator
+      return: radiator → tank bottom port (0cm) → enters tank at bottom
 
   active_drain:
     description: Pump water out of collectors for freeze protection
@@ -418,11 +518,11 @@ structure:
 
 budget:
   control_system:
-    shelly_hardware: ~550€  # Pro 4PM + 3× Pro 2PM + Plus 1 + Add-on
-    sensors: ~40€
+    shelly_hardware: ~310€  # Pro 4PM + 4× Pro 2PM + Plus 1 + Add-on
+    sensors: ~35€            # 5–7× DS18B20
     motorized_valves: ~200€  # 8× DN15 on/off @ ~25€ each
     flow_sensor: ~25€
     auto_air_vent: ~10€
     manual_service_valves: ~20€  # 2× manual ball valve with hose barb
-    total: ~845€
+    total: ~600€
   note: On/off valves are cheaper per unit than 3-way valves

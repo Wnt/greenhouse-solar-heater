@@ -23,11 +23,13 @@ stateDiagram-v2
     note right of SolarCharging
         VI-btm OPEN, VO-coll OPEN, V_ret OPEN
         Pump ON, Fan OFF
+        Return: collectors → reservoir → dip tube → tank top
     end note
 
     note right of GreenhouseHeating
         VI-top OPEN, VO-rad OPEN
         Pump ON, Fan ON
+        Supply: tank top → dip tube → reservoir (air sep) → pump → radiator
     end note
 
     note right of ActiveDrain

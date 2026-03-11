@@ -18,7 +18,7 @@ All component specifications are defined in `system.yaml` (source of truth).
 |-----------|-----------|----------|
 | Solar collectors | 2× flat plate, 2m×1m | 4m² total, mounted 30–280cm height |
 | Storage tank | Jäspi VLM 300L | Used unpressurized, ALL connections at bottom (0cm) |
-| Open reservoir | Vented container, 20–50L | On top of tank (~200cm), piped down to tank bottom |
+| Open reservoir | Vented container, 20–50L | On top of tank (~200cm), air separator, connected to dip tube |
 | Circulation pump | Wilo Star Z20/4 | 34/51/71W, 230V, near ground |
 | Radiator | Car radiator + 230V fan | Inside greenhouse, heat distribution |
 | Space heater | 2kW fan heater | Emergency/backup |
@@ -33,7 +33,7 @@ The system uses 8 motorized on/off ball valves (DN15, 230V) arranged in input an
 | Valve | Source | Used In |
 |-------|--------|---------|
 | VI-btm | Tank bottom (cool water) | Solar charging |
-| VI-top | Tank top via dip tube (hot water) | Greenhouse heating |
+| VI-top | Reservoir bottom (de-aired hot water) | Greenhouse heating |
 | VI-coll | Collector bottom pipe | Active drain |
 
 **Output manifold** (pump outlet):
@@ -63,9 +63,18 @@ The system uses 8 motorized on/off ball valves (DN15, 230V) arranged in input an
 
 All physical pipe connections on the Jäspi tank are at the **bottom** (0cm):
 
-- **Tank bottom port:** direct connection to the bottom of the tank. Used for drawing cool water (solar charging) and receiving return water.
-- **Tank top port:** has an internal dip tube reaching the top of the water column (~190cm). Used for drawing hot water (greenhouse heating). From outside, this connection is also at the bottom of the tank.
-- **Reservoir connection:** pipe runs from reservoir (200cm) **down** to the tank bottom port. Returning hot water enters at the bottom and rises inside the tank by thermal stratification (hot water is less dense).
+- **Tank bottom port:** direct connection to the bottom of the tank. Used for drawing cool water (solar charging), receiving radiator return water, and receiving drained collector water.
+- **Tank top port (dip tube):** has an internal dip tube reaching the top of the water column (~185cm). Pipe runs **UP** from dip tube port (0cm) to the reservoir at ~200cm. This is the primary path for water and gas to move between the tank top and the reservoir.
+
+### Reservoir as Air Separator
+
+The reservoir sits on top of the Jäspi (~200cm) and serves as the system's **primary air separator**. It has three connections:
+
+1. **Top/mid inlet — dip tube pipe:** from dip tube port (0cm) up to reservoir. Hot water from the tank top exits here; trapped gas separates and vents to atmosphere.
+2. **Top/mid inlet — V_ret pipe:** collector return water enters here during solar charging.
+3. **Bottom outlet:** clean, de-aired water feeds VI-top → pump. Gravity head (~200cm) ensures the pump never loses prime.
+
+The Jäspi tank has no vent at the top — gas trapped above the dip tube opening (~185cm) cannot exit downward. By routing all water through the open reservoir, gas is separated before reaching the pump. The pump always pushes water through the radiator (positive pressure clears trapped gas from the radiator's small parallel channels).
 
 ### Piping
 
@@ -73,7 +82,8 @@ All physical pipe connections on the Jäspi tank are at the **bottom** (0cm):
 - DN15 (½") valves with PEX → threaded adapters
 - Collector pipes slope 2–3 cm/m toward drain point
 - Typical flow: 4–10 L/min
-- Radiator return connects via tee fitting at tank bottom pipe
+- Radiator return connects to tank bottom port (direct)
+- Reservoir-to-tank pipe runs from reservoir top/mid (200cm) DOWN to dip tube port (0cm), then UP through internal dip tube to ~185cm inside tank
 
 ### Sensors (DS18B20 via Shelly Plus Add-on)
 
@@ -87,26 +97,49 @@ All physical pipe connections on the Jäspi tank are at the **bottom** (0cm):
 | T_radiator_in | Radiator inlet (optional) | Performance monitoring |
 | T_radiator_out | Radiator outlet (optional) | Performance monitoring |
 
-### Control Hardware
+### Control Hardware — Shelly Components
 
-| Device | Role |
-|--------|------|
-| Shelly Pro 4PM | Main controller: pump, fan, heater contactor, space heater |
-| Shelly Pro 2PM ×3 | Valve relays (2 valves each, 6 of 8 valves) |
-| Shelly Plus 1 | Remaining valve(s), V_air as fail-safe |
-| Shelly Plus 1 + Add-on | Temperature sensor hub (DS18B20) |
+12 relay outputs needed: 8 motorized valves + pump + fan + 2 heaters.
 
-Communication: HTTP RPC over local network (Shelly scripting), optionally MQTT.
+| Device | Qty | Outputs | Assignment | Est. Price |
+|--------|-----|---------|------------|------------|
+| **Shelly Pro 4PM** | 1 | 4 | Pump, radiator fan, immersion heater, space heater | ~60€ |
+| **Shelly Pro 2PM** | 4 | 2 each | 8 motorized valves (2 per unit) | ~180€ |
+| **Shelly Plus 1 + Add-on** | 1 | — | Temperature sensor hub (DS18B20, 1-Wire) | ~30€ |
+| **DS18B20 sensors** | 5–7 | — | T_coll, T_tank×2, T_greenhouse, T_outdoor (+2 optional) | ~35€ |
 
-Total relay outputs needed: 8 valves + pump + fan + 2 heaters = 12.
+**Total Shelly + sensors: ~305€**
+
+**Pro 4PM** is the main brain — runs Shelly scripts for control logic, has power monitoring on all 4 channels (useful for detecting stuck pump, verifying fan is running).
+
+**Pro 2PM valve assignments:**
+
+| Unit | Output 1 | Output 2 | Location |
+|------|----------|----------|----------|
+| #1 | VI-btm | VI-top | Input manifold (ground) |
+| #2 | VI-coll | VO-coll | Input/output manifold (ground) |
+| #3 | VO-rad | VO-tank | Output manifold (ground) |
+| #4 | V_ret | V_air | Collector top (~280cm) |
+
+**V_air fail-safe:** Wired with a normally-open spring-return valve. Relay ON = valve closed (normal operation). Relay OFF or power loss = valve opens, allowing air in so collectors drain automatically.
+
+**Sensor hub:** Shelly Plus Add-on connects DS18B20 sensors via 1-Wire bus. Supports up to 5 sensors natively; a second Add-on may be needed if all 7 sensors are used.
+
+**Flow sensor** connects to a digital input on the Plus 1 or Pro 4PM.
+
+**Communication:** HTTP RPC over local network (Shelly scripting), optionally MQTT.
 
 ### Air Management
 
-No flow restrictor needed at panel bottom. Air is managed by:
-- **Auto air vent** at collector top (highest point) — continuously bleeds trapped air
-- **Open reservoir** acts as air separator
-- **Upward flow** through collectors carries air bubbles to the top naturally
-- Pump provides sufficient head (~4m max) to clear any air pockets
+**Collector loop:** Auto air vent at collector top (highest point) continuously bleeds trapped air. Upward flow carries bubbles to the top naturally.
+
+**Tank gas venting:** The Jäspi has no top vent — gas trapped above the dip tube (~185cm) cannot escape downward. The reservoir solves this by acting as the primary air separator:
+- Water from the tank top exits via dip tube → enters reservoir at top/mid level
+- Gas separates in the reservoir and vents to atmosphere (open top)
+- Clean, de-aired water exits the reservoir bottom to the pump
+- The pump **never** draws directly from the dip tube — it always draws from the reservoir bottom
+
+**Radiator gas clearing:** The pump pushes pressurized water through the radiator (not suction). Positive pressure clears gas from the car radiator's small parallel channels more effectively. Gas returns to the tank and eventually reaches the reservoir via the dip tube.
 
 ## Operating Modes
 
@@ -124,7 +157,7 @@ No flow restrictor needed at panel bottom. Air is managed by:
 
 **Flow loop:**
 - Supply: Tank bottom port (0cm) → VI-btm → Pump → VO-coll → Collector bottom (30cm) → up through panels (to 280cm)
-- Return: Collector top (280cm) → V_ret → Reservoir (200cm) → pipe down to tank bottom port (0cm) → hot water rises inside tank
+- Return: Collector top (280cm) → V_ret → Reservoir top (200cm) → dip tube pipe down to 0cm → up through internal dip tube → exits at ~185cm inside tank (enters at TOP = excellent stratification)
 
 **Actuators:** Pump ON, Fan OFF
 
@@ -140,8 +173,8 @@ No flow restrictor needed at panel bottom. Air is managed by:
 | All others | CLOSED |
 
 **Flow loop:**
-- Supply: Tank top port (0cm, dip tube draws hot water from top of column) → VI-top → Pump → VO-rad → Radiator
-- Return: Radiator → tee at tank bottom port (0cm) → enters tank at bottom
+- Supply: Tank top (hot water) → dip tube → exits 0cm → pipe UP to reservoir top (~200cm, gas separates) → reservoir bottom → VI-top → Pump → VO-rad → Radiator
+- Return: Radiator → tank bottom port (0cm) → enters tank at bottom
 
 **Actuators:** Pump ON, Fan ON
 
@@ -199,8 +232,11 @@ Full seasonal shutdown for deep winter (-25°C periods):
           V_ret, V_air (collector top manifold)
           T_collector sensor
 
-200cm ─── Open reservoir (on top of Jäspi)
-          ↓ pipe runs down from reservoir to tank bottom port
+200cm ─── Open reservoir / air separator (on top of Jäspi)
+          IN:  dip tube pipe (from 0cm below) + V_ret pipe (collector return)
+          OUT: bottom outlet → VI-top → pump
+
+~185cm── Dip tube opening inside tank (top of water column)
 
 170cm ─── Upper panel bottom / Lower panel top
 
@@ -213,10 +249,9 @@ Full seasonal shutdown for deep winter (-25°C periods):
           SV-drain, SV-fill (service valves)
 
   0cm ─── Ground level
-          Jäspi tank — ALL pipe connections at bottom:
+          Jäspi tank — pipe connections at bottom:
             • Tank bottom port (direct to bottom of tank)
-            • Tank top port (internal dip tube to top of water column)
-            • Reservoir pipe (from reservoir above, enters at bottom)
+            • Dip tube port (pipe runs UP to reservoir at 200cm)
           Radiator + fan (inside greenhouse, near ground)
           2kW space heater (inside greenhouse)
 ```
@@ -243,24 +278,23 @@ Full seasonal shutdown for deep winter (-25°C periods):
 
 | Category | Cost |
 |----------|------|
-| Shelly hardware (Pro 4PM + 3× Pro 2PM + Plus 1 + Add-on) | ~550€ |
-| DS18B20 sensors | ~40€ |
+| Shelly hardware (Pro 4PM + 4× Pro 2PM + Plus 1 + Add-on) | ~310€ |
+| DS18B20 sensors (5–7×) | ~35€ |
 | 8× motorized on/off valves (DN15) | ~200€ |
 | Flow sensor | ~25€ |
 | Auto air vent | ~10€ |
 | 2× manual service valves | ~20€ |
-| **Control system total** | **~845€** |
+| **Control system total** | **~600€** |
 
 Structural materials (wood, slabs, fasteners) budgeted separately.
 
 ## Open Design Questions
 
-1. **Reservoir sizing:** 20–50L range — exact size depends on collector loop water volume.
+1. **Reservoir sizing:** 20–50L range — exact size depends on collector loop water volume. Must have 3 pipe penetrations (2× top/mid, 1× bottom).
 2. **Collector seasonal adjustment:** Fixed angle or seasonally adjustable?
 3. **Wind anchoring:** Required for collector frame?
 4. **Jäspi internal heater:** Use as backup boost, or leave disconnected?
-5. **Radiator return routing:** Tee at tank bottom vs dedicated return connection.
-6. **Fail-safe behavior:** Should V_air be normally-open (drain on power failure)?
+5. **Fail-safe behavior:** Should V_air be normally-open (drain on power failure)?
 
 ## Documentation Format
 
