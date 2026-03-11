@@ -1,0 +1,344 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 750" font-family="sans-serif" font-size="12">
+  <title>Kasvihuone System — Pipe &amp; Valve Topology</title>
+  <desc>
+    On/off valve manifold topology. 8 motorized valves + pump + service valves.
+    Source of truth: system.yaml
+  </desc>
+  <style>
+    .pipe { stroke-width: 2.5; fill: none; }
+    .pipe-supply { stroke: #42a5f5; }
+    .pipe-return { stroke: #ef5350; }
+    .pipe-drain { stroke: #ff9800; stroke-dasharray: 8,4; }
+    .pipe-air { stroke: #90caf9; stroke-dasharray: 6,4; }
+    .pipe-inactive { stroke: #333; stroke-width: 1.5; }
+  </style>
+
+  <!-- Background -->
+  <rect width="1100" height="750" fill="#0d1117"/>
+
+  <!-- Title -->
+  <text x="550" y="28" fill="#ccc" text-anchor="middle" font-size="18" font-weight="bold">System Pipe &amp; Valve Topology</text>
+  <text x="550" y="46" fill="#666" text-anchor="middle" font-size="11">On/off manifold — 8 motorized valves, 2 manual service valves, 1 flow sensor, 1 auto air vent</text>
+
+  <!-- ============================================================ -->
+  <!-- HEIGHT SCALE (far left) -->
+  <!-- ============================================================ -->
+  <line x1="35" y1="80" x2="35" y2="660" stroke="#333" stroke-width="1"/>
+  <text x="8" y="84" fill="#555" font-size="9">280cm</text>
+  <line x1="30" y1="80" x2="40" y2="80" stroke="#555"/>
+  <text x="8" y="200" fill="#555" font-size="9">200cm</text>
+  <line x1="30" y1="196" x2="40" y2="196" stroke="#555"/>
+  <text x="8" y="316" fill="#555" font-size="9">120cm</text>
+  <line x1="30" y1="312" x2="40" y2="312" stroke="#444" stroke-dasharray="2,4"/>
+  <text x="8" y="518" fill="#555" font-size="9">  30cm</text>
+  <line x1="30" y1="514" x2="40" y2="514" stroke="#555"/>
+  <text x="8" y="662" fill="#555" font-size="9">    0cm</text>
+  <line x1="30" y1="658" x2="40" y2="658" stroke="#555"/>
+
+  <!-- Ground line -->
+  <line x1="35" y1="658" x2="1080" y2="658" stroke="#5d4037" stroke-width="2" stroke-dasharray="8,4"/>
+
+  <!-- ============================================================ -->
+  <!-- SOLAR COLLECTORS (left column) -->
+  <!-- ============================================================ -->
+  <rect x="60" y="80" width="70" height="434"
+        fill="#f9a82508" stroke="#f9a825" stroke-width="2.5" rx="5"
+        data-component="solar_collectors" data-height-top="280cm" data-height-bottom="30cm"/>
+  <text x="95" y="300" fill="#f9a825" text-anchor="middle" font-size="12" font-weight="bold"
+        transform="rotate(-90 95 300)">Solar Collectors (30–280cm)</text>
+
+  <!-- Auto air vent above collectors -->
+  <circle cx="95" cy="65" r="10" fill="#90caf915" stroke="#90caf9" stroke-width="1.5"/>
+  <text x="95" y="69" fill="#90caf9" text-anchor="middle" font-size="8">AAV</text>
+  <text x="115" y="62" fill="#90caf9" font-size="9">auto air vent (285cm)</text>
+
+  <!-- Collector top connection -->
+  <circle cx="140" cy="95" r="5" fill="#f9a825"/>
+  <text x="150" y="92" fill="#aaa" font-size="9">collector top</text>
+
+  <!-- Collector bottom connection -->
+  <circle cx="140" cy="514" r="5" fill="#fbc02d"/>
+  <text x="150" y="511" fill="#aaa" font-size="9">collector bottom</text>
+
+  <!-- ============================================================ -->
+  <!-- COLLECTOR TOP MANIFOLD (upper area) -->
+  <!-- ============================================================ -->
+  <rect x="240" y="68" width="200" height="80"
+        fill="#1a1a2e" stroke="#555" stroke-width="1" rx="5"/>
+  <text x="340" y="62" fill="#b39ddb" font-size="11" font-weight="bold">COLLECTOR TOP MANIFOLD</text>
+
+  <!-- V_ret -->
+  <rect x="260" y="82" width="60" height="22" fill="#e040fb12" stroke="#e040fb" stroke-width="1.5" rx="3"/>
+  <text x="290" y="97" fill="#e040fb" text-anchor="middle" font-size="10">V_ret</text>
+
+  <!-- Pipe: collector top → V_ret -->
+  <line x1="140" y1="95" x2="260" y2="93" stroke="#f9a825" stroke-width="2"/>
+  <!-- Pipe: V_ret → reservoir -->
+  <line x1="320" y1="93" x2="420" y2="93" stroke="#42a5f5" stroke-width="2"/>
+  <text x="355" y="87" fill="#64b5f6" font-size="9">→ to reservoir</text>
+
+  <!-- V_air -->
+  <rect x="260" y="115" width="60" height="22" fill="#e040fb12" stroke="#e040fb" stroke-width="1.5" rx="3"/>
+  <text x="290" y="130" fill="#e040fb" text-anchor="middle" font-size="10">V_air</text>
+
+  <!-- Pipe: collector top → V_air (branch from main) -->
+  <line x1="200" y1="95" x2="200" y2="126" stroke="#f9a825" stroke-width="1.5"/>
+  <line x1="200" y1="126" x2="260" y2="126" stroke="#f9a825" stroke-width="1.5"/>
+  <!-- Pipe: V_air → open air -->
+  <line x1="320" y1="126" x2="420" y2="126" stroke="#90caf9" stroke-width="2" stroke-dasharray="6,4"/>
+  <text x="355" y="120" fill="#90caf9" font-size="9">→ air intake</text>
+
+  <!-- ============================================================ -->
+  <!-- RESERVOIR (center, high) -->
+  <!-- ============================================================ -->
+  <rect x="500" y="180" width="100" height="35"
+        fill="#42a5f515" stroke="#42a5f5" stroke-width="2" rx="5"
+        data-component="reservoir" data-height="200-220cm"/>
+  <text x="550" y="202" fill="#64b5f6" text-anchor="middle" font-size="12" font-weight="bold">Reservoir</text>
+  <text x="550" y="173" fill="#90caf9" text-anchor="middle" font-size="9">open / vented (200cm)</text>
+
+  <!-- Pipe: V_ret output → down to reservoir -->
+  <path d="M 420 93 L 460 93 L 460 197 L 500 197" fill="none" stroke="#42a5f5" stroke-width="2"/>
+  <polygon points="500,197 492,192 492,202" fill="#42a5f5"/>
+
+  <!-- ============================================================ -->
+  <!-- JÄSPI TANK (center) -->
+  <!-- ============================================================ -->
+  <rect x="490" y="218" width="120" height="440"
+        fill="#1565c008" stroke="#1565c0" stroke-width="2.5" rx="6"
+        data-component="tank" data-model="Jäspi VLM" data-volume="300L"/>
+
+  <!-- Hot zone -->
+  <rect x="494" y="228" width="112" height="100" fill="#e5393510" rx="4"/>
+  <text x="550" y="275" fill="#ef9a9a" text-anchor="middle" font-size="10">HOT (top)</text>
+
+  <!-- Cool zone -->
+  <rect x="494" y="580" width="112" height="73" fill="#1565c015" rx="4"/>
+  <text x="550" y="620" fill="#64b5f6" text-anchor="middle" font-size="10">COOL (btm)</text>
+
+  <text x="550" y="420" fill="#90caf9" text-anchor="middle" font-size="16" font-weight="bold">Jäspi</text>
+  <text x="550" y="440" fill="#90caf9" text-anchor="middle" font-size="13">VLM 300L</text>
+  <text x="550" y="458" fill="#64b5f6" text-anchor="middle" font-size="10">unpressurized</text>
+
+  <!-- Internal heater element -->
+  <line x1="515" y1="530" x2="585" y2="530" stroke="#ff5722" stroke-width="2.5" stroke-dasharray="4,2"/>
+  <text x="550" y="548" fill="#ff8a65" text-anchor="middle" font-size="9">heater element (optional)</text>
+
+  <!-- Tank bottom connections -->
+  <circle cx="520" cy="658" r="5" fill="#e53935"/>
+  <text x="500" y="680" fill="#ef9a9a" font-size="9">top (dip tube)</text>
+  <circle cx="580" cy="658" r="5" fill="#1565c0"/>
+  <text x="566" y="680" fill="#64b5f6" font-size="9">bottom</text>
+
+  <!-- Tank return connection (side) -->
+  <circle cx="610" cy="500" r="5" fill="#42a5f5"/>
+  <text x="620" y="497" fill="#aaa" font-size="9">return</text>
+
+  <!-- Sensors on tank -->
+  <circle cx="490" cy="260" r="4" fill="#76ff03"/>
+  <text x="470" y="263" fill="#76ff03" font-size="8" text-anchor="end">T_tank_top</text>
+  <circle cx="490" cy="630" r="4" fill="#76ff03"/>
+  <text x="470" y="633" fill="#76ff03" font-size="8" text-anchor="end">T_tank_btm</text>
+
+  <!-- T_collector sensor -->
+  <circle cx="70" cy="95" r="4" fill="#76ff03"/>
+  <text x="60" y="108" fill="#76ff03" font-size="8">T_coll</text>
+
+  <!-- ============================================================ -->
+  <!-- INPUT MANIFOLD (lower left area) -->
+  <!-- ============================================================ -->
+  <rect x="170" y="570" width="180" height="120"
+        fill="#1a2a1a" stroke="#388e3c" stroke-width="1.5" rx="6"/>
+  <text x="260" y="562" fill="#66bb6a" font-size="12" font-weight="bold">INPUT MANIFOLD</text>
+
+  <!-- VI-btm: from tank bottom -->
+  <rect x="190" y="585" width="65" height="22" fill="#e040fb12" stroke="#e040fb" stroke-width="1.5" rx="3"/>
+  <text x="222" y="600" fill="#e040fb" text-anchor="middle" font-size="9">VI-btm</text>
+
+  <!-- VI-top: from tank top -->
+  <rect x="190" y="618" width="65" height="22" fill="#e040fb12" stroke="#e040fb" stroke-width="1.5" rx="3"/>
+  <text x="222" y="633" fill="#e040fb" text-anchor="middle" font-size="9">VI-top</text>
+
+  <!-- VI-coll: from collector bottom -->
+  <rect x="190" y="651" width="65" height="22" fill="#e040fb12" stroke="#e040fb" stroke-width="1.5" rx="3"/>
+  <text x="222" y="666" fill="#e040fb" text-anchor="middle" font-size="9">VI-coll</text>
+
+  <!-- Common input bus line -->
+  <line x1="255" y1="596" x2="310" y2="596" stroke="#42a5f5" stroke-width="1.5"/>
+  <line x1="255" y1="629" x2="310" y2="629" stroke="#42a5f5" stroke-width="1.5"/>
+  <line x1="255" y1="662" x2="310" y2="662" stroke="#42a5f5" stroke-width="1.5"/>
+  <line x1="310" y1="596" x2="310" y2="662" stroke="#42a5f5" stroke-width="2"/>
+  <line x1="310" y1="629" x2="340" y2="629" stroke="#42a5f5" stroke-width="3"/>
+
+  <!-- Pipe: tank bottom → VI-btm -->
+  <path d="M 580 658 L 580 700 L 165 700 L 165 596 L 190 596" fill="none" stroke="#64b5f6" stroke-width="1.5"/>
+
+  <!-- Pipe: tank top (dip tube) → VI-top -->
+  <path d="M 520 658 L 520 715 L 155 715 L 155 629 L 190 629" fill="none" stroke="#ef9a9a" stroke-width="1.5"/>
+
+  <!-- Pipe: collector bottom → flow sensor → VI-coll -->
+  <path d="M 140 514 L 140 662 L 190 662" fill="none" stroke="#fbc02d" stroke-width="1.5"/>
+
+  <!-- Flow sensor on collector bottom pipe -->
+  <rect x="132" y="555" width="16" height="30" fill="#e040fb20" stroke="#e040fb" stroke-width="1.5" rx="2"/>
+  <text x="140" y="574" fill="#ce93d8" text-anchor="middle" font-size="7" transform="rotate(-90 140 574)">FS</text>
+  <text x="155" y="568" fill="#ce93d8" font-size="8">flow sensor</text>
+
+  <!-- ============================================================ -->
+  <!-- PUMP (center bottom) -->
+  <!-- ============================================================ -->
+  <circle cx="395" cy="629" r="28" fill="#00695c12" stroke="#4fc3f7" stroke-width="3"
+          data-component="pump" data-model="Wilo Star Z20/4"/>
+  <text x="395" y="624" fill="#4fc3f7" text-anchor="middle" font-size="13" font-weight="bold">PUMP</text>
+  <text x="395" y="639" fill="#4fc3f7" text-anchor="middle" font-size="9">Wilo Z20/4</text>
+
+  <!-- Input to pump -->
+  <line x1="340" y1="629" x2="367" y2="629" stroke="#42a5f5" stroke-width="3"/>
+  <polygon points="367,629 358,624 358,634" fill="#42a5f5"/>
+
+  <!-- Output from pump -->
+  <line x1="423" y1="629" x2="455" y2="629" stroke="#ef5350" stroke-width="3"/>
+  <polygon points="455,629 446,624 446,634" fill="#ef5350"/>
+
+  <!-- ============================================================ -->
+  <!-- OUTPUT MANIFOLD (lower right area) -->
+  <!-- ============================================================ -->
+  <rect x="460" y="570" width="180" height="120"
+        fill="#2a1a1a" stroke="#c62828" stroke-width="1.5" rx="6"/>
+  <text x="550" y="562" fill="#ef5350" font-size="12" font-weight="bold">OUTPUT MANIFOLD</text>
+
+  <!-- Common output bus line -->
+  <line x1="455" y1="629" x2="505" y2="629" stroke="#ef5350" stroke-width="3"/>
+  <line x1="505" y1="596" x2="505" y2="662" stroke="#ef5350" stroke-width="2"/>
+  <line x1="505" y1="596" x2="530" y2="596" stroke="#ef5350" stroke-width="1.5"/>
+  <line x1="505" y1="629" x2="530" y2="629" stroke="#ef5350" stroke-width="1.5"/>
+  <line x1="505" y1="662" x2="530" y2="662" stroke="#ef5350" stroke-width="1.5"/>
+
+  <!-- VO-coll: to collectors -->
+  <rect x="530" y="585" width="65" height="22" fill="#e040fb12" stroke="#e040fb" stroke-width="1.5" rx="3"/>
+  <text x="562" y="600" fill="#e040fb" text-anchor="middle" font-size="9">VO-coll</text>
+
+  <!-- VO-rad: to radiator -->
+  <rect x="530" y="618" width="65" height="22" fill="#e040fb12" stroke="#e040fb" stroke-width="1.5" rx="3"/>
+  <text x="562" y="633" fill="#e040fb" text-anchor="middle" font-size="9">VO-rad</text>
+
+  <!-- VO-tank: to tank return -->
+  <rect x="530" y="651" width="65" height="22" fill="#e040fb12" stroke="#e040fb" stroke-width="1.5" rx="3"/>
+  <text x="562" y="666" fill="#e040fb" text-anchor="middle" font-size="9">VO-tank</text>
+
+  <!-- Pipe: VO-coll → collector bottom (supply) -->
+  <path d="M 595 596 L 680 596 L 680 514 L 140 514" fill="none" stroke="#f9a825" stroke-width="1.5"/>
+  <text x="400" y="507" fill="#f9a825" font-size="8">supply to collectors</text>
+
+  <!-- Pipe: VO-rad → radiator -->
+  <path d="M 595 629 L 700" y1="629" y2="629" fill="none" stroke="#ff5722" stroke-width="1.5"/>
+  <line x1="595" y1="629" x2="830" y2="629" stroke="#ff5722" stroke-width="1.5"/>
+
+  <!-- Pipe: VO-tank → tank return -->
+  <path d="M 595 662 L 650 662 L 650 500 L 610 500" fill="none" stroke="#1565c0" stroke-width="1.5"/>
+
+  <!-- ============================================================ -->
+  <!-- GREENHOUSE (right side) -->
+  <!-- ============================================================ -->
+  <path d="M 830 430 L 830 658 L 1060 658 L 1060 430 L 980 375 L 910 375 Z"
+        fill="#2e7d3208" stroke="#2e7d32" stroke-width="2.5"/>
+  <text x="945" y="410" fill="#66bb6a" text-anchor="middle" font-size="14" font-weight="bold">Greenhouse</text>
+
+  <!-- Radiator + fan -->
+  <rect x="855" y="610" width="90" height="35"
+        fill="#ff572215" stroke="#ff5722" stroke-width="2" rx="4"
+        data-component="radiator"/>
+  <text x="900" y="628" fill="#ff8a65" text-anchor="middle" font-size="11" font-weight="bold">Radiator</text>
+  <text x="900" y="641" fill="#ff8a65" text-anchor="middle" font-size="9">+ 230V fan</text>
+
+  <!-- Radiator return pipe (to tank bottom via tee) -->
+  <path d="M 855 640 L 830 640 L 830 700 L 580 700" fill="none" stroke="#42a5f5" stroke-width="1.5"/>
+  <text x="730" y="712" fill="#42a5f5" font-size="8">radiator return → tank bottom (tee)</text>
+
+  <!-- Space heater -->
+  <rect x="970" y="610" width="70" height="35"
+        fill="#f4433615" stroke="#f44336" stroke-width="2" rx="4"/>
+  <text x="1005" y="628" fill="#ef9a9a" text-anchor="middle" font-size="11" font-weight="bold">2kW</text>
+  <text x="1005" y="641" fill="#ef9a9a" text-anchor="middle" font-size="9">Space Heater</text>
+
+  <!-- Greenhouse sensors -->
+  <circle cx="945" cy="450" r="4" fill="#76ff03"/>
+  <text x="955" y="453" fill="#76ff03" font-size="9">T_greenhouse</text>
+  <circle cx="840" cy="450" r="4" fill="#76ff03"/>
+  <text x="840" y="468" fill="#76ff03" font-size="9">T_outdoor</text>
+
+  <!-- ============================================================ -->
+  <!-- SERVICE VALVES (below input manifold) -->
+  <!-- ============================================================ -->
+  <rect x="170" y="705" width="180" height="35"
+        fill="#33280a" stroke="#ff980055" stroke-width="1" rx="4"/>
+  <text x="175" y="718" fill="#ff9800" font-size="9" font-weight="bold">SERVICE (manual):</text>
+  <rect x="290" y="710" width="55" height="12" fill="#ff980015" stroke="#ff9800" stroke-width="1" rx="2"/>
+  <text x="317" y="719" fill="#ffb74d" text-anchor="middle" font-size="7">SV-drain</text>
+  <rect x="290" y="725" width="55" height="12" fill="#ff980015" stroke="#ff9800" stroke-width="1" rx="2"/>
+  <text x="317" y="734" fill="#ffb74d" text-anchor="middle" font-size="7">SV-fill</text>
+
+  <!-- ============================================================ -->
+  <!-- LEGEND (top right) -->
+  <!-- ============================================================ -->
+  <rect x="830" y="70" width="250" height="175" fill="#111" stroke="#444" stroke-width="1" rx="5"/>
+  <text x="845" y="92" fill="#ccc" font-size="12" font-weight="bold">Legend</text>
+
+  <line x1="845" y1="108" x2="885" y2="108" stroke="#42a5f5" stroke-width="2.5"/>
+  <text x="893" y="112" fill="#aaa" font-size="10">Supply / cool water</text>
+
+  <line x1="845" y1="128" x2="885" y2="128" stroke="#ef5350" stroke-width="2.5"/>
+  <text x="893" y="132" fill="#aaa" font-size="10">Output / hot water</text>
+
+  <line x1="845" y1="148" x2="885" y2="148" stroke="#90caf9" stroke-width="2" stroke-dasharray="6,4"/>
+  <text x="893" y="152" fill="#aaa" font-size="10">Air path</text>
+
+  <rect x="845" y="163" width="20" height="12" fill="#e040fb12" stroke="#e040fb" stroke-width="1.5" rx="2"/>
+  <text x="873" y="173" fill="#aaa" font-size="10">Motorized on/off valve</text>
+
+  <circle cx="855" cy="193" r="4" fill="#76ff03"/>
+  <text x="873" y="197" fill="#aaa" font-size="10">DS18B20 sensor</text>
+
+  <circle cx="855" cy="213" r="6" fill="none" stroke="#90caf9" stroke-width="1.5"/>
+  <text x="855" y="216" fill="#90caf9" text-anchor="middle" font-size="6">A</text>
+  <text x="873" y="217" fill="#aaa" font-size="10">Auto air vent</text>
+
+  <rect x="845" y="227" width="20" height="10" fill="#ff980015" stroke="#ff9800" stroke-width="1" rx="2"/>
+  <text x="873" y="236" fill="#aaa" font-size="10">Manual service valve</text>
+
+  <!-- ============================================================ -->
+  <!-- MODE STATE TABLE (right side, below legend) -->
+  <!-- ============================================================ -->
+  <rect x="700" y="260" width="380" height="160" fill="#111" stroke="#555" stroke-width="1" rx="5"/>
+  <text x="715" y="282" fill="#ccc" font-size="12" font-weight="bold">Valve States Per Mode</text>
+  <line x1="710" y1="290" x2="1070" y2="290" stroke="#333"/>
+
+  <!-- Header -->
+  <text x="715" y="308" fill="#888" font-size="9">Mode</text>
+  <text x="810" y="308" fill="#888" font-size="9">Open Valves</text>
+  <text x="990" y="308" fill="#888" font-size="9">Pump</text>
+  <text x="1035" y="308" fill="#888" font-size="9">Fan</text>
+  <line x1="710" y1="315" x2="1070" y2="315" stroke="#222"/>
+
+  <text x="715" y="333" fill="#f9a825" font-size="9">Solar Charging</text>
+  <text x="810" y="333" fill="#ccc" font-size="9">VI-btm + VO-coll + V_ret</text>
+  <text x="990" y="333" fill="#76ff03" font-size="9">ON</text>
+  <text x="1035" y="333" fill="#888" font-size="9">OFF</text>
+
+  <text x="715" y="356" fill="#66bb6a" font-size="9">Greenhouse Heat</text>
+  <text x="810" y="356" fill="#ccc" font-size="9">VI-top + VO-rad</text>
+  <text x="990" y="356" fill="#76ff03" font-size="9">ON</text>
+  <text x="1035" y="356" fill="#76ff03" font-size="9">ON</text>
+
+  <text x="715" y="379" fill="#ff9800" font-size="9">Active Drain</text>
+  <text x="810" y="379" fill="#ccc" font-size="9">VI-coll + VO-tank + V_air</text>
+  <text x="990" y="379" fill="#76ff03" font-size="9">ON*</text>
+  <text x="1035" y="379" fill="#888" font-size="9">OFF</text>
+
+  <text x="715" y="402" fill="#f44336" font-size="9">Emergency</text>
+  <text x="810" y="402" fill="#ccc" font-size="9">(all closed)</text>
+  <text x="990" y="402" fill="#888" font-size="9">OFF</text>
+  <text x="1035" y="402" fill="#888" font-size="9">OFF</text>
+
+  <text x="810" y="418" fill="#888" font-size="8">* until flow sensor = 0</text>
+</svg>

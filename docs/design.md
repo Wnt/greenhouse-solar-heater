@@ -22,26 +22,50 @@ All component specifications are defined in `system.yaml` (source of truth).
 | Circulation pump | Wilo Star Z20/4 | 34/51/71W, 230V, near ground |
 | Radiator | Car radiator + 230V fan | Inside greenhouse, heat distribution |
 | Space heater | 2kW fan heater | Emergency/backup |
+| Auto air vent | Automatic bleed valve | Collector top (highest point, ~285cm) |
 
-### Valve Arrangement (3× three-way motorized ball valves)
+### Valve Topology: On/Off Manifold
 
-| Valve | Location | Position A (normal) | Position B (drain) |
-|-------|----------|---------------------|---------------------|
-| V_top | Collector top | Collector output → reservoir | Open to air intake |
-| V_pump_in | Pump inlet | Draw from tank | Draw from collector bottom |
-| V_pump_out | Pump outlet | Push to collectors/radiator | Push to tank |
+The system uses 8 motorized on/off ball valves (DN15, 230V) arranged in input and output manifolds around the pump. Any input source can be routed to any output destination. Control logic ensures exactly one input and one output valve are open at a time.
 
-All valves: DN15, 230V actuator, motorized ball valve.
+**Input manifold** (pump inlet):
 
-A **flow sensor** at the collector bottom pipe detects when collectors are empty during drain.
+| Valve | Source | Used In |
+|-------|--------|---------|
+| VI-btm | Tank bottom (cool water) | Solar charging |
+| VI-top | Tank top via dip tube (hot water) | Greenhouse heating |
+| VI-coll | Collector bottom pipe | Active drain |
+
+**Output manifold** (pump outlet):
+
+| Valve | Destination | Used In |
+|-------|-------------|---------|
+| VO-coll | Collector bottom (supply) | Solar charging, refill |
+| VO-rad | Radiator in greenhouse | Greenhouse heating |
+| VO-tank | Tank return | Active drain |
+
+**Collector top** (at panel top, ~280cm):
+
+| Valve | Path | Used In |
+|-------|------|---------|
+| V_ret | Collector top → reservoir | Solar charging (return path) |
+| V_air | Collector top → open air | Active drain (air intake) |
+
+**Additional:**
+
+| Component | Type | Purpose |
+|-----------|------|---------|
+| Flow sensor | On collector bottom pipe | Detects empty collectors during drain |
+| SV-drain | Manual ball valve, hose barb | Drain system at lowest point |
+| SV-fill | Manual ball valve, hose barb | Fill system (garden hose) |
 
 ### Piping
 
-- 22mm PEX throughout
+- 22mm PEX throughout, insulated
 - DN15 (½") valves with PEX → threaded adapters
-- Pipes insulated
 - Collector pipes slope 2–3 cm/m toward drain point
 - Typical flow: 4–10 L/min
+- Radiator return connects via tee fitting at tank bottom pipe
 
 ### Sensors (DS18B20 via Shelly Plus Add-on)
 
@@ -59,65 +83,88 @@ A **flow sensor** at the collector bottom pipe detects when collectors are empty
 
 | Device | Role |
 |--------|------|
-| Shelly Pro 4PM | Main controller, runs scripts. Outputs: pump, fan, heater contactor, spare |
-| Shelly Pro 2PM/3 | Additional valve relays (3 valves need 3 relay outputs) |
+| Shelly Pro 4PM | Main controller: pump, fan, heater contactor, space heater |
+| Shelly Pro 2PM ×3 | Valve relays (2 valves each, 6 of 8 valves) |
+| Shelly Plus 1 | Remaining valve(s), V_air as fail-safe |
 | Shelly Plus 1 + Add-on | Temperature sensor hub (DS18B20) |
 
 Communication: HTTP RPC over local network (Shelly scripting), optionally MQTT.
+
+Total relay outputs needed: 8 valves + pump + fan + 2 heaters = 12.
+
+### Air Management
+
+No flow restrictor needed at panel bottom. Air is managed by:
+- **Auto air vent** at collector top (highest point) — continuously bleeds trapped air
+- **Open reservoir** acts as air separator
+- **Upward flow** through collectors carries air bubbles to the top naturally
+- Pump provides sufficient head (~4m max) to clear any air pockets
 
 ## Operating Modes
 
 ### Mode 1: Solar Charging
 
 **Trigger:** T_collector > T_tank_bottom + 7°C
+**Stop:** T_collector < T_tank_bottom + 3°C
 
-Water circulates from the tank through the solar collectors and back, heating the tank.
+| Valve | State |
+|-------|-------|
+| VI-btm | OPEN |
+| VO-coll | OPEN |
+| V_ret | OPEN |
+| All others | CLOSED |
 
 **Flow loop:**
-- Supply: Tank bottom → V_pump_in(A) → Pump → V_pump_out(A) → Collector bottom → up through panels
-- Return: Collector top → V_top(A) → Reservoir → overflows into tank
+- Supply: Tank bottom → VI-btm → Pump → VO-coll → Collector bottom → up through panels
+- Return: Collector top → V_ret → Reservoir → overflows into tank
 
-**Valve states:** V_top=A, V_pump_in=A, V_pump_out=A
 **Actuators:** Pump ON, Fan OFF
 
 ### Mode 2: Greenhouse Heating
 
 **Trigger:** T_greenhouse < 10°C
+**Stop:** T_greenhouse ≥ 12°C
 
-Hot water from the tank circulates through the radiator inside the greenhouse.
+| Valve | State |
+|-------|-------|
+| VI-top | OPEN |
+| VO-rad | OPEN |
+| All others | CLOSED |
 
 **Flow loop:**
-- Supply: Tank top (via internal dip tube) → V_pump_in(A) → Pump → V_pump_out(A) → Radiator
-- Return: Radiator → Tank bottom
+- Supply: Tank top (dip tube) → VI-top → Pump → VO-rad → Radiator
+- Return: Radiator → tee at tank bottom → tank
 
-**Valve states:** V_top=A, V_pump_in=A, V_pump_out=A
 **Actuators:** Pump ON, Fan ON
-
-**Note:** V_pump_in draws from tank top for heating (hot water) vs tank bottom for charging (cool water). The valve routing for selecting tank top vs bottom needs further detail — either V_pump_in has a third path, or a separate valve (V_tank) selects the tank connection.
 
 ### Mode 3: Active Drain (Freeze Protection)
 
 **Trigger:** T_outdoor < 2°C AND collectors not already drained
 
-The pump actively empties the collectors by pulling water from the bottom while air enters from the top.
+| Valve | State |
+|-------|-------|
+| VI-coll | OPEN |
+| VO-tank | OPEN |
+| V_air | OPEN |
+| All others | CLOSED |
 
 **Sequence:**
 1. Stop pump
-2. Switch V_top → B (air intake)
-3. Switch V_pump_in → B (draw from collector bottom)
-4. Switch V_pump_out → B (push to tank)
-5. Start pump
-6. Monitor flow sensor
-7. Flow sensor reads zero → stop pump
+2. Close all valves
+3. Open V_air (air enters collector top)
+4. Open VI-coll (pump inlet from collector bottom)
+5. Open VO-tank (pump outlet to tank)
+6. Start pump
+7. Monitor flow sensor
+8. Flow sensor reads zero → stop pump → close all valves
 
-**Valve states:** V_top=B, V_pump_in=B, V_pump_out=B
 **Actuators:** Pump ON (until flow=0)
 
 ### Mode 4: Refill After Drain
 
 **Trigger:** T_outdoor > 5°C AND collectors drained AND sun available
 
-Switch all valves back to position A. Resume normal solar charging — pump fills collectors with water from the tank.
+Switch to solar charging valve states. Pump fills collectors with water from tank.
 
 ### Mode 5: Emergency Heating
 
@@ -130,7 +177,7 @@ Switch all valves back to position A. Resume normal solar charging — pump fill
 
 Full seasonal shutdown for deep winter (-25°C periods):
 - Run active drain sequence
-- Optionally drain all outdoor pipes
+- Open SV-drain to empty all outdoor pipes via gravity
 - Space heater on standalone thermostat for greenhouse minimum temperature
 
 ## Physical Layout
@@ -138,8 +185,10 @@ Full seasonal shutdown for deep winter (-25°C periods):
 ### Height Map
 
 ```
+285cm ─── Auto air vent (highest point)
+
 280cm ─── Collector top (upper panel)
-          V_top (3-way valve)
+          V_ret, V_air (collector top manifold)
           T_collector sensor
 
 200cm ─── Open reservoir (on top of Jäspi)
@@ -151,12 +200,14 @@ Full seasonal shutdown for deep winter (-25°C periods):
           Flow sensor
 
  20cm ─── Pump (Wilo Star Z20/4)
-          V_pump_in, V_pump_out
-          Radiator + fan (inside greenhouse)
-          2kW space heater (inside greenhouse)
+          Input manifold (VI-btm, VI-top, VI-coll)
+          Output manifold (VO-coll, VO-rad, VO-tank)
+          SV-drain, SV-fill (service valves)
 
   0cm ─── Ground level
           Jäspi tank bottom (pipe connections)
+          Radiator + fan (inside greenhouse, near ground)
+          2kW space heater (inside greenhouse)
 ```
 
 ### Collector Frame
@@ -171,29 +222,34 @@ Full seasonal shutdown for deep winter (-25°C periods):
 
 1. **Always stop pump before switching any valve** — prevents water hammer and valve damage
 2. **Never run pump dry** — flow sensor stops pump when collectors empty
-3. **Drain before freezing** — trigger at 2°C gives safety margin before 0°C
-4. **Slope collector pipes** — 2–3 cm/m toward drain to ensure complete drainage
-5. **Union fittings** — on all valves for easy replacement
+3. **One input, one output** — exactly one input valve and one output valve open at a time
+4. **Drain before freezing** — trigger at 2°C gives safety margin before 0°C
+5. **Slope collector pipes** — 2–3 cm/m toward drain to ensure complete drainage
+6. **Union fittings** — on all valves for easy replacement
+7. **Fail-safe V_air** — consider wiring V_air as normally-open so collectors drain on power loss
 
 ## Budget Estimate
 
 | Category | Cost |
 |----------|------|
-| Shelly hardware | ~350€ |
+| Shelly hardware (Pro 4PM + 3× Pro 2PM + Plus 1 + Add-on) | ~550€ |
 | DS18B20 sensors | ~40€ |
-| 3× motorized valves | ~180€ |
+| 8× motorized on/off valves (DN15) | ~200€ |
 | Flow sensor | ~25€ |
-| **Control total** | **~595€** |
+| Auto air vent | ~10€ |
+| 2× manual service valves | ~20€ |
+| **Control system total** | **~845€** |
 
 Structural materials (wood, slabs, fasteners) budgeted separately.
 
 ## Open Design Questions
 
-1. **Tank top/bottom selection:** V_pump_in currently selects tank vs collector-bottom. How do we also select between tank-top and tank-bottom for charging vs heating modes? May need a 4th valve (V_tank) or a different valve topology.
-2. **Reservoir sizing:** 20–50L range — exact size depends on collector loop water volume.
-3. **Collector seasonal adjustment:** Fixed angle or seasonally adjustable?
-4. **Wind anchoring:** Required for collector frame?
-5. **Jäspi internal heater:** Use as backup boost, or leave disconnected?
+1. **Reservoir sizing:** 20–50L range — exact size depends on collector loop water volume.
+2. **Collector seasonal adjustment:** Fixed angle or seasonally adjustable?
+3. **Wind anchoring:** Required for collector frame?
+4. **Jäspi internal heater:** Use as backup boost, or leave disconnected?
+5. **Radiator return routing:** Tee at tank bottom vs dedicated return connection.
+6. **Fail-safe behavior:** Should V_air be normally-open (drain on power failure)?
 
 ## Documentation Format
 

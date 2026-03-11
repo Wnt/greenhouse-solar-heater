@@ -75,45 +75,113 @@ components:
     position: inside greenhouse
     purpose: emergency / backup heating
 
+  auto_air_vent:
+    type: automatic air vent
+    position: collector top (highest point in system)
+    height: ~285cm
+    purpose: continuously bleeds trapped air from collector loop
+
 # =============================================================================
-# VALVES
+# VALVE MANIFOLD (on/off topology)
 # =============================================================================
+# Topology: independent on/off valves on input and output manifolds.
+# Any input can connect to any output. Control logic ensures exactly
+# one input and one output are open at a time.
 
 valves:
-  v_top:
-    type: 3-way motorized ball valve
-    size: DN15
-    actuator: 230V
-    location: collector top pipe
-    height: ~280cm (or at pipe routing from collector top)
-    positions:
-      a: collector output → reservoir (normal operation)
-      b: open to air intake (drain mode)
+  topology: on/off manifold
 
-  v_pump_in:
-    type: 3-way motorized ball valve
-    size: DN15
-    actuator: 230V
-    location: pump inlet
-    height: ~20cm
-    positions:
-      a: draw from tank (normal operation)
-      b: draw from collector bottom (drain mode)
+  input_manifold:
+    description: Three on/off valves selecting pump input source
+    location: near pump, ground level
+    rule: exactly ONE input valve open at a time
 
-  v_pump_out:
-    type: 3-way motorized ball valve
-    size: DN15
-    actuator: 230V
-    location: pump outlet
-    height: ~20cm
-    positions:
-      a: push to collectors or radiator (normal operation)
-      b: push to tank (drain mode)
+    vi_btm:
+      type: motorized on/off ball valve
+      size: DN15
+      actuator: 230V
+      source: tank bottom connection
+      purpose: draw cool water from tank bottom (for solar charging)
+
+    vi_top:
+      type: motorized on/off ball valve
+      size: DN15
+      actuator: 230V
+      source: tank top connection (via internal dip tube)
+      purpose: draw hot water from tank top (for greenhouse heating)
+
+    vi_coll:
+      type: motorized on/off ball valve
+      size: DN15
+      actuator: 230V
+      source: collector bottom pipe
+      purpose: draw water from collectors (for active drain)
+
+  output_manifold:
+    description: Three on/off valves selecting pump output destination
+    location: near pump, ground level
+    rule: exactly ONE output valve open at a time
+
+    vo_coll:
+      type: motorized on/off ball valve
+      size: DN15
+      actuator: 230V
+      destination: collector bottom pipe (supply)
+      purpose: push water into collectors (for solar charging / refill)
+
+    vo_rad:
+      type: motorized on/off ball valve
+      size: DN15
+      actuator: 230V
+      destination: radiator in greenhouse
+      purpose: push hot water to radiator (for greenhouse heating)
+
+    vo_tank:
+      type: motorized on/off ball valve
+      size: DN15
+      actuator: 230V
+      destination: tank return connection
+      purpose: return water to tank (for active drain)
+
+  collector_top:
+    description: Two on/off valves at collector top pipe
+    location: collector top, height ~280cm
+
+    v_ret:
+      type: motorized on/off ball valve
+      size: DN15
+      actuator: 230V
+      path: collector top → reservoir
+      purpose: normal return path for heated water
+
+    v_air:
+      type: motorized on/off ball valve
+      size: DN15
+      actuator: 230V
+      path: collector top → open air
+      purpose: air intake for drain mode
 
   flow_sensor:
-    location: collector bottom pipe
+    location: collector bottom pipe (between collector and VI-coll/VO-coll tee)
     purpose: detect when collectors are empty during drain
     height: ~25cm
+
+  service_valves:
+    description: Manual ball valves for system maintenance
+    type: manual ball valve (not motorized)
+
+    sv_drain:
+      location: lowest point of input manifold
+      fitting: hose barb
+      purpose: drain entire system via gravity
+
+    sv_fill:
+      location: input manifold or reservoir area
+      fitting: hose barb (garden hose compatible)
+      purpose: fill system with water (air escapes through open reservoir)
+
+  total_motorized: 8
+  total_manual: 2
 
 # =============================================================================
 # PIPING
@@ -123,8 +191,9 @@ piping:
   type: 22mm PEX
   valve_size: DN15 (½")
   adapters: 22mm PEX → threaded adapter → valve
-  insulation: "yes — pipes insulated"
+  insulation: "yes — all outdoor pipes insulated"
   typical_flow: 4–10 L/min
+  radiator_return: tee fitting at tank bottom, shared with VI-btm pipe
 
 # =============================================================================
 # SENSORS
@@ -171,15 +240,37 @@ sensors:
 control:
   hardware:
     main_controller: Shelly Pro 4PM
-    additional_relays: Shelly Pro 2PM or Pro 3
+    additional_relays: Shelly Pro 2PM or Pro 3 (×2 if needed)
     sensor_hub: Shelly Plus 1 + Add-on
     communication: HTTP RPC (local network), optionally MQTT
 
-  pro_4pm_outputs:
-    O1: pump
-    O2: radiator fan
-    O3: immersion heater contactor (optional)
-    O4: space heater or spare
+  relay_assignments:
+    note: 8 motorized valves + pump + fan + heaters = 12 outputs needed
+    shelly_pro_4pm:
+      O1: pump
+      O2: radiator fan
+      O3: immersion heater contactor (optional)
+      O4: space heater
+    shelly_pro_2pm_1:
+      O1: vi_btm
+      O2: vi_top
+    shelly_pro_2pm_2:
+      O1: vi_coll
+      O2: vo_coll
+    shelly_pro_2pm_3:
+      O1: vo_rad
+      O2: vo_tank
+    shelly_plus_1:
+      O1: v_ret
+      note: v_air can be normally-open (opens when power lost) for fail-safe
+
+  air_management:
+    method: automatic air vent at collector top (highest point)
+    backup: open reservoir acts as air separator
+    note: >
+      No flow restrictor needed. Water flows upward through collectors,
+      carrying air bubbles to the top where they are vented.
+      The pump provides sufficient head (~4m max) to clear any air pockets.
 
 # =============================================================================
 # OPERATING MODES
@@ -190,52 +281,69 @@ modes:
     description: Heat tank water using solar collectors
     trigger: t_collector > t_tank_bottom + 7°C
     valve_states:
-      v_top: a        # collector → reservoir
-      v_pump_in: a    # draw from tank bottom
-      v_pump_out: a   # push to collectors
+      vi_btm: OPEN
+      vi_top: CLOSED
+      vi_coll: CLOSED
+      vo_coll: OPEN
+      vo_rad: CLOSED
+      vo_tank: CLOSED
+      v_ret: OPEN
+      v_air: CLOSED
     actuators:
       pump: ON
       fan: OFF
     flow_path:
-      supply: tank bottom → v_pump_in → pump → v_pump_out → collector bottom → up through panels
-      return: collector top → v_top → reservoir → overflow into tank top
+      supply: tank bottom → VI-btm → pump → VO-coll → collector bottom → up through panels
+      return: collector top → V_ret → reservoir → overflow into tank
 
   greenhouse_heating:
     description: Use stored heat to warm greenhouse
     trigger: t_greenhouse < 10°C
     valve_states:
-      v_top: a        # irrelevant (collectors not in use)
-      v_pump_in: a    # draw from tank top (via dip tube)
-      v_pump_out: a   # push to radiator
+      vi_btm: CLOSED
+      vi_top: OPEN
+      vi_coll: CLOSED
+      vo_coll: CLOSED
+      vo_rad: OPEN
+      vo_tank: CLOSED
+      v_ret: CLOSED
+      v_air: CLOSED
     actuators:
       pump: ON
       fan: ON
     flow_path:
-      supply: tank top (dip tube) → v_pump_in → pump → v_pump_out → radiator
-      return: radiator → back to tank bottom
+      supply: tank top (dip tube) → VI-top → pump → VO-rad → radiator
+      return: radiator → tee at tank bottom pipe → tank
 
   active_drain:
     description: Pump water out of collectors for freeze protection
     trigger: t_outdoor < 2°C AND collectors not already drained
     valve_states:
-      v_top: b        # open to air
-      v_pump_in: b    # draw from collector bottom
-      v_pump_out: b   # push to tank
+      vi_btm: CLOSED
+      vi_top: CLOSED
+      vi_coll: OPEN
+      vo_coll: CLOSED
+      vo_rad: CLOSED
+      vo_tank: OPEN
+      v_ret: CLOSED
+      v_air: OPEN
     sequence:
       - step: 1
         action: Stop pump
       - step: 2
-        action: Switch v_top to position B (air intake)
+        action: Close all valves
       - step: 3
-        action: Switch v_pump_in to position B (collector bottom)
+        action: Open V_air (air intake at collector top)
       - step: 4
-        action: Switch v_pump_out to position B (to tank)
+        action: Open VI-coll (pump draws from collector bottom)
       - step: 5
-        action: Start pump
+        action: Open VO-tank (pump pushes to tank)
       - step: 6
-        action: Monitor flow sensor
+        action: Start pump
       - step: 7
-        action: "Flow sensor reads zero → stop pump"
+        action: Monitor flow sensor
+      - step: 8
+        action: "Flow sensor reads zero → stop pump → close all valves"
     safety:
       - Always stop pump before switching valves
       - Flow sensor prevents pump from running dry
@@ -243,7 +351,7 @@ modes:
   refill_collectors:
     description: Refill collectors after a drain cycle (morning)
     trigger: t_outdoor > 5°C AND collectors are drained AND sun available
-    notes: Switch all valves back to position A, run pump — normal solar charging resumes
+    notes: Switch to solar_charging valve states, pump fills collectors
 
   emergency_heating:
     description: Backup when solar heat is insufficient
@@ -255,8 +363,8 @@ modes:
   winter_shutdown:
     description: Full seasonal shutdown for deep winter
     actions:
-      - Drain collectors (active drain sequence)
-      - Optionally drain all outdoor pipes
+      - Run active drain sequence
+      - Optionally drain all outdoor pipes via SV-drain
       - Space heater on thermostat for greenhouse minimum temp
 
 # =============================================================================
@@ -266,9 +374,11 @@ modes:
 safety:
   - Always stop pump before switching any valve
   - Never run pump dry (flow sensor protection)
+  - Exactly ONE input valve and ONE output valve open at a time
   - Drain collectors before t_outdoor reaches 0°C (2°C safety margin)
   - Use union fittings for easy valve replacement
   - Collector pipes must slope toward drain point (2–3 cm/m)
+  - Consider fail-safe: V_air normally-open so collectors drain on power loss
 
 # =============================================================================
 # PHYSICAL LAYOUT
@@ -290,9 +400,11 @@ structure:
 
 budget:
   control_system:
-    shelly_hardware: ~350€
+    shelly_hardware: ~550€  # Pro 4PM + 3× Pro 2PM + Plus 1 + Add-on
     sensors: ~40€
-    valves: ~180€  # 3× DN15 3-way motorized @ 25–60€ each
+    motorized_valves: ~200€  # 8× DN15 on/off @ ~25€ each
     flow_sensor: ~25€
-    total: ~595€
-  note: Professional HVAC valves could increase to ~900–1000€
+    auto_air_vent: ~10€
+    manual_service_valves: ~20€  # 2× manual ball valve with hose barb
+    total: ~845€
+  note: On/off valves are cheaper per unit than 3-way valves

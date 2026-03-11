@@ -1,32 +1,38 @@
 sequenceDiagram
     participant C as Controller<br/>(Shelly Pro 4PM)
     participant P as Pump<br/>(Wilo Z20/4)
-    participant VT as V_top<br/>(3-way)
-    participant VI as V_pump_in<br/>(3-way)
-    participant VO as V_pump_out<br/>(3-way)
+    participant VI as VI-coll<br/>(on/off)
+    participant VO as VO-tank<br/>(on/off)
+    participant VA as V_air<br/>(on/off)
     participant FS as Flow Sensor
-    participant COL as Collectors
 
     Note over C: T_outdoor < 2°C detected
     C->>P: Stop pump
     P-->>C: Pump OFF confirmed
 
-    Note over C: Wait for pump to fully stop
-    C->>VT: Switch to position B (air intake)
-    C->>VI: Switch to position B (collector bottom)
-    C->>VO: Switch to position B (to tank)
-    VT-->>C: Valve switched
-    VI-->>C: Valve switched
-    VO-->>C: Valve switched
+    Note over C: Close all valves first
+    C->>VI: Close (if open)
+    C->>VO: Close (if open)
 
-    Note over C: All valves in drain position
+    Note over C: Set drain valve states
+    C->>VA: Open V_air (air intake)
+    C->>VI: Open VI-coll (from collector bottom)
+    C->>VO: Open VO-tank (to tank return)
+    VA-->>C: Open confirmed
+    VI-->>C: Open confirmed
+    VO-->>C: Open confirmed
+
+    Note over C: All drain valves set
     C->>P: Start pump
 
-    loop Monitor flow
+    loop Monitor flow sensor
         FS-->>C: Flow detected (water)
-        Note over COL: Water pumped out,<br/>air entering from top
+        Note over P: Pumping water from<br/>collectors to tank.<br/>Air entering from top.
     end
 
-    FS-->>C: Flow = 0 (empty)
+    FS-->>C: Flow = 0 (collectors empty)
     C->>P: Stop pump
-    Note over C: Collectors drained successfully
+    C->>VA: Close V_air
+    C->>VI: Close VI-coll
+    C->>VO: Close VO-tank
+    Note over C: Drain complete.<br/>Collectors empty and safe.

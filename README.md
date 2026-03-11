@@ -16,9 +16,13 @@ An open (unpressurized) solar thermal system that:
 |------|---------|
 | `system.yaml` | **Source of truth** — all component specs, heights, valve states, operating modes |
 | `docs/design.md` | Design specification — architecture, modes, safety rules |
+| `diagrams/system-topology.svg` | SVG pipe & valve topology — full manifold schematic |
+| `diagrams/system-height-layout.svg` | SVG physical layout — components at real-world heights |
+| `diagrams/solar-charging-flow.svg` | SVG flow loop — Mode 1: solar charging |
+| `diagrams/greenhouse-heating-flow.svg` | SVG flow loop — Mode 2: greenhouse heating |
+| `diagrams/active-drain-flow.svg` | SVG flow loop — Mode 3: active drain |
 | `diagrams/control-states.mmd` | Mermaid state diagram — operating mode transitions |
 | `diagrams/drain-sequence.mmd` | Mermaid sequence diagram — active drain procedure |
-| `diagrams/system-height-layout.svg` | SVG physical layout — components at real-world heights |
 | `construction/solar_collector_frame.md` | Collector frame build details |
 | `existing-hardware/` | Photos of owned components (pump, panels, tank) |
 
@@ -31,7 +35,9 @@ An open (unpressurized) solar thermal system that:
 ## Key Design Decisions
 
 - **Unpressurized system** — Jäspi tank used open/vented via reservoir on top
-- **Active drainback** — pump empties collectors through 3-way valve switching
-- **3× three-way valves** — V_top (collector top), V_pump_in, V_pump_out
+- **On/off valve manifold** — 8 motorized on/off valves (DN15) in input/output manifolds around pump
+- **Active drainback** — pump empties collectors; air enters via V_air at collector top
 - **Flow sensor** — detects when collectors are empty, prevents pump dry-run
-- **Shelly control** — Pro 4PM + Pro 2PM/3 + Plus 1 with Add-on
+- **Auto air vent** — at collector top (highest point), continuously bleeds trapped air
+- **Manual service valves** — SV-drain and SV-fill for system maintenance
+- **Shelly control** — Pro 4PM + 3× Pro 2PM + Plus 1 with Add-on

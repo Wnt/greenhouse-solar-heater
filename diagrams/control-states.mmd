@@ -21,21 +21,22 @@ stateDiagram-v2
     Emergency --> Idle : T_greenhouse ≥ 10°C
 
     note right of SolarCharging
-        V_top=A, V_pump_in=A(btm), V_pump_out=A(coll)
+        VI-btm OPEN, VO-coll OPEN, V_ret OPEN
         Pump ON, Fan OFF
     end note
 
     note right of GreenhouseHeating
-        V_pump_in=A(top), V_pump_out=A(rad)
+        VI-top OPEN, VO-rad OPEN
         Pump ON, Fan ON
     end note
 
     note right of ActiveDrain
-        V_top=B(air), V_pump_in=B(coll), V_pump_out=B(tank)
+        VI-coll OPEN, VO-tank OPEN, V_air OPEN
         Pump ON until flow=0
     end note
 
     note right of Emergency
+        All valves CLOSED
         Space heater ON (2kW)
         Jäspi element ON (optional)
     end note
