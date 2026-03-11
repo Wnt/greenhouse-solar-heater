@@ -315,3 +315,38 @@ function transitionTo(newMode) {
     });
   });
 }
+
+function startDrainMonitor() {
+  var drain_start = Date.now();
+
+  state.drain_timer = Timer.set(CFG.DRAIN_MONITOR_INTERVAL, true, function() {
+    // Safety timeout
+    if (Date.now() - drain_start > CFG.DRAIN_TIMEOUT) {
+      stopDrain("timeout");
+      return;
+    }
+    // Check pump power locally
+    var sw = Shelly.getComponentStatus("switch", 0);
+    if (sw && sw.apower < CFG.DRAIN_POWER_THRESHOLD) {
+      stopDrain("dry_run");
+    }
+  });
+}
+
+function stopDrain(reason) {
+  if (state.drain_timer !== null) {
+    Timer.clear(state.drain_timer);
+    state.drain_timer = null;
+  }
+  state.transitioning = true; // guard against control loop during valve-close
+  setPump(false);
+  state.collectors_drained = true;
+  Shelly.call("KVS.Set", {key: "drained", value: "1"});
+  state.last_error = (reason === "timeout") ? "drain_timeout" : null;
+
+  closeAllValves(function() {
+    state.mode = MODE.IDLE;
+    state.mode_start = Date.now();
+    state.transitioning = false;
+  });
+}
