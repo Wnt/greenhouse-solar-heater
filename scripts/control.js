@@ -154,3 +154,43 @@ function closeAllValves(cb) {
   }
   setValves(pairs, 0, cb);
 }
+
+function pollSensor(name, id, cb) {
+  var url = "http://" + SENSOR_IP + "/rpc/Temperature.GetStatus?id=" + id;
+  Shelly.call("HTTP.GET", {url: url}, function(res, err) {
+    if (err || !res || res.code !== 200 ||
+        !res.body || res.body.indexOf("tC") < 0) {
+      if (cb) cb(name, null);
+      return;
+    }
+    var data = JSON.parse(res.body);
+    if (cb) cb(name, data.tC);
+  });
+}
+
+function pollAllSensors(cb) {
+  var names = ["collector", "tank_top", "tank_bottom", "greenhouse", "outdoor"];
+  var any_success = false;
+
+  function next(i) {
+    if (i >= names.length) {
+      if (any_success) {
+        state.temp_updated = Date.now();
+        state.stale_cycles = 0;
+      } else {
+        state.stale_cycles++;
+      }
+      if (cb) cb(any_success);
+      return;
+    }
+    pollSensor(names[i], SENSOR_IDS[names[i]], function(name, val) {
+      if (val !== null) {
+        state.temps[name] = val;
+        any_success = true;
+      }
+      next(i + 1);
+    });
+  }
+
+  next(0);
+}
