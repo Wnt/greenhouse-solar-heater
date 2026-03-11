@@ -259,3 +259,59 @@ function evaluateNonEmergency() {
 
   return MODE.IDLE;
 }
+
+function transitionTo(newMode) {
+  if (state.transitioning) return;
+  state.transitioning = true;
+
+  // Step 1: Stop pump and all actuators
+  setPump(false);
+  setFan(false);
+  setSpaceHeater(false);
+  setImmersion(false);
+
+  // Step 2: Wait for settle, then close all valves
+  Timer.set(CFG.VALVE_SETTLE_MS, false, function() {
+    closeAllValves(function(ok) {
+      if (!ok) return; // closeAllValves already handled error
+
+      // Step 3: Open valves for new mode
+      var target = MODE_VALVES[newMode];
+      var pairs = [];
+      var names = [
+        "vi_btm", "vi_top", "vi_coll", "vo_coll",
+        "vo_rad", "vo_tank", "v_ret", "v_air",
+      ];
+      for (var i = 0; i < names.length; i++) {
+        if (target[names[i]]) pairs.push([names[i], true]);
+      }
+
+      setValves(pairs, 0, function(ok2) {
+        if (!ok2) return;
+
+        // Step 4: Wait for valve travel + gravity prime
+        Timer.set(CFG.PUMP_PRIME_MS, false, function() {
+          state.mode = newMode;
+          state.mode_start = Date.now();
+          state.transitioning = false;
+
+          // Activate mode-specific outputs
+          if (newMode === MODE.SOLAR) {
+            setPump(true);
+            state.collectors_drained = false;
+            Shelly.call("KVS.Set", {key: "drained", value: "0"});
+          } else if (newMode === MODE.HEATING) {
+            setPump(true);
+            setFan(true);
+          } else if (newMode === MODE.DRAIN) {
+            setPump(true);
+            startDrainMonitor();
+          } else if (newMode === MODE.EMERGENCY) {
+            setSpaceHeater(true);
+          }
+          // IDLE: everything stays off
+        });
+      });
+    });
+  });
+}
