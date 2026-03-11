@@ -101,3 +101,56 @@ function setImmersion(on) {
 function setSpaceHeater(on) {
   Shelly.call("Switch.Set", {id: 3, on: on});
 }
+
+function setValve(name, open, cb) {
+  var v = VALVES[name];
+  var cmd = (name === "v_air") ? !open : open;
+  var url = "http://" + v.ip + "/rpc/Switch.Set?id=" + v.id +
+    "&on=" + (cmd ? "true" : "false");
+  Shelly.call("HTTP.GET", {url: url}, function(res, err) {
+    if (err || !res || res.code !== 200) {
+      Shelly.call("HTTP.GET", {url: url}, function(res2, err2) {
+        if (err2 || !res2 || res2.code !== 200) {
+          state.last_error = "valve_" + name;
+          if (cb) cb(false);
+          return;
+        }
+        state.valve_states[name] = open;
+        if (cb) cb(true);
+      });
+      return;
+    }
+    state.valve_states[name] = open;
+    if (cb) cb(true);
+  });
+}
+
+function setValves(pairs, idx, cb) {
+  if (idx >= pairs.length) {
+    if (cb) cb(true);
+    return;
+  }
+  setValve(pairs[idx][0], pairs[idx][1], function(ok) {
+    if (!ok) {
+      setPump(false);
+      state.mode = MODE.IDLE;
+      state.mode_start = Date.now();
+      state.transitioning = false;
+      if (cb) cb(false);
+      return;
+    }
+    setValves(pairs, idx + 1, cb);
+  });
+}
+
+function closeAllValves(cb) {
+  var names = [
+    "vi_btm", "vi_top", "vi_coll", "vo_coll",
+    "vo_rad", "vo_tank", "v_ret", "v_air",
+  ];
+  var pairs = [];
+  for (var i = 0; i < names.length; i++) {
+    pairs.push([names[i], false]);
+  }
+  setValves(pairs, 0, cb);
+}
