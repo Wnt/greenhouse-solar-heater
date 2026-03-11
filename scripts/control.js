@@ -350,3 +350,28 @@ function stopDrain(reason) {
     state.transitioning = false;
   });
 }
+
+HTTPServer.registerEndpoint("status", function(req, res) {
+  var now = Date.now();
+  var sw = Shelly.getComponentStatus("switch", 0);
+  var body = JSON.stringify({
+    mode: MODE_NAMES[state.mode],
+    mode_duration_s: Math.floor((now - state.mode_start) / 1000),
+    temperatures: state.temps,
+    temp_updated_s_ago: state.temp_updated > 0 ?
+      Math.floor((now - state.temp_updated) / 1000) : null,
+    valves: state.valve_states,
+    pump: {
+      on: state.pump_on,
+      power_w: sw ? sw.apower : null,
+    },
+    collectors_drained: state.collectors_drained,
+    last_error: state.last_error,
+    uptime_s: Math.floor(
+      Shelly.getComponentStatus("sys").uptime
+    ),
+  });
+  res.code = 200;
+  res.body = body;
+  res.send();
+});
