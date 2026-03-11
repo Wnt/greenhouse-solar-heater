@@ -1,114 +1,122 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 520" font-family="sans-serif" font-size="12">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 620" font-family="sans-serif" font-size="12">
   <title>Mode 2: Greenhouse Heating — Flow Loop</title>
   <desc>
-    Hot water from tank top circulates through radiator inside greenhouse,
-    returns cool to tank bottom. Source of truth: system.yaml → modes.greenhouse_heating
+    Hot water from tank top port (dip tube at bottom) through radiator,
+    returns to tank bottom port. Source of truth: system.yaml → modes.greenhouse_heating
   </desc>
 
-  <!-- Background -->
-  <rect width="700" height="520" fill="#0d1117"/>
+  <rect width="800" height="620" fill="#0d1117"/>
 
   <!-- Title -->
-  <text x="350" y="30" fill="#2e7d32" text-anchor="middle" font-size="16" font-weight="bold">Mode 2: Greenhouse Heating</text>
-  <text x="350" y="48" fill="#888" text-anchor="middle" font-size="11">Trigger: T_greenhouse &lt; 10°C</text>
+  <text x="400" y="28" fill="#2e7d32" text-anchor="middle" font-size="16" font-weight="bold">Mode 2: Greenhouse Heating</text>
+  <text x="400" y="46" fill="#888" text-anchor="middle" font-size="11">Trigger: T_greenhouse &lt; 10°C</text>
 
   <!-- Height scale -->
-  <line x1="40" y1="70" x2="40" y2="470" stroke="#333" stroke-width="1"/>
-  <text x="10" y="74" fill="#555" font-size="9">280cm</text>
-  <line x1="35" y1="70" x2="45" y2="70" stroke="#333" stroke-dasharray="2,4"/>
-  <text x="10" y="170" fill="#555" font-size="9">200cm</text>
-  <line x1="35" y1="166" x2="45" y2="166" stroke="#555"/>
-  <text x="10" y="266" fill="#555" font-size="9">100cm</text>
-  <line x1="35" y1="262" x2="45" y2="262" stroke="#333" stroke-dasharray="2,4"/>
-  <text x="15" y="474" fill="#555" font-size="9">0cm</text>
-  <line x1="35" y1="470" x2="45" y2="470" stroke="#555"/>
+  <line x1="35" y1="70" x2="35" y2="560" stroke="#333" stroke-width="1"/>
+  <text x="8" y="174" fill="#555" font-size="9">200cm</text>
+  <line x1="30" y1="170" x2="40" y2="170" stroke="#555"/>
+  <text x="8" y="564" fill="#555" font-size="9">0cm</text>
+  <line x1="30" y1="560" x2="40" y2="560" stroke="#555"/>
 
   <!-- Ground -->
-  <line x1="40" y1="470" x2="680" y2="470" stroke="#5d4037" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <line x1="35" y1="560" x2="770" y2="560" stroke="#5d4037" stroke-width="1.5" stroke-dasharray="6,3"/>
 
   <!-- ====== COLLECTORS (idle, dimmed) ====== -->
-  <rect x="70" y="70" width="55" height="336" fill="none" stroke="#333" stroke-width="1.5" stroke-dasharray="6,4" rx="4"/>
-  <text x="97" y="240" fill="#444" text-anchor="middle" font-size="10" transform="rotate(-90 97 240)">Collectors (idle)</text>
+  <rect x="60" y="70" width="50" height="370"
+        fill="none" stroke="#333" stroke-width="1.5" stroke-dasharray="6,4" rx="4"/>
+  <text x="85" y="260" fill="#444" text-anchor="middle" font-size="9"
+        transform="rotate(-90 85 260)">Collectors (idle)</text>
 
-  <!-- ====== TANK ====== -->
-  <rect x="180" y="100" width="100" height="370" fill="#1565c012" stroke="#1565c0" stroke-width="2.5" rx="5"/>
-  <!-- Hot zone highlighted (being drawn from) -->
-  <rect x="183" y="110" width="94" height="100" fill="#e5393520" stroke="#ef535055" stroke-width="1" rx="3"/>
-  <text x="230" y="150" fill="#ef9a9a" text-anchor="middle" font-size="11" font-weight="bold">HOT</text>
-  <text x="230" y="166" fill="#ef9a9a" text-anchor="middle" font-size="9">draw from here</text>
-  <!-- Cool zone (return goes here) -->
-  <rect x="183" y="400" width="94" height="65" fill="#1565c020" stroke="#42a5f555" stroke-width="1" rx="3"/>
-  <text x="230" y="435" fill="#64b5f6" text-anchor="middle" font-size="9">COOL (return)</text>
+  <!-- ====== JÄSPI TANK ====== -->
+  <rect x="170" y="160" width="120" height="400"
+        fill="#1565c010" stroke="#1565c0" stroke-width="2.5" rx="5"/>
 
-  <text x="230" y="290" fill="#90caf9" text-anchor="middle" font-size="14" font-weight="bold">Jäspi</text>
-  <text x="230" y="308" fill="#90caf9" text-anchor="middle" font-size="12">300L</text>
+  <!-- Hot zone (drawing from here) -->
+  <rect x="174" y="175" width="112" height="100" fill="#e5393518" stroke="#ef535030" stroke-width="1" rx="3"/>
+  <text x="230" y="215" fill="#ef9a9a" text-anchor="middle" font-size="11" font-weight="bold">HOT</text>
+  <text x="230" y="232" fill="#ef9a9a" text-anchor="middle" font-size="9">draw from here</text>
 
-  <!-- Internal dip tube (shows hot water drawn from top via bottom connection) -->
-  <line x1="250" y1="130" x2="250" y2="470" stroke="#ef535050" stroke-width="1.5" stroke-dasharray="4,3"/>
-  <text x="258" y="350" fill="#ef9a9a55" font-size="8" transform="rotate(-90 258 350)">internal dip tube</text>
+  <!-- Cool zone -->
+  <rect x="174" y="490" width="112" height="65" fill="#1565c018" rx="3"/>
+  <text x="230" y="525" fill="#64b5f6" text-anchor="middle" font-size="9">COOL (return)</text>
 
-  <!-- ====== PUMP ====== -->
-  <circle cx="360" cy="445" r="20" fill="#76ff0315" stroke="#4fc3f7" stroke-width="2.5"/>
-  <text x="360" y="442" fill="#4fc3f7" text-anchor="middle" font-size="10" font-weight="bold">Pump</text>
-  <text x="360" y="454" fill="#76ff03" text-anchor="middle" font-size="9">ON</text>
+  <text x="230" y="380" fill="#90caf9" text-anchor="middle" font-size="14" font-weight="bold">Jäspi</text>
+  <text x="230" y="398" fill="#90caf9" text-anchor="middle" font-size="11">300L</text>
 
-  <!-- V_pump_in = A (from tank top via dip tube) -->
-  <rect x="296" y="460" width="50" height="14" fill="#76ff0325" stroke="#76ff03" stroke-width="1.5" rx="3"/>
-  <text x="321" y="470" fill="#76ff03" text-anchor="middle" font-size="8">V_p_in=A</text>
+  <!-- Dip tube inside tank (shows internal path) -->
+  <line x1="250" y1="200" x2="250" y2="560" stroke="#ef535030" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="258" y="400" fill="#ef9a9a40" font-size="7" transform="rotate(-90 258 400)">internal dip tube</text>
 
-  <!-- V_pump_out = A (to radiator) -->
-  <rect x="388" y="460" width="50" height="14" fill="#76ff0325" stroke="#76ff03" stroke-width="1.5" rx="3"/>
-  <text x="413" y="470" fill="#76ff03" text-anchor="middle" font-size="8">V_p_out=A</text>
+  <!-- Tank bottom connections -->
+  <circle cx="210" cy="560" r="5" fill="#1565c0"/>
+  <text x="190" y="580" fill="#64b5f6" font-size="8">bottom port</text>
+  <circle cx="250" cy="560" r="5" fill="#e53935"/>
+  <text x="238" y="580" fill="#ef9a9a" font-size="8">top port</text>
+  <text x="250" y="595" fill="#666" font-size="8">(dip tube to top)</text>
+
+  <!-- ====== SUPPLY FLOW (hot water from tank top port) ====== -->
+
+  <!-- VI-top valve -->
+  <rect x="320" y="530" width="55" height="20" fill="#76ff0320" stroke="#76ff03" stroke-width="1.5" rx="3"/>
+  <text x="347" y="544" fill="#76ff03" text-anchor="middle" font-size="9">VI-top</text>
+  <text x="347" y="524" fill="#76ff03" text-anchor="middle" font-size="8">OPEN</text>
+
+  <!-- Pipe: tank top port → VI-top -->
+  <path d="M 250 560 L 250 600 L 320 600 L 320 540" fill="none" stroke="#ef5350" stroke-width="2.5"/>
+
+  <!-- Pump -->
+  <circle cx="430" cy="505" r="22" fill="#76ff0312" stroke="#4fc3f7" stroke-width="2.5"/>
+  <text x="430" y="501" fill="#4fc3f7" text-anchor="middle" font-size="11" font-weight="bold">Pump</text>
+  <text x="430" y="514" fill="#76ff03" text-anchor="middle" font-size="9">ON</text>
+
+  <!-- Pipe: VI-top → pump -->
+  <path d="M 347 530 L 347 505 L 408 505" fill="none" stroke="#ef5350" stroke-width="2.5"/>
+  <polygon points="408,505 400,500 400,510" fill="#ef5350"/>
+
+  <!-- VO-rad valve -->
+  <rect x="490" y="463" width="55" height="20" fill="#76ff0320" stroke="#76ff03" stroke-width="1.5" rx="3"/>
+  <text x="517" y="477" fill="#76ff03" text-anchor="middle" font-size="9">VO-rad</text>
+  <text x="517" y="457" fill="#76ff03" text-anchor="middle" font-size="8">OPEN</text>
+
+  <!-- Pipe: pump → VO-rad -->
+  <path d="M 452 505 L 517 505 L 517 483" fill="none" stroke="#ef5350" stroke-width="2.5"/>
 
   <!-- ====== GREENHOUSE ====== -->
-  <path d="M 470 280 L 470 470 L 670 470 L 670 280 L 610 230 L 530 230 Z"
+  <path d="M 590 340 L 590 560 L 770 560 L 770 340 L 715 290 L 645 290 Z"
         fill="#2e7d3210" stroke="#2e7d32" stroke-width="2.5"/>
-  <text x="570" y="270" fill="#66bb6a" text-anchor="middle" font-size="13" font-weight="bold">Greenhouse</text>
+  <text x="680" y="325" fill="#66bb6a" text-anchor="middle" font-size="13" font-weight="bold">Greenhouse</text>
 
-  <!-- Radiator + fan -->
-  <rect x="495" y="410" width="90" height="40" fill="#ff572220" stroke="#ff5722" stroke-width="2" rx="4"/>
-  <text x="540" y="430" fill="#ff8a65" text-anchor="middle" font-size="11" font-weight="bold">Radiator</text>
-  <text x="540" y="444" fill="#ff8a65" text-anchor="middle" font-size="9">+ fan ON</text>
+  <!-- Radiator -->
+  <rect x="615" y="480" width="90" height="40"
+        fill="#ff572218" stroke="#ff5722" stroke-width="2" rx="4"/>
+  <text x="660" y="500" fill="#ff8a65" text-anchor="middle" font-size="11" font-weight="bold">Radiator</text>
+  <text x="660" y="514" fill="#ff8a65" text-anchor="middle" font-size="9">+ fan ON</text>
 
-  <!-- Heat waves from radiator -->
-  <text x="505" y="400" fill="#ff8a6580" font-size="14">~</text>
-  <text x="525" y="395" fill="#ff8a6560" font-size="14">~</text>
-  <text x="545" y="398" fill="#ff8a6580" font-size="14">~</text>
-  <text x="565" y="393" fill="#ff8a6560" font-size="14">~</text>
+  <!-- Heat waves -->
+  <text x="625" y="470" fill="#ff8a6570" font-size="14">~</text>
+  <text x="645" y="465" fill="#ff8a6550" font-size="14">~</text>
+  <text x="665" y="468" fill="#ff8a6570" font-size="14">~</text>
+  <text x="685" y="463" fill="#ff8a6550" font-size="14">~</text>
+
+  <!-- Pipe: VO-rad → radiator inlet -->
+  <path d="M 517 463 L 517 440 L 600 440 L 600 490 L 615 490" fill="none" stroke="#ef5350" stroke-width="2.5"/>
+  <polygon points="615,490 607,485 607,495" fill="#ef5350"/>
+  <text x="555" y="434" fill="#ef5350" font-size="9">hot →</text>
+
+  <!-- ====== RETURN FLOW (cool water from radiator to tank bottom port) ====== -->
+  <path d="M 615 510 L 600 510 L 600 610 L 210 610 L 210 560" fill="none" stroke="#42a5f5" stroke-width="2.5"/>
+  <polygon points="210,560 205,570 215,570" fill="#42a5f5"/>
+  <text x="400" y="605" fill="#42a5f5" font-size="9">← cool return to tank bottom port</text>
 
   <!-- T_greenhouse sensor -->
-  <circle cx="570" cy="320" r="4" fill="#76ff03"/>
-  <text x="580" y="323" fill="#76ff03" font-size="9">T_greenhouse</text>
-
-  <!-- ====== SUPPLY FLOW (hot water: tank top → pump → radiator) ====== -->
-  <!-- Tank bottom connection (dip tube to top) → V_pump_in → Pump -->
-  <path d="M 250 470 L 250 480 L 296 480 L 296 467" fill="none" stroke="#ef5350" stroke-width="3"/>
-  <polygon points="296,467 291,477 301,477" fill="#ef5350"/>
-
-  <!-- Pump → V_pump_out → radiator -->
-  <path d="M 380 445 L 388 460" fill="none" stroke="#ef5350" stroke-width="3"/>
-  <path d="M 438 467 L 480 467 L 480 430 L 495 430" fill="none" stroke="#ef5350" stroke-width="3"/>
-  <polygon points="495,430 485,425 485,435" fill="#ef5350"/>
-
-  <!-- Supply label -->
-  <text x="355" y="498" fill="#ef5350" font-size="10">supply: hot water from tank top (via dip tube)</text>
-
-  <!-- ====== RETURN FLOW (cool water: radiator → tank bottom) ====== -->
-  <path d="M 495 445 L 480 445 L 480 500 L 210 500 L 210 470" fill="none" stroke="#42a5f5" stroke-width="3"/>
-  <polygon points="210,470 205,480 215,480" fill="#42a5f5"/>
-
-  <!-- Return label -->
-  <text x="340" y="512" fill="#42a5f5" font-size="10">return: cooled water to tank bottom</text>
+  <circle cx="680" cy="370" r="4" fill="#76ff03"/>
+  <text x="690" y="373" fill="#76ff03" font-size="9">T_greenhouse</text>
 
   <!-- ====== STATUS BOX ====== -->
-  <rect x="470" y="70" width="210" height="150" fill="#1a2a1a" stroke="#388e3c" stroke-width="1.5" rx="5"/>
-  <text x="485" y="92" fill="#66bb6a" font-size="12" font-weight="bold">Valve States</text>
-  <text x="485" y="112" fill="#ccc" font-size="11">V_top = A (irrelevant)</text>
-  <text x="485" y="130" fill="#ccc" font-size="11">V_pump_in = A (tank top)</text>
-  <text x="485" y="148" fill="#ccc" font-size="11">V_pump_out = A (radiator)</text>
-  <line x1="480" y1="158" x2="670" y2="158" stroke="#388e3c55"/>
-  <text x="485" y="175" fill="#66bb6a" font-size="11">Pump: ON, Fan: ON</text>
-  <line x1="480" y1="185" x2="670" y2="185" stroke="#388e3c55"/>
-  <text x="485" y="200" fill="#aaa" font-size="10">Stop when:</text>
-  <text x="485" y="215" fill="#ccc" font-size="10">T_greenhouse ≥ 12°C</text>
+  <rect x="60" y="460" width="180" height="90" fill="#1a2a1a" stroke="#388e3c" stroke-width="1.5" rx="5"/>
+  <text x="75" y="482" fill="#66bb6a" font-size="12" font-weight="bold">Open Valves</text>
+  <text x="75" y="502" fill="#ccc" font-size="11">VI-top — tank top (hot)</text>
+  <text x="75" y="520" fill="#ccc" font-size="11">VO-rad — to radiator</text>
+  <line x1="70" y1="528" x2="230" y2="528" stroke="#388e3c55"/>
+  <text x="75" y="544" fill="#66bb6a" font-size="10">Pump ON, Fan ON</text>
 </svg>

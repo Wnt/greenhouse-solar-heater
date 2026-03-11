@@ -1,114 +1,129 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 520" font-family="sans-serif" font-size="12">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 620" font-family="sans-serif" font-size="12">
   <title>Mode 1: Solar Charging — Flow Loop</title>
   <desc>
-    Cool water from tank bottom circulates through solar collectors and returns
-    hot to reservoir/tank top. Source of truth: system.yaml → modes.solar_charging
+    Cool water from tank bottom port through collectors, returns via reservoir
+    and pipe down to tank bottom. Source of truth: system.yaml → modes.solar_charging
   </desc>
 
-  <!-- Background -->
-  <rect width="700" height="520" fill="#0d1117"/>
+  <rect width="800" height="620" fill="#0d1117"/>
 
   <!-- Title -->
-  <text x="350" y="30" fill="#f9a825" text-anchor="middle" font-size="16" font-weight="bold">Mode 1: Solar Charging</text>
-  <text x="350" y="48" fill="#888" text-anchor="middle" font-size="11">Trigger: T_collector > T_tank_bottom + 7°C</text>
+  <text x="400" y="28" fill="#f9a825" text-anchor="middle" font-size="16" font-weight="bold">Mode 1: Solar Charging</text>
+  <text x="400" y="46" fill="#888" text-anchor="middle" font-size="11">Trigger: T_collector > T_tank_bottom + 7°C</text>
 
   <!-- Height scale -->
-  <line x1="40" y1="70" x2="40" y2="470" stroke="#333" stroke-width="1"/>
-  <text x="10" y="74" fill="#555" font-size="9">280cm</text>
-  <line x1="35" y1="70" x2="45" y2="70" stroke="#555"/>
-  <text x="10" y="170" fill="#555" font-size="9">200cm</text>
-  <line x1="35" y1="166" x2="45" y2="166" stroke="#555"/>
-  <text x="10" y="266" fill="#555" font-size="9">100cm</text>
-  <line x1="35" y1="262" x2="45" y2="262" stroke="#555"/>
-  <text x="15" y="410" fill="#555" font-size="9">30cm</text>
-  <line x1="35" y1="406" x2="45" y2="406" stroke="#555"/>
-  <text x="15" y="474" fill="#555" font-size="9">0cm</text>
-  <line x1="35" y1="470" x2="45" y2="470" stroke="#555"/>
+  <line x1="35" y1="70" x2="35" y2="560" stroke="#333" stroke-width="1"/>
+  <text x="8" y="74" fill="#555" font-size="9">280cm</text>
+  <line x1="30" y1="70" x2="40" y2="70" stroke="#555"/>
+  <text x="8" y="174" fill="#555" font-size="9">200cm</text>
+  <line x1="30" y1="170" x2="40" y2="170" stroke="#555"/>
+  <text x="8" y="444" fill="#555" font-size="9">30cm</text>
+  <line x1="30" y1="440" x2="40" y2="440" stroke="#555"/>
+  <text x="8" y="564" fill="#555" font-size="9">0cm</text>
+  <line x1="30" y1="560" x2="40" y2="560" stroke="#555"/>
 
   <!-- Ground -->
-  <line x1="40" y1="470" x2="680" y2="470" stroke="#5d4037" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <line x1="35" y1="560" x2="770" y2="560" stroke="#5d4037" stroke-width="1.5" stroke-dasharray="6,3"/>
 
   <!-- ====== COLLECTORS ====== -->
-  <rect x="70" y="70" width="55" height="336" fill="#f9a82510" stroke="#f9a825" stroke-width="2.5" rx="4"/>
-  <text x="97" y="240" fill="#f9a825" text-anchor="middle" font-size="11" font-weight="bold" transform="rotate(-90 97 240)">Solar Collectors</text>
+  <rect x="60" y="70" width="60" height="370"
+        fill="#f9a82510" stroke="#f9a825" stroke-width="2.5" rx="4"/>
+  <text x="90" y="260" fill="#f9a825" text-anchor="middle" font-size="11" font-weight="bold"
+        transform="rotate(-90 90 260)">Solar Collectors</text>
 
-  <!-- V_top = A (collector → reservoir) -->
-  <rect x="78" y="58" width="40" height="14" fill="#76ff0325" stroke="#76ff03" stroke-width="1.5" rx="3"/>
-  <text x="98" y="68" fill="#76ff03" text-anchor="middle" font-size="8">V_top=A</text>
+  <!-- Flow UP inside collectors -->
+  <path d="M 90 420 L 90 95" fill="none" stroke="#ef5350" stroke-width="2" stroke-dasharray="8,4"/>
+  <polygon points="90,95 85,110 95,110" fill="#ef5350"/>
+  <text x="55" y="260" fill="#ef5350" font-size="9" transform="rotate(-90 55 260)">heating ↑</text>
 
-  <!-- Flow sensor -->
-  <rect x="80" y="410" width="36" height="12" fill="#e040fb22" stroke="#e040fb" stroke-width="1" rx="2"/>
-  <text x="98" y="419" fill="#ce93d8" text-anchor="middle" font-size="7">FlowSens</text>
+  <!-- ====== V_ret at collector top ====== -->
+  <rect x="150" y="75" width="55" height="20" fill="#76ff0320" stroke="#76ff03" stroke-width="1.5" rx="3"/>
+  <text x="177" y="89" fill="#76ff03" text-anchor="middle" font-size="9">V_ret</text>
+  <text x="177" y="69" fill="#76ff03" text-anchor="middle" font-size="8">OPEN</text>
+  <line x1="120" y1="85" x2="150" y2="85" stroke="#ef5350" stroke-width="2"/>
 
   <!-- ====== RESERVOIR ====== -->
-  <rect x="210" y="155" width="70" height="28" fill="#42a5f520" stroke="#42a5f5" stroke-width="2" rx="4"/>
-  <text x="245" y="173" fill="#64b5f6" text-anchor="middle" font-size="10" font-weight="bold">Reservoir</text>
+  <rect x="290" y="158" width="90" height="30"
+        fill="#42a5f515" stroke="#42a5f5" stroke-width="2" rx="4"/>
+  <text x="335" y="177" fill="#64b5f6" text-anchor="middle" font-size="11" font-weight="bold">Reservoir</text>
+  <text x="335" y="152" fill="#90caf9" text-anchor="middle" font-size="9">open / vented (200cm)</text>
 
-  <!-- ====== TANK ====== -->
-  <rect x="205" y="185" width="80" height="285" fill="#1565c012" stroke="#1565c0" stroke-width="2" rx="5"/>
-  <!-- Stratification -->
-  <rect x="208" y="195" width="74" height="70" fill="#e5393512" rx="3"/>
-  <text x="245" y="225" fill="#ef9a9a" text-anchor="middle" font-size="9">HOT (top)</text>
-  <rect x="208" y="400" width="74" height="65" fill="#1565c018" rx="3"/>
-  <text x="245" y="435" fill="#64b5f6" text-anchor="middle" font-size="9">COOL (btm)</text>
-  <text x="245" y="330" fill="#90caf9" text-anchor="middle" font-size="13" font-weight="bold">Jäspi 300L</text>
+  <!-- Return pipe: V_ret → reservoir -->
+  <path d="M 205 85 L 250 85 L 250 173 L 290 173" fill="none" stroke="#ef5350" stroke-width="2.5"/>
+  <polygon points="290,173 282,168 282,178" fill="#ef5350"/>
+  <text x="255" y="125" fill="#ef5350" font-size="9">hot return ↓</text>
 
-  <!-- ====== PUMP ====== -->
-  <circle cx="370" cy="445" r="20" fill="#76ff0315" stroke="#4fc3f7" stroke-width="2.5"/>
-  <text x="370" y="442" fill="#4fc3f7" text-anchor="middle" font-size="10" font-weight="bold">Pump</text>
-  <text x="370" y="454" fill="#76ff03" text-anchor="middle" font-size="9">ON</text>
+  <!-- ====== JÄSPI TANK ====== -->
+  <rect x="285" y="260" width="100" height="300"
+        fill="#1565c010" stroke="#1565c0" stroke-width="2" rx="5"/>
+  <!-- Hot zone (being filled from top) -->
+  <rect x="289" y="270" width="92" height="80" fill="#e5393512" rx="3"/>
+  <text x="335" y="310" fill="#ef9a9a" text-anchor="middle" font-size="10">HOT (top)</text>
+  <!-- Cool zone (being drawn from) -->
+  <rect x="289" y="490" width="92" height="65" fill="#1565c018" rx="3"/>
+  <text x="335" y="525" fill="#64b5f6" text-anchor="middle" font-size="10">COOL (btm)</text>
+  <text x="335" y="410" fill="#90caf9" text-anchor="middle" font-size="14" font-weight="bold">Jäspi</text>
+  <text x="335" y="430" fill="#90caf9" text-anchor="middle" font-size="11">300L</text>
 
-  <!-- V_pump_in = A (from tank) -->
-  <rect x="310" y="460" width="46" height="14" fill="#76ff0325" stroke="#76ff03" stroke-width="1.5" rx="3"/>
-  <text x="333" y="470" fill="#76ff03" text-anchor="middle" font-size="8">V_p_in=A</text>
+  <!-- Pipe: Reservoir → DOWN to tank bottom port -->
+  <path d="M 335 188 L 335 260" fill="none" stroke="#ef5350" stroke-width="2"/>
+  <text x="345" y="230" fill="#ef9a9a" font-size="8">pipe down to</text>
+  <text x="345" y="242" fill="#ef9a9a" font-size="8">tank bottom</text>
 
-  <!-- V_pump_out = A (to collectors) -->
-  <rect x="398" y="460" width="50" height="14" fill="#76ff0325" stroke="#76ff03" stroke-width="1.5" rx="3"/>
-  <text x="423" y="470" fill="#76ff03" text-anchor="middle" font-size="8">V_p_out=A</text>
+  <!-- Continue into tank: entering at bottom, hot water rises -->
+  <path d="M 335 530 L 335 555 L 335 560" fill="none" stroke="#ef5350" stroke-width="2"/>
+  <text x="345" y="575" fill="#ef9a9a" font-size="8">enters at bottom port</text>
 
-  <!-- ====== SUPPLY FLOW (cool water: tank bottom → pump → collectors) ====== -->
-  <!-- Tank bottom out → V_pump_in → Pump -->
-  <path d="M 245 470 L 245 480 L 310 480 L 310 467" fill="none" stroke="#42a5f5" stroke-width="3"/>
-  <path d="M 356 467 L 356 480 L 350 455" fill="none" stroke="#42a5f5" stroke-width="3"/>
+  <!-- Tank bottom connections (both at 0cm) -->
+  <circle cx="310" cy="560" r="5" fill="#1565c0"/>
+  <text x="270" y="585" fill="#64b5f6" font-size="8">bottom port</text>
+  <circle cx="360" cy="560" r="5" fill="#e53935"/>
+  <text x="345" y="585" fill="#ef9a9a" font-size="8">top port</text>
+  <text x="335" y="600" fill="#666" text-anchor="middle" font-size="8">(dip tube inside)</text>
 
-  <!-- Pump → V_pump_out → up to collector bottom -->
-  <path d="M 390 445 L 398 460" fill="none" stroke="#42a5f5" stroke-width="3"/>
-  <path d="M 448 467 L 470 467 L 470 420 L 125 420 L 125 406" fill="none" stroke="#42a5f5" stroke-width="3"/>
+  <!-- ====== SUPPLY PATH ====== -->
+  <!-- Tank bottom port → VI-btm → pump → VO-coll → collector bottom -->
 
-  <!-- Arrow heads on supply -->
-  <polygon points="125,406 120,416 130,416" fill="#42a5f5"/>
-  <polygon points="310,467 305,477 315,477" fill="#42a5f5"/>
+  <!-- VI-btm valve -->
+  <rect x="430" y="530" width="55" height="20" fill="#76ff0320" stroke="#76ff03" stroke-width="1.5" rx="3"/>
+  <text x="457" y="544" fill="#76ff03" text-anchor="middle" font-size="9">VI-btm</text>
+  <text x="457" y="524" fill="#76ff03" text-anchor="middle" font-size="8">OPEN</text>
 
-  <!-- Supply label -->
-  <text x="300" y="498" fill="#42a5f5" font-size="10">supply: cool water from tank bottom</text>
+  <!-- Pipe: tank bottom port → VI-btm -->
+  <path d="M 310 560 L 310 580 L 430 580 L 430 540" fill="none" stroke="#42a5f5" stroke-width="2.5"/>
 
-  <!-- Flow direction inside collectors (up) -->
-  <path d="M 97 395 L 97 85" fill="none" stroke="#42a5f5" stroke-width="2" stroke-dasharray="8,4"/>
-  <polygon points="97,85 92,100 102,100" fill="#42a5f5"/>
-  <text x="62" y="250" fill="#42a5f5" font-size="9" transform="rotate(-90 62 250)">flow UP ↑</text>
+  <!-- Pump -->
+  <circle cx="530" cy="505" r="22" fill="#76ff0312" stroke="#4fc3f7" stroke-width="2.5"/>
+  <text x="530" y="501" fill="#4fc3f7" text-anchor="middle" font-size="11" font-weight="bold">Pump</text>
+  <text x="530" y="514" fill="#76ff03" text-anchor="middle" font-size="9">ON</text>
 
-  <!-- ====== RETURN FLOW (hot water: collector top → reservoir → tank) ====== -->
-  <!-- Collector top → V_top → over to reservoir -->
-  <path d="M 118 65 L 118 55 L 210 55 L 210 155" fill="none" stroke="#ef5350" stroke-width="3"/>
-  <polygon points="210,155 205,142 215,142" fill="#ef5350"/>
+  <!-- Pipe: VI-btm → pump -->
+  <path d="M 457 530 L 457 505 L 508 505" fill="none" stroke="#42a5f5" stroke-width="2.5"/>
+  <polygon points="508,505 500,500 500,510" fill="#42a5f5"/>
 
-  <!-- Reservoir overflows into tank -->
-  <path d="M 245 183 L 245 195" fill="none" stroke="#ef5350" stroke-width="2.5"/>
-  <polygon points="245,195 240,188 250,188" fill="#ef5350"/>
+  <!-- VO-coll valve -->
+  <rect x="580" y="463" width="55" height="20" fill="#76ff0320" stroke="#76ff03" stroke-width="1.5" rx="3"/>
+  <text x="607" y="477" fill="#76ff03" text-anchor="middle" font-size="9">VO-coll</text>
+  <text x="607" y="457" fill="#76ff03" text-anchor="middle" font-size="8">OPEN</text>
 
-  <!-- Return label -->
-  <text x="155" y="50" fill="#ef5350" font-size="10">return: hot water to reservoir</text>
+  <!-- Pipe: pump → VO-coll -->
+  <path d="M 552 505 L 607 505 L 607 483" fill="none" stroke="#42a5f5" stroke-width="2.5"/>
+
+  <!-- Pipe: VO-coll → collector bottom -->
+  <path d="M 607 463 L 607 440 L 120 440" fill="none" stroke="#42a5f5" stroke-width="2.5"/>
+  <polygon points="120,440 130,435 130,445" fill="#42a5f5"/>
+  <text x="370" y="434" fill="#42a5f5" font-size="9">cool supply →</text>
 
   <!-- ====== STATUS BOX ====== -->
-  <rect x="490" y="70" width="190" height="170" fill="#1a2a1a" stroke="#388e3c" stroke-width="1.5" rx="5"/>
-  <text x="505" y="92" fill="#66bb6a" font-size="12" font-weight="bold">Valve States</text>
-  <text x="505" y="112" fill="#ccc" font-size="11">V_top = A (coll→reservoir)</text>
-  <text x="505" y="130" fill="#ccc" font-size="11">V_pump_in = A (tank btm)</text>
-  <text x="505" y="148" fill="#ccc" font-size="11">V_pump_out = A (collectors)</text>
-  <line x1="500" y1="158" x2="670" y2="158" stroke="#388e3c55"/>
-  <text x="505" y="175" fill="#66bb6a" font-size="11">Pump: ON</text>
-  <text x="505" y="193" fill="#888" font-size="11">Fan: OFF</text>
-  <line x1="500" y1="203" x2="670" y2="203" stroke="#388e3c55"/>
-  <text x="505" y="220" fill="#aaa" font-size="10">Stop when:</text>
-  <text x="505" y="235" fill="#ccc" font-size="10">T_coll &lt; T_tank_btm + 3°C</text>
+  <rect x="560" y="70" width="210" height="200" fill="#1a2a1a" stroke="#388e3c" stroke-width="1.5" rx="5"/>
+  <text x="575" y="92" fill="#66bb6a" font-size="12" font-weight="bold">Open Valves</text>
+  <text x="575" y="115" fill="#ccc" font-size="11">VI-btm — tank bottom</text>
+  <text x="575" y="135" fill="#ccc" font-size="11">VO-coll — to collectors</text>
+  <text x="575" y="155" fill="#ccc" font-size="11">V_ret — collector → reservoir</text>
+  <line x1="570" y1="168" x2="760" y2="168" stroke="#388e3c55"/>
+  <text x="575" y="188" fill="#66bb6a" font-size="11">Pump: ON</text>
+  <text x="575" y="208" fill="#888" font-size="11">Fan: OFF</text>
+  <line x1="570" y1="218" x2="760" y2="218" stroke="#388e3c55"/>
+  <text x="575" y="238" fill="#aaa" font-size="10">Stop when:</text>
+  <text x="575" y="255" fill="#ccc" font-size="10">T_coll &lt; T_tank_btm + 3°C</text>
 </svg>

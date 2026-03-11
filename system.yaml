@@ -35,8 +35,21 @@ components:
     height: 200cm
     position: ground level, beside greenhouse, under collector frame
     connections:
-      hot_out: bottom (internal dip tube to top of tank)
-      cold_in: bottom
+      note: >
+        ALL physical pipe connections are at the BOTTOM of the tank (~0cm).
+        The "tank top" connection uses an internal dip tube that reaches the
+        top of the water column inside the tank. From outside, both connections
+        look the same — they are both at the bottom.
+      tank_top_port:
+        physical_height: 0cm (bottom of tank)
+        internal_reach: top of water column (~190cm inside)
+        type: internal dip tube
+        used_for: drawing hot water (greenhouse heating)
+      tank_bottom_port:
+        physical_height: 0cm (bottom of tank)
+        internal_reach: bottom of tank
+        type: direct connection
+        used_for: drawing cool water (solar charging), receiving return water
     internal_heater:
       available: true
       use: optional backup
@@ -46,6 +59,11 @@ components:
     position: on top of Jäspi tank
     height: 200–220cm
     volume: 20–50L (TBD)
+    connection_to_tank: >
+      Pipe runs from reservoir (200cm) DOWN to tank bottom port (0cm).
+      Hot water returning from collectors enters reservoir, then flows
+      down this pipe to the tank bottom. Inside the tank, hot water
+      naturally rises to the top (thermal stratification).
     purpose:
       - drainback buffer
       - expansion volume
@@ -293,8 +311,8 @@ modes:
       pump: ON
       fan: OFF
     flow_path:
-      supply: tank bottom → VI-btm → pump → VO-coll → collector bottom → up through panels
-      return: collector top → V_ret → reservoir → overflow into tank
+      supply: tank bottom port (0cm) → VI-btm → pump → VO-coll → collector bottom → up through panels
+      return: collector top → V_ret → reservoir (200cm) → pipe down to tank bottom port (0cm) → hot water rises inside tank
 
   greenhouse_heating:
     description: Use stored heat to warm greenhouse
@@ -312,8 +330,8 @@ modes:
       pump: ON
       fan: ON
     flow_path:
-      supply: tank top (dip tube) → VI-top → pump → VO-rad → radiator
-      return: radiator → tee at tank bottom pipe → tank
+      supply: tank top port (0cm, dip tube draws from top of water column) → VI-top → pump → VO-rad → radiator
+      return: radiator → tee at tank bottom port (0cm) → enters tank at bottom
 
   active_drain:
     description: Pump water out of collectors for freeze protection
