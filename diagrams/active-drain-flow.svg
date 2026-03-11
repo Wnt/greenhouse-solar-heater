@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 560" font-family="sans-serif" font-size="12">
+  <title>Mode 3: Active Drain — Flow Loop</title>
+  <desc>
+    Pump actively empties collectors: air enters from top via V_top(B),
+    pump pulls water from collector bottom via V_pump_in(B),
+    pushes to tank via V_pump_out(B). Flow sensor detects empty.
+    Source of truth: system.yaml → modes.active_drain
+  </desc>
+
+  <!-- Background -->
+  <rect width="700" height="560" fill="#0d1117"/>
+
+  <!-- Title -->
+  <text x="350" y="30" fill="#ff9800" text-anchor="middle" font-size="16" font-weight="bold">Mode 3: Active Drain (Freeze Protection)</text>
+  <text x="350" y="48" fill="#888" text-anchor="middle" font-size="11">Trigger: T_outdoor &lt; 2°C AND collectors not already drained</text>
+
+  <!-- Height scale -->
+  <line x1="40" y1="70" x2="40" y2="490" stroke="#333" stroke-width="1"/>
+  <text x="10" y="74" fill="#555" font-size="9">280cm</text>
+  <line x1="35" y1="70" x2="45" y2="70" stroke="#555"/>
+  <text x="10" y="170" fill="#555" font-size="9">200cm</text>
+  <line x1="35" y1="166" x2="45" y2="166" stroke="#555"/>
+  <text x="10" y="266" fill="#555" font-size="9">100cm</text>
+  <line x1="35" y1="262" x2="45" y2="262" stroke="#333" stroke-dasharray="2,4"/>
+  <text x="15" y="422" fill="#555" font-size="9">30cm</text>
+  <line x1="35" y1="418" x2="45" y2="418" stroke="#555"/>
+  <text x="15" y="494" fill="#555" font-size="9">0cm</text>
+  <line x1="35" y1="490" x2="45" y2="490" stroke="#555"/>
+
+  <!-- Ground -->
+  <line x1="40" y1="490" x2="680" y2="490" stroke="#5d4037" stroke-width="1.5" stroke-dasharray="6,3"/>
+
+  <!-- ====== COLLECTORS (draining) ====== -->
+  <rect x="70" y="70" width="60" height="348" fill="#ff980008" stroke="#ff9800" stroke-width="2.5" stroke-dasharray="6,3" rx="4"/>
+  <text x="100" y="230" fill="#ff9800" text-anchor="middle" font-size="11" font-weight="bold" transform="rotate(-90 100 230)">Collectors — DRAINING</text>
+
+  <!-- V_top = B (air intake) -->
+  <rect x="75" y="55" width="46" height="16" fill="#ff980030" stroke="#ff9800" stroke-width="2" rx="3"/>
+  <text x="98" y="66" fill="#ff9800" text-anchor="middle" font-size="8" font-weight="bold">V_top=B</text>
+
+  <!-- Air entering from top -->
+  <path d="M 98 40 L 98 55" fill="none" stroke="#90caf9" stroke-width="2.5"/>
+  <polygon points="98,55 93,45 103,45" fill="#90caf9"/>
+  <text x="98" y="36" fill="#90caf9" text-anchor="middle" font-size="10" font-weight="bold">AIR IN</text>
+
+  <!-- Water level dropping inside collectors (animated look) -->
+  <rect x="73" y="300" width="54" height="115" fill="#42a5f515" rx="2"/>
+  <text x="100" y="360" fill="#42a5f5" text-anchor="middle" font-size="9">water</text>
+  <text x="100" y="374" fill="#42a5f5" text-anchor="middle" font-size="9">draining ↓</text>
+  <rect x="73" y="70" width="54" height="230" fill="#90caf908" rx="2"/>
+  <text x="100" y="170" fill="#90caf955" text-anchor="middle" font-size="9">air</text>
+  <text x="100" y="184" fill="#90caf955" text-anchor="middle" font-size="9">replacing</text>
+
+  <!-- Flow sensor at collector bottom -->
+  <rect x="78" y="422" width="44" height="16" fill="#e040fb30" stroke="#e040fb" stroke-width="2" rx="3"/>
+  <text x="100" y="433" fill="#e040fb" text-anchor="middle" font-size="8" font-weight="bold">FlowSens</text>
+  <text x="100" y="450" fill="#ce93d8" text-anchor="middle" font-size="8">→ 0 = stop pump</text>
+
+  <!-- ====== RESERVOIR ====== -->
+  <rect x="210" y="155" width="70" height="28" fill="#42a5f515" stroke="#42a5f555" stroke-width="1.5" rx="4"/>
+  <text x="245" y="173" fill="#42a5f555" text-anchor="middle" font-size="10">Reservoir</text>
+
+  <!-- ====== TANK ====== -->
+  <rect x="205" y="185" width="80" height="305" fill="#1565c012" stroke="#1565c0" stroke-width="2" rx="5"/>
+  <text x="245" y="330" fill="#90caf9" text-anchor="middle" font-size="13" font-weight="bold">Jäspi</text>
+  <text x="245" y="348" fill="#90caf9" text-anchor="middle" font-size="11">300L</text>
+  <!-- Water level rising indicator -->
+  <rect x="208" y="360" width="74" height="125" fill="#42a5f515" rx="3"/>
+  <text x="245" y="430" fill="#64b5f6" text-anchor="middle" font-size="9">receiving</text>
+  <text x="245" y="444" fill="#64b5f6" text-anchor="middle" font-size="9">drained water</text>
+
+  <!-- ====== PUMP ====== -->
+  <circle cx="370" cy="460" r="20" fill="#ff980015" stroke="#ff9800" stroke-width="2.5"/>
+  <text x="370" y="457" fill="#ff9800" text-anchor="middle" font-size="10" font-weight="bold">Pump</text>
+  <text x="370" y="469" fill="#76ff03" text-anchor="middle" font-size="9">ON</text>
+
+  <!-- V_pump_in = B (from collector bottom) -->
+  <rect x="155" y="460" width="54" height="14" fill="#ff980030" stroke="#ff9800" stroke-width="1.5" rx="3"/>
+  <text x="182" y="470" fill="#ff9800" text-anchor="middle" font-size="8" font-weight="bold">V_p_in=B</text>
+
+  <!-- V_pump_out = B (to tank) -->
+  <rect x="398" y="460" width="54" height="14" fill="#ff980030" stroke="#ff9800" stroke-width="1.5" rx="3"/>
+  <text x="425" y="470" fill="#ff9800" text-anchor="middle" font-size="8" font-weight="bold">V_p_out=B</text>
+
+  <!-- ====== DRAIN FLOW PATH ====== -->
+  <!-- Water exits collector bottom → flow sensor → V_pump_in(B) → Pump -->
+  <path d="M 100 438 L 100 475 L 155 475" fill="none" stroke="#42a5f5" stroke-width="3"/>
+  <polygon points="155,475 145,470 145,480" fill="#42a5f5"/>
+
+  <path d="M 209 475 L 350 475 L 350 460" fill="none" stroke="#42a5f5" stroke-width="3"/>
+  <polygon points="350,460 345,470 355,470" fill="#42a5f5"/>
+
+  <!-- Pump → V_pump_out(B) → Tank -->
+  <path d="M 390 460 L 398 467" fill="none" stroke="#42a5f5" stroke-width="3"/>
+  <path d="M 452 467 L 480 467 L 480 500 L 245 500 L 245 490" fill="none" stroke="#42a5f5" stroke-width="3"/>
+  <polygon points="245,490 240,500 250,500" fill="#42a5f5"/>
+
+  <!-- Flow labels -->
+  <text x="100" y="492" fill="#42a5f5" font-size="9">water from collectors</text>
+  <text x="350" y="515" fill="#42a5f5" font-size="9">pumped into tank</text>
+
+  <!-- ====== SEQUENCE BOX ====== -->
+  <rect x="480" y="70" width="200" height="260" fill="#2a1a0a" stroke="#ff9800" stroke-width="1.5" rx="5"/>
+  <text x="495" y="92" fill="#ff9800" font-size="12" font-weight="bold">Drain Sequence</text>
+  <line x1="490" y1="100" x2="670" y2="100" stroke="#ff980055"/>
+
+  <text x="495" y="118" fill="#ccc" font-size="11">1. Stop pump</text>
+  <text x="495" y="138" fill="#ccc" font-size="11">2. V_top → B (air intake)</text>
+  <text x="495" y="158" fill="#ccc" font-size="11">3. V_pump_in → B (coll btm)</text>
+  <text x="495" y="178" fill="#ccc" font-size="11">4. V_pump_out → B (to tank)</text>
+  <text x="495" y="198" fill="#ccc" font-size="11">5. Start pump</text>
+  <text x="495" y="218" fill="#ccc" font-size="11">6. Monitor flow sensor</text>
+  <text x="495" y="238" fill="#76ff03" font-size="11" font-weight="bold">7. Flow = 0 → Stop pump</text>
+
+  <line x1="490" y1="250" x2="670" y2="250" stroke="#ff980055"/>
+  <text x="495" y="268" fill="#e53935" font-size="10" font-weight="bold">Safety:</text>
+  <text x="495" y="285" fill="#ccc" font-size="10">Stop pump BEFORE</text>
+  <text x="495" y="300" fill="#ccc" font-size="10">switching any valve</text>
+  <text x="495" y="320" fill="#ccc" font-size="10">Flow sensor prevents</text>
+  <text x="495" y="335" fill="#ccc" font-size="10">pump dry-run</text>
+</svg>
