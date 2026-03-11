@@ -397,9 +397,35 @@ control:
 # =============================================================================
 
 modes:
+  idle:
+    description: Default state — system monitoring, waiting for triggers
+    valve_states:
+      vi_btm: CLOSED
+      vi_top: CLOSED
+      vi_coll: CLOSED
+      vo_coll: CLOSED
+      vo_rad: CLOSED
+      vo_tank: CLOSED
+      v_ret: CLOSED
+      v_air: CLOSED
+    actuators:
+      pump: OFF
+      fan: OFF
+      space_heater: OFF
+    notes: >
+      All valves closed, all actuators off. Shelly monitors sensor
+      temperatures and evaluates mode triggers continuously.
+      V_air fail-safe: if wired normally-open, V_air is actually OPEN
+      during idle when relay is OFF — collectors stay drained.
+
   solar_charging:
     description: Heat tank water using solar collectors
     trigger: t_collector > t_tank_bottom + 7°C
+    minimum_run_time: tunable (order of minutes)
+    notes: >
+      After refill, cold water in collectors drops T_collector initially.
+      Minimum run time prevents immediate stop — gives collectors time
+      to heat up before evaluating the stop condition.
     valve_states:
       vi_btm: OPEN
       vi_top: CLOSED
@@ -468,10 +494,39 @@ modes:
       - Always stop pump before switching valves
       - Flow sensor prevents pump from running dry
 
+  overheat_drain:
+    description: Drain collectors to prevent boiling when tank is fully charged
+    trigger: t_tank_top > 85°C AND solar_charging active
+    notes: >
+      Same valve states and sequence as active_drain. Collectors can
+      handle full sun exposure when empty — no stagnation damage risk.
+      Prevents boiling in an open system (steam would vent through
+      reservoir, losing water). Resume solar charging when tank cools.
+    valve_states: same as active_drain
+    sequence: same as active_drain
+    resume_condition: t_tank_top < 75°C (re-enter solar_charging / refill)
+
   refill_collectors:
-    description: Refill collectors after a drain cycle (morning)
-    trigger: t_outdoor > 5°C AND collectors are drained AND sun available
-    notes: Switch to solar_charging valve states, pump fills collectors
+    description: Speculatively refill collectors and test for useful solar gain
+    trigger: collectors drained AND t_outdoor > 5°C AND daytime
+    retry_cooldown: tunable (order of minutes)
+    sequence:
+      - step: 1
+        action: Enter solar_charging valve states, start pump (fills collectors)
+      - step: 2
+        action: Wait minimum_run_time (collectors filling with cold water, T_collector drops initially)
+      - step: 3
+        action: "Evaluate: t_collector > t_tank_bottom + 7°C?"
+      - step: 4a
+        action: "Yes → remain in solar_charging mode (productive sun)"
+      - step: 4b
+        action: "No → drain collectors, wait retry_cooldown before next attempt"
+    notes: >
+      T_collector sensor reads air temperature when collectors are empty,
+      so it cannot reliably trigger solar charging from drained state.
+      Speculative refill is cheap (few minutes of pump runtime). On
+      semi-cloudy days, shorter retry cooldown captures more energy
+      between clouds. Tune both timers based on real-world experience.
 
   emergency_heating:
     description: Backup when solar heat is insufficient
@@ -480,12 +535,62 @@ modes:
       space_heater: ON (2kW)
       immersion_heater: ON (optional, boost tank temperature)
 
+  initial_fill:
+    description: First-time system fill and commissioning
+    trigger: manual (one-time procedure)
+    sequence:
+      - step: 1
+        action: Ensure all motorized valves are CLOSED
+      - step: 2
+        action: Open SV-fill, connect garden hose, fill via reservoir
+      - step: 3
+        action: "Water fills reservoir → overflows down dip tube pipe → fills tank"
+      - step: 4
+        action: Continue filling until reservoir water level stabilizes (~200cm, communicating vessels)
+      - step: 5
+        action: Close SV-fill
+      - step: 6
+        action: Run solar_charging mode briefly — purges air from collector loop
+      - step: 7
+        action: Run greenhouse_heating mode briefly — purges air from radiator loop
+      - step: 8
+        action: Check for leaks at all fittings
+      - step: 9
+        action: Add corrosion inhibitor (e.g. Sentinel X100) per manufacturer dosing
+    notes: >
+      Air escapes through the open reservoir during fill. Running each
+      flow loop with the pump pushes remaining trapped air through the
+      system to the reservoir where it vents. The auto air vent at
+      collector top handles residual air in the collector loop.
+
+  autumn_shutdown:
+    description: Seasonal shutdown — drain entire outdoor system
+    trigger: manual (end of heating season, before sustained frost)
+    sequence:
+      - step: 1
+        action: Run active_drain sequence (empties collectors)
+      - step: 2
+        action: Stop pump, close all motorized valves
+      - step: 3
+        action: Open SV-drain at lowest point — gravity drains manifolds, outdoor pipes
+      - step: 4
+        action: Briefly open each valve pair to drain trapped water between valves
+      - step: 5
+        action: Close SV-drain and all valves
+      - step: 6
+        action: "Tank and reservoir remain filled (indoors / insulated)"
+    notes: >
+      Tank water is retained — the immersion heater or space heater
+      can still provide greenhouse heating through early winter.
+      Full tank drain only needed for maintenance. Space heater on
+      standalone thermostat as backup for greenhouse minimum temp.
+
   winter_shutdown:
-    description: Full seasonal shutdown for deep winter
+    description: Full shutdown for deep winter (no active heating from tank)
     actions:
-      - Run active drain sequence
-      - Optionally drain all outdoor pipes via SV-drain
-      - Space heater on thermostat for greenhouse minimum temp
+      - Run autumn_shutdown if not already done
+      - Space heater on standalone thermostat for greenhouse minimum temp
+      - System is passive — no Shelly control needed
 
 # =============================================================================
 # SAFETY RULES

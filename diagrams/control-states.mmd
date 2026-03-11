@@ -1,40 +1,65 @@
 stateDiagram-v2
     [*] --> Idle
 
-    Idle --> SolarCharging : T_coll > T_tank_btm + 7°C
+    Idle --> SolarCharging : T_coll > T_tank_btm + 7°C\nAND collectors filled
+    Idle --> SpeculativeRefill : collectors drained\nAND T_outdoor > 5°C AND daytime
     Idle --> GreenhouseHeating : T_greenhouse < 10°C
     Idle --> ActiveDrain : T_outdoor < 2°C\nAND collectors filled
     Idle --> Emergency : T_greenhouse < 5°C\nAND tank insufficient
 
-    SolarCharging --> Idle : T_coll < T_tank_btm + 3°C
+    SolarCharging --> Idle : T_coll < T_tank_btm + 3°C\n(after min run time)
     SolarCharging --> ActiveDrain : T_outdoor < 2°C
+    SolarCharging --> OverheatDrain : T_tank_top > 85°C
+
+    OverheatDrain --> CollectorsDrained : flow sensor = 0
+    ActiveDrain --> CollectorsDrained : flow sensor = 0
+
+    CollectorsDrained --> Idle : waiting
+    CollectorsDrained --> SpeculativeRefill : T_outdoor > 5°C\nAND daytime\nAND retry cooldown elapsed
+
+    SpeculativeRefill --> SolarCharging : T_coll > T_tank_btm + 7°C\n(after min run time)
+    SpeculativeRefill --> CollectorsDrained : T_coll too low\n(after min run time)
 
     GreenhouseHeating --> Idle : T_greenhouse ≥ 12°C
     GreenhouseHeating --> Emergency : T_greenhouse < 5°C\nAND tank insufficient
 
-    ActiveDrain --> CollectorsDrained : flow sensor = 0
-    CollectorsDrained --> Idle : waiting
-    CollectorsDrained --> Refill : T_outdoor > 5°C\nAND sun available
-
-    Refill --> SolarCharging : collectors filled
-
     Emergency --> Idle : T_greenhouse ≥ 10°C
+
+    note right of Idle
+        All valves CLOSED, all actuators OFF
+        V_air fail-safe: OPEN when relay OFF
+        (collectors stay drained)
+    end note
 
     note right of SolarCharging
         VI-btm OPEN, VO-coll OPEN, V_ret OPEN
         Pump ON, Fan OFF
-        Return: collectors → reservoir → dip tube → tank top
+        Min run time after refill before evaluating stop
     end note
 
     note right of GreenhouseHeating
         VI-top OPEN, VO-rad OPEN
         Pump ON, Fan ON
-        Supply: tank top → dip tube → reservoir (air sep) → pump → radiator
+        Supply: tank top → reservoir (air sep) → pump → radiator
     end note
 
     note right of ActiveDrain
         VI-coll OPEN, VO-tank OPEN, V_air OPEN
         Pump ON until flow=0
+        Trigger: freeze protection
+    end note
+
+    note right of OverheatDrain
+        Same valves/sequence as ActiveDrain
+        Trigger: tank fully charged (T_tank_top > 85°C)
+        Resume when T_tank_top < 75°C
+    end note
+
+    note right of SpeculativeRefill
+        Uses solar_charging valve states
+        Cold water drops T_coll initially
+        Wait min run time, then evaluate
+        Retry cooldown if sun insufficient
     end note
 
     note right of Emergency

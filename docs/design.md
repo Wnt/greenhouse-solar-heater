@@ -143,10 +143,15 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 
 ## Operating Modes
 
+### Idle (Default)
+
+All valves closed, all actuators off. Shelly monitors sensor temperatures continuously and evaluates mode triggers. If V_air is wired normally-open (fail-safe), collectors stay drained during idle.
+
 ### Mode 1: Solar Charging
 
 **Trigger:** T_collector > T_tank_bottom + 7°C
 **Stop:** T_collector < T_tank_bottom + 3°C
+**Minimum run time:** tunable — after refill, cold water drops T_collector initially; minimum run time prevents immediate stop before collectors heat up
 
 | Valve | State |
 |-------|-------|
@@ -201,25 +206,67 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 
 **Actuators:** Pump ON (until flow=0)
 
-### Mode 4: Refill After Drain
+### Mode 4: Overheat Drain (Stagnation Protection)
 
-**Trigger:** T_outdoor > 5°C AND collectors drained AND sun available
+**Trigger:** T_tank_top > 85°C AND solar charging active
+**Resume:** T_tank_top < 75°C
 
-Switch to solar charging valve states. Pump fills collectors with water from tank.
+Same valve states and sequence as Active Drain (Mode 3). Drains collectors to prevent boiling — collectors handle full sun exposure when empty. In an open system, boiling would vent steam through the reservoir and lose water.
 
-### Mode 5: Emergency Heating
+### Mode 5: Refill After Drain (Speculative)
+
+**Trigger:** collectors drained AND T_outdoor > 5°C AND daytime
+**Retry cooldown:** tunable — wait before next attempt after a failed fill
+
+1. Enter solar charging valve states, start pump (fills collectors)
+2. Wait minimum run time (cold water drops T_collector initially)
+3. Evaluate: T_collector > T_tank_bottom + 7°C?
+   - **Yes** → remain in solar charging (productive sun)
+   - **No** → drain collectors, wait retry cooldown before next attempt
+
+T_collector reads air temperature when collectors are empty, so it can't reliably trigger charging from drained state. Speculative refill is cheap (few minutes of pump). On semi-cloudy days, shorter retry cooldown captures more energy between clouds. Tune both timers based on real-world experience.
+
+### Mode 6: Emergency Heating
 
 **Trigger:** T_greenhouse < 5°C AND tank heat insufficient
 
 - 2kW space heater ON
 - Jäspi internal heater element ON (optional, boost tank)
 
-### Mode 6: Winter Shutdown
+### Mode 7: Initial Fill (Commissioning)
 
-Full seasonal shutdown for deep winter (-25°C periods):
-- Run active drain sequence
-- Open SV-drain to empty all outdoor pipes via gravity
+**Trigger:** manual (one-time procedure)
+
+1. Ensure all motorized valves are closed
+2. Open SV-fill, connect garden hose, fill via reservoir
+3. Water fills reservoir → overflows down dip tube pipe → fills tank
+4. Continue until reservoir water level stabilizes (~200cm, communicating vessels)
+5. Close SV-fill
+6. Run solar charging mode briefly — purges air from collector loop
+7. Run greenhouse heating mode briefly — purges air from radiator loop
+8. Check for leaks at all fittings
+9. Add corrosion inhibitor (e.g. Sentinel X100) per manufacturer dosing
+
+Air escapes through the open reservoir during fill. The auto air vent at collector top handles residual air in the collector loop.
+
+### Mode 8: Autumn Shutdown
+
+**Trigger:** manual (end of heating season, before sustained frost)
+
+1. Run active drain sequence (empties collectors)
+2. Stop pump, close all motorized valves
+3. Open SV-drain at lowest point — gravity drains manifolds and outdoor pipes
+4. Briefly open each valve pair to drain trapped water between valves
+5. Close SV-drain and all valves
+
+Tank and reservoir remain filled — the immersion heater or space heater can still provide greenhouse heating through early winter.
+
+### Mode 9: Winter Shutdown
+
+Full shutdown for deep winter — no active heating from tank:
+- Run autumn shutdown if not already done
 - Space heater on standalone thermostat for greenhouse minimum temperature
+- System is passive — no Shelly control needed
 
 ## Physical Layout
 

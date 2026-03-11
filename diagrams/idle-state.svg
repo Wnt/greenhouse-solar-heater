@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 660" font-family="sans-serif" font-size="12">
+  <title>Idle State — System at Rest</title>
+  <desc>
+    Default state: all valves closed, all actuators off.
+    Shelly monitors sensors, evaluates mode triggers.
+    V_air fail-safe: OPEN when relay OFF (collectors stay drained).
+    Source of truth: system.yaml → modes.idle
+  </desc>
+
+  <rect width="800" height="660" fill="#0d1117"/>
+
+  <!-- Title -->
+  <text x="400" y="28" fill="#888" text-anchor="middle" font-size="16" font-weight="bold">Idle — System at Rest</text>
+  <text x="400" y="46" fill="#555" text-anchor="middle" font-size="11">All valves closed, all actuators off — monitoring sensors</text>
+
+  <!-- Height scale -->
+  <line x1="35" y1="70" x2="35" y2="600" stroke="#333" stroke-width="1"/>
+  <text x="8" y="74" fill="#555" font-size="9">280cm</text>
+  <line x1="30" y1="70" x2="40" y2="70" stroke="#555"/>
+  <text x="8" y="174" fill="#555" font-size="9">200cm</text>
+  <line x1="30" y1="170" x2="40" y2="170" stroke="#555"/>
+  <text x="8" y="444" fill="#555" font-size="9">30cm</text>
+  <line x1="30" y1="440" x2="40" y2="440" stroke="#555"/>
+  <text x="8" y="604" fill="#555" font-size="9">0cm</text>
+  <line x1="30" y1="600" x2="40" y2="600" stroke="#555"/>
+
+  <!-- Ground -->
+  <line x1="35" y1="600" x2="770" y2="600" stroke="#5d4037" stroke-width="1.5" stroke-dasharray="6,3"/>
+
+  <!-- ====== COLLECTORS (empty/drained) ====== -->
+  <rect x="60" y="70" width="60" height="370"
+        fill="none" stroke="#555" stroke-width="1.5" stroke-dasharray="6,4" rx="4"/>
+  <text x="90" y="260" fill="#555" text-anchor="middle" font-size="10"
+        transform="rotate(-90 90 260)">Collectors (drained)</text>
+
+  <!-- ====== V_air at collector top (OPEN — fail-safe) ====== -->
+  <rect x="150" y="75" width="55" height="20" fill="#ff980030" stroke="#ff9800" stroke-width="2" rx="3"/>
+  <text x="177" y="89" fill="#ff9800" text-anchor="middle" font-size="9" font-weight="bold">V_air</text>
+  <text x="177" y="69" fill="#ff9800" text-anchor="middle" font-size="8">OPEN*</text>
+
+  <!-- V_ret CLOSED -->
+  <rect x="150" y="110" width="55" height="20" fill="#33333380" stroke="#555" stroke-width="1" rx="3"/>
+  <text x="177" y="124" fill="#666" text-anchor="middle" font-size="9">V_ret</text>
+  <text x="220" y="124" fill="#666" font-size="8">CLOSED</text>
+
+  <!-- ====== RESERVOIR ====== -->
+  <rect x="290" y="155" width="120" height="45"
+        fill="#42a5f510" stroke="#42a5f540" stroke-width="1.5" rx="4"/>
+  <text x="350" y="175" fill="#42a5f560" text-anchor="middle" font-size="11">Reservoir</text>
+  <text x="350" y="190" fill="#42a5f540" text-anchor="middle" font-size="9">open / vented (200cm)</text>
+
+  <!-- ====== JÄSPI TANK ====== -->
+  <rect x="290" y="260" width="120" height="340"
+        fill="#1565c010" stroke="#1565c0" stroke-width="2" rx="5"/>
+  <text x="350" y="400" fill="#90caf9" text-anchor="middle" font-size="14" font-weight="bold">Jäspi</text>
+  <text x="350" y="418" fill="#90caf9" text-anchor="middle" font-size="11">300L</text>
+
+  <!-- Water in tank -->
+  <rect x="294" y="310" width="112" height="285" fill="#42a5f512" rx="3"/>
+  <text x="350" y="460" fill="#64b5f6" text-anchor="middle" font-size="9">stored heat</text>
+
+  <!-- Tank bottom connections -->
+  <circle cx="325" cy="600" r="5" fill="#1565c0"/>
+  <text x="290" y="620" fill="#64b5f6" font-size="8">bottom port</text>
+  <circle cx="375" cy="600" r="5" fill="#e53935"/>
+  <text x="362" y="620" fill="#ef9a9a" font-size="8">dip tube port</text>
+
+  <!-- ====== PUMP (OFF) ====== -->
+  <circle cx="500" cy="530" r="22" fill="#33333320" stroke="#555" stroke-width="2"/>
+  <text x="500" y="526" fill="#666" text-anchor="middle" font-size="11">Pump</text>
+  <text x="500" y="539" fill="#666" text-anchor="middle" font-size="9">OFF</text>
+
+  <!-- ====== INPUT MANIFOLD VALVES (all CLOSED) ====== -->
+  <rect x="480" y="565" width="55" height="20" fill="#33333380" stroke="#555" stroke-width="1" rx="3"/>
+  <text x="507" y="579" fill="#666" text-anchor="middle" font-size="9">VI-btm</text>
+
+  <rect x="550" y="565" width="55" height="20" fill="#33333380" stroke="#555" stroke-width="1" rx="3"/>
+  <text x="577" y="579" fill="#666" text-anchor="middle" font-size="9">VI-top</text>
+
+  <rect x="620" y="565" width="55" height="20" fill="#33333380" stroke="#555" stroke-width="1" rx="3"/>
+  <text x="647" y="579" fill="#666" text-anchor="middle" font-size="9">VI-coll</text>
+
+  <text x="577" y="558" fill="#555" text-anchor="middle" font-size="8">ALL CLOSED</text>
+
+  <!-- ====== OUTPUT MANIFOLD VALVES (all CLOSED) ====== -->
+  <rect x="480" y="480" width="55" height="20" fill="#33333380" stroke="#555" stroke-width="1" rx="3"/>
+  <text x="507" y="494" fill="#666" text-anchor="middle" font-size="9">VO-coll</text>
+
+  <rect x="550" y="480" width="55" height="20" fill="#33333380" stroke="#555" stroke-width="1" rx="3"/>
+  <text x="577" y="494" fill="#666" text-anchor="middle" font-size="9">VO-rad</text>
+
+  <rect x="620" y="480" width="55" height="20" fill="#33333380" stroke="#555" stroke-width="1" rx="3"/>
+  <text x="647" y="494" fill="#666" text-anchor="middle" font-size="9">VO-tank</text>
+
+  <text x="577" y="475" fill="#555" text-anchor="middle" font-size="8">ALL CLOSED</text>
+
+  <!-- ====== GREENHOUSE (not heated) ====== -->
+  <path d="M 660 350 L 660 440 L 770 440 L 770 350 L 740 320 L 690 320 Z"
+        fill="#2e7d3208" stroke="#33333380" stroke-width="1.5"/>
+  <text x="715" y="390" fill="#444" text-anchor="middle" font-size="10">Greenhouse</text>
+  <text x="715" y="405" fill="#444" text-anchor="middle" font-size="9">(unheated)</text>
+
+  <!-- ====== SENSORS (monitoring) ====== -->
+  <circle cx="90" cy="75" r="3" fill="#76ff03"/>
+  <text x="100" y="78" fill="#76ff03" font-size="8">T_collector</text>
+
+  <circle cx="350" cy="310" r="3" fill="#76ff03"/>
+  <text x="365" y="313" fill="#76ff03" font-size="8">T_tank_top</text>
+
+  <circle cx="350" cy="570" r="3" fill="#76ff03"/>
+  <text x="365" y="573" fill="#76ff03" font-size="8">T_tank_btm</text>
+
+  <circle cx="715" cy="360" r="3" fill="#76ff03"/>
+  <text x="728" y="363" fill="#76ff03" font-size="8">T_greenhouse</text>
+
+  <!-- ====== STATUS BOX ====== -->
+  <rect x="60" y="480" width="200" height="115" fill="#1a1a2a" stroke="#555" stroke-width="1.5" rx="5"/>
+  <text x="75" y="502" fill="#888" font-size="12" font-weight="bold">System Status</text>
+  <line x1="70" y1="510" x2="250" y2="510" stroke="#33333380"/>
+  <text x="75" y="528" fill="#666" font-size="11">All valves: CLOSED</text>
+  <text x="75" y="546" fill="#666" font-size="11">Pump: OFF</text>
+  <text x="75" y="564" fill="#666" font-size="11">Fan: OFF</text>
+  <line x1="70" y1="572" x2="250" y2="572" stroke="#33333380"/>
+  <text x="75" y="588" fill="#76ff03" font-size="10">Sensors: monitoring</text>
+
+  <!-- V_air fail-safe note -->
+  <text x="400" y="645" fill="#ff9800" text-anchor="middle" font-size="10">*V_air fail-safe: relay OFF = valve OPEN — collectors vent to air, stay drained</text>
+</svg>

@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 660" font-family="sans-serif" font-size="12">
+  <title>Initial Fill — Commissioning</title>
+  <desc>
+    First-time system fill: garden hose via SV-fill into reservoir,
+    water overflows down dip tube pipe into tank. Communicating vessels
+    equalize at ~200cm. Then purge air from each loop.
+    Source of truth: system.yaml → modes.initial_fill
+  </desc>
+
+  <rect width="800" height="660" fill="#0d1117"/>
+
+  <!-- Title -->
+  <text x="400" y="28" fill="#42a5f5" text-anchor="middle" font-size="16" font-weight="bold">Initial Fill (Commissioning)</text>
+  <text x="400" y="46" fill="#888" text-anchor="middle" font-size="11">Manual one-time procedure — fill via reservoir, purge air from loops</text>
+
+  <!-- Height scale -->
+  <line x1="35" y1="70" x2="35" y2="600" stroke="#333" stroke-width="1"/>
+  <text x="8" y="74" fill="#555" font-size="9">280cm</text>
+  <line x1="30" y1="70" x2="40" y2="70" stroke="#555"/>
+  <text x="8" y="94" fill="#555" font-size="9">200cm</text>
+  <line x1="30" y1="90" x2="40" y2="90" stroke="#555"/>
+  <text x="8" y="114" fill="#555" font-size="9">185cm</text>
+  <line x1="30" y1="110" x2="40" y2="110" stroke="#444" stroke-dasharray="2,4"/>
+  <text x="8" y="474" fill="#555" font-size="9">30cm</text>
+  <line x1="30" y1="470" x2="40" y2="470" stroke="#555"/>
+  <text x="8" y="604" fill="#555" font-size="9">0cm</text>
+  <line x1="30" y1="600" x2="40" y2="600" stroke="#555"/>
+
+  <!-- Ground -->
+  <line x1="35" y1="600" x2="770" y2="600" stroke="#5d4037" stroke-width="1.5" stroke-dasharray="6,3"/>
+
+  <!-- ====== COLLECTORS (empty, to be filled in step 6) ====== -->
+  <rect x="60" y="70" width="60" height="400"
+        fill="none" stroke="#555" stroke-width="1.5" stroke-dasharray="6,4" rx="4"/>
+  <text x="90" y="280" fill="#555" text-anchor="middle" font-size="10"
+        transform="rotate(-90 90 280)">Collectors (empty)</text>
+
+  <!-- Auto air vent -->
+  <rect x="130" y="55" width="70" height="18" fill="none" stroke="#76ff0340" stroke-width="1" rx="3"/>
+  <text x="165" y="67" fill="#76ff0360" text-anchor="middle" font-size="8">auto air vent</text>
+  <line x1="120" y1="65" x2="130" y2="65" stroke="#76ff0340"/>
+
+  <!-- ====== GARDEN HOSE → SV-fill ====== -->
+  <path d="M 60 545 L 160 545" fill="none" stroke="#42a5f5" stroke-width="3"/>
+  <polygon points="160,545 152,540 152,550" fill="#42a5f5"/>
+  <text x="60" y="538" fill="#42a5f5" font-size="10" font-weight="bold">Garden hose</text>
+
+  <!-- SV-fill valve -->
+  <rect x="165" y="535" width="55" height="20" fill="#42a5f530" stroke="#42a5f5" stroke-width="2" rx="3"/>
+  <text x="192" y="549" fill="#42a5f5" text-anchor="middle" font-size="9" font-weight="bold">SV-fill</text>
+  <text x="192" y="529" fill="#42a5f5" text-anchor="middle" font-size="8">OPEN</text>
+
+  <!-- Pipe: SV-fill → up to reservoir -->
+  <path d="M 220 545 L 260 545 L 260 97 L 290 97" fill="none" stroke="#42a5f5" stroke-width="2.5"/>
+  <polygon points="290,97 282,92 282,102" fill="#42a5f5"/>
+  <text x="268" y="320" fill="#42a5f5" font-size="9" transform="rotate(-90 268 320)">water rises to reservoir</text>
+
+  <!-- ====== RESERVOIR (being filled) ====== -->
+  <rect x="290" y="72" width="140" height="55"
+        fill="#42a5f520" stroke="#42a5f5" stroke-width="2.5" rx="5"/>
+  <text x="360" y="92" fill="#64b5f6" text-anchor="middle" font-size="12" font-weight="bold">Reservoir</text>
+  <text x="360" y="107" fill="#64b5f6" text-anchor="middle" font-size="9">filling — air escapes from open top</text>
+  <text x="360" y="66" fill="#90caf9" text-anchor="middle" font-size="9">open / vented (~200cm)</text>
+
+  <!-- Air escaping from reservoir -->
+  <text x="440" y="68" fill="#90caf960" font-size="12">↑ air out</text>
+
+  <!-- Water level rising in reservoir -->
+  <line x1="295" y1="105" x2="425" y2="105" stroke="#42a5f540" stroke-width="1.5"/>
+  <text x="445" y="108" fill="#42a5f540" font-size="8">water level ↑</text>
+
+  <!-- ====== JÄSPI TANK (being filled from top) ====== -->
+  <rect x="470" y="100" width="120" height="500"
+        fill="#1565c010" stroke="#1565c0" stroke-width="2" rx="5"/>
+  <text x="530" y="380" fill="#90caf9" text-anchor="middle" font-size="14" font-weight="bold">Jäspi</text>
+  <text x="530" y="398" fill="#90caf9" text-anchor="middle" font-size="11">300L</text>
+
+  <!-- Water level rising in tank -->
+  <rect x="474" y="340" width="112" height="255" fill="#42a5f512" rx="3"/>
+  <text x="530" y="460" fill="#64b5f6" text-anchor="middle" font-size="9">water level ↑</text>
+  <path d="M 474 340 L 586 340" stroke="#42a5f540" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- Dip tube inside tank -->
+  <line x1="510" y1="115" x2="510" y2="600" stroke="#42a5f530" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="518" y="250" fill="#64b5f640" font-size="7" transform="rotate(-90 518 250)">internal dip tube</text>
+
+  <!-- Dip tube opening at ~185cm -->
+  <circle cx="510" cy="115" r="3" fill="#42a5f5"/>
+  <text x="525" y="118" fill="#64b5f6" font-size="8">exits ~185cm</text>
+
+  <!-- Tank bottom connections -->
+  <circle cx="510" cy="600" r="5" fill="#1565c0"/>
+  <text x="470" y="620" fill="#64b5f6" font-size="8">bottom port</text>
+  <circle cx="545" cy="600" r="5" fill="#42a5f5"/>
+  <text x="535" y="620" fill="#64b5f6" font-size="8">dip tube port</text>
+
+  <!-- ====== Pipe: Reservoir → dip tube pipe → into tank ====== -->
+  <path d="M 360 127 L 360 150 L 440 150 L 440 640 L 545 640 L 545 600" fill="none" stroke="#42a5f5" stroke-width="2.5"/>
+  <text x="448" y="400" fill="#42a5f5" font-size="8" transform="rotate(-90 448 400)">overflows down to dip tube port ↓</text>
+
+  <!-- Water enters tank via dip tube, exits at top -->
+  <path d="M 510 600 L 510 115" fill="none" stroke="#42a5f540" stroke-width="1.5"/>
+  <text x="495" y="200" fill="#64b5f660" font-size="8" transform="rotate(-90 495 200)">fills from top ↑</text>
+
+  <!-- ====== Communicating vessels note ====== -->
+  <line x1="360" y1="105" x2="360" y2="145" stroke="#76ff0340" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="360" y1="145" x2="440" y2="145" stroke="#76ff0340" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="510" y1="115" x2="510" y2="145" stroke="#76ff0340" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="440" y1="145" x2="510" y2="145" stroke="#76ff0340" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="435" y="140" fill="#76ff0360" text-anchor="middle" font-size="7">communicating vessels</text>
+
+  <!-- ====== SEQUENCE BOX ====== -->
+  <rect x="570" y="70" width="210" height="310" fill="#0a1a2a" stroke="#42a5f5" stroke-width="1.5" rx="5"/>
+  <text x="585" y="92" fill="#64b5f6" font-size="13" font-weight="bold">Fill Sequence</text>
+  <line x1="580" y1="100" x2="770" y2="100" stroke="#42a5f540"/>
+
+  <text x="585" y="120" fill="#ccc" font-size="11">1. All motorized valves CLOSED</text>
+  <text x="585" y="140" fill="#ccc" font-size="11">2. Open SV-fill, connect hose</text>
+  <text x="585" y="160" fill="#ccc" font-size="11">3. Fill via reservoir</text>
+  <text x="585" y="180" fill="#ccc" font-size="11">4. Water overflows to tank</text>
+  <text x="585" y="200" fill="#ccc" font-size="11">5. Wait for level to stabilize</text>
+  <text x="585" y="220" fill="#ccc" font-size="11">6. Close SV-fill</text>
+  <line x1="580" y1="230" x2="770" y2="230" stroke="#42a5f540"/>
+  <text x="585" y="248" fill="#64b5f6" font-size="11" font-weight="bold">Purge air from loops:</text>
+  <text x="585" y="268" fill="#ccc" font-size="11">7. Run solar charging briefly</text>
+  <text x="585" y="288" fill="#ccc" font-size="11">8. Run greenhouse heating briefly</text>
+  <line x1="580" y1="298" x2="770" y2="298" stroke="#42a5f540"/>
+  <text x="585" y="316" fill="#ccc" font-size="11">9. Check for leaks</text>
+  <text x="585" y="336" fill="#76ff03" font-size="11" font-weight="bold">10. Add corrosion inhibitor</text>
+  <line x1="580" y1="348" x2="770" y2="348" stroke="#42a5f540"/>
+  <text x="585" y="368" fill="#90caf9" font-size="9">Air escapes through open reservoir</text>
+
+  <!-- ====== PUMP (used in steps 7-8) ====== -->
+  <circle cx="350" cy="540" r="22" fill="#33333320" stroke="#555" stroke-width="2"/>
+  <text x="350" y="536" fill="#666" text-anchor="middle" font-size="11">Pump</text>
+  <text x="350" y="549" fill="#666" text-anchor="middle" font-size="9">OFF*</text>
+  <text x="350" y="575" fill="#555" text-anchor="middle" font-size="8">*ON during air purge (steps 7-8)</text>
+</svg>

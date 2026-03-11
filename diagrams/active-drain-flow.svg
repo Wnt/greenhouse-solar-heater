@@ -1,16 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 660" font-family="sans-serif" font-size="12">
-  <title>Mode 3: Active Drain — Flow Loop</title>
+  <title>Active Drain — Flow Loop (Freeze Protection / Overheat Protection)</title>
   <desc>
     Pump pulls water from collector bottom via VI-coll, pushes to tank via VO-tank.
     Air enters collector top via V_air. Flow sensor detects empty.
-    Source of truth: system.yaml → modes.active_drain
+    Used for both freeze protection (Mode 3) and overheat protection (Mode 4).
+    Source of truth: system.yaml → modes.active_drain, modes.overheat_drain
   </desc>
 
   <rect width="800" height="660" fill="#0d1117"/>
 
   <!-- Title -->
-  <text x="400" y="28" fill="#ff9800" text-anchor="middle" font-size="16" font-weight="bold">Mode 3: Active Drain (Freeze Protection)</text>
-  <text x="400" y="46" fill="#888" text-anchor="middle" font-size="11">Trigger: T_outdoor &lt; 2°C AND collectors not already drained</text>
+  <text x="400" y="28" fill="#ff9800" text-anchor="middle" font-size="16" font-weight="bold">Active Drain (Freeze / Overheat Protection)</text>
+  <text x="400" y="46" fill="#888" text-anchor="middle" font-size="11">Freeze: T_outdoor &lt; 2°C — Overheat: T_tank_top &gt; 85°C — Same valve states and sequence</text>
 
   <!-- Height scale -->
   <line x1="35" y1="70" x2="35" y2="560" stroke="#333" stroke-width="1"/>
