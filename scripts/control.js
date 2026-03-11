@@ -375,3 +375,58 @@ HTTPServer.registerEndpoint("status", function(req, res) {
   res.body = body;
   res.send();
 });
+
+function controlLoop() {
+  if (state.transitioning) return;
+
+  // Stale sensor protection
+  if (state.stale_cycles >= CFG.MAX_STALE_CYCLES) {
+    if (state.mode !== MODE.IDLE) {
+      setPump(false);
+      setFan(false);
+      state.mode = MODE.IDLE;
+      state.mode_start = Date.now();
+      state.last_error = "sensors_stale";
+    }
+    // Still try to poll — may recover
+  }
+
+  pollAllSensors(function() {
+    if (state.transitioning) return;
+    var target = evaluateMode();
+    if (target !== state.mode) {
+      transitionTo(target);
+    }
+  });
+}
+
+// NOTE: Boot during freezing conditions is an open question (see spec).
+// The persisted collectors_drained flag may be stale if power was lost
+// mid-operation. V_air fail-safe opens on power loss but collectors may
+// not fully gravity-drain. Verify drain procedure TBD before commissioning.
+function boot() {
+  setPump(false);
+  setFan(false);
+  setSpaceHeater(false);
+  setImmersion(false);
+
+  closeAllValves(function() {
+    Timer.set(5000, false, function() {
+      // Load persisted drain state
+      Shelly.call("KVS.Get", {key: "drained"}, function(res, err) {
+        if (res && res.value === "1") {
+          state.collectors_drained = true;
+        }
+
+        // Initial sensor read, then start loop
+        pollAllSensors(function() {
+          state.mode_start = Date.now();
+          Timer.set(CFG.POLL_INTERVAL, true, controlLoop);
+          controlLoop();
+        });
+      });
+    });
+  });
+}
+
+boot();
