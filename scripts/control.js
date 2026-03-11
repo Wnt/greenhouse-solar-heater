@@ -194,3 +194,68 @@ function pollAllSensors(cb) {
 
   next(0);
 }
+
+function evaluateMode() {
+  var t = state.temps;
+  var now = Date.now();
+  var elapsed = now - state.mode_start;
+
+  // Active drain — highest priority, always preempts
+  if (t.outdoor !== null && t.outdoor < CFG.DRAIN_ENTER_TEMP &&
+      !state.collectors_drained) {
+    if (state.mode !== MODE.DRAIN) return MODE.DRAIN;
+  }
+
+  // Minimum mode duration (does not apply to drain preemption above)
+  if (elapsed < CFG.MIN_MODE_DURATION && state.mode !== MODE.IDLE) {
+    return state.mode;
+  }
+
+  // Emergency heating
+  if (t.greenhouse !== null && t.tank_top !== null) {
+    if (state.mode === MODE.EMERGENCY) {
+      if (t.greenhouse > CFG.EMERG_EXIT_TEMP) {
+        return evaluateNonEmergency();
+      }
+      return MODE.EMERGENCY;
+    }
+    if (t.greenhouse < CFG.EMERG_ENTER_TEMP &&
+        t.tank_top < CFG.EMERG_MIN_TANK) {
+      return MODE.EMERGENCY;
+    }
+  }
+
+  return evaluateNonEmergency();
+}
+
+function evaluateNonEmergency() {
+  var t = state.temps;
+
+  // Solar charging
+  if (t.collector !== null && t.tank_bottom !== null) {
+    if (state.mode === MODE.SOLAR) {
+      if (t.collector >= t.tank_bottom + CFG.SOLAR_EXIT_DIFF) {
+        return MODE.SOLAR;
+      }
+      // Below exit threshold — fall through
+    } else if (t.collector > t.tank_bottom + CFG.SOLAR_ENTER_DIFF) {
+      return MODE.SOLAR;
+    }
+  }
+
+  // Greenhouse heating
+  if (t.greenhouse !== null && t.tank_top !== null) {
+    if (state.mode === MODE.HEATING) {
+      if (t.greenhouse <= CFG.HEAT_EXIT_TEMP) {
+        return MODE.HEATING;
+      }
+      return MODE.IDLE;
+    }
+    if (t.greenhouse < CFG.HEAT_ENTER_TEMP &&
+        t.tank_top > CFG.HEAT_MIN_TANK) {
+      return MODE.HEATING;
+    }
+  }
+
+  return MODE.IDLE;
+}
