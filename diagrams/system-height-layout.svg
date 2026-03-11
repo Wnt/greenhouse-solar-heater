@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 550" font-family="sans-serif" font-size="12">
+  <title>Kasvihuone System — Physical Height Layout</title>
+  <desc>
+    Component positions mapped to real-world heights.
+    Source of truth: system.yaml
+  </desc>
+  <style>
+    .label { fill: #888; font-size: 10px; }
+    .height-mark { fill: #666; font-size: 10px; }
+    .component-label { font-size: 11px; font-weight: bold; }
+    .detail { fill: #999; font-size: 9px; }
+    .pipe-supply { stroke: #42a5f5; stroke-width: 2; fill: none; }
+    .pipe-return { stroke: #ef5350; stroke-width: 2; fill: none; }
+    .pipe-drain { stroke: #ff9800; stroke-width: 2; fill: none; stroke-dasharray: 6,3; }
+  </style>
+
+  <!-- Background -->
+  <rect width="800" height="550" fill="#0d1117"/>
+
+  <!-- Height scale -->
+  <line x1="50" y1="40" x2="50" y2="490" stroke="#333" stroke-width="1"/>
+  <text x="15" y="44" class="height-mark">300cm</text>
+  <line x1="45" y1="40" x2="55" y2="40" stroke="#555"/>
+  <text x="15" y="124" class="height-mark">250cm</text>
+  <line x1="45" y1="120" x2="55" y2="120" stroke="#333" stroke-dasharray="2,4"/>
+  <text x="15" y="204" class="height-mark">200cm</text>
+  <line x1="45" y1="200" x2="55" y2="200" stroke="#555"/>
+  <text x="15" y="284" class="height-mark">150cm</text>
+  <line x1="45" y1="280" x2="55" y2="280" stroke="#333" stroke-dasharray="2,4"/>
+  <text x="15" y="364" class="height-mark">100cm</text>
+  <line x1="45" y1="360" x2="55" y2="360" stroke="#333" stroke-dasharray="2,4"/>
+  <text x="20" y="444" class="height-mark">50cm</text>
+  <line x1="45" y1="440" x2="55" y2="440" stroke="#333" stroke-dasharray="2,4"/>
+  <text x="25" y="494" class="height-mark">0cm</text>
+  <line x1="45" y1="490" x2="55" y2="490" stroke="#555"/>
+
+  <!-- Ground line -->
+  <line x1="50" y1="490" x2="780" y2="490" stroke="#5d4037" stroke-width="2" stroke-dasharray="8,4"/>
+  <text x="700" y="508" fill="#5d4037" font-size="10">ground level</text>
+
+  <!-- ====== SOLAR COLLECTORS ====== -->
+  <!-- Upper panel: 170–280cm → y: 72–200 -->
+  <rect x="80" y="72" width="65" height="128"
+        fill="none" stroke="#f9a825" stroke-width="2.5" rx="4"
+        data-component="upper_panel" data-height-top="280cm" data-height-bottom="170cm"/>
+  <text x="112" y="130" fill="#f9a825" text-anchor="middle" class="component-label">Upper</text>
+  <text x="112" y="144" fill="#f9a825" text-anchor="middle" class="component-label">Panel</text>
+  <text x="152" y="78" class="detail">280cm</text>
+  <text x="152" y="203" class="detail">170cm</text>
+
+  <!-- Lower panel: 30–170cm → y: 200–442 -->
+  <rect x="80" y="200" width="65" height="242"
+        fill="none" stroke="#fbc02d" stroke-width="2.5" rx="4"
+        data-component="lower_panel" data-height-top="170cm" data-height-bottom="30cm"/>
+  <text x="112" y="320" fill="#fbc02d" text-anchor="middle" class="component-label">Lower</text>
+  <text x="112" y="334" fill="#fbc02d" text-anchor="middle" class="component-label">Panel</text>
+  <text x="152" y="446" class="detail">30cm</text>
+
+  <!-- V_top: 3-way valve at collector top -->
+  <rect x="90" y="55" width="44" height="16" fill="#e040fb33" stroke="#e040fb" stroke-width="1.5" rx="3"
+        data-component="v_top" data-height="280cm"/>
+  <text x="112" y="66" fill="#e040fb" text-anchor="middle" font-size="9">V_top</text>
+
+  <!-- Flow sensor at collector bottom -->
+  <rect x="90" y="448" width="44" height="14" fill="#e040fb22" stroke="#e040fb" stroke-width="1" rx="2"
+        data-component="flow_sensor" data-height="25cm"/>
+  <text x="112" y="458" fill="#ce93d8" text-anchor="middle" font-size="8">FlowSens</text>
+
+  <!-- T_collector sensor -->
+  <circle cx="80" cy="80" r="4" fill="#76ff03"/>
+  <text x="60" y="84" fill="#76ff03" font-size="8" text-anchor="end">T_coll</text>
+
+  <!-- ====== RESERVOIR ====== -->
+  <rect x="220" y="188" width="70" height="30" fill="#42a5f520" stroke="#42a5f5" stroke-width="2" rx="4"
+        data-component="reservoir" data-height-top="220cm" data-height-bottom="200cm"/>
+  <text x="255" y="206" fill="#64b5f6" text-anchor="middle" class="component-label">Reservoir</text>
+  <text x="255" y="183" fill="#90caf9" text-anchor="middle" font-size="9">open / vented</text>
+
+  <!-- ====== JÄSPI TANK ====== -->
+  <rect x="215" y="220" width="80" height="270" fill="#1565c012" stroke="#1565c0" stroke-width="2.5" rx="5"
+        data-component="tank" data-model="Jäspi VLM" data-volume="300L"
+        data-height-top="200cm" data-height-bottom="0cm"/>
+  <!-- Hot zone (top) -->
+  <rect x="218" y="230" width="74" height="80" fill="#e5393515" rx="3"/>
+  <text x="255" y="260" fill="#ef9a9a" text-anchor="middle" font-size="9">HOT</text>
+  <!-- Cool zone (bottom) -->
+  <rect x="218" y="430" width="74" height="55" fill="#1565c020" rx="3"/>
+  <text x="255" y="455" fill="#64b5f6" text-anchor="middle" font-size="9">COOL</text>
+
+  <text x="255" y="345" fill="#90caf9" text-anchor="middle" font-size="14" font-weight="bold">Jäspi</text>
+  <text x="255" y="363" fill="#90caf9" text-anchor="middle" font-size="12">VLM 300L</text>
+  <text x="255" y="380" fill="#64b5f6" text-anchor="middle" font-size="10">unpressurized</text>
+
+  <!-- Internal heater element -->
+  <line x1="230" y1="400" x2="280" y2="400" stroke="#ff5722" stroke-width="2.5" stroke-dasharray="4,2"/>
+  <text x="255" y="418" fill="#ff8a65" text-anchor="middle" font-size="8">heater element</text>
+
+  <!-- Tank pipe connections at bottom -->
+  <circle cx="235" cy="490" r="5" fill="#1565c0"/>
+  <circle cx="275" cy="490" r="5" fill="#e53935"/>
+  <text x="220" y="510" fill="#64b5f6" font-size="8">cold/btm</text>
+  <text x="262" y="510" fill="#ef9a9a" font-size="8">hot/top</text>
+
+  <!-- T_tank sensors -->
+  <circle cx="300" cy="250" r="4" fill="#76ff03"/>
+  <text x="308" y="253" fill="#76ff03" font-size="8">T_tank_top</text>
+  <circle cx="300" cy="470" r="4" fill="#76ff03"/>
+  <text x="308" y="473" fill="#76ff03" font-size="8">T_tank_btm</text>
+
+  <!-- ====== PUMP ====== -->
+  <circle cx="380" cy="462" r="22" fill="#00695c20" stroke="#4fc3f7" stroke-width="2.5"
+          data-component="pump" data-model="Wilo Star Z20/4" data-height="20cm"/>
+  <text x="380" y="458" fill="#4fc3f7" text-anchor="middle" font-size="10" font-weight="bold">Wilo</text>
+  <text x="380" y="472" fill="#4fc3f7" text-anchor="middle" font-size="9">Z20/4</text>
+
+  <!-- V_pump_in -->
+  <rect x="338" y="480" width="36" height="14" fill="#e040fb33" stroke="#e040fb" stroke-width="1.5" rx="3"
+        data-component="v_pump_in" data-height="20cm"/>
+  <text x="356" y="490" fill="#e040fb" text-anchor="middle" font-size="8">V_p_in</text>
+
+  <!-- V_pump_out -->
+  <rect x="406" y="480" width="36" height="14" fill="#e040fb33" stroke="#e040fb" stroke-width="1.5" rx="3"
+        data-component="v_pump_out" data-height="20cm"/>
+  <text x="424" y="490" fill="#e040fb" text-anchor="middle" font-size="8">V_p_out</text>
+
+  <!-- ====== GREENHOUSE ====== -->
+  <path d="M 510 320 L 510 490 L 750 490 L 750 320 L 670 260 L 590 260 Z"
+        fill="#2e7d3210" stroke="#2e7d32" stroke-width="2.5"/>
+  <text x="630" y="295" fill="#66bb6a" text-anchor="middle" font-size="14" font-weight="bold">Greenhouse</text>
+
+  <!-- Radiator + fan -->
+  <rect x="530" y="440" width="80" height="35" fill="#ff572218" stroke="#ff5722" stroke-width="2" rx="4"
+        data-component="radiator" data-height="20cm"/>
+  <text x="570" y="457" fill="#ff8a65" text-anchor="middle" class="component-label">Radiator</text>
+  <text x="570" y="470" fill="#ff8a65" text-anchor="middle" font-size="9">+ 230V fan</text>
+
+  <!-- Space heater -->
+  <rect x="640" y="440" width="80" height="35" fill="#f4433618" stroke="#f44336" stroke-width="2" rx="4"
+        data-component="space_heater" data-power="2kW" data-height="20cm"/>
+  <text x="680" y="457" fill="#ef9a9a" text-anchor="middle" class="component-label">2kW</text>
+  <text x="680" y="470" fill="#ef9a9a" text-anchor="middle" font-size="9">Space Heater</text>
+
+  <!-- Greenhouse sensors -->
+  <circle cx="630" cy="350" r="4" fill="#76ff03"/>
+  <text x="640" y="353" fill="#76ff03" font-size="8">T_greenhouse</text>
+  <circle cx="515" cy="350" r="4" fill="#76ff03"/>
+  <text x="515" y="368" fill="#76ff03" font-size="8">T_outdoor</text>
+
+  <!-- ====== LEGEND ====== -->
+  <rect x="540" y="20" width="240" height="110" fill="#111" stroke="#333" stroke-width="1" rx="4"/>
+  <text x="555" y="40" fill="#ccc" font-size="11" font-weight="bold">Legend</text>
+  <line x1="555" y1="55" x2="590" y2="55" stroke="#42a5f5" stroke-width="2.5"/>
+  <text x="598" y="59" fill="#aaa" font-size="10">Supply (cool water)</text>
+  <line x1="555" y1="75" x2="590" y2="75" stroke="#ef5350" stroke-width="2.5"/>
+  <text x="598" y="79" fill="#aaa" font-size="10">Return (hot water)</text>
+  <line x1="555" y1="95" x2="590" y2="95" stroke="#ff9800" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="598" y="99" fill="#aaa" font-size="10">Drain path</text>
+  <circle cx="560" cy="115" r="4" fill="#76ff03"/>
+  <text x="572" y="119" fill="#aaa" font-size="10">DS18B20 sensor</text>
+  <rect x="555" y="108" width="10" height="10" fill="#e040fb33" stroke="#e040fb" stroke-width="1" rx="2"/>
+  <text x="0" y="0" fill="none">spacer</text>
+</svg>

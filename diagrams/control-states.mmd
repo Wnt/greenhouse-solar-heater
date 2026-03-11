@@ -1,0 +1,41 @@
+stateDiagram-v2
+    [*] --> Idle
+
+    Idle --> SolarCharging : T_coll > T_tank_btm + 7°C
+    Idle --> GreenhouseHeating : T_greenhouse < 10°C
+    Idle --> ActiveDrain : T_outdoor < 2°C\nAND collectors filled
+    Idle --> Emergency : T_greenhouse < 5°C\nAND tank insufficient
+
+    SolarCharging --> Idle : T_coll < T_tank_btm + 3°C
+    SolarCharging --> ActiveDrain : T_outdoor < 2°C
+
+    GreenhouseHeating --> Idle : T_greenhouse ≥ 12°C
+    GreenhouseHeating --> Emergency : T_greenhouse < 5°C\nAND tank insufficient
+
+    ActiveDrain --> CollectorsDrained : flow sensor = 0
+    CollectorsDrained --> Idle : waiting
+    CollectorsDrained --> Refill : T_outdoor > 5°C\nAND sun available
+
+    Refill --> SolarCharging : collectors filled
+
+    Emergency --> Idle : T_greenhouse ≥ 10°C
+
+    note right of SolarCharging
+        V_top=A, V_pump_in=A(btm), V_pump_out=A(coll)
+        Pump ON, Fan OFF
+    end note
+
+    note right of GreenhouseHeating
+        V_pump_in=A(top), V_pump_out=A(rad)
+        Pump ON, Fan ON
+    end note
+
+    note right of ActiveDrain
+        V_top=B(air), V_pump_in=B(coll), V_pump_out=B(tank)
+        Pump ON until flow=0
+    end note
+
+    note right of Emergency
+        Space heater ON (2kW)
+        Jäspi element ON (optional)
+    end note

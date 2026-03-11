@@ -1,0 +1,298 @@
+# Kasvihuone Solar Heating System — Source of Truth
+# All component specs, heights, and operating modes defined here.
+# Diagrams (Mermaid, SVG) are visual views of this data.
+
+project:
+  name: Kasvihuone Solar Heating System
+  location: Southwest Finland
+  winter_design_temp: -25°C
+  greenhouse_target_temp: 10°C
+  system_type: open (unpressurized)
+
+# =============================================================================
+# COMPONENTS
+# =============================================================================
+
+components:
+  solar_collectors:
+    count: 2
+    dimensions: 2m × 1m
+    weight_each: 40kg
+    total_area: 4m²
+    mounting: overlapping vertical on wooden frame
+    slope_requirement: 2–3 cm/m toward drain
+    upper_panel:
+      height_top: 280cm
+      height_bottom: 170cm
+    lower_panel:
+      height_top: 170cm
+      height_bottom: 30cm
+
+  tank:
+    model: Jäspi VLM
+    type: hot water cylinder (used unpressurized)
+    volume: 300L
+    height: 200cm
+    position: ground level, beside greenhouse, under collector frame
+    connections:
+      hot_out: bottom (internal dip tube to top of tank)
+      cold_in: bottom
+    internal_heater:
+      available: true
+      use: optional backup
+
+  reservoir:
+    type: open vented container
+    position: on top of Jäspi tank
+    height: 200–220cm
+    volume: 20–50L (TBD)
+    purpose:
+      - drainback buffer
+      - expansion volume
+      - fill point
+      - air separation
+
+  pump:
+    model: Wilo Star Z20/4
+    article: "4081193/16w03"
+    voltage: 230V / 50Hz
+    current_max: 0.31A
+    power_settings: [34W, 51W, 71W]
+    ip_rating: IP44
+    pressure_rating: PN10
+    height: ~20cm
+
+  radiator:
+    type: car radiator (syyläri)
+    fan: 230V
+    position: inside greenhouse, near ground
+    purpose: heat distribution from tank to greenhouse air
+
+  space_heater:
+    type: fan heater
+    power: 2kW
+    voltage: 230V
+    position: inside greenhouse
+    purpose: emergency / backup heating
+
+# =============================================================================
+# VALVES
+# =============================================================================
+
+valves:
+  v_top:
+    type: 3-way motorized ball valve
+    size: DN15
+    actuator: 230V
+    location: collector top pipe
+    height: ~280cm (or at pipe routing from collector top)
+    positions:
+      a: collector output → reservoir (normal operation)
+      b: open to air intake (drain mode)
+
+  v_pump_in:
+    type: 3-way motorized ball valve
+    size: DN15
+    actuator: 230V
+    location: pump inlet
+    height: ~20cm
+    positions:
+      a: draw from tank (normal operation)
+      b: draw from collector bottom (drain mode)
+
+  v_pump_out:
+    type: 3-way motorized ball valve
+    size: DN15
+    actuator: 230V
+    location: pump outlet
+    height: ~20cm
+    positions:
+      a: push to collectors or radiator (normal operation)
+      b: push to tank (drain mode)
+
+  flow_sensor:
+    location: collector bottom pipe
+    purpose: detect when collectors are empty during drain
+    height: ~25cm
+
+# =============================================================================
+# PIPING
+# =============================================================================
+
+piping:
+  type: 22mm PEX
+  valve_size: DN15 (½")
+  adapters: 22mm PEX → threaded adapter → valve
+  insulation: "yes — pipes insulated"
+  typical_flow: 4–10 L/min
+
+# =============================================================================
+# SENSORS
+# =============================================================================
+
+sensors:
+  t_collector:
+    type: DS18B20
+    location: collector outlet
+    height: ~280cm
+
+  t_tank_top:
+    type: DS18B20
+    location: tank upper region
+    height: ~180cm
+
+  t_tank_bottom:
+    type: DS18B20
+    location: tank lower region
+    height: ~10cm
+
+  t_greenhouse:
+    type: DS18B20
+    location: greenhouse air
+
+  t_outdoor:
+    type: DS18B20
+    location: outside, shaded
+
+  t_radiator_in:
+    type: DS18B20
+    location: radiator inlet
+    optional: true
+
+  t_radiator_out:
+    type: DS18B20
+    location: radiator outlet
+    optional: true
+
+# =============================================================================
+# CONTROL SYSTEM
+# =============================================================================
+
+control:
+  hardware:
+    main_controller: Shelly Pro 4PM
+    additional_relays: Shelly Pro 2PM or Pro 3
+    sensor_hub: Shelly Plus 1 + Add-on
+    communication: HTTP RPC (local network), optionally MQTT
+
+  pro_4pm_outputs:
+    O1: pump
+    O2: radiator fan
+    O3: immersion heater contactor (optional)
+    O4: space heater or spare
+
+# =============================================================================
+# OPERATING MODES
+# =============================================================================
+
+modes:
+  solar_charging:
+    description: Heat tank water using solar collectors
+    trigger: t_collector > t_tank_bottom + 7°C
+    valve_states:
+      v_top: a        # collector → reservoir
+      v_pump_in: a    # draw from tank bottom
+      v_pump_out: a   # push to collectors
+    actuators:
+      pump: ON
+      fan: OFF
+    flow_path:
+      supply: tank bottom → v_pump_in → pump → v_pump_out → collector bottom → up through panels
+      return: collector top → v_top → reservoir → overflow into tank top
+
+  greenhouse_heating:
+    description: Use stored heat to warm greenhouse
+    trigger: t_greenhouse < 10°C
+    valve_states:
+      v_top: a        # irrelevant (collectors not in use)
+      v_pump_in: a    # draw from tank top (via dip tube)
+      v_pump_out: a   # push to radiator
+    actuators:
+      pump: ON
+      fan: ON
+    flow_path:
+      supply: tank top (dip tube) → v_pump_in → pump → v_pump_out → radiator
+      return: radiator → back to tank bottom
+
+  active_drain:
+    description: Pump water out of collectors for freeze protection
+    trigger: t_outdoor < 2°C AND collectors not already drained
+    valve_states:
+      v_top: b        # open to air
+      v_pump_in: b    # draw from collector bottom
+      v_pump_out: b   # push to tank
+    sequence:
+      - step: 1
+        action: Stop pump
+      - step: 2
+        action: Switch v_top to position B (air intake)
+      - step: 3
+        action: Switch v_pump_in to position B (collector bottom)
+      - step: 4
+        action: Switch v_pump_out to position B (to tank)
+      - step: 5
+        action: Start pump
+      - step: 6
+        action: Monitor flow sensor
+      - step: 7
+        action: "Flow sensor reads zero → stop pump"
+    safety:
+      - Always stop pump before switching valves
+      - Flow sensor prevents pump from running dry
+
+  refill_collectors:
+    description: Refill collectors after a drain cycle (morning)
+    trigger: t_outdoor > 5°C AND collectors are drained AND sun available
+    notes: Switch all valves back to position A, run pump — normal solar charging resumes
+
+  emergency_heating:
+    description: Backup when solar heat is insufficient
+    trigger: t_greenhouse < 5°C AND tank heat insufficient
+    actuators:
+      space_heater: ON (2kW)
+      immersion_heater: ON (optional, boost tank temperature)
+
+  winter_shutdown:
+    description: Full seasonal shutdown for deep winter
+    actions:
+      - Drain collectors (active drain sequence)
+      - Optionally drain all outdoor pipes
+      - Space heater on thermostat for greenhouse minimum temp
+
+# =============================================================================
+# SAFETY RULES
+# =============================================================================
+
+safety:
+  - Always stop pump before switching any valve
+  - Never run pump dry (flow sensor protection)
+  - Drain collectors before t_outdoor reaches 0°C (2°C safety margin)
+  - Use union fittings for easy valve replacement
+  - Collector pipes must slope toward drain point (2–3 cm/m)
+
+# =============================================================================
+# PHYSICAL LAYOUT
+# =============================================================================
+
+structure:
+  collector_frame:
+    material: 48×98mm structural timber
+    foundation: concrete slabs on sand (20cm hole)
+    fasteners:
+      screws: 6×120 structural screws, ~60 pcs
+      brackets: angle brackets ×12, joist hangers ×4
+    snow_load: 2.5 kN/m² (~1000kg worst case)
+    total_load_capacity: ~1100kg
+
+# =============================================================================
+# BUDGET ESTIMATE
+# =============================================================================
+
+budget:
+  control_system:
+    shelly_hardware: ~350€
+    sensors: ~40€
+    valves: ~180€  # 3× DN15 3-way motorized @ 25–60€ each
+    flow_sensor: ~25€
+    total: ~595€
+  note: Professional HVAC valves could increase to ~900–1000€
