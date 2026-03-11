@@ -3,10 +3,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONF="$SCRIPT_DIR/devices.conf"
+LOGIC_JS="$SCRIPT_DIR/control-logic.js"
 CONTROL_JS="$SCRIPT_DIR/control.js"
 
 if [ ! -f "$CONF" ]; then
   echo "Error: $CONF not found" >&2
+  exit 1
+fi
+
+if [ ! -f "$LOGIC_JS" ]; then
+  echo "Error: $LOGIC_JS not found" >&2
   exit 1
 fi
 
@@ -21,18 +27,21 @@ source "$CONF"
 DEVICE="${1:-$PRO4PM}"
 SCRIPT_ID="${2:-1}"
 
-echo "Deploying control.js to $DEVICE (script $SCRIPT_ID)..."
+echo "Deploying control-logic.js + control.js to $DEVICE (script $SCRIPT_ID)..."
 
 # Stop existing script (ignore errors if not running)
 curl -s "http://$DEVICE/rpc/Script.Stop?id=$SCRIPT_ID" > /dev/null 2>&1 || true
 sleep 1
 
-# Read and JSON-escape the script source
+# Concatenate logic + shell and JSON-escape for upload
 CODE=$(python3 -c "
 import json, sys
-with open(sys.argv[1]) as f:
-    print(json.dumps(f.read()))
-" "$CONTROL_JS")
+content = ''
+for path in sys.argv[1:]:
+    with open(path) as f:
+        content += f.read() + '\n'
+print(json.dumps(content))
+" "$LOGIC_JS" "$CONTROL_JS")
 
 # Upload code
 echo "Uploading code..."
