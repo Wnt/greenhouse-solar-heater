@@ -31,6 +31,8 @@ components:
   tank:
     model: Jäspi VLM
     type: hot water cylinder (used unpressurized)
+    material: ferritic acid-resistant stainless steel (ferriittinen haponkestävä jaloteräs)
+    anode: none (stainless steel requires no sacrificial anode)
     volume: 300L
     height: 200cm
     position: ground level, beside greenhouse, under collector frame
@@ -497,6 +499,46 @@ safety:
   - Use union fittings for easy valve replacement
   - Collector pipes must slope toward drain point (2–3 cm/m)
   - Consider fail-safe: V_air normally-open so collectors drain on power loss
+
+# =============================================================================
+# WATER TREATMENT
+# =============================================================================
+
+water_treatment:
+  system_characteristics: >
+    Open system with continuous oxygen exposure via reservoir.
+    Materials: stainless steel tank, PEX piping, brass valves,
+    bronze/stainless pump (Wilo Z20/4), copper solar collectors.
+    Mixed metals (copper + brass) in oxygenated water.
+
+  biological:
+    primary_measure: >
+      Keep reservoir covered (opaque lid, still vented for gas escape).
+      Darkness prevents algae growth. High temperatures during solar
+      charging (60°C+) suppress biological growth in the loop.
+    chemical_option: >
+      If needed, periodic hydrogen peroxide dosing (food-grade, 30–50 ppm)
+      decomposes to water+oxygen and leaves no residue.
+
+  corrosion:
+    risk_level: low-moderate
+    notes: >
+      Stainless steel tank and PEX piping are highly resistant.
+      Main risk is copper/brass in oxygenated water — copper ions
+      can deposit on other metals. Risk is mitigated by the limited
+      amount of copper surface area (collectors only) and low flow
+      velocities.
+    recommendation: >
+      Use a combined corrosion inhibitor / biocide designed for open
+      heating systems with mixed metals (e.g. Sentinel X100 or
+      Fernox Protector F1). These contain oxygen scavengers, mixed-metal
+      inhibitors, and biocide in one product. Check compatibility with
+      PEX and EPDM seals (most are compatible). Test concentration annually.
+
+  maintenance:
+    - Check inhibitor concentration annually (test kits from manufacturer)
+    - Monitor water clarity — discoloration indicates corrosion or biological growth
+    - Reservoir lid must remain opaque and in place
 
 # =============================================================================
 # PHYSICAL LAYOUT

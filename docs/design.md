@@ -17,7 +17,7 @@ All component specifications are defined in `system.yaml` (source of truth).
 | Component | Model/Type | Key Spec |
 |-----------|-----------|----------|
 | Solar collectors | 2× flat plate, 2m×1m | 4m² total, mounted 30–280cm height |
-| Storage tank | Jäspi VLM 300L | Used unpressurized, ALL connections at bottom (0cm) |
+| Storage tank | Jäspi VLM 300L | Ferritic stainless steel, used unpressurized, ALL connections at bottom (0cm) |
 | Open reservoir | Vented container, 20–50L | On top of tank (~200cm), air separator, connected to dip tube |
 | Circulation pump | Wilo Star Z20/4 | 34/51/71W, 230V, near ground |
 | Radiator | Car radiator + 230V fan | Inside greenhouse, heat distribution |
@@ -263,6 +263,14 @@ Full seasonal shutdown for deep winter (-25°C periods):
 - Fasteners: 6×120 structural screws (~60), angle brackets (12), joist hangers (4)
 - Snow load rated: 2.5 kN/m² (~1000kg)
 - Total load capacity: ~1100kg (panels + snow)
+
+## Water Treatment
+
+**Materials in contact with water:** ferritic stainless steel (tank), PEX (piping), brass (valves), bronze/stainless (pump), copper (solar collectors).
+
+**Biological growth:** The open reservoir is the main risk area — cover it with an opaque lid (keep it vented). Darkness prevents algae. The solar loop regularly exceeds 60°C, which suppresses growth elsewhere in the system. If needed, periodic food-grade hydrogen peroxide (30–50 ppm) can be added — it decomposes cleanly.
+
+**Corrosion:** Low-moderate risk. Stainless tank and PEX are highly resistant. The main concern is copper collectors + brass valves in oxygenated water (the open reservoir continuously dissolves O₂). Use a combined corrosion inhibitor / biocide for open mixed-metal systems (e.g. Sentinel X100 or Fernox Protector F1). These contain oxygen scavengers, mixed-metal inhibitors, and biocide. Check inhibitor concentration annually.
 
 ## Safety Rules
 
