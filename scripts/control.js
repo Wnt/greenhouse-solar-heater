@@ -84,3 +84,20 @@ let state = {
   transitioning: false,
   drain_timer: null,
 };
+
+function setPump(on) {
+  Shelly.call("Switch.Set", {id: 0, on: on});
+  state.pump_on = on;
+}
+
+function setFan(on) {
+  Shelly.call("Switch.Set", {id: 1, on: on});
+}
+
+function setImmersion(on) {
+  Shelly.call("Switch.Set", {id: 2, on: on});
+}
+
+function setSpaceHeater(on) {
+  Shelly.call("Switch.Set", {id: 3, on: on});
+}
