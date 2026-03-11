@@ -200,6 +200,9 @@ function evaluateMode() {
   var now = Date.now();
   var elapsed = now - state.mode_start;
 
+  // If already draining, stay in drain (drain sub-loop manages completion)
+  if (state.mode === MODE.DRAIN) return MODE.DRAIN;
+
   // Active drain — highest priority, always preempts
   if (t.outdoor !== null && t.outdoor < CFG.DRAIN_ENTER_TEMP &&
       !state.collectors_drained) {
@@ -308,6 +311,7 @@ function transitionTo(newMode) {
             startDrainMonitor();
           } else if (newMode === MODE.EMERGENCY) {
             setSpaceHeater(true);
+            setImmersion(true);
           }
           // IDLE: everything stays off
         });
@@ -318,6 +322,7 @@ function transitionTo(newMode) {
 
 function startDrainMonitor() {
   var drain_start = Date.now();
+  var low_count = 0;
 
   state.drain_timer = Timer.set(CFG.DRAIN_MONITOR_INTERVAL, true, function() {
     // Safety timeout
@@ -325,10 +330,15 @@ function startDrainMonitor() {
       stopDrain("timeout");
       return;
     }
-    // Check pump power locally
+    // Check pump power locally (debounce: 3 consecutive low readings)
     var sw = Shelly.getComponentStatus("switch", 0);
     if (sw && sw.apower < CFG.DRAIN_POWER_THRESHOLD) {
-      stopDrain("dry_run");
+      low_count++;
+      if (low_count >= 3) {
+        stopDrain("dry_run");
+      }
+    } else {
+      low_count = 0;
     }
   });
 }
@@ -354,6 +364,7 @@ function stopDrain(reason) {
 HTTPServer.registerEndpoint("status", function(req, res) {
   var now = Date.now();
   var sw = Shelly.getComponentStatus("switch", 0);
+  var sys = Shelly.getComponentStatus("sys");
   var body = JSON.stringify({
     mode: MODE_NAMES[state.mode],
     mode_duration_s: Math.floor((now - state.mode_start) / 1000),
@@ -367,9 +378,7 @@ HTTPServer.registerEndpoint("status", function(req, res) {
     },
     collectors_drained: state.collectors_drained,
     last_error: state.last_error,
-    uptime_s: Math.floor(
-      Shelly.getComponentStatus("sys").uptime
-    ),
+    uptime_s: sys ? Math.floor(sys.uptime) : 0,
   });
   res.code = 200;
   res.body = body;
@@ -384,6 +393,12 @@ function controlLoop() {
     if (state.mode !== MODE.IDLE) {
       setPump(false);
       setFan(false);
+      setSpaceHeater(false);
+      setImmersion(false);
+      if (state.drain_timer !== null) {
+        Timer.clear(state.drain_timer);
+        state.drain_timer = null;
+      }
       state.mode = MODE.IDLE;
       state.mode_start = Date.now();
       state.last_error = "sensors_stale";
@@ -410,7 +425,12 @@ function boot() {
   setSpaceHeater(false);
   setImmersion(false);
 
-  closeAllValves(function() {
+  closeAllValves(function(ok) {
+    if (!ok) {
+      // Retry after 5 seconds if valve comms failed at boot
+      Timer.set(5000, false, function() { boot(); });
+      return;
+    }
     Timer.set(5000, false, function() {
       // Load persisted drain state
       Shelly.call("KVS.Get", {key: "drained"}, function(res, err) {
