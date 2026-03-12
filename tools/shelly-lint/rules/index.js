@@ -38,7 +38,7 @@ function callExprName(node) {
 const UNSUPPORTED_APIS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'Worker', 'localStorage', 'sessionStorage'];
 
 const RESOURCE_LIMITS = [
-  { id: 'SH-001', severity: 'error', desc: 'Max 5 timers per script', apis: ['Timer.set'], limit: 5 },
+  { id: 'SH-001', severity: 'warning', desc: 'Max 5 timers per script (static count — actual concurrency may be lower)', apis: ['Timer.set'], limit: 5 },
   { id: 'SH-002', severity: 'error', desc: 'Max 5 event subscriptions per script', apis: ['Shelly.addStatusHandler', 'Shelly.addEventHandler'], limit: 5 },
   { id: 'SH-003', severity: 'warning', desc: 'Max 5 concurrent RPC/HTTP calls', apis: ['Shelly.call', 'HTTP.GET', 'HTTP.POST', 'HTTP.request'], limit: 5 },
 ];
@@ -156,8 +156,9 @@ function checkSafetyRules(ast, config, findings) {
   const modes = config.modes || {};
   for (const [modeName, mode] of Object.entries(modes)) {
     if (modeName === 'idle' || modeName === 'emergency_heating') continue;
-    const vs = mode.valve_states || {};
-    if (typeof vs === 'string') continue;
+    // Skip sequence-based modes that don't define explicit valve_states
+    if (!mode.valve_states || typeof mode.valve_states === 'string') continue;
+    const vs = mode.valve_states;
 
     const inputOpen = ['vi_btm', 'vi_top', 'vi_coll'].filter(v => vs[v] === 'OPEN');
     const outputOpen = ['vo_coll', 'vo_rad', 'vo_tank'].filter(v => vs[v] === 'OPEN');

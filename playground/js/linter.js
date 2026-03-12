@@ -246,8 +246,9 @@ function checkSafetyRules(ast, config, findings) {
   const modes = config.modes || {};
   for (const [modeName, mode] of Object.entries(modes)) {
     if (modeName === 'idle' || modeName === 'emergency_heating') continue;
-    const vs = mode.valve_states || {};
-    if (typeof vs === 'string') continue; // "same as active_drain"
+    // Skip sequence-based modes that don't define explicit valve_states
+    if (!mode.valve_states || typeof mode.valve_states === 'string') continue;
+    const vs = mode.valve_states; // "same as active_drain"
 
     const inputOpen = ['vi_btm', 'vi_top', 'vi_coll'].filter(v => vs[v] === 'OPEN');
     const outputOpen = ['vo_coll', 'vo_rad', 'vo_tank'].filter(v => vs[v] === 'OPEN');
