@@ -46,3 +46,37 @@ All SVGs use a dark background (#0d1117), consistent color coding:
 - Orange (#ff9800) = drain mode, service valves
 
 Height scales in SVGs are approximate — `system-height-layout.svg` is the most precise for physical positioning.
+
+## Playground Architecture
+
+The `playground/` directory contains interactive browser-based simulators (thermal, hydraulic) and a Shelly script linter. These are static HTML files using ES modules with `<script type="importmap">`.
+
+### Vendored Dependencies
+
+All third-party libraries are vendored locally in `playground/vendor/` to avoid CDN/CORS issues in restricted environments (e.g. Claude Code web runtime, CI, offline):
+
+- `playground/vendor/js-yaml.mjs` — js-yaml 4.1.0 (ESM), used by all playground pages
+- `playground/vendor/three.module.js` — Three.js 0.170.0 (ESM, minified), used by thermal sim 3D view
+- `playground/vendor/three-addons/controls/OrbitControls.js` — Three.js OrbitControls addon
+- `playground/vendor/acorn.js` — Acorn 8.11.3 (UMD), used by the Shelly linter
+
+**Do NOT replace these with CDN URLs.** The importmaps in each HTML file point to `./vendor/...` paths. If upgrading a dependency, download via `npm pack`, extract the dist files, and copy to `playground/vendor/`.
+
+### 3D Visualization (Three.js)
+
+The thermal simulation has a 3D view (`playground/js/scene3d.js`) that is **lazy-loaded** via dynamic `import()`. If Three.js fails to load (e.g. WebGL unavailable), the page falls back to the 2D SVG schematic automatically. The toggle button is hidden when 3D is unavailable.
+
+## Running Tests
+
+```bash
+npm test              # all tests: unit + simulation + e2e
+npm run test:unit     # unit + simulation tests only (fast, no browser)
+npm run test:e2e      # Playwright e2e tests only (requires Chromium)
+```
+
+### Test Setup Notes
+
+- **Playwright version**: Must match the cached Chromium browser revision. Currently `@playwright/test@1.56.0` matches `chromium-1194`. If you see "browser not found" errors, check `~/.cache/ms-playwright/` for available revisions and install the matching Playwright version.
+- **Static server**: Tests use `npx serve` on port 3210 to serve the playground. The Playwright config auto-starts this server.
+- **No `-s` flag on serve**: Do NOT use `serve -s` (SPA mode) — it breaks direct HTML file access by redirecting all routes.
+- **E2e tests exercise the 3D view** when Three.js loads successfully (vendored locally). Individual test timeouts are 30s to accommodate WebGL initialization overhead.

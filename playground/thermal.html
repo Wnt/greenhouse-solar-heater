@@ -8,7 +8,9 @@
   <script type="importmap">
   {
     "imports": {
-      "js-yaml": "https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/+esm"
+      "js-yaml": "./vendor/js-yaml.mjs",
+      "three": "./vendor/three.module.js",
+      "three/addons/": "./vendor/three-addons/"
     }
   }
   </script>
@@ -43,11 +45,21 @@
       <div class="controls-grid" id="controls"></div>
     </div>
 
-    <div class="split-layout">
-      <!-- System schematic -->
-      <div class="card">
-        <h2>System Schematic</h2>
+    <!-- 3D Visualization (full width) -->
+    <div class="card">
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+        <h2 style="margin-bottom: 0;">System Visualization</h2>
+        <button id="btn-toggle-view" style="font-size: 12px; padding: 4px 10px;">Switch to 2D</button>
+      </div>
+      <div id="view-3d" style="width: 100%; height: 500px; border-radius: 6px; overflow: hidden;"></div>
+      <div id="view-2d" style="display: none;">
         <div id="schematic" class="svg-container"></div>
+      </div>
+    </div>
+
+    <div class="split-layout">
+      <!-- Placeholder for layout balance -->
+      <div class="card" style="display: none;">
       </div>
 
       <!-- Status tables -->
@@ -80,7 +92,7 @@
     <!-- Transition log -->
     <div class="card">
       <h2>Mode Transition Log</h2>
-      <div id="transition-log" style="font-family: monospace; font-size: 12px; max-height: 200px; overflow: auto; color: var(--text-muted);"></div>
+      <div id="transition-log" style="font-family: monospace; font-size: 12px; max-height: 200px; overflow: auto; color: var(--text-muted); white-space: pre-wrap;"></div>
     </div>
   </div>
 
@@ -94,10 +106,12 @@
     let config = null;
     let model = null;
     let controller = null;
+    let scene3d = null;
     let store = new TimeSeriesStore(600);
     let running = false;
     let lastFrame = 0;
     let simSpeed = 10;
+    let viewMode = '3d';
     const DT = 1; // 1-second physics timestep
 
     // ── Input parameters ──
@@ -125,7 +139,20 @@
       setupControls();
       resetSim();
       buildSchematic();
-      render();
+
+      // Initialize 3D scene (lazy-load Three.js to avoid blocking if CDN unavailable)
+      try {
+        const { Scene3D } = await import('./js/scene3d.js');
+        scene3d = new Scene3D(document.getElementById('view-3d'));
+      } catch (e) {
+        console.warn('3D view unavailable:', e);
+        // Fall back to 2D
+        viewMode = '2d';
+        document.getElementById('view-3d').style.display = 'none';
+        document.getElementById('view-2d').style.display = '';
+        document.getElementById('btn-toggle-view').style.display = 'none';
+      }
+
     }
 
     function buildFallbackConfig() {
@@ -281,8 +308,13 @@
         yMax: 100,
       });
 
-      // Update schematic
+      // Update schematic (2D)
       updateSchematic(result);
+
+      // Update 3D scene
+      if (scene3d) {
+        scene3d.update(state, result);
+      }
     }
 
     // ── SVG Schematic ──
@@ -307,10 +339,16 @@
           </defs>
           <rect x="252" y="62" width="76" height="196" rx="3" fill="url(#tank-grad)"/>
 
-          <!-- Reservoir -->
-          <rect id="s-reservoir" x="260" y="15" width="60" height="35" rx="3" fill="#0d47a1" stroke="#42a5f5" stroke-width="1.5"/>
-          <text x="290" y="32" fill="#90caf9" font-size="9" text-anchor="middle">Reservoir</text>
-          <line x1="290" y1="50" x2="290" y2="60" stroke="#42a5f5" stroke-width="2" stroke-dasharray="4,2"/>
+          <!-- Reservoir (200–220cm, just above tank water pillar at 197cm) -->
+          <rect id="s-reservoir" x="340" y="48" width="50" height="28" rx="3" fill="#0d47a1" stroke="#42a5f5" stroke-width="1.5"/>
+          <text x="365" y="45" fill="#90caf9" font-size="9" text-anchor="middle">Reservoir</text>
+          <text x="365" y="82" fill="#8b949e" font-size="7" text-anchor="middle">200–220cm</text>
+          <!-- open vent -->
+          <path d="M345,48 L385,48" stroke="#76ff03" stroke-width="1" stroke-dasharray="3,2"/>
+          <text x="392" y="52" fill="#76ff03" font-size="7">open</text>
+          <!-- dip tube pipe connection to tank -->
+          <line x1="355" y1="76" x2="330" y2="76" stroke="#42a5f5" stroke-width="2" stroke-dasharray="4,2"/>
+          <line x1="330" y1="62" x2="330" y2="76" stroke="#42a5f5" stroke-width="2" stroke-dasharray="4,2"/>
 
           <!-- Solar Collectors -->
           <rect id="s-coll" x="50" y="40" width="60" height="180" rx="4" fill="#f9a825" stroke="#fdd835" stroke-width="2" opacity="0.8"/>
@@ -338,14 +376,14 @@
             <text x="225" y="255" fill="#42a5f5" font-size="8">VI-btm</text>
             <path d="M200,316 L200,340 L80,340 L80,220" stroke="#42a5f5" stroke-width="3" fill="none"/>
             <text x="140" y="355" fill="#42a5f5" font-size="8">VO-coll</text>
-            <path d="M80,40 L80,20 L260,20" stroke="#ef5350" stroke-width="3" fill="none"/>
-            <text x="170" y="16" fill="#ef5350" font-size="8">V-ret</text>
+            <path d="M80,40 L80,20 L340,20 L340,48" stroke="#ef5350" stroke-width="3" fill="none"/>
+            <text x="170" y="16" fill="#ef5350" font-size="8">V-ret → reservoir</text>
           </g>
 
           <!-- Pipes: Greenhouse Heating path -->
           <g id="pipe-heating" opacity="0.3">
-            <path d="M290,50 L290,30 L370,30 L370,284" stroke="#ef5350" stroke-width="3" fill="none"/>
-            <text x="340" y="26" fill="#ef5350" font-size="8">via reservoir</text>
+            <path d="M365,76 L365,90 L370,90 L370,284" stroke="#ef5350" stroke-width="3" fill="none"/>
+            <text x="392" y="90" fill="#ef5350" font-size="8">via reservoir</text>
             <path d="M370,316 L370,340 L520,340 L520,200" stroke="#ef5350" stroke-width="3" fill="none"/>
             <text x="440" y="355" fill="#ef5350" font-size="8">VO-rad</text>
             <path d="M570,200 L570,370 L290,370 L290,260" stroke="#42a5f5" stroke-width="3" fill="none"/>
@@ -436,6 +474,14 @@
       document.getElementById('btn-play').textContent = 'Start';
     });
     document.getElementById('btn-reset').addEventListener('click', () => resetSim());
+
+    // ── View toggle ──
+    document.getElementById('btn-toggle-view').addEventListener('click', () => {
+      viewMode = viewMode === '3d' ? '2d' : '3d';
+      document.getElementById('view-3d').style.display = viewMode === '3d' ? '' : 'none';
+      document.getElementById('view-2d').style.display = viewMode === '2d' ? '' : 'none';
+      document.getElementById('btn-toggle-view').textContent = viewMode === '3d' ? 'Switch to 2D' : 'Switch to 3D';
+    });
 
     // ── Load URL params ──
     function loadUrlParams() {
