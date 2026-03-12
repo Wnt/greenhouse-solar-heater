@@ -3,9 +3,9 @@
  *
  * Simplified lumped-parameter model:
  * - Two-node tank (top/bottom) with stratification
- * - Flat-plate collector gain (Hottel-Whillier)
+ * - Flat-plate collector gain (Hottel-Whillier) with proper thermal mass
  * - Greenhouse heat loss
- * - Radiator heat output
+ * - Radiator heat output bounded by flow capacity
  */
 
 // Physical constants
@@ -17,6 +17,8 @@ const DEFAULTS = {
   collector_area: 4.0,          // m²
   collector_eta0: 0.75,         // optical efficiency
   collector_UL: 4.0,            // W/(m²·K) loss coefficient
+  collector_water_volume: 0.008,// m³ (8L in collectors)
+  collector_plate_mass_cp: 20000, // J/K (absorber plate thermal capacity)
   tank_volume: 0.300,           // m³ (300L)
   tank_UA: 3.0,                 // W/K tank heat loss (insulated)
   greenhouse_UA: 25.0,          // W/K greenhouse envelope loss
@@ -62,75 +64,98 @@ export class ThermalModel {
     if (env.t_outdoor !== undefined) s.t_outdoor = env.t_outdoor;
     if (env.irradiance !== undefined) s.irradiance = env.irradiance;
 
-    const tankTopMass = (p.tank_volume / 2) * WATER_DENSITY;
-    const tankBotMass = (p.tank_volume / 2) * WATER_DENSITY;
+    const tankTopMass = (p.tank_volume / 2) * WATER_DENSITY;   // 150 kg
+    const tankBotMass = (p.tank_volume / 2) * WATER_DENSITY;   // 150 kg
 
-    // ── Collector ──
-    let Q_collector = 0;
-    if (s.irradiance > 0) {
-      // Collector stagnation temp when no flow
-      const t_coll_avg = actuators.pump && mode === 'solar_charging'
-        ? (s.t_collector + s.t_tank_bottom) / 2
-        : s.t_collector;
-      Q_collector = p.collector_eta0 * p.collector_area * s.irradiance
-        - p.collector_UL * p.collector_area * (t_coll_avg - s.t_outdoor);
-      Q_collector = Math.max(Q_collector, 0);
-    }
+    // Collector thermal mass: water + absorber plate
+    const collectorWaterMass = p.collector_water_volume * WATER_DENSITY; // 8 kg
+    const collectorThermalMass = collectorWaterMass * WATER_CP + p.collector_plate_mass_cp;
 
-    // Collector temperature
-    const collectorMass = 8 * WATER_DENSITY / 1000; // ~8L water in collectors
-    const collectorThermalMass = collectorMass * WATER_CP + 20000; // + absorber plate mass
-    if (!actuators.pump || mode === 'active_drain') {
-      // No flow: collector heats up from sun, loses to ambient
-      const Q_coll_loss = p.collector_UL * p.collector_area * (s.t_collector - s.t_outdoor);
-      const Q_coll_gain = p.collector_eta0 * p.collector_area * s.irradiance;
-      s.t_collector += (Q_coll_gain - Q_coll_loss) * dt / collectorThermalMass;
+    // ── Collector solar gain & heat loss (always active) ──
+    const Q_coll_solar = p.collector_eta0 * p.collector_area * s.irradiance; // W
+    const Q_coll_loss = p.collector_UL * p.collector_area *
+      Math.max(s.t_collector - s.t_outdoor, 0); // W (loss to ambient)
+    const Q_coll_net = Q_coll_solar - Q_coll_loss; // W (can be negative if cold & cloudy)
+
+    // ── No-flow collector: heats/cools from sun and ambient ──
+    if (!actuators.pump || (mode !== 'solar_charging')) {
+      s.t_collector += Q_coll_net * dt / collectorThermalMass;
+      // Collector can't go below outdoor temp (ambient loss limit)
+      if (Q_coll_net < 0 && s.t_collector < s.t_outdoor) {
+        s.t_collector = s.t_outdoor;
+      }
     }
 
     // ── Solar Charging mode ──
+    // Flow path: tank bottom → pump → collector → reservoir → tank top
     if (actuators.pump && mode === 'solar_charging') {
       const flowRate = p.pump_flow / 60 / 1000; // m³/s
       const flowMass = flowRate * WATER_DENSITY * dt; // kg moved this step
 
-      // Water from tank bottom goes to collector
+      // Cold water from tank bottom enters collector
       const t_in = s.t_tank_bottom;
-      // Collector heats it
-      const Q_pipe_loss = p.pipe_loss_per_meter * p.outdoor_pipe_length * (s.t_collector - s.t_outdoor) * dt;
-      const t_out = t_in + (Q_collector * dt - Q_pipe_loss) / Math.max(flowMass * WATER_CP, 1);
-      s.t_collector = t_in + (t_out - t_in) * 0.5; // avg collector temp
 
-      // Hot water enters tank top (via reservoir)
+      // Collector absorbs solar energy and exchanges heat with flowing water.
+      // The collector temperature changes gradually based on:
+      // 1. Solar gain onto absorber plate
+      // 2. Heat loss to ambient
+      // 3. Heat transfer from collector to flowing water
+      // Heat exchange between collector and water: proportional to temp difference
+      const collectorToWaterUA = flowRate * WATER_DENSITY * WATER_CP; // W/K (perfect heat exchanger)
+      const Q_to_water = collectorToWaterUA * (s.t_collector - t_in); // W transferred to water
+
+      // Update collector temperature: gains from sun, loses to ambient and water
+      const dT_collector = (Q_coll_net - Q_to_water) * dt / collectorThermalMass;
+      s.t_collector += dT_collector;
+
+      // Water outlet temperature from collector
+      const Q_pipe_loss = p.pipe_loss_per_meter * p.outdoor_pipe_length *
+        (s.t_collector - s.t_outdoor); // W
+      const t_out = t_in + (Q_to_water - Q_pipe_loss) * dt /
+        Math.max(flowMass * WATER_CP, 1);
+
+      // Hot water enters tank top (via reservoir) — only if warmer than tank top
       const energyIn = flowMass * WATER_CP * (t_out - s.t_tank_top);
       s.t_tank_top += energyIn / (tankTopMass * WATER_CP);
 
-      // Cold water drawn from tank bottom
-      const energyOut = flowMass * WATER_CP * (s.t_tank_bottom - t_in);
-      // bottom temp stays roughly the same (drawing from itself)
+      // Cold water drawn from tank bottom — replaced by slightly warmer water
+      // mixing down from above (handled by stratification mixing below)
     }
 
     // ── Greenhouse Heating mode ──
+    // Flow path: tank top → dip tube → reservoir → pump → radiator → tank bottom
     if (actuators.pump && mode === 'greenhouse_heating') {
-      const flowRate = p.pump_flow / 60 / 1000;
-      const flowMass = flowRate * WATER_DENSITY * dt;
+      const flowRate = p.pump_flow / 60 / 1000; // m³/s
+      const flowMass = flowRate * WATER_DENSITY * dt; // kg moved this step
 
-      // Water from tank top → radiator
+      // Hot water from tank top goes to radiator
       const t_water_in = s.t_tank_top;
-      const radiator_output = p.radiator_UA * (t_water_in - s.t_greenhouse);
-      const Q_rad = Math.max(radiator_output, 0) * dt;
 
-      // Heat to greenhouse
+      // Radiator heat transfer — bounded by BOTH radiator UA AND flow capacity
+      // The radiator can't transfer more heat than the water can carry
+      const radiator_potential = p.radiator_UA * (t_water_in - s.t_greenhouse); // W
+      const flow_capacity = flowRate * WATER_DENSITY * WATER_CP *
+        (t_water_in - s.t_greenhouse); // W (max if water exits at greenhouse temp)
+      const Q_rad_rate = Math.max(Math.min(radiator_potential, flow_capacity), 0); // W
+      const Q_rad = Q_rad_rate * dt; // J
+
+      // Heat delivered to greenhouse
       s.t_greenhouse += Q_rad / p.greenhouse_thermal_mass;
 
       // Water returns cooler to tank bottom
       const t_water_out = t_water_in - Q_rad / Math.max(flowMass * WATER_CP, 1);
-      const energyLost = flowMass * WATER_CP * (s.t_tank_top - t_water_out);
-      s.t_tank_top -= energyLost / (tankTopMass * WATER_CP) * 0.7;
-      s.t_tank_bottom += flowMass * WATER_CP * (t_water_out - s.t_tank_bottom) / (tankBotMass * WATER_CP) * 0.3;
-    }
+      // Clamp: water can't exit colder than greenhouse temp
+      const t_return = Math.max(t_water_out, s.t_greenhouse);
 
-    // ── Fan effect (radiator fan boosts heat transfer) ──
-    if (actuators.fan && mode === 'greenhouse_heating') {
-      // Fan already factored into radiator_UA — just cosmetic
+      // Tank top loses the hot water that was drawn out.
+      // The drawn volume is replaced by water from below (via mixing).
+      // Energy balance: tank top loses energy proportional to flow volume
+      const energyDrawn = flowMass * WATER_CP * (s.t_tank_top - s.t_tank_bottom);
+      s.t_tank_top -= energyDrawn / (tankTopMass * WATER_CP);
+
+      // Tank bottom receives cooled return water
+      const energyReturn = flowMass * WATER_CP * (t_return - s.t_tank_bottom);
+      s.t_tank_bottom += energyReturn / (tankBotMass * WATER_CP);
     }
 
     // ── Space heater (emergency) ──
@@ -143,17 +168,18 @@ export class ThermalModel {
     const mixRate = p.tank_mixing_coeff * dt;
     const diff = s.t_tank_top - s.t_tank_bottom;
     if (diff > 0) {
-      // Natural stratification: top stays hot. Slow mixing downward.
+      // Natural stratification: top hot, bottom cold. Slow diffusion.
       s.t_tank_top -= diff * mixRate * 0.3;
       s.t_tank_bottom += diff * mixRate * 0.3;
     } else {
-      // Inverted: fast mixing to equalize
+      // Inverted (bottom hotter than top): rapid convective mixing
       s.t_tank_top -= diff * mixRate * 2;
       s.t_tank_bottom += diff * mixRate * 2;
     }
 
     // ── Tank heat loss to environment ──
-    const Q_tank_loss = p.tank_UA * ((s.t_tank_top + s.t_tank_bottom) / 2 - s.t_outdoor) * dt;
+    const t_tank_avg = (s.t_tank_top + s.t_tank_bottom) / 2;
+    const Q_tank_loss = p.tank_UA * (t_tank_avg - s.t_outdoor) * dt;
     s.t_tank_top -= Q_tank_loss * 0.5 / (tankTopMass * WATER_CP);
     s.t_tank_bottom -= Q_tank_loss * 0.5 / (tankBotMass * WATER_CP);
 
@@ -161,7 +187,7 @@ export class ThermalModel {
     const Q_gh_loss = p.greenhouse_UA * (s.t_greenhouse - s.t_outdoor) * dt;
     s.t_greenhouse -= Q_gh_loss / p.greenhouse_thermal_mass;
 
-    // ── Solar gain into greenhouse (passive, small) ──
+    // ── Passive solar gain into greenhouse (small) ──
     if (s.irradiance > 50) {
       const Q_solar_passive = 0.1 * s.irradiance * 2 * dt; // ~10% of 2m² window
       s.t_greenhouse += Q_solar_passive / p.greenhouse_thermal_mass;
