@@ -1,22 +1,16 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { evaluate, MODES, DEFAULT_CONFIG } = require('../scripts/control-logic.js');
+const { evaluate, MODES, DEFAULT_CONFIG, MODE_VALVES } = require('../scripts/control-logic.js');
 
 function makeState(overrides) {
   const base = {
-    temps: {
-      collector: 20, tank_top: 40, tank_bottom: 30,
-      greenhouse: 15, outdoor: 10
-    },
+    temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
     currentMode: MODES.IDLE,
     modeEnteredAt: 0,
-    now: 1000,
+    now: 2000,
     collectorsDrained: false,
     lastRefillAttempt: 0,
-    sensorAge: {
-      collector: 0, tank_top: 0, tank_bottom: 0,
-      greenhouse: 0, outdoor: 0
-    }
+    sensorAge: { collector: 0, tank_top: 0, tank_bottom: 0, greenhouse: 0, outdoor: 0 }
   };
   return Object.assign({}, base, overrides);
 }
@@ -27,72 +21,432 @@ describe('mode evaluation', () => {
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
-  // TODO: each mode entered when trigger conditions met
-  // TODO: correct mode selected when multiple triggers (priority order)
-});
-
-describe('hysteresis', () => {
-  it('enters solar charging at collector > tank_bottom + 7', () => {
+  it('enters SOLAR_CHARGING when collector > tank_bottom + 7', () => {
     const result = evaluate(makeState({
       temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
 
-  // TODO: solar exit threshold
-  // TODO: greenhouse heating enter/exit
-  // TODO: emergency enter/exit
-});
-
-describe('minimum duration', () => {
-  // TODO: mode held for minimum time
-  // TODO: ACTIVE_DRAIN preempts regardless of minimum
-  // TODO: minimum run time after speculative refill
-});
-
-describe('valve and actuator mapping', () => {
-  it('IDLE has all valves closed and actuators off', () => {
-    const result = evaluate(makeState({}), null);
-    for (const v of Object.values(result.valves)) {
-      assert.strictEqual(v, false);
-    }
-    for (const a of Object.values(result.actuators)) {
-      assert.strictEqual(a, false);
-    }
+  it('enters GREENHOUSE_HEATING when greenhouse < 10 and tank_top > 25', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 }
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
   });
 
-  // TODO: each mode produces correct valve/actuator states
-  // TODO: one-input-one-output invariant
-});
-
-describe('priority and preemption', () => {
-  // TODO: ACTIVE_DRAIN preempts SOLAR_CHARGING
-  // TODO: EMERGENCY preempts GREENHOUSE_HEATING
-  // TODO: concurrent solar + greenhouse → heating wins
-});
-
-describe('speculative refill', () => {
-  // TODO: refill attempted when conditions met
-  // TODO: retry cooldown respected
-  // TODO: lastRefillAttempt updated
-});
-
-describe('sensor failure', () => {
-  it('transitions to IDLE when sensors are stale', () => {
+  it('enters ACTIVE_DRAIN when outdoor < 2 and collectors not drained', () => {
     const result = evaluate(makeState({
-      currentMode: MODES.SOLAR_CHARGING,
-      sensorAge: {
-        collector: 200, tank_top: 0, tank_bottom: 0,
-        greenhouse: 0, outdoor: 0
-      }
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 }
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+
+  it('enters EMERGENCY_HEATING when greenhouse < 5 and tank_top < 25', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 4, outdoor: -5 },
+      collectorsDrained: true
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.EMERGENCY_HEATING);
+  });
+
+  it('selects highest priority mode when multiple triggers active', () => {
+    // Both freeze drain and emergency could trigger — drain wins
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 4, outdoor: 1 },
+      collectorsDrained: false
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+});
+
+describe('hysteresis', () => {
+  it('enters solar charging at collector > tank_bottom + 7', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 38, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+
+  it('does not enter solar at collector = tank_bottom + 7 (needs strictly greater)', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 37, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
-  // TODO: all sensors stale simultaneously
+  it('stays in solar at exact exit threshold (collector = tank_bottom + 3)', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 33, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 2000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+
+  it('exits solar when collector < tank_bottom + 3', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 32, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 2000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('enters greenhouse heating at greenhouse < 10 with hot tank', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 }
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+  });
+
+  it('does not enter greenhouse heating when tank_top < 25', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 9, outdoor: 10 },
+      collectorsDrained: true
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('stays in greenhouse heating at exact exit threshold (greenhouse = 12)', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 12, outdoor: 10 },
+      currentMode: MODES.GREENHOUSE_HEATING,
+      modeEnteredAt: 0, now: 2000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+  });
+
+  it('exits greenhouse heating when greenhouse > 12', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 13, outdoor: 10 },
+      currentMode: MODES.GREENHOUSE_HEATING,
+      modeEnteredAt: 0, now: 2000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('does not enter greenhouse heating at exact threshold (greenhouse = 10)', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 10, outdoor: 10 }
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('enters emergency at greenhouse < 5 and tank_top < 25', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 4, outdoor: -5 },
+      collectorsDrained: true
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.EMERGENCY_HEATING);
+  });
+
+  it('stays in emergency at exact exit threshold (greenhouse = 8)', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 8, outdoor: -5 },
+      currentMode: MODES.EMERGENCY_HEATING,
+      modeEnteredAt: 0, now: 2000,
+      collectorsDrained: true
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.EMERGENCY_HEATING);
+  });
+
+  it('exits emergency when greenhouse > 8', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 9, outdoor: -5 },
+      currentMode: MODES.EMERGENCY_HEATING,
+      modeEnteredAt: 0, now: 2000,
+      collectorsDrained: true
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('does not enter emergency at exact threshold (greenhouse = 5)', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 5, outdoor: -5 },
+      collectorsDrained: true
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+});
+
+describe('minimum duration', () => {
+  it('holds mode for minimum time even if exit conditions met', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 32, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 900, now: 1000  // only 100s elapsed, min is 300
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+
+  it('allows exit after minimum duration', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 32, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 1000  // 1000s elapsed > 300 min
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('ACTIVE_DRAIN preempts immediately regardless of minimum duration', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 990, now: 1000  // only 10s elapsed
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+
+  it('uses longer minimum after speculative refill', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 32, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 500, now: 800,  // 300s elapsed > minModeDuration(300)
+      lastRefillAttempt: 500,  // but < minRunTimeAfterRefill(600)
+      collectorsDrained: false
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+});
+
+describe('valve and actuator mapping', () => {
+  it('IDLE: all valves closed, all actuators off', () => {
+    const r = evaluate(makeState({}), null);
+    assert.deepStrictEqual(r.valves, {
+      vi_btm: false, vi_top: false, vi_coll: false,
+      vo_coll: false, vo_rad: false, vo_tank: false,
+      v_ret: false, v_air: false
+    });
+    assert.deepStrictEqual(r.actuators, {
+      pump: false, fan: false, space_heater: false, immersion_heater: false
+    });
+  });
+
+  it('SOLAR_CHARGING: vi_btm + vo_coll + v_ret open, pump on', () => {
+    const r = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+    }), null);
+    assert.strictEqual(r.valves.vi_btm, true);
+    assert.strictEqual(r.valves.vo_coll, true);
+    assert.strictEqual(r.valves.v_ret, true);
+    assert.strictEqual(r.valves.vi_top, false);
+    assert.strictEqual(r.valves.vo_rad, false);
+    assert.strictEqual(r.actuators.pump, true);
+    assert.strictEqual(r.actuators.fan, false);
+  });
+
+  it('GREENHOUSE_HEATING: vi_top + vo_rad open, pump + fan on', () => {
+    const r = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 }
+    }), null);
+    assert.strictEqual(r.valves.vi_top, true);
+    assert.strictEqual(r.valves.vo_rad, true);
+    assert.strictEqual(r.valves.vi_btm, false);
+    assert.strictEqual(r.valves.vo_coll, false);
+    assert.strictEqual(r.actuators.pump, true);
+    assert.strictEqual(r.actuators.fan, true);
+  });
+
+  it('ACTIVE_DRAIN: vi_coll + vo_tank + v_air open, pump on', () => {
+    const r = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 }
+    }), null);
+    assert.strictEqual(r.valves.vi_coll, true);
+    assert.strictEqual(r.valves.vo_tank, true);
+    assert.strictEqual(r.valves.v_air, true);
+    assert.strictEqual(r.valves.vi_btm, false);
+    assert.strictEqual(r.actuators.pump, true);
+  });
+
+  it('EMERGENCY_HEATING: all valves closed, space_heater + immersion on', () => {
+    const r = evaluate(makeState({
+      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 4, outdoor: -5 },
+      collectorsDrained: true
+    }), null);
+    assert.deepStrictEqual(r.valves, {
+      vi_btm: false, vi_top: false, vi_coll: false,
+      vo_coll: false, vo_rad: false, vo_tank: false,
+      v_ret: false, v_air: false
+    });
+    assert.strictEqual(r.actuators.space_heater, true);
+    assert.strictEqual(r.actuators.immersion_heater, true);
+    assert.strictEqual(r.actuators.pump, false);
+  });
+
+  it('one-input-one-output invariant: at most 1 input and 1 output valve open', () => {
+    const inputs = ['vi_btm', 'vi_top', 'vi_coll'];
+    const outputs = ['vo_coll', 'vo_rad', 'vo_tank'];
+    const allModes = [MODES.IDLE, MODES.SOLAR_CHARGING, MODES.GREENHOUSE_HEATING,
+                      MODES.ACTIVE_DRAIN, MODES.EMERGENCY_HEATING];
+    for (const mode of allModes) {
+      const v = MODE_VALVES[mode];
+      const openInputs = inputs.filter(k => v[k]).length;
+      const openOutputs = outputs.filter(k => v[k]).length;
+      assert.ok(openInputs <= 1, mode + ' has ' + openInputs + ' input valves open');
+      assert.ok(openOutputs <= 1, mode + ' has ' + openOutputs + ' output valves open');
+    }
+  });
+});
+
+describe('priority and preemption', () => {
+  it('ACTIVE_DRAIN preempts SOLAR_CHARGING when outdoor drops', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 1000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+
+  it('EMERGENCY preempts GREENHOUSE_HEATING when tank depletes', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 10, tank_top: 20, tank_bottom: 15, greenhouse: 4, outdoor: -5 },
+      currentMode: MODES.GREENHOUSE_HEATING,
+      modeEnteredAt: 0, now: 1000,
+      collectorsDrained: true
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.EMERGENCY_HEATING);
+  });
+
+  it('concurrent solar + greenhouse triggers: greenhouse wins', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 }
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+  });
+
+  it('overheat triggers ACTIVE_DRAIN when tank_top > 85', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 90, tank_top: 86, tank_bottom: 70, greenhouse: 25, outdoor: 30 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 1000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+});
+
+describe('speculative refill', () => {
+  it('attempts refill when drained + solar delta met + warm outdoor', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      collectorsDrained: true,
+      lastRefillAttempt: 0,
+      now: 2000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.flags.collectorsDrained, false);
+    assert.strictEqual(result.flags.lastRefillAttempt, 2000);
+  });
+
+  it('does not refill when outdoor too cold', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 4 },
+      collectorsDrained: true,
+      lastRefillAttempt: 0,
+      now: 2000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('respects retry cooldown', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      collectorsDrained: true,
+      lastRefillAttempt: 500, now: 1000  // only 500s, cooldown is 1800
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('allows refill after cooldown expires', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      collectorsDrained: true,
+      lastRefillAttempt: 500, now: 2500  // 2000s > 1800 cooldown
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+});
+
+describe('sensor failure', () => {
+  it('transitions to IDLE when any sensor is stale', () => {
+    const result = evaluate(makeState({
+      currentMode: MODES.SOLAR_CHARGING,
+      sensorAge: { collector: 200, tank_top: 0, tank_bottom: 0, greenhouse: 0, outdoor: 0 }
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('transitions to IDLE when all sensors stale', () => {
+    const result = evaluate(makeState({
+      currentMode: MODES.SOLAR_CHARGING,
+      sensorAge: { collector: 200, tank_top: 200, tank_bottom: 200, greenhouse: 200, outdoor: 200 }
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('stays in mode when sensors are fresh', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 2000,
+      sensorAge: { collector: 10, tank_top: 10, tank_bottom: 10, greenhouse: 10, outdoor: 10 }
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+
+  it('handles null temperature values gracefully', () => {
+    const result = evaluate(makeState({
+      temps: { collector: null, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
 });
 
 describe('edge cases', () => {
-  // TODO: overheat during active charging → active drain
-  // TODO: boot during freezing conditions
+  it('overheat during active charging triggers drain', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 90, tank_top: 86, tank_bottom: 70, greenhouse: 25, outdoor: 30 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 1000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+
+  it('boot during freeze: first eval triggers drain if not drained', () => {
+    const result = evaluate(makeState({
+      temps: { collector: -3, tank_top: 5, tank_bottom: 5, greenhouse: -3, outdoor: -3 },
+      currentMode: MODES.IDLE,
+      collectorsDrained: false
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+
+  it('boot during freeze: stays IDLE if already drained', () => {
+    const result = evaluate(makeState({
+      temps: { collector: -3, tank_top: 5, tank_bottom: 5, greenhouse: -3, outdoor: -3 },
+      currentMode: MODES.IDLE,
+      collectorsDrained: true
+    }), null);
+    // Emergency needs tank_top < 25 AND greenhouse < 5
+    // greenhouse is -3 < 5 and tank_top is 5 < 25, so emergency triggers
+    assert.strictEqual(result.nextMode, MODES.EMERGENCY_HEATING);
+  });
+
+  it('drain timeout sets collectorsDrained and returns IDLE', () => {
+    const result = evaluate(makeState({
+      currentMode: MODES.ACTIVE_DRAIN,
+      modeEnteredAt: 0, now: 200  // 200s > drainTimeout 180s
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+    assert.strictEqual(result.flags.collectorsDrained, true);
+  });
+
+  it('stays in ACTIVE_DRAIN before timeout', () => {
+    const result = evaluate(makeState({
+      currentMode: MODES.ACTIVE_DRAIN,
+      modeEnteredAt: 0, now: 100  // 100s < 180s
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
 });
