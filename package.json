@@ -1,0 +1,15 @@
+{
+  "name": "greenhouse-solar-heater",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Solar thermal greenhouse heating system — specs, simulation, and tools",
+  "scripts": {
+    "test": "node tests/control-logic.test.js && node tests/simulation/simulation.test.js && npx playwright test",
+    "test:unit": "node tests/control-logic.test.js && node tests/simulation/simulation.test.js",
+    "test:e2e": "npx playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "serve": "^14.2.6"
+  }
+}
