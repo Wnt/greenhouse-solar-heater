@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Solar thermal greenhouse heating system design for Southwest Finland. This is a **specification repository** — no software to build, test, or run. All files are documentation, diagrams, and hardware reference photos.
+Solar thermal greenhouse heating system for Southwest Finland. The repo contains system specifications, Shelly control scripts, interactive browser-based simulators (playground), a Shelly platform linter, and documentation/diagrams.
+
+## Mandatory: Keep CLAUDE.md Up to Date
+
+**Before finishing any work in this repo, review this file and update it if your changes affect the project structure, file relationships, conventions, commands, or workflows described here.** This ensures CLAUDE.md remains an accurate guide for future sessions. If you added new directories, scripts, tools, tests, CI workflows, or conventions — document them here.
 
 ## Source of Truth
 
@@ -16,10 +20,18 @@ When making changes, **update system.yaml first**, then propagate to affected do
 
 - `system.yaml` → authoritative specs (heights, valve states, modes, components)
 - `docs/design.md` → prose explanation of the YAML, for human review
+- `docs/ideas/` → idea specs and implementation plans (thermal sim, hydraulic playground, linter)
+- `docs/superpowers/specs/` → detailed design specs (Shelly control software, testing strategy)
 - `diagrams/*.svg` → hand-authored SVG with `data-` attributes mapping to YAML values
 - `diagrams/*.mmd` → Mermaid control logic (state machines, sequences)
 - `construction/` → physical build instructions
 - `existing-hardware/` → reference photos of owned components
+- `scripts/` → Shelly device scripts and deployment tooling
+- `tools/shelly-lint/` → standalone Shelly platform conformance linter (CLI)
+- `playground/` → interactive browser-based simulators and linter UI
+- `tests/` → unit, simulation, and e2e tests
+- `.github/workflows/` → CI (GitHub Pages deploy, Shelly lint)
+- `IDEAS.md` → raw ideas / wishlist
 
 ## Documentation Formats
 
@@ -34,6 +46,25 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - **Valve manifold**: 8 motorized on/off DN15 valves in input/output manifolds around a single pump. Three input valves (VI-btm, VI-top, VI-coll) and three output valves (VO-coll, VO-rad, VO-tank) plus two at collector top (V_ret, V_air).
 - **Three operating modes**: Solar Charging (Mode 1), Greenhouse Heating (Mode 2), Active Drain (Mode 3). Each mode opens a specific subset of valves — see the `modes` section in system.yaml.
 - **Safety rule**: Always stop pump BEFORE switching valves.
+
+## Shelly Control Scripts
+
+The `scripts/` directory contains the actual device scripts deployed to Shelly hardware:
+
+- `scripts/control-logic.js` — Pure decision logic (ES5-compatible). Exports an `evaluate(state, config)` function with no side effects and no Shelly API calls. This is the testable core.
+- `scripts/control.js` — Shelly shell script that handles timers, RPC, relays, KVS, sensors. Imports `control-logic.js` (concatenated at deploy time).
+- `scripts/deploy.sh` — Deploys scripts to the Shelly Pro 4PM via HTTP RPC. Reads device IPs from `devices.conf`.
+- `scripts/devices.conf` — DHCP-reserved IP addresses for all Shelly devices.
+
+**Shelly scripting constraints**: Scripts must use ES5-compatible JavaScript — no `const`/`let`, no arrow functions, no destructuring, no template literals, no ES6 classes. The linter enforces these rules.
+
+## Shelly Linter
+
+Two implementations of the platform conformance linter exist:
+
+- **CLI tool**: `tools/shelly-lint/` — standalone Node.js CLI (`node tools/shelly-lint/bin/shelly-lint.js`). Uses Acorn for AST parsing. Has its own `package.json` with acorn and js-yaml dependencies.
+- **Browser UI**: `playground/linter.html` + `playground/js/linter.js` — interactive linter in the playground, using vendored Acorn.
+- **CI**: `.github/workflows/lint-shelly.yml` runs the CLI linter on push/PR when `scripts/` or `tools/shelly-lint/` files change.
 
 ## SVG Diagram Conventions
 
@@ -50,6 +81,13 @@ Height scales in SVGs are approximate — `system-height-layout.svg` is the most
 ## Playground Architecture
 
 The `playground/` directory contains interactive browser-based simulators (thermal, hydraulic) and a Shelly script linter. These are static HTML files using ES modules with `<script type="importmap">`.
+
+- `playground/index.html` — landing page linking to all playground tools
+- `playground/thermal.html` — thermal simulation (2D + optional 3D view)
+- `playground/hydraulic.html` — hydraulic simulation (water level, air venting)
+- `playground/linter.html` — Shelly script linter UI
+- `playground/js/` — ES modules: physics, control, hydraulics, UI, yaml-loader, scene3d, linter
+- `playground/css/style.css` — shared styles
 
 ### Vendored Dependencies
 
@@ -74,9 +112,20 @@ npm run test:unit     # unit + simulation tests only (fast, no browser)
 npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 ```
 
+### Test Structure
+
+- `tests/control-logic.test.js` — unit tests for the pure control logic (`scripts/control-logic.js`)
+- `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
+- `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
+
 ### Test Setup Notes
 
 - **Playwright version**: Must match the cached Chromium browser revision. Currently `@playwright/test@1.56.0` matches `chromium-1194`. If you see "browser not found" errors, check `~/.cache/ms-playwright/` for available revisions and install the matching Playwright version.
 - **Static server**: Tests use `npx serve` on port 3210 to serve the playground. The Playwright config auto-starts this server.
 - **No `-s` flag on serve**: Do NOT use `serve -s` (SPA mode) — it breaks direct HTML file access by redirecting all routes.
 - **E2e tests exercise the 3D view** when Three.js loads successfully (vendored locally). Individual test timeouts are 30s to accommodate WebGL initialization overhead.
+
+## CI / GitHub Actions
+
+- `.github/workflows/deploy-pages.yml` — deploys playground to GitHub Pages on push to main/master
+- `.github/workflows/lint-shelly.yml` — runs Shelly linter on push/PR when scripts or linter files change
