@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hydraulic Simulation — Greenhouse Solar Heater</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "js-yaml": "https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/+esm"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="page-header">
+    <h1>Greenhouse Solar Heater</h1>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="thermal.html">Thermal Sim</a>
+      <a href="hydraulic.html" class="active">Hydraulic Sim</a>
+      <a href="linter.html">Shelly Linter</a>
+    </nav>
+  </header>
+
+  <div class="container">
+    <!-- Sim controls -->
+    <div class="sim-bar">
+      <button id="btn-play" class="primary">Start</button>
+      <button id="btn-pause">Pause</button>
+      <button id="btn-reset">Reset</button>
+      <span style="color: var(--text-muted); font-size: 13px;">Time:</span>
+      <span id="sim-time" style="font-family: monospace; color: var(--text-bright);">00:00:00</span>
+      <span style="color: var(--text-muted); font-size: 13px;">Mode:</span>
+      <select id="mode-select" style="min-width: 150px;">
+        <option value="idle">Idle</option>
+        <option value="solar_charging">Solar Charging</option>
+        <option value="greenhouse_heating">Greenhouse Heating</option>
+        <option value="active_drain">Active Drain</option>
+      </select>
+    </div>
+
+    <!-- Input controls -->
+    <div class="card">
+      <h2>Hydraulic Parameters</h2>
+      <div class="controls-grid" id="controls"></div>
+      <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <button id="btn-inject-air" class="primary">Inject Air</button>
+        <select id="air-location">
+          <option value="collector_top">At collector top</option>
+          <option value="pipe">In pipes</option>
+          <option value="tank">In tank</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="split-layout">
+      <!-- Cross-section visualization -->
+      <div class="card">
+        <h2>System Cross-Section</h2>
+        <div id="cross-section" class="svg-container"></div>
+      </div>
+
+      <!-- Volume accounting -->
+      <div>
+        <div class="card">
+          <h2>Volume Accounting</h2>
+          <table class="status-table">
+            <thead><tr><th>Component</th><th>Water (L)</th><th>Air/Gas (L)</th></tr></thead>
+            <tbody id="volume-table"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h2>Levels</h2>
+          <table class="status-table">
+            <thead><tr><th>Measurement</th><th>Value</th></tr></thead>
+            <tbody id="level-table"></tbody>
+          </table>
+        </div>
+        <div id="warnings-container"></div>
+      </div>
+    </div>
+
+    <!-- Preset scenarios -->
+    <div class="card">
+      <h2>Preset Scenarios</h2>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="preset" data-scenario="normal">Normal Operation</button>
+        <button class="preset" data-scenario="drain">Drain Cycle</button>
+        <button class="preset" data-scenario="air-inject">Air Injection Test</button>
+        <button class="preset" data-scenario="low-water">Low Water</button>
+        <button class="preset" data-scenario="refill">Refill After Drain</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { HydraulicModel } from './js/hydraulics.js';
+    import { createSlider, formatTime } from './js/ui.js';
+
+    let model = new HydraulicModel();
+    let running = false;
+    let lastFrame = 0;
+    let simSpeed = 5;
+    const DT = 0.5;
+
+    const params = {
+      total_water: 320,
+      reservoir_capacity: 30,
+      air_volume: 2,
+      sim_speed: 5,
+    };
+
+    function init() {
+      setupControls();
+      buildCrossSection();
+      resetSim();
+      updateDisplay(model.getState());
+    }
+
+    function setupControls() {
+      const el = document.getElementById('controls');
+      const sliders = [
+        { id: 'total-water', label: 'Total Water', min: 200, max: 370, step: 1, value: params.total_water, unit: 'L', key: 'total_water' },
+        { id: 'reservoir-cap', label: 'Reservoir Capacity', min: 20, max: 50, step: 1, value: params.reservoir_capacity, unit: 'L', key: 'reservoir_capacity' },
+        { id: 'air-vol', label: 'Air to Inject', min: 0, max: 20, step: 0.5, value: params.air_volume, unit: 'L', key: 'air_volume' },
+        { id: 'speed', label: 'Sim Speed', min: 1, max: 20, step: 1, value: params.sim_speed, unit: '×', key: 'sim_speed' },
+      ];
+
+      for (const s of sliders) {
+        createSlider(el, {
+          ...s,
+          onChange: (v) => {
+            params[s.key] = v;
+            if (s.key === 'sim_speed') simSpeed = v;
+            if (s.key === 'total_water') {
+              model.setTotalWater(v);
+              updateDisplay(model.getState());
+            }
+            if (s.key === 'reservoir_capacity') {
+              model.p.reservoir_capacity = v;
+              model.reset({ total_water: params.total_water });
+              updateDisplay(model.getState());
+            }
+          },
+        });
+      }
+    }
+
+    function resetSim() {
+      model = new HydraulicModel({ reservoir_capacity: params.reservoir_capacity });
+      model.reset({ total_water: params.total_water });
+      running = false;
+      lastFrame = 0;
+      document.getElementById('btn-play').textContent = 'Start';
+    }
+
+    function simLoop(timestamp) {
+      if (!running) return;
+      if (!lastFrame) lastFrame = timestamp;
+      const realDt = (timestamp - lastFrame) / 1000;
+      lastFrame = timestamp;
+
+      const simDt = realDt * simSpeed;
+      const steps = Math.min(Math.ceil(simDt / DT), 20);
+      const mode = document.getElementById('mode-select').value;
+      const pumpOn = mode !== 'idle';
+
+      for (let i = 0; i < steps; i++) {
+        model.step(DT, mode, pumpOn);
+      }
+
+      updateDisplay(model.getState());
+      requestAnimationFrame(simLoop);
+    }
+
+    function updateDisplay(state) {
+      document.getElementById('sim-time').textContent = formatTime(state.simTime);
+
+      // Volume table
+      const vt = document.getElementById('volume-table');
+      vt.innerHTML = [
+        ['Tank', state.tank_water.toFixed(1), state.tank_gas.toFixed(1)],
+        ['Reservoir', state.reservoir_water.toFixed(1), '—'],
+        ['Collectors', state.collector_water.toFixed(1), state.collector_air.toFixed(1)],
+        ['Pipes', state.pipe_water.toFixed(1), state.system_air.toFixed(1)],
+        ['<strong>Total</strong>',
+          '<strong>' + (state.tank_water + state.reservoir_water + state.collector_water + state.pipe_water).toFixed(1) + '</strong>',
+          '<strong>' + (state.tank_gas + state.collector_air + state.system_air).toFixed(1) + '</strong>'],
+      ].map(([c, w, a]) => `<tr><td>${c}</td><td class="val">${w}</td><td class="val">${a}</td></tr>`).join('');
+
+      // Level table
+      const lt = document.getElementById('level-table');
+      lt.innerHTML = [
+        ['Tank water level', state.tank_water_level.toFixed(1) + ' cm'],
+        ['Reservoir level', state.reservoir_water_level.toFixed(1) + ' cm'],
+        ['Pump primed', state.pump_primed ? '<span class="status-on">YES</span>' : '<span class="lint-error">NO</span>'],
+      ].map(([n, v]) => `<tr><td>${n}</td><td class="val">${v}</td></tr>`).join('');
+
+      // Warnings
+      const wc = document.getElementById('warnings-container');
+      const warnings = model.getWarnings();
+      wc.innerHTML = warnings.map(w => {
+        const cls = w.level === 'danger' ? 'danger-box' : 'warning-box';
+        return `<div class="${cls}">${w.msg}</div>`;
+      }).join('');
+
+      updateCrossSection(state);
+    }
+
+    function buildCrossSection() {
+      const el = document.getElementById('cross-section');
+      el.innerHTML = `
+        <svg viewBox="0 0 600 380" xmlns="http://www.w3.org/2000/svg" style="font-family: -apple-system, sans-serif;">
+          <rect width="600" height="380" fill="#0d1117"/>
+
+          <!-- Height scale -->
+          <g fill="#8b949e" font-size="9">
+            <text x="15" y="340">0cm</text>
+            <text x="15" y="250">100cm</text>
+            <text x="15" y="160">200cm</text>
+            <text x="15" y="70">300cm</text>
+            <line x1="35" y1="345" x2="35" y2="60" stroke="#30363d" stroke-width="0.5" stroke-dasharray="2,4"/>
+          </g>
+
+          <!-- Tank outline -->
+          <rect x="200" y="55" width="100" height="285" rx="4" fill="none" stroke="#42a5f5" stroke-width="2"/>
+          <text x="250" y="48" fill="#42a5f5" font-size="11" text-anchor="middle">Tank (300L)</text>
+
+          <!-- Tank water fill -->
+          <rect id="h-tank-water" x="202" y="62" width="96" height="276" rx="3" fill="#1565c0" opacity="0.6"/>
+          <!-- Tank gas space -->
+          <rect id="h-tank-gas" x="202" y="55" width="96" height="10" rx="3" fill="#90a4ae" opacity="0.3"/>
+
+          <!-- Dip tube inside tank -->
+          <line x1="260" y1="57" x2="260" y2="340" stroke="#ef5350" stroke-width="1.5" stroke-dasharray="3,2"/>
+          <text x="270" y="68" fill="#ef5350" font-size="8">dip tube (197cm)</text>
+
+          <!-- Reservoir -->
+          <rect x="220" y="18" width="60" height="35" rx="3" fill="none" stroke="#42a5f5" stroke-width="1.5"/>
+          <text x="250" y="14" fill="#90caf9" font-size="10" text-anchor="middle">Reservoir</text>
+          <rect id="h-res-water" x="222" y="28" width="56" height="23" rx="2" fill="#1565c0" opacity="0.7"/>
+          <!-- Open top marker -->
+          <path d="M225,18 L275,18" stroke="#76ff03" stroke-width="1" stroke-dasharray="3,2"/>
+          <text x="283" y="22" fill="#76ff03" font-size="8">open vent</text>
+
+          <!-- Connection pipe: reservoir to tank -->
+          <line x1="250" y1="53" x2="250" y2="57" stroke="#42a5f5" stroke-width="2"/>
+
+          <!-- Collectors -->
+          <rect x="50" y="55" width="40" height="250" rx="3" fill="none" stroke="#f9a825" stroke-width="2"/>
+          <text x="70" y="48" fill="#f9a825" font-size="10" text-anchor="middle">Collectors</text>
+          <!-- Collector water -->
+          <rect id="h-coll-water" x="52" y="200" width="36" height="103" rx="2" fill="#42a5f5" opacity="0.5"/>
+          <!-- Collector air -->
+          <rect id="h-coll-air" x="52" y="57" width="36" height="143" rx="2" fill="#90a4ae" opacity="0.2"/>
+
+          <!-- Air vent at collector top -->
+          <circle cx="70" cy="50" r="4" fill="none" stroke="#ff9800" stroke-width="1"/>
+          <text x="80" y="53" fill="#ff9800" font-size="8">air vent</text>
+
+          <!-- Pipes -->
+          <path d="M90,300 L200,300" stroke="#42a5f5" stroke-width="2" fill="none" opacity="0.5"/>
+          <path d="M90,80 L120,80 L120,20 L220,20" stroke="#ef5350" stroke-width="2" fill="none" opacity="0.5"/>
+
+          <!-- Pump -->
+          <circle x="140" cy="310" cx="145" r="12" fill="#21262d" stroke="#e040fb" stroke-width="1.5"/>
+          <text x="145" y="314" fill="#e040fb" font-size="9" text-anchor="middle">P</text>
+
+          <!-- Radiator (small) -->
+          <rect x="400" y="200" width="50" height="30" rx="2" fill="none" stroke="#ef5350" stroke-width="1"/>
+          <text x="425" y="220" fill="#ef5350" font-size="8" text-anchor="middle">Rad</text>
+          <path d="M300,250 L400,215" stroke="#ef5350" stroke-width="1.5" fill="none" opacity="0.3" stroke-dasharray="4,2"/>
+
+          <!-- Volume labels -->
+          <text id="h-tank-vol" x="250" y="200" fill="#fff" font-size="11" text-anchor="middle">--L</text>
+          <text id="h-res-vol" x="250" y="42" fill="#fff" font-size="9" text-anchor="middle">--L</text>
+          <text id="h-coll-vol" x="70" y="280" fill="#fff" font-size="9" text-anchor="middle">--L</text>
+
+          <!-- Danger overlays -->
+          <text id="h-overflow-warn" x="310" y="30" fill="#ef5350" font-size="10" font-weight="bold" opacity="0"></text>
+          <text id="h-prime-warn" x="145" y="340" fill="#ef5350" font-size="10" font-weight="bold" opacity="0">NO PRIME</text>
+        </svg>
+      `;
+    }
+
+    function updateCrossSection(state) {
+      const tankH = 285; // pixel height for tank
+      const tankY = 55;  // top of tank in SVG
+
+      // Tank water level (fill from bottom)
+      const tankFillFrac = state.tank_water / 300;
+      const tankFillH = tankFillFrac * tankH;
+      setAttr('h-tank-water', { y: tankY + tankH - tankFillH, height: tankFillH });
+
+      // Tank gas space
+      const gasFrac = state.tank_gas / 300;
+      const gasH = Math.max(gasFrac * tankH, 0);
+      setAttr('h-tank-gas', { y: tankY + 2, height: gasH });
+
+      // Reservoir water
+      const resFrac = state.reservoir_water / model.p.reservoir_capacity;
+      const resH = Math.max(resFrac * 23, 0);
+      setAttr('h-res-water', { y: 51 - resH, height: resH });
+
+      // Collector water (fill from bottom)
+      const collFrac = state.collector_water / model.p.collector_volume;
+      const collH = collFrac * 248;
+      setAttr('h-coll-water', { y: 303 - collH, height: collH });
+      // Collector air
+      const airFrac = state.collector_air / model.p.collector_volume;
+      const airH = airFrac * 248;
+      setAttr('h-coll-air', { y: 57, height: airH });
+
+      // Volume labels
+      setText('h-tank-vol', state.tank_water.toFixed(0) + 'L');
+      setText('h-res-vol', state.reservoir_water.toFixed(1) + 'L');
+      setText('h-coll-vol', state.collector_water.toFixed(1) + 'L');
+
+      // Warning indicators
+      setAttr('h-overflow-warn', { opacity: state.reservoir_overflow ? 1 : 0 });
+      if (state.reservoir_overflow) setText('h-overflow-warn', 'OVERFLOW!');
+      setAttr('h-prime-warn', { opacity: state.pump_primed ? 0 : 1 });
+    }
+
+    function setAttr(id, attrs) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    }
+    function setText(id, text) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    }
+
+    // Buttons
+    document.getElementById('btn-play').addEventListener('click', () => {
+      running = !running;
+      document.getElementById('btn-play').textContent = running ? 'Running...' : 'Start';
+      if (running) { lastFrame = 0; requestAnimationFrame(simLoop); }
+    });
+    document.getElementById('btn-pause').addEventListener('click', () => {
+      running = false;
+      document.getElementById('btn-play').textContent = 'Start';
+    });
+    document.getElementById('btn-reset').addEventListener('click', () => { resetSim(); updateDisplay(model.getState()); });
+
+    document.getElementById('btn-inject-air').addEventListener('click', () => {
+      const loc = document.getElementById('air-location').value;
+      model.injectAir(params.air_volume, loc);
+      updateDisplay(model.getState());
+    });
+
+    // Presets
+    document.querySelectorAll('.preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const scenario = btn.dataset.scenario;
+        switch (scenario) {
+          case 'normal':
+            params.total_water = 320;
+            model.reset({ total_water: 320, collector_water: 8 });
+            document.getElementById('mode-select').value = 'solar_charging';
+            break;
+          case 'drain':
+            params.total_water = 320;
+            model.reset({ total_water: 320, collector_water: 8 });
+            document.getElementById('mode-select').value = 'active_drain';
+            break;
+          case 'air-inject':
+            params.total_water = 320;
+            model.reset({ total_water: 320, collector_water: 8 });
+            model.injectAir(5, 'collector_top');
+            document.getElementById('mode-select').value = 'solar_charging';
+            break;
+          case 'low-water':
+            params.total_water = 260;
+            model.reset({ total_water: 260, collector_water: 8 });
+            document.getElementById('mode-select').value = 'idle';
+            break;
+          case 'refill':
+            model.reset({ total_water: 320, collector_water: 0, collector_air: 8 });
+            document.getElementById('mode-select').value = 'solar_charging';
+            break;
+        }
+        // Update slider display
+        const slider = document.getElementById('total-water');
+        if (slider) { slider.value = params.total_water; document.getElementById('total-water-val').textContent = params.total_water + 'L'; }
+        updateDisplay(model.getState());
+      });
+    });
+
+    init();
+  </script>
+</body>
+</html>

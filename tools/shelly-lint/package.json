@@ -1,0 +1,16 @@
+{
+  "name": "shelly-lint",
+  "version": "1.0.0",
+  "description": "Shelly Gen2+ platform conformance linter",
+  "type": "module",
+  "bin": {
+    "shelly-lint": "bin/shelly-lint.js"
+  },
+  "scripts": {
+    "lint": "node bin/shelly-lint.js"
+  },
+  "dependencies": {
+    "acorn": "^8.11.3",
+    "js-yaml": "^4.1.0"
+  }
+}

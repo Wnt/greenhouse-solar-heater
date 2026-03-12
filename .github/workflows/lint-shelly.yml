@@ -1,0 +1,25 @@
+name: Lint Shelly Scripts
+
+on:
+  push:
+    paths:
+      - 'scripts/**'
+      - 'tools/shelly-lint/**'
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'tools/shelly-lint/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install linter dependencies
+        working-directory: tools/shelly-lint
+        run: npm install
+      - name: Lint Shelly scripts
+        run: node tools/shelly-lint/bin/shelly-lint.js scripts/control-logic.js scripts/control.js --config system.yaml --format github

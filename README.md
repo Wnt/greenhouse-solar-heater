@@ -10,12 +10,28 @@ An open (unpressurized) solar thermal system that:
 - Uses active pump-driven drainback for freeze protection (spring/autumn nightly drain cycles)
 - Controlled by Shelly devices with DS18B20 temperature sensors
 
+## Interactive Playground
+
+Web-based tools for simulating and validating the system, deployed via GitHub Pages.
+
+| Tool | Description |
+|------|-------------|
+| [Thermal Simulation](playground/thermal.html) | Set outdoor temp, irradiance, tank state — watch the control system respond in real time |
+| [Hydraulic Simulation](playground/hydraulic.html) | Explore communicating vessels, reservoir sizing, drainback dynamics, and air management |
+| [Shelly Linter](playground/linter.html) | Static analysis for Shelly scripts — catches unsupported syntax and resource limit violations |
+
+All tools run entirely client-side (no backend), load `system.yaml` as configuration, and use ES modules with no build step.
+
 ## Project Files
 
 | File | Purpose |
 |------|---------|
 | `system.yaml` | **Source of truth** — all component specs, heights, valve states, operating modes |
 | `docs/design.md` | Design specification — architecture, modes, safety rules |
+| `playground/` | Interactive web tools — thermal sim, hydraulic sim, Shelly linter |
+| `tools/shelly-lint/` | CLI linter for Shelly scripts (Node.js) |
+| `scripts/` | Shelly control software — control logic + shell integration |
+| `tests/` | Unit tests and thermal simulation scenarios |
 | `diagrams/system-topology.svg` | SVG pipe & valve topology — full manifold schematic |
 | `diagrams/system-height-layout.svg` | SVG physical layout — components at real-world heights |
 | `diagrams/solar-charging-flow.svg` | SVG flow loop — Mode 1: solar charging |

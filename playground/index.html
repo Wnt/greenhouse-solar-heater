@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Greenhouse Solar Heater — Playground</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="page-header">
+    <h1>Greenhouse Solar Heater</h1>
+    <nav>
+      <a href="index.html" class="active">Home</a>
+      <a href="thermal.html">Thermal Sim</a>
+      <a href="hydraulic.html">Hydraulic Sim</a>
+      <a href="linter.html">Shelly Linter</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <h1>Solar Thermal Greenhouse Heating</h1>
+    <p>Interactive tools for designing and validating an unpressurized solar heating system in Southwest Finland. All driven by <code>system.yaml</code> as the single source of truth.</p>
+  </div>
+
+  <div class="tools-grid">
+    <a href="thermal.html" class="tool-card">
+      <div class="icon">&#9728;&#65039;</div>
+      <h2>Thermal Simulation</h2>
+      <p>Set environmental conditions — outdoor temperature, solar irradiance, tank state — and watch the control system respond in real time. Validate mode transitions and heating performance.</p>
+      <span class="tag tag-sim">Simulator</span>
+    </a>
+
+    <a href="hydraulic.html" class="tool-card">
+      <div class="icon">&#128167;</div>
+      <h2>Hydraulic Simulation</h2>
+      <p>Explore communicating vessels physics, reservoir sizing, drainback dynamics, and air management. Inject air, change water levels, run drain cycles.</p>
+      <span class="tag tag-sim">Simulator</span>
+    </a>
+
+    <a href="linter.html" class="tool-card">
+      <div class="icon">&#128270;</div>
+      <h2>Shelly Platform Linter</h2>
+      <p>Static analysis for Shelly Gen2+ scripts. Catches unsupported syntax, resource limit violations, and safety rule breaches before deployment.</p>
+      <span class="tag tag-tool">Tool</span>
+    </a>
+  </div>
+
+  <div class="container" style="margin-top: 40px;">
+    <div class="card">
+      <h2>About This Project</h2>
+      <p style="color: var(--text-muted); font-size: 14px; line-height: 1.7;">
+        This system heats a greenhouse using flat-plate solar collectors, a 300L Jäspi tank, and a Wilo circulation pump.
+        Eight motorized valves in a manifold topology allow three operating modes: <strong>Solar Charging</strong> (collectors → tank),
+        <strong>Greenhouse Heating</strong> (tank → radiator), and <strong>Active Drain</strong> (freeze protection).
+        Control runs on Shelly Pro devices with DS18B20 temperature sensors.
+        The system is unpressurized — an open reservoir on top of the tank acts as air separator, expansion buffer, and drainback volume.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

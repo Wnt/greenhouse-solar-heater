@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thermal Simulation — Greenhouse Solar Heater</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "js-yaml": "https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/+esm"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="page-header">
+    <h1>Greenhouse Solar Heater</h1>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="thermal.html" class="active">Thermal Sim</a>
+      <a href="hydraulic.html">Hydraulic Sim</a>
+      <a href="linter.html">Shelly Linter</a>
+    </nav>
+  </header>
+
+  <div class="container">
+    <!-- Sim controls bar -->
+    <div class="sim-bar">
+      <button id="btn-play" class="primary">Start</button>
+      <button id="btn-pause">Pause</button>
+      <button id="btn-reset">Reset</button>
+      <span style="color: var(--text-muted); font-size: 13px;">Time:</span>
+      <span id="sim-time" style="font-family: monospace; color: var(--text-bright);">00:00:00</span>
+      <span style="color: var(--text-muted); font-size: 13px;">Mode:</span>
+      <span id="sim-mode" class="mode-badge mode-idle">idle</span>
+      <span id="sim-transition" style="font-size: 12px; color: var(--text-muted); margin-left: auto;"></span>
+    </div>
+
+    <!-- Input controls -->
+    <div class="card">
+      <h2>Environment &amp; Initial Conditions</h2>
+      <div class="controls-grid" id="controls"></div>
+    </div>
+
+    <div class="split-layout">
+      <!-- System schematic -->
+      <div class="card">
+        <h2>System Schematic</h2>
+        <div id="schematic" class="svg-container"></div>
+      </div>
+
+      <!-- Status tables -->
+      <div>
+        <div class="card">
+          <h2>Temperatures</h2>
+          <table class="status-table">
+            <thead><tr><th>Sensor</th><th>Value</th></tr></thead>
+            <tbody id="temp-table"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h2>Valve &amp; Actuator States</h2>
+          <table class="status-table">
+            <thead><tr><th>Component</th><th>State</th></tr></thead>
+            <tbody id="valve-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="card">
+      <h2>Temperature History</h2>
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Transition log -->
+    <div class="card">
+      <h2>Mode Transition Log</h2>
+      <div id="transition-log" style="font-family: monospace; font-size: 12px; max-height: 200px; overflow: auto; color: var(--text-muted);"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { loadSystemYaml } from './js/yaml-loader.js';
+    import { ThermalModel } from './js/physics.js';
+    import { ControlStateMachine } from './js/control.js';
+    import { createSlider, formatTime, TimeSeriesStore, drawChart, modeBadgeClass } from './js/ui.js';
+
+    // ── State ──
+    let config = null;
+    let model = null;
+    let controller = null;
+    let store = new TimeSeriesStore(600);
+    let running = false;
+    let lastFrame = 0;
+    let simSpeed = 10;
+    const DT = 1; // 1-second physics timestep
+
+    // ── Input parameters ──
+    const params = {
+      t_outdoor: 5,
+      irradiance: 500,
+      t_tank_top: 40,
+      t_tank_bottom: 35,
+      t_greenhouse: 8,
+      sim_speed: 10,
+    };
+
+    // ── Init ──
+    async function init() {
+      try {
+        config = await loadSystemYaml('../system.yaml');
+      } catch {
+        // Fallback: use embedded defaults if YAML not available
+        config = buildFallbackConfig();
+      }
+
+      model = new ThermalModel();
+      controller = new ControlStateMachine(config.modes);
+
+      setupControls();
+      resetSim();
+      buildSchematic();
+      render();
+    }
+
+    function buildFallbackConfig() {
+      return {
+        modes: {
+          idle: { description: 'Default', valve_states: { vi_btm: 'CLOSED', vi_top: 'CLOSED', vi_coll: 'CLOSED', vo_coll: 'CLOSED', vo_rad: 'CLOSED', vo_tank: 'CLOSED', v_ret: 'CLOSED', v_air: 'CLOSED' }, actuators: { pump: 'OFF', fan: 'OFF' } },
+          solar_charging: { description: 'Solar charging', trigger: 't_collector > t_tank_bottom + 7', exit: 't_collector < t_tank_bottom + 3', valve_states: { vi_btm: 'OPEN', vi_top: 'CLOSED', vi_coll: 'CLOSED', vo_coll: 'OPEN', vo_rad: 'CLOSED', vo_tank: 'CLOSED', v_ret: 'OPEN', v_air: 'CLOSED' }, actuators: { pump: 'ON', fan: 'OFF' } },
+          greenhouse_heating: { description: 'Greenhouse heating', trigger: 't_greenhouse < 10 AND t_tank_top > 25', exit: 't_greenhouse > 12', valve_states: { vi_btm: 'CLOSED', vi_top: 'OPEN', vi_coll: 'CLOSED', vo_coll: 'CLOSED', vo_rad: 'OPEN', vo_tank: 'CLOSED', v_ret: 'CLOSED', v_air: 'CLOSED' }, actuators: { pump: 'ON', fan: 'ON' } },
+          active_drain: { description: 'Active drain', trigger: 't_outdoor < 2', exit: null, valve_states: { vi_btm: 'CLOSED', vi_top: 'CLOSED', vi_coll: 'OPEN', vo_coll: 'CLOSED', vo_rad: 'CLOSED', vo_tank: 'OPEN', v_ret: 'CLOSED', v_air: 'OPEN' }, actuators: { pump: 'ON', fan: 'OFF' } },
+          overheat_drain: { description: 'Overheat drain', trigger: 't_tank_top > 85', exit: null, valve_states: { vi_btm: 'CLOSED', vi_top: 'CLOSED', vi_coll: 'OPEN', vo_coll: 'CLOSED', vo_rad: 'CLOSED', vo_tank: 'OPEN', v_ret: 'CLOSED', v_air: 'OPEN' }, actuators: { pump: 'ON', fan: 'OFF' } },
+          emergency_heating: { description: 'Emergency', trigger: 't_greenhouse < 5 AND t_tank_top < 25', exit: 't_greenhouse > 8', valve_states: { vi_btm: 'CLOSED', vi_top: 'CLOSED', vi_coll: 'CLOSED', vo_coll: 'CLOSED', vo_rad: 'CLOSED', vo_tank: 'CLOSED', v_ret: 'CLOSED', v_air: 'CLOSED' }, actuators: { pump: 'OFF', fan: 'OFF', space_heater: 'ON' } },
+        },
+        valves: {},
+        sensors: {},
+        components: {},
+        safety: [],
+        project: { name: 'Greenhouse Solar Heater' },
+      };
+    }
+
+    function setupControls() {
+      const el = document.getElementById('controls');
+      const sliders = [
+        { id: 'outdoor', label: 'Outdoor Temp', min: -30, max: 40, step: 0.5, value: params.t_outdoor, unit: '°C', key: 't_outdoor' },
+        { id: 'irradiance', label: 'Solar Irradiance', min: 0, max: 1000, step: 10, value: params.irradiance, unit: ' W/m²', key: 'irradiance' },
+        { id: 'tank-top', label: 'Tank Top (initial)', min: 5, max: 95, step: 1, value: params.t_tank_top, unit: '°C', key: 't_tank_top' },
+        { id: 'tank-bot', label: 'Tank Bottom (initial)', min: 5, max: 95, step: 1, value: params.t_tank_bottom, unit: '°C', key: 't_tank_bottom' },
+        { id: 'greenhouse', label: 'Greenhouse (initial)', min: -10, max: 40, step: 0.5, value: params.t_greenhouse, unit: '°C', key: 't_greenhouse' },
+        { id: 'speed', label: 'Sim Speed', min: 1, max: 100, step: 1, value: params.sim_speed, unit: '×', key: 'sim_speed' },
+      ];
+
+      for (const s of sliders) {
+        createSlider(el, {
+          ...s,
+          onChange: (v) => {
+            params[s.key] = v;
+            if (s.key === 'sim_speed') simSpeed = v;
+          },
+        });
+      }
+    }
+
+    function resetSim() {
+      model.reset({
+        t_tank_top: params.t_tank_top,
+        t_tank_bottom: params.t_tank_bottom,
+        t_greenhouse: params.t_greenhouse,
+        t_outdoor: params.t_outdoor,
+        irradiance: params.irradiance,
+      });
+      controller.reset();
+      store.reset();
+      running = false;
+      lastFrame = 0;
+      document.getElementById('btn-play').textContent = 'Start';
+      updateDisplay(model.getState(), { mode: 'idle', valves: config.modes.idle.valve_states, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
+    }
+
+    // ── Simulation loop ──
+    function simLoop(timestamp) {
+      if (!running) return;
+
+      if (!lastFrame) lastFrame = timestamp;
+      const realDt = (timestamp - lastFrame) / 1000;
+      lastFrame = timestamp;
+
+      // How many physics steps this frame
+      const simDt = realDt * simSpeed;
+      const steps = Math.min(Math.ceil(simDt / DT), 50); // cap at 50 steps/frame
+
+      let result;
+      for (let i = 0; i < steps; i++) {
+        const sensors = {
+          t_collector: model.state.t_collector,
+          t_tank_top: model.state.t_tank_top,
+          t_tank_bottom: model.state.t_tank_bottom,
+          t_greenhouse: model.state.t_greenhouse,
+          t_outdoor: model.state.t_outdoor,
+        };
+
+        result = controller.evaluate(sensors, model.state.simTime);
+
+        model.step(DT, { t_outdoor: params.t_outdoor, irradiance: params.irradiance }, result.actuators, result.mode);
+
+        // Record every ~10 seconds of sim time
+        if (Math.floor(model.state.simTime) % 10 === 0) {
+          store.addPoint(model.state.simTime, {
+            t_tank_top: model.state.t_tank_top,
+            t_tank_bottom: model.state.t_tank_bottom,
+            t_collector: model.state.t_collector,
+            t_greenhouse: model.state.t_greenhouse,
+            t_outdoor: model.state.t_outdoor,
+          });
+        }
+      }
+
+      if (result) updateDisplay(model.getState(), result);
+      requestAnimationFrame(simLoop);
+    }
+
+    function updateDisplay(state, result) {
+      // Time
+      document.getElementById('sim-time').textContent = formatTime(state.simTime);
+
+      // Mode badge
+      const modeEl = document.getElementById('sim-mode');
+      modeEl.textContent = result.mode.replace(/_/g, ' ');
+      modeEl.className = modeBadgeClass(result.mode);
+
+      // Transition
+      if (result.transition) {
+        document.getElementById('sim-transition').textContent = result.transition;
+        const log = document.getElementById('transition-log');
+        log.textContent += `[${formatTime(state.simTime)}] ${result.transition}\n`;
+        log.scrollTop = log.scrollHeight;
+      }
+
+      // Temperature table
+      const tempBody = document.getElementById('temp-table');
+      const temps = [
+        ['Collector', state.t_collector],
+        ['Tank Top', state.t_tank_top],
+        ['Tank Bottom', state.t_tank_bottom],
+        ['Greenhouse', state.t_greenhouse],
+        ['Outdoor', state.t_outdoor],
+      ];
+      tempBody.innerHTML = temps.map(([name, val]) =>
+        `<tr><td>${name}</td><td class="val">${val.toFixed(1)}°C</td></tr>`
+      ).join('');
+
+      // Valve table
+      const valveBody = document.getElementById('valve-table');
+      const valveNames = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_ret', 'v_air'];
+      const actuatorNames = [['Pump', result.actuators.pump], ['Fan', result.actuators.fan], ['Space Heater', result.actuators.space_heater]];
+
+      let html = '';
+      for (const v of valveNames) {
+        const state_v = result.valves[v] || 'CLOSED';
+        const cls = state_v === 'OPEN' ? 'status-open' : 'status-closed';
+        html += `<tr><td>${v}</td><td class="val ${cls}">${state_v}</td></tr>`;
+      }
+      for (const [name, on] of actuatorNames) {
+        const cls = on ? 'status-on' : 'status-off';
+        html += `<tr><td>${name}</td><td class="val ${cls}">${on ? 'ON' : 'OFF'}</td></tr>`;
+      }
+      valveBody.innerHTML = html;
+
+      // Chart
+      drawChart(document.getElementById('chart'), store, {
+        series: ['t_tank_top', 't_tank_bottom', 't_collector', 't_greenhouse', 't_outdoor'],
+        labels: { t_tank_top: 'Tank Top', t_tank_bottom: 'Tank Bot', t_collector: 'Collector', t_greenhouse: 'Greenhouse', t_outdoor: 'Outdoor' },
+        yMin: -10,
+        yMax: 100,
+      });
+
+      // Update schematic
+      updateSchematic(result);
+    }
+
+    // ── SVG Schematic ──
+    function buildSchematic() {
+      const svg = document.getElementById('schematic');
+      svg.innerHTML = `
+        <svg viewBox="0 0 700 400" xmlns="http://www.w3.org/2000/svg" style="font-family: -apple-system, sans-serif;">
+          <!-- Background -->
+          <rect width="700" height="400" fill="#0d1117"/>
+
+          <!-- Tank -->
+          <rect id="s-tank" x="250" y="60" width="80" height="200" rx="4" fill="#1565c0" stroke="#42a5f5" stroke-width="2"/>
+          <text x="290" y="50" fill="#42a5f5" font-size="12" text-anchor="middle">Tank 300L</text>
+          <text id="s-t-top" x="290" y="100" fill="#fff" font-size="11" text-anchor="middle">--°C</text>
+          <text id="s-t-bot" x="290" y="230" fill="#fff" font-size="11" text-anchor="middle">--°C</text>
+          <!-- Stratification gradient -->
+          <defs>
+            <linearGradient id="tank-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#e53935" stop-opacity="0.6"/>
+              <stop offset="100%" stop-color="#1565c0" stop-opacity="0.6"/>
+            </linearGradient>
+          </defs>
+          <rect x="252" y="62" width="76" height="196" rx="3" fill="url(#tank-grad)"/>
+
+          <!-- Reservoir -->
+          <rect id="s-reservoir" x="260" y="15" width="60" height="35" rx="3" fill="#0d47a1" stroke="#42a5f5" stroke-width="1.5"/>
+          <text x="290" y="32" fill="#90caf9" font-size="9" text-anchor="middle">Reservoir</text>
+          <line x1="290" y1="50" x2="290" y2="60" stroke="#42a5f5" stroke-width="2" stroke-dasharray="4,2"/>
+
+          <!-- Solar Collectors -->
+          <rect id="s-coll" x="50" y="40" width="60" height="180" rx="4" fill="#f9a825" stroke="#fdd835" stroke-width="2" opacity="0.8"/>
+          <text x="80" y="30" fill="#f9a825" font-size="12" text-anchor="middle">Collectors</text>
+          <text id="s-t-coll" x="80" y="140" fill="#000" font-size="11" text-anchor="middle" font-weight="bold">--°C</text>
+
+          <!-- Sun indicator -->
+          <circle id="s-sun" cx="80" cy="15" r="10" fill="#f9a825" opacity="0.5"/>
+          <text id="s-irr" x="100" y="19" fill="#f9a825" font-size="10">-- W/m²</text>
+
+          <!-- Radiator / Greenhouse -->
+          <rect x="500" y="120" width="150" height="140" rx="6" fill="none" stroke="#76ff03" stroke-width="1.5" stroke-dasharray="6,3"/>
+          <text x="575" y="115" fill="#76ff03" font-size="12" text-anchor="middle">Greenhouse</text>
+          <rect id="s-rad" x="520" y="160" width="50" height="40" rx="3" fill="#424242" stroke="#ef5350" stroke-width="1.5"/>
+          <text x="545" y="185" fill="#ef5350" font-size="9" text-anchor="middle">Radiator</text>
+          <text id="s-t-gh" x="575" y="240" fill="#76ff03" font-size="11" text-anchor="middle">--°C</text>
+
+          <!-- Pump -->
+          <circle id="s-pump" cx="200" cy="300" r="16" fill="#21262d" stroke="#e040fb" stroke-width="2"/>
+          <text x="200" y="304" fill="#e040fb" font-size="10" text-anchor="middle">P</text>
+
+          <!-- Pipes: Solar Charging path -->
+          <g id="pipe-solar" opacity="0.3">
+            <path d="M250,260 L200,260 L200,284" stroke="#42a5f5" stroke-width="3" fill="none"/>
+            <text x="225" y="255" fill="#42a5f5" font-size="8">VI-btm</text>
+            <path d="M200,316 L200,340 L80,340 L80,220" stroke="#42a5f5" stroke-width="3" fill="none"/>
+            <text x="140" y="355" fill="#42a5f5" font-size="8">VO-coll</text>
+            <path d="M80,40 L80,20 L260,20" stroke="#ef5350" stroke-width="3" fill="none"/>
+            <text x="170" y="16" fill="#ef5350" font-size="8">V-ret</text>
+          </g>
+
+          <!-- Pipes: Greenhouse Heating path -->
+          <g id="pipe-heating" opacity="0.3">
+            <path d="M290,50 L290,30 L370,30 L370,284" stroke="#ef5350" stroke-width="3" fill="none"/>
+            <text x="340" y="26" fill="#ef5350" font-size="8">via reservoir</text>
+            <path d="M370,316 L370,340 L520,340 L520,200" stroke="#ef5350" stroke-width="3" fill="none"/>
+            <text x="440" y="355" fill="#ef5350" font-size="8">VO-rad</text>
+            <path d="M570,200 L570,370 L290,370 L290,260" stroke="#42a5f5" stroke-width="3" fill="none"/>
+            <text x="430" y="385" fill="#42a5f5" font-size="8">return → tank bottom</text>
+          </g>
+
+          <!-- Pipes: Active Drain path -->
+          <g id="pipe-drain" opacity="0.3">
+            <path d="M80,220 L80,284" stroke="#ff9800" stroke-width="3" fill="none"/>
+            <text x="65" y="255" fill="#ff9800" font-size="8" transform="rotate(-90,65,255)">VI-coll</text>
+            <path d="M80,316 L80,370 L250,370 L250,260" stroke="#ff9800" stroke-width="3" fill="none"/>
+            <text x="165" y="385" fill="#ff9800" font-size="8">VO-tank</text>
+            <path d="M110,40 L130,15" stroke="#ff9800" stroke-width="2" fill="none" stroke-dasharray="4,2"/>
+            <text x="135" y="12" fill="#ff9800" font-size="8">V-air (open)</text>
+          </g>
+
+          <!-- Outdoor temp -->
+          <text id="s-t-out" x="15" y="390" fill="#8b949e" font-size="11">Outdoor: --°C</text>
+
+          <!-- Fan indicator -->
+          <text id="s-fan" x="580" y="170" fill="#8b949e" font-size="10">Fan: OFF</text>
+
+          <!-- Space heater -->
+          <rect id="s-heater" x="590" y="200" width="40" height="20" rx="2" fill="none" stroke="#8b949e" stroke-width="1"/>
+          <text x="610" y="214" fill="#8b949e" font-size="8" text-anchor="middle">2kW</text>
+        </svg>
+      `;
+    }
+
+    function updateSchematic(result) {
+      const s = model.getState();
+
+      // Temperatures
+      setText('s-t-top', s.t_tank_top.toFixed(1) + '°C');
+      setText('s-t-bot', s.t_tank_bottom.toFixed(1) + '°C');
+      setText('s-t-coll', s.t_collector.toFixed(1) + '°C');
+      setText('s-t-gh', s.t_greenhouse.toFixed(1) + '°C');
+      setText('s-t-out', 'Outdoor: ' + s.t_outdoor.toFixed(1) + '°C');
+      setText('s-irr', s.irradiance + ' W/m²');
+
+      // Sun brightness
+      const sun = document.getElementById('s-sun');
+      if (sun) sun.setAttribute('opacity', Math.min(s.irradiance / 800, 1).toFixed(2));
+
+      // Pipe path highlighting
+      const mode = result.mode;
+      setOpacity('pipe-solar', mode === 'solar_charging' ? 1 : 0.15);
+      setOpacity('pipe-heating', mode === 'greenhouse_heating' ? 1 : 0.15);
+      setOpacity('pipe-drain', (mode === 'active_drain' || mode === 'overheat_drain') ? 1 : 0.15);
+
+      // Pump
+      const pump = document.getElementById('s-pump');
+      if (pump) {
+        pump.setAttribute('fill', result.actuators.pump ? '#e040fb33' : '#21262d');
+        pump.setAttribute('stroke', result.actuators.pump ? '#e040fb' : '#555');
+      }
+
+      // Fan
+      setText('s-fan', 'Fan: ' + (result.actuators.fan ? 'ON' : 'OFF'));
+      const fanEl = document.getElementById('s-fan');
+      if (fanEl) fanEl.setAttribute('fill', result.actuators.fan ? '#76ff03' : '#8b949e');
+
+      // Space heater
+      const heater = document.getElementById('s-heater');
+      if (heater) heater.setAttribute('stroke', result.actuators.space_heater ? '#ef5350' : '#8b949e');
+    }
+
+    function setText(id, text) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    }
+    function setOpacity(id, val) {
+      const el = document.getElementById(id);
+      if (el) el.setAttribute('opacity', val);
+    }
+
+    // ── Button handlers ──
+    document.getElementById('btn-play').addEventListener('click', () => {
+      running = !running;
+      document.getElementById('btn-play').textContent = running ? 'Running...' : 'Start';
+      if (running) {
+        lastFrame = 0;
+        requestAnimationFrame(simLoop);
+      }
+    });
+    document.getElementById('btn-pause').addEventListener('click', () => {
+      running = false;
+      document.getElementById('btn-play').textContent = 'Start';
+    });
+    document.getElementById('btn-reset').addEventListener('click', () => resetSim());
+
+    // ── Load URL params ──
+    function loadUrlParams() {
+      const p = new URLSearchParams(window.location.search);
+      for (const [key, val] of p.entries()) {
+        if (params.hasOwnProperty(key)) {
+          params[key] = parseFloat(val);
+          const slider = document.getElementById(key === 't_outdoor' ? 'outdoor' : key === 't_tank_top' ? 'tank-top' : key === 't_tank_bottom' ? 'tank-bot' : key === 't_greenhouse' ? 'greenhouse' : key === 'sim_speed' ? 'speed' : key);
+          if (slider) {
+            slider.value = val;
+            const valEl = document.getElementById(slider.id + '-val');
+            if (valEl) valEl.textContent = val + (slider.id === 'speed' ? '×' : slider.id === 'irradiance' ? ' W/m²' : '°C');
+          }
+        }
+      }
+    }
+
+    loadUrlParams();
+    init();
+  </script>
+</body>
+</html>
