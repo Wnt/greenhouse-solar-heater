@@ -36,7 +36,7 @@
       <span id="sim-time" style="font-family: monospace; color: var(--text-bright);">00:00:00</span>
       <span style="color: var(--text-muted); font-size: 13px;">Mode:</span>
       <span id="sim-mode" class="mode-badge mode-idle">idle</span>
-      <span id="sim-clock" style="display: none; font-size: 13px; color: var(--text-muted); margin-left: 8px;">Clock: <strong id="sim-clock-time" style="font-family: monospace; color: #f9a825;">08:00</strong></span>
+      <span id="sim-clock" style="font-size: 13px; color: var(--text-muted); margin-left: 8px;">Clock: <strong id="sim-clock-time" style="font-family: monospace; color: #f9a825;">08:00</strong></span>
       <span id="sim-transition" style="font-size: 12px; color: var(--text-muted); margin-left: auto;"></span>
     </div>
 
@@ -50,14 +50,14 @@
     <div class="card">
       <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
         <h2 style="margin-bottom: 0;">System Visualization</h2>
-        <button id="btn-toggle-view" style="font-size: 12px; padding: 4px 10px;">Switch to 2D</button>
+        <button id="btn-toggle-view" style="font-size: 12px; padding: 4px 10px;">Switch to 3D</button>
       </div>
-      <div id="view-3d" style="width: 100%; height: 500px; border-radius: 6px; overflow: hidden; position: relative; background: #0d1117;">
+      <div id="view-3d" style="display: none; width: 100%; height: 500px; border-radius: 6px; overflow: hidden; position: relative; background: #0d1117;">
         <div id="view-3d-fallback" style="display: none; position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: #8b949e; font-size: 14px; text-align: center; padding: 40px;">
           3D view requires WebGL. Switch to 2D view.
         </div>
       </div>
-      <div id="view-2d" style="display: none;">
+      <div id="view-2d">
         <div id="schematic" class="svg-container"></div>
       </div>
     </div>
@@ -117,7 +117,7 @@
     let lastFrame = 0;
     let simSpeed = 10;
     let simTimeAccum = 0; // accumulates fractional sim-time between frames
-    let viewMode = '3d';
+    let viewMode = '2d';
     const DT = 1; // 1-second physics timestep
 
     // ── Input parameters ──
@@ -128,7 +128,7 @@
       t_tank_bottom: 9,
       t_greenhouse: 11,
       sim_speed: 10,
-      day_night_cycle: false,
+      day_night_cycle: true,
     };
 
     // ── Init ──
@@ -197,6 +197,11 @@
       t_greenhouse: 't_greenhouse',
     };
 
+    // Slider element references for programmatic updates during day/night cycle
+    const sliderRefs = {};
+    // Track which sliders are being actively dragged by the user
+    const sliderActive = {};
+
     function setupControls() {
       const el = document.getElementById('controls');
       const sliders = [
@@ -209,7 +214,7 @@
       ];
 
       for (const s of sliders) {
-        createSlider(el, {
+        const ref = createSlider(el, {
           ...s,
           onChange: (v) => {
             params[s.key] = v;
@@ -220,6 +225,12 @@
             }
           },
         });
+        sliderRefs[s.key] = ref;
+
+        // Track user interaction to pause auto-move during drag
+        ref.slider.addEventListener('pointerdown', () => { sliderActive[s.key] = true; });
+        ref.slider.addEventListener('pointerup', () => { sliderActive[s.key] = false; });
+        ref.slider.addEventListener('pointercancel', () => { sliderActive[s.key] = false; });
       }
 
       // Day/night cycle toggle
@@ -227,10 +238,10 @@
       dnGroup.className = 'control-group';
       dnGroup.innerHTML = `
         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-          <input type="checkbox" id="day-night-toggle">
+          <input type="checkbox" id="day-night-toggle" checked>
           Day / Night Cycle
         </label>
-        <div id="day-night-info" style="display: none; font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+        <div id="day-night-info" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
           <span>Sliders set base outdoor temp &amp; peak irradiance.</span><br>
           <span>Time of day: <strong id="sim-time-of-day" style="color: var(--text-bright);">08:00</strong></span>
         </div>
@@ -242,6 +253,16 @@
         document.getElementById('day-night-info').style.display = e.target.checked ? '' : 'none';
         document.getElementById('sim-clock').style.display = e.target.checked ? '' : 'none';
       });
+    }
+
+    /** Update a slider's visual position and value label without triggering onChange */
+    function setSliderVisual(key, value) {
+      const ref = sliderRefs[key];
+      if (!ref || sliderActive[key]) return;
+      ref.slider.value = value;
+      const unit = key === 'irradiance' ? ' W/m²' : '°C';
+      const display = key === 'irradiance' ? Math.round(value) : value.toFixed(1);
+      ref.val.textContent = display + unit;
     }
 
     function resetSim() {
@@ -360,7 +381,7 @@
         document.getElementById('sim-transition').textContent = latest.text;
       }
 
-      // Update time of day display
+      // Update time of day display and move sliders for day/night cycle
       const timeStr = getTimeOfDay(model.state.simTime);
       const clockEl = document.getElementById('sim-clock');
       const clockTimeEl = document.getElementById('sim-clock-time');
@@ -369,6 +390,10 @@
         if (todEl) todEl.textContent = timeStr;
         if (clockEl) clockEl.style.display = '';
         if (clockTimeEl) clockTimeEl.textContent = timeStr;
+        // Move outdoor temp and irradiance sliders to show effective values
+        const effEnv = getDayNightEnv(model.state.simTime, params.t_outdoor, params.irradiance);
+        setSliderVisual('t_outdoor', effEnv.t_outdoor);
+        setSliderVisual('irradiance', effEnv.irradiance);
       } else {
         if (clockEl) clockEl.style.display = 'none';
       }

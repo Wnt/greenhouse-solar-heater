@@ -152,18 +152,21 @@ test.describe('Thermal Simulation UI', () => {
     const view3d = page.locator('#view-3d');
     const view2d = page.locator('#view-2d');
 
+    // 2D is the default view
+    await expect(view2d).toBeVisible();
+
     // Wait for 3D init to complete (or fall back)
     await page.waitForTimeout(500);
 
     const toggleVisible = await toggleBtn.isVisible();
     if (toggleVisible) {
-      // 3D available: toggle should switch views
-      await toggleBtn.click();
-      await expect(view2d).toBeVisible();
+      // 3D available: toggle to 3D then back to 2D
       await toggleBtn.click();
       await expect(view3d).toBeVisible();
+      await toggleBtn.click();
+      await expect(view2d).toBeVisible();
     } else {
-      // 3D unavailable: should fall back to 2D schematic
+      // 3D unavailable: stays on 2D
       await expect(view2d).toBeVisible();
       await expect(page.locator('#schematic svg')).toBeAttached();
     }
