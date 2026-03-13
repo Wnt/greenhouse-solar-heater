@@ -4,7 +4,7 @@ test.describe('Thermal Simulation UI', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/playground/thermal.html');
     // Wait for the page to initialize (sliders rendered)
-    await expect(page.locator('#controls .control-group')).toHaveCount(6);
+    await expect(page.locator('#controls .control-group')).toHaveCount(7);
   });
 
   test('page loads with correct title and initial state', async ({ page }) => {
@@ -86,9 +86,17 @@ test.describe('Thermal Simulation UI', () => {
   });
 
   test('simulation produces mode transitions with default params', async ({ page }) => {
-    // Default params: t_outdoor=5, irradiance=500, t_tank_top=40, t_tank_bottom=35, t_greenhouse=8
-    // With irradiance=500 and t_tank_bottom=35, collector should heat up and trigger solar_charging
-    // Also t_greenhouse=8 < 10 and t_tank_top=40 > 25 should trigger greenhouse_heating
+    // Set params that trigger quick mode transitions:
+    // t_greenhouse=8 < 10 and t_tank_top=40 > 25 triggers greenhouse_heating
+    for (const { id, value } of [
+      { id: 'tank-top', value: '40' },
+      { id: 'tank-bot', value: '35' },
+      { id: 'greenhouse', value: '8' },
+      { id: 'speed', value: '50' },
+    ]) {
+      await page.locator(`#${id}`).fill(value);
+      await page.locator(`#${id}`).dispatchEvent('input');
+    }
 
     // Start simulation
     await page.locator('#btn-play').click();
@@ -103,6 +111,17 @@ test.describe('Thermal Simulation UI', () => {
   });
 
   test('log output has proper line breaks', async ({ page }) => {
+    // Set params that trigger quick transitions
+    for (const { id, value } of [
+      { id: 'tank-top', value: '40' },
+      { id: 'tank-bot', value: '35' },
+      { id: 'greenhouse', value: '8' },
+      { id: 'speed', value: '50' },
+    ]) {
+      await page.locator(`#${id}`).fill(value);
+      await page.locator(`#${id}`).dispatchEvent('input');
+    }
+
     // Start simulation and wait for multiple transitions
     await page.locator('#btn-play').click();
 
@@ -161,12 +180,12 @@ test.describe('Thermal Simulation UI', () => {
 
   test('simulation uses slider values, not hardcoded defaults', async ({ page }) => {
     // Set sliders to values different from defaults
-    // Defaults: t_outdoor=5, t_tank_top=40, t_tank_bottom=35, t_greenhouse=8
+    // Defaults: t_outdoor=10, t_tank_top=12, t_tank_bottom=9, t_greenhouse=11
     const sliderValues = [
-      { id: 'outdoor', value: '13.5' },
-      { id: 'tank-top', value: '12' },
-      { id: 'tank-bot', value: '11' },
-      { id: 'greenhouse', value: '13.5' },
+      { id: 'outdoor', value: '15' },
+      { id: 'tank-top', value: '40' },
+      { id: 'tank-bot', value: '30' },
+      { id: 'greenhouse', value: '18' },
     ];
     for (const { id, value } of sliderValues) {
       const slider = page.locator(`#${id}`);
@@ -183,15 +202,15 @@ test.describe('Thermal Simulation UI', () => {
     const logText = await page.locator('#transition-log').textContent();
 
     // The log should show our slider values, not the defaults
-    expect(logText).toContain('Tank top:    12.0°C');
-    expect(logText).toContain('Tank bottom: 11.0°C');
-    expect(logText).toContain('Greenhouse:  13.5°C');
-    expect(logText).toContain('Outdoor:     13.5°C');
+    expect(logText).toContain('Tank top:    40.0°C');
+    expect(logText).toContain('Tank bottom: 30.0°C');
+    expect(logText).toContain('Greenhouse:  18.0°C');
+    expect(logText).toContain('Outdoor:     15.0°C');
 
     // Must NOT contain the hardcoded defaults
-    expect(logText).not.toContain('Tank top:    40.0°C');
-    expect(logText).not.toContain('Tank bottom: 35.0°C');
-    expect(logText).not.toContain('Greenhouse:  8.0°C');
+    expect(logText).not.toContain('Tank top:    12.0°C');
+    expect(logText).not.toContain('Tank bottom: 9.0°C');
+    expect(logText).not.toContain('Greenhouse:  11.0°C');
   });
 
   test('temperature table reflects slider values after start', async ({ page }) => {
@@ -243,10 +262,20 @@ test.describe('Thermal Simulation UI', () => {
   });
 
   test('mode badge updates during simulation', async ({ page }) => {
+    // Set params that trigger greenhouse_heating: t_greenhouse < 10 and t_tank_top > 25
+    for (const { id, value } of [
+      { id: 'tank-top', value: '40' },
+      { id: 'greenhouse', value: '8' },
+      { id: 'speed', value: '50' },
+    ]) {
+      await page.locator(`#${id}`).fill(value);
+      await page.locator(`#${id}`).dispatchEvent('input');
+    }
+
     // Start simulation
     await page.locator('#btn-play').click();
 
-    // Wait for any mode change (the default params should trigger greenhouse_heating quickly)
+    // Wait for any mode change (greenhouse_heating should trigger quickly)
     // since t_greenhouse=8 < 10 and t_tank_top=40 > 25
     await page.waitForFunction(() => {
       const mode = document.getElementById('sim-mode');
