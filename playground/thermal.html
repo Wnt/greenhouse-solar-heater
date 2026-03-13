@@ -481,6 +481,18 @@
       document.getElementById('btn-play').textContent = running ? 'Running...' : 'Start';
       if (running) {
         lastFrame = 0;
+        // Re-apply slider values on fresh start so model uses current params
+        if (model.state.simTime === 0) {
+          model.reset({
+            t_tank_top: params.t_tank_top,
+            t_tank_bottom: params.t_tank_bottom,
+            t_greenhouse: params.t_greenhouse,
+            t_outdoor: params.t_outdoor,
+            irradiance: params.irradiance,
+          });
+          controller.reset();
+          store.reset();
+        }
         // Log startup conditions on first start (when simTime is 0)
         if (model.state.simTime === 0) {
           const log = document.getElementById('transition-log');
