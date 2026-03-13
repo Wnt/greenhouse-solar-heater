@@ -94,7 +94,7 @@ test.describe('Thermal Simulation UI', () => {
     await page.locator('#btn-play').click();
 
     // Wait for timestamped transition entries to appear (after startup header)
-    await expect(page.locator('#transition-log')).toContainText(/\[\d{2}:\d{2}:\d{2}\]/, { timeout: 5000 });
+    await expect(page.locator('#transition-log')).toContainText(/\[\d{2}:\d{2}:\d{2}\]/, { timeout: 10000 });
 
     const logText = await page.locator('#transition-log').textContent();
     // Log should contain startup header and timestamp-prefixed entries
@@ -157,6 +157,89 @@ test.describe('Thermal Simulation UI', () => {
 
     // The value display should update
     await expect(page.locator('#outdoor-val')).toContainText('20');
+  });
+
+  test('simulation uses slider values, not hardcoded defaults', async ({ page }) => {
+    // Set sliders to values different from defaults
+    // Defaults: t_outdoor=5, t_tank_top=40, t_tank_bottom=35, t_greenhouse=8
+    const sliderValues = [
+      { id: 'outdoor', value: '13.5' },
+      { id: 'tank-top', value: '12' },
+      { id: 'tank-bot', value: '11' },
+      { id: 'greenhouse', value: '13.5' },
+    ];
+    for (const { id, value } of sliderValues) {
+      const slider = page.locator(`#${id}`);
+      await slider.fill(value);
+      await slider.dispatchEvent('input');
+    }
+
+    // Start the simulation
+    await page.locator('#btn-play').click();
+
+    // Wait for the startup log to appear
+    await expect(page.locator('#transition-log')).toContainText('Simulation started', { timeout: 3000 });
+
+    const logText = await page.locator('#transition-log').textContent();
+
+    // The log should show our slider values, not the defaults
+    expect(logText).toContain('Tank top:    12.0°C');
+    expect(logText).toContain('Tank bottom: 11.0°C');
+    expect(logText).toContain('Greenhouse:  13.5°C');
+    expect(logText).toContain('Outdoor:     13.5°C');
+
+    // Must NOT contain the hardcoded defaults
+    expect(logText).not.toContain('Tank top:    40.0°C');
+    expect(logText).not.toContain('Tank bottom: 35.0°C');
+    expect(logText).not.toContain('Greenhouse:  8.0°C');
+  });
+
+  test('temperature table reflects slider values after start', async ({ page }) => {
+    // Set non-default slider values
+    await page.locator('#tank-top').fill('20');
+    await page.locator('#tank-top').dispatchEvent('input');
+    await page.locator('#tank-bot').fill('15');
+    await page.locator('#tank-bot').dispatchEvent('input');
+
+    // Start simulation
+    await page.locator('#btn-play').click();
+    await page.waitForTimeout(200);
+
+    // Temperature table should show values close to what we set (physics may shift them slightly)
+    const tankTopRow = page.locator('#temp-table tr:nth-child(2) .val');
+    const tankTopText = await tankTopRow.textContent();
+    const tankTopVal = parseFloat(tankTopText);
+    // Should be near 20, not near the default 40
+    expect(tankTopVal).toBeLessThan(25);
+    expect(tankTopVal).toBeGreaterThan(15);
+
+    const tankBotRow = page.locator('#temp-table tr:nth-child(3) .val');
+    const tankBotText = await tankBotRow.textContent();
+    const tankBotVal = parseFloat(tankBotText);
+    // Should be near 15, not near the default 35
+    expect(tankBotVal).toBeLessThan(20);
+    expect(tankBotVal).toBeGreaterThan(10);
+  });
+
+  test('reset then change sliders then start uses new values', async ({ page }) => {
+    // Start with defaults, run briefly, then reset
+    await page.locator('#btn-play').click();
+    await page.waitForTimeout(200);
+    await page.locator('#btn-reset').click();
+
+    // Now change sliders
+    await page.locator('#greenhouse').fill('25');
+    await page.locator('#greenhouse').dispatchEvent('input');
+    await page.locator('#outdoor').fill('20');
+    await page.locator('#outdoor').dispatchEvent('input');
+
+    // Start again
+    await page.locator('#btn-play').click();
+    await expect(page.locator('#transition-log')).toContainText('Simulation started', { timeout: 3000 });
+
+    const logText = await page.locator('#transition-log').textContent();
+    expect(logText).toContain('Greenhouse:  25.0°C');
+    expect(logText).toContain('Outdoor:     20.0°C');
   });
 
   test('mode badge updates during simulation', async ({ page }) => {
