@@ -309,6 +309,7 @@
       simTimeAccum -= steps * DT;
 
       let result;
+      const pendingTransitions = [];
       for (let i = 0; i < steps; i++) {
         // Compute environment: use day/night cycle or raw slider values
         let env;
@@ -328,6 +329,11 @@
 
         result = controller.evaluate(sensors, model.state.simTime);
 
+        // Collect transitions so none are lost when multiple steps run per frame
+        if (result.transition) {
+          pendingTransitions.push({ time: model.state.simTime, text: result.transition });
+        }
+
         model.step(DT, env, result.actuators, result.mode);
 
         // Record every ~10 seconds of sim time
@@ -340,6 +346,18 @@
             t_outdoor: model.state.t_outdoor,
           });
         }
+      }
+
+      // Log all transitions that occurred during this frame's batch of steps
+      if (pendingTransitions.length > 0) {
+        const log = document.getElementById('transition-log');
+        for (const t of pendingTransitions) {
+          log.textContent += `[${formatTime(t.time)}] ${t.text}\n`;
+        }
+        log.scrollTop = log.scrollHeight;
+        // Show latest transition in the status bar
+        const latest = pendingTransitions[pendingTransitions.length - 1];
+        document.getElementById('sim-transition').textContent = latest.text;
       }
 
       // Update time of day display
@@ -368,13 +386,7 @@
       modeEl.textContent = result.mode.replace(/_/g, ' ');
       modeEl.className = modeBadgeClass(result.mode);
 
-      // Transition
-      if (result.transition) {
-        document.getElementById('sim-transition').textContent = result.transition;
-        const log = document.getElementById('transition-log');
-        log.textContent += `[${formatTime(state.simTime)}] ${result.transition}\n`;
-        log.scrollTop = log.scrollHeight;
-      }
+      // Transition (logging handled in simLoop to avoid losing batched transitions)
 
       // Temperature table
       const tempBody = document.getElementById('temp-table');
