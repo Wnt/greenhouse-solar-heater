@@ -93,11 +93,12 @@ test.describe('Thermal Simulation UI', () => {
     // Start simulation
     await page.locator('#btn-play').click();
 
-    // Wait for transitions to appear in the log
-    await expect(page.locator('#transition-log')).not.toBeEmpty({ timeout: 5000 });
+    // Wait for timestamped transition entries to appear (after startup header)
+    await expect(page.locator('#transition-log')).toContainText(/\[\d{2}:\d{2}:\d{2}\]/, { timeout: 5000 });
 
     const logText = await page.locator('#transition-log').textContent();
-    // Log should contain timestamp-prefixed entries
+    // Log should contain startup header and timestamp-prefixed entries
+    expect(logText).toContain('Simulation started');
     expect(logText).toMatch(/\[\d{2}:\d{2}:\d{2}\]/);
   });
 
