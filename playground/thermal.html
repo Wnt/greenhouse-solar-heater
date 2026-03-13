@@ -116,6 +116,7 @@
     let running = false;
     let lastFrame = 0;
     let simSpeed = 10;
+    let simTimeAccum = 0; // accumulates fractional sim-time between frames
     let viewMode = '3d';
     const DT = 1; // 1-second physics timestep
 
@@ -255,6 +256,7 @@
       store.reset();
       running = false;
       lastFrame = 0;
+      simTimeAccum = 0;
       document.getElementById('btn-play').textContent = 'Start';
       document.getElementById('transition-log').textContent = '';
       updateDisplay(model.getState(), { mode: 'idle', valves: config.modes.idle.valve_states, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
@@ -301,9 +303,10 @@
       const realDt = (timestamp - lastFrame) / 1000;
       lastFrame = timestamp;
 
-      // How many physics steps this frame
-      const simDt = realDt * simSpeed;
-      const steps = Math.min(Math.ceil(simDt / DT), 50); // cap at 50 steps/frame
+      // Accumulate sim-time and run integer physics steps
+      simTimeAccum += realDt * simSpeed;
+      const steps = Math.min(Math.floor(simTimeAccum / DT), 50); // cap at 50 steps/frame
+      simTimeAccum -= steps * DT;
 
       let result;
       for (let i = 0; i < steps; i++) {
@@ -569,6 +572,7 @@
       document.getElementById('btn-play').textContent = running ? 'Running...' : 'Start';
       if (running) {
         lastFrame = 0;
+        simTimeAccum = 0;
         // Re-apply slider values on fresh start so model uses current params
         if (model.state.simTime === 0) {
           model.reset({

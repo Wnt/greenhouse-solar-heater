@@ -47,10 +47,11 @@ test.describe('Thermal Simulation UI', () => {
     await btn.click();
     await expect(btn).toHaveText('Running...');
 
-    // Wait a moment and check time advances
-    await page.waitForTimeout(300);
-    const time = await page.locator('#sim-time').textContent();
-    expect(time).not.toBe('00:00:00');
+    // Wait for sim time to advance past 00:00:00
+    await page.waitForFunction(() => {
+      const el = document.getElementById('sim-time');
+      return el && el.textContent !== '00:00:00';
+    }, { timeout: 3000 });
 
     // Click again to pause (toggle)
     await btn.click();
@@ -284,6 +285,36 @@ test.describe('Thermal Simulation UI', () => {
 
     const modeText = await page.locator('#sim-mode').textContent();
     expect(modeText).not.toBe('idle');
+  });
+
+  test('sim speed slider controls simulation rate', async ({ page }) => {
+    // Helper: parse HH:MM:SS to total seconds
+    const parseTime = (t) => {
+      const [h, m, s] = t.split(':').map(Number);
+      return h * 3600 + m * 60 + s;
+    };
+
+    // Run at speed=1 for 1 second of wall time
+    await page.locator('#speed').fill('1');
+    await page.locator('#speed').dispatchEvent('input');
+    await page.locator('#btn-play').click();
+    await page.waitForTimeout(1000);
+    await page.locator('#btn-pause').click();
+    const timeSlow = parseTime(await page.locator('#sim-time').textContent());
+
+    // Reset and run at speed=100 for 1 second of wall time
+    await page.locator('#btn-reset').click();
+    await page.locator('#speed').fill('100');
+    await page.locator('#speed').dispatchEvent('input');
+    await page.locator('#btn-play').click();
+    await page.waitForTimeout(1000);
+    await page.locator('#btn-pause').click();
+    const timeFast = parseTime(await page.locator('#sim-time').textContent());
+
+    // Fast run should advance significantly more sim-time than slow run
+    // At 100x vs 1x, ratio should be ~100, but allow wide margin for CI variance.
+    // The key assertion: speed=100 must produce at least 10x more sim-time than speed=1
+    expect(timeFast).toBeGreaterThan(timeSlow * 10);
   });
 
   test('chart canvas is present and sized', async ({ page }) => {
