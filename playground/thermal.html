@@ -222,6 +222,7 @@
       running = false;
       lastFrame = 0;
       document.getElementById('btn-play').textContent = 'Start';
+      document.getElementById('transition-log').textContent = '';
       updateDisplay(model.getState(), { mode: 'idle', valves: config.modes.idle.valve_states, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
     }
 
@@ -480,6 +481,22 @@
       document.getElementById('btn-play').textContent = running ? 'Running...' : 'Start';
       if (running) {
         lastFrame = 0;
+        // Log startup conditions on first start (when simTime is 0)
+        if (model.state.simTime === 0) {
+          const log = document.getElementById('transition-log');
+          const s = model.getState();
+          const delta = s.t_collector - s.t_tank_bottom;
+          log.textContent =
+            `── Simulation started ──\n` +
+            `  Outdoor:     ${params.t_outdoor.toFixed(1)}°C\n` +
+            `  Irradiance:  ${params.irradiance} W/m²\n` +
+            `  Tank top:    ${s.t_tank_top.toFixed(1)}°C\n` +
+            `  Tank bottom: ${s.t_tank_bottom.toFixed(1)}°C\n` +
+            `  Collector:   ${s.t_collector.toFixed(1)}°C (delta=${delta.toFixed(1)}°C, entry>7, exit<3)\n` +
+            `  Greenhouse:  ${s.t_greenhouse.toFixed(1)}°C\n` +
+            `  Sim speed:   ${simSpeed}×\n` +
+            `────────────────────────\n`;
+        }
         requestAnimationFrame(simLoop);
       }
     });

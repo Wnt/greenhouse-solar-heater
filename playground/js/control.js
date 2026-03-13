@@ -29,92 +29,90 @@ export class ControlStateMachine {
    * @param {number} simTime - current simulation time in seconds
    * @returns {{ mode: string, actuators: object, valves: object, transition: string|null }}
    */
+  /** Format all sensor values as a compact string */
+  _sensorSummary(sensors) {
+    return `T_coll=${sensors.t_collector.toFixed(1)} T_top=${sensors.t_tank_top.toFixed(1)} T_bot=${sensors.t_tank_bottom.toFixed(1)} T_gh=${sensors.t_greenhouse.toFixed(1)} T_out=${sensors.t_outdoor.toFixed(1)}`;
+  }
+
   evaluate(sensors, simTime) {
     let transition = null;
     const prevMode = this.currentMode;
-
-    // Check exit condition for current mode
-    if (this.currentMode !== 'idle') {
-      const exitCond = this.parsedTriggers[this.currentMode]?.exit;
-      if (exitCond && evaluateTrigger(exitCond, sensors)) {
-        this.currentMode = 'idle';
-        transition = `${prevMode} → idle (exit condition met)`;
-      }
-    }
-
-    // Minimum run time check
-    const modeConf = this.modes[this.currentMode];
-    const minRun = 120; // 2 minutes minimum run time
+    const MIN_RUN = 120; // 2 minutes minimum run time
     const runDuration = simTime - this.modeStartTime;
+    const pastMinRun = runDuration > MIN_RUN;
+    const sensorStr = this._sensorSummary(sensors);
+    const delta = sensors.t_collector - sensors.t_tank_bottom;
 
-    // Priority-ordered mode evaluation (only from idle)
-    if (this.currentMode === 'idle' || this.currentMode === 'solar_charging') {
-      // Emergency heating — highest priority
-      if (sensors.t_greenhouse < 5 && sensors.t_tank_top < 25) {
-        if (this.currentMode !== 'emergency_heating') {
-          this.currentMode = 'emergency_heating';
-          transition = `${prevMode} → emergency_heating (T_gh=${sensors.t_greenhouse.toFixed(1)}°C, T_tank_top=${sensors.t_tank_top.toFixed(1)}°C)`;
-        }
-      }
-      // Active drain — freeze protection
-      else if (sensors.t_outdoor < 2 && !this.collectorsDrained) {
-        if (this.currentMode !== 'active_drain') {
-          this.currentMode = 'active_drain';
-          transition = `${prevMode} → active_drain (T_outdoor=${sensors.t_outdoor.toFixed(1)}°C)`;
-        }
-      }
-      // Overheat drain
-      else if (sensors.t_tank_top > 85 && this.currentMode === 'solar_charging') {
-        this.currentMode = 'overheat_drain';
-        transition = `solar_charging → overheat_drain (T_tank_top=${sensors.t_tank_top.toFixed(1)}°C)`;
-      }
-      // Greenhouse heating
-      else if (this.currentMode === 'idle' && sensors.t_greenhouse < 10 && sensors.t_tank_top > 25) {
-        this.currentMode = 'greenhouse_heating';
-        transition = `idle → greenhouse_heating (T_gh=${sensors.t_greenhouse.toFixed(1)}°C)`;
-      }
-      // Solar charging
-      else if (this.currentMode === 'idle' && sensors.t_collector > sensors.t_tank_bottom + 7) {
-        this.currentMode = 'solar_charging';
-        transition = `idle → solar_charging (T_coll=${sensors.t_collector.toFixed(1)}°C > T_bot+7=${(sensors.t_tank_bottom + 7).toFixed(1)}°C)`;
-      }
-    }
+    // ── Exit checks (mode-specific, all respect minimum run time) ──
 
-    // Active drain completion (simulate 3 min drain)
+    // Active drain completion (3 min drain cycle)
     if (this.currentMode === 'active_drain' && runDuration > 180) {
       this.collectorsDrained = true;
       this.currentMode = 'idle';
-      transition = `active_drain → idle (drain complete)`;
+      transition = `active_drain → idle | drain complete after ${Math.round(runDuration)}s | ${sensorStr}`;
     }
 
     // Overheat drain completion
     if (this.currentMode === 'overheat_drain' && runDuration > 180) {
       this.collectorsDrained = true;
       this.currentMode = 'idle';
-      transition = `overheat_drain → idle (drain complete)`;
+      transition = `overheat_drain → idle | drain complete after ${Math.round(runDuration)}s | ${sensorStr}`;
     }
 
     // Greenhouse heating exit
-    if (this.currentMode === 'greenhouse_heating' && sensors.t_greenhouse > 12) {
+    if (this.currentMode === 'greenhouse_heating' && pastMinRun && sensors.t_greenhouse > 12) {
       this.currentMode = 'idle';
-      transition = `greenhouse_heating → idle (T_gh=${sensors.t_greenhouse.toFixed(1)}°C > 12°C)`;
+      transition = `greenhouse_heating → idle | T_gh=${sensors.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;
     }
 
-    // Solar charging exit
-    if (this.currentMode === 'solar_charging' && runDuration > minRun && sensors.t_collector < sensors.t_tank_bottom + 3) {
+    // Solar charging exit: collector delta dropped below +3°C
+    if (this.currentMode === 'solar_charging' && pastMinRun && delta < 3) {
       this.currentMode = 'idle';
-      transition = `solar_charging → idle (insufficient gain)`;
+      transition = `solar_charging → idle | delta=${delta.toFixed(1)}°C < 3°C threshold | ${sensorStr}`;
     }
 
     // Emergency exit
-    if (this.currentMode === 'emergency_heating' && sensors.t_greenhouse > 8) {
+    if (this.currentMode === 'emergency_heating' && pastMinRun && sensors.t_greenhouse > 8) {
       this.currentMode = 'idle';
-      transition = `emergency_heating → idle (T_gh=${sensors.t_greenhouse.toFixed(1)}°C > 8°C)`;
+      transition = `emergency_heating → idle | T_gh=${sensors.t_greenhouse.toFixed(1)}°C > 8°C | ${sensorStr}`;
+    }
+
+    // ── Priority-ordered mode entry (from idle, or preempt solar_charging for safety) ──
+    if (this.currentMode === 'idle' || this.currentMode === 'solar_charging') {
+      // Emergency heating — highest priority
+      if (sensors.t_greenhouse < 5 && sensors.t_tank_top < 25) {
+        if (this.currentMode !== 'emergency_heating') {
+          this.currentMode = 'emergency_heating';
+          transition = `${prevMode} → emergency_heating | T_gh=${sensors.t_greenhouse.toFixed(1)}°C < 5°C, T_top=${sensors.t_tank_top.toFixed(1)}°C < 25°C | ${sensorStr}`;
+        }
+      }
+      // Active drain — freeze protection
+      else if (sensors.t_outdoor < 2 && !this.collectorsDrained) {
+        if (this.currentMode !== 'active_drain') {
+          this.currentMode = 'active_drain';
+          transition = `${prevMode} → active_drain | T_out=${sensors.t_outdoor.toFixed(1)}°C < 2°C | ${sensorStr}`;
+        }
+      }
+      // Overheat drain
+      else if (sensors.t_tank_top > 85 && this.currentMode === 'solar_charging') {
+        this.currentMode = 'overheat_drain';
+        transition = `solar_charging → overheat_drain | T_top=${sensors.t_tank_top.toFixed(1)}°C > 85°C | ${sensorStr}`;
+      }
+      // Greenhouse heating
+      else if (this.currentMode === 'idle' && sensors.t_greenhouse < 10 && sensors.t_tank_top > 25) {
+        this.currentMode = 'greenhouse_heating';
+        transition = `idle → greenhouse_heating | T_gh=${sensors.t_greenhouse.toFixed(1)}°C < 10°C, T_top=${sensors.t_tank_top.toFixed(1)}°C > 25°C | ${sensorStr}`;
+      }
+      // Solar charging
+      else if (this.currentMode === 'idle' && delta > 7) {
+        this.currentMode = 'solar_charging';
+        transition = `idle → solar_charging | delta=${delta.toFixed(1)}°C > 7°C threshold | ${sensorStr}`;
+      }
     }
 
     // Refill check: if drained and outdoor warms up
     if (this.collectorsDrained && sensors.t_outdoor > 5 && this.currentMode === 'idle') {
-      this.collectorsDrained = false; // Allow solar charging again
+      this.collectorsDrained = false;
     }
 
     if (transition) {
