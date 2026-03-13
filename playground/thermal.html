@@ -51,7 +51,11 @@
         <h2 style="margin-bottom: 0;">System Visualization</h2>
         <button id="btn-toggle-view" style="font-size: 12px; padding: 4px 10px;">Switch to 2D</button>
       </div>
-      <div id="view-3d" style="width: 100%; height: 500px; border-radius: 6px; overflow: hidden;"></div>
+      <div id="view-3d" style="width: 100%; height: 500px; border-radius: 6px; overflow: hidden; position: relative; background: #0d1117;">
+        <div id="view-3d-fallback" style="display: none; position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: #8b949e; font-size: 14px; text-align: center; padding: 40px;">
+          3D view requires WebGL. Switch to 2D view.
+        </div>
+      </div>
       <div id="view-2d" style="display: none;">
         <div id="schematic" class="svg-container"></div>
       </div>
@@ -140,13 +144,23 @@
       resetSim();
       buildSchematic();
 
-      // Initialize 3D scene (lazy-load Three.js to avoid blocking if CDN unavailable)
+      // Initialize 3D scene (lazy-load Three.js)
       try {
+        // Pre-check: does this environment support WebGL at all?
+        const testCanvas = document.createElement('canvas');
+        const gl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
+        if (!gl) throw new Error('WebGL not supported');
+
         const { Scene3D } = await import('./js/scene3d.js');
-        scene3d = new Scene3D(document.getElementById('view-3d'));
+        const container = document.getElementById('view-3d');
+        scene3d = new Scene3D(container);
+
+        // Verify the renderer actually produced a canvas
+        const rendererCanvas = container.querySelector('canvas');
+        if (!rendererCanvas) throw new Error('Three.js did not create a canvas');
       } catch (e) {
         console.warn('3D view unavailable:', e);
-        // Fall back to 2D
+        scene3d = null;
         viewMode = '2d';
         document.getElementById('view-3d').style.display = 'none';
         document.getElementById('view-2d').style.display = '';

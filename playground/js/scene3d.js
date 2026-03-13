@@ -41,7 +41,8 @@ export class Scene3D {
     this.container = container;
     this.flowParticles = [];
     this.animationId = null;
-    this.clock = new THREE.Clock();
+    this._lastTime = performance.now();
+    this._dt = 0;
 
     this._init();
     this._buildScene();
@@ -53,7 +54,13 @@ export class Scene3D {
     const h = Math.max(this.container.clientHeight, 400);
 
     // Renderer
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: false,
+      preserveDrawingBuffer: true, // needed for some environments
+      powerPreference: 'default',
+      failIfMajorPerformanceCaveat: false,
+    });
     this.renderer.setSize(w, h);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
@@ -717,7 +724,7 @@ export class Scene3D {
   update(state, result) {
     if (!state || !result) return;
 
-    const dt = this.clock.getDelta();
+    const dt = this._dt; // use delta computed in _animate()
 
     // Temperature → color mapping
     const tempToColor = (t) => {
@@ -820,8 +827,10 @@ export class Scene3D {
 
   _animate() {
     this.animationId = requestAnimationFrame(() => this._animate());
-    const dt = this.clock.getDelta();
-    this._updateFlowParticles(dt);
+    const now = performance.now();
+    this._dt = Math.min((now - this._lastTime) / 1000, 0.1); // cap at 100ms
+    this._lastTime = now;
+    this._updateFlowParticles(this._dt);
     this.renderer.render(this.scene, this.camera);
   }
 
