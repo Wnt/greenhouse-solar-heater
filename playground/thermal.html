@@ -36,6 +36,7 @@
       <span id="sim-time" style="font-family: monospace; color: var(--text-bright);">00:00:00</span>
       <span style="color: var(--text-muted); font-size: 13px;">Mode:</span>
       <span id="sim-mode" class="mode-badge mode-idle">idle</span>
+      <span id="sim-clock" style="display: none; font-size: 13px; color: var(--text-muted); margin-left: 8px;">Clock: <strong id="sim-clock-time" style="font-family: monospace; color: #f9a825;">08:00</strong></span>
       <span id="sim-transition" style="font-size: 12px; color: var(--text-muted); margin-left: auto;"></span>
     </div>
 
@@ -120,12 +121,13 @@
 
     // ── Input parameters ──
     const params = {
-      t_outdoor: 5,
+      t_outdoor: 10,
       irradiance: 500,
-      t_tank_top: 40,
-      t_tank_bottom: 35,
-      t_greenhouse: 8,
+      t_tank_top: 12,
+      t_tank_bottom: 9,
+      t_greenhouse: 11,
       sim_speed: 10,
+      day_night_cycle: false,
     };
 
     // ── Init ──
@@ -187,14 +189,21 @@
       };
     }
 
+    // Map of param keys to model state keys for live updates
+    const liveStateKeys = {
+      t_tank_top: 't_tank_top',
+      t_tank_bottom: 't_tank_bottom',
+      t_greenhouse: 't_greenhouse',
+    };
+
     function setupControls() {
       const el = document.getElementById('controls');
       const sliders = [
         { id: 'outdoor', label: 'Outdoor Temp', min: -30, max: 40, step: 0.5, value: params.t_outdoor, unit: '°C', key: 't_outdoor' },
         { id: 'irradiance', label: 'Solar Irradiance', min: 0, max: 1000, step: 10, value: params.irradiance, unit: ' W/m²', key: 'irradiance' },
-        { id: 'tank-top', label: 'Tank Top (initial)', min: 5, max: 95, step: 1, value: params.t_tank_top, unit: '°C', key: 't_tank_top' },
-        { id: 'tank-bot', label: 'Tank Bottom (initial)', min: 5, max: 95, step: 1, value: params.t_tank_bottom, unit: '°C', key: 't_tank_bottom' },
-        { id: 'greenhouse', label: 'Greenhouse (initial)', min: -10, max: 40, step: 0.5, value: params.t_greenhouse, unit: '°C', key: 't_greenhouse' },
+        { id: 'tank-top', label: 'Tank Top', min: 5, max: 95, step: 1, value: params.t_tank_top, unit: '°C', key: 't_tank_top' },
+        { id: 'tank-bot', label: 'Tank Bottom', min: 5, max: 95, step: 1, value: params.t_tank_bottom, unit: '°C', key: 't_tank_bottom' },
+        { id: 'greenhouse', label: 'Greenhouse', min: -10, max: 40, step: 0.5, value: params.t_greenhouse, unit: '°C', key: 't_greenhouse' },
         { id: 'speed', label: 'Sim Speed', min: 1, max: 100, step: 1, value: params.sim_speed, unit: '×', key: 'sim_speed' },
       ];
 
@@ -204,9 +213,34 @@
           onChange: (v) => {
             params[s.key] = v;
             if (s.key === 'sim_speed') simSpeed = v;
+            // Live-update model state during simulation
+            if (model && running && liveStateKeys[s.key]) {
+              model.state[liveStateKeys[s.key]] = v;
+            }
           },
         });
       }
+
+      // Day/night cycle toggle
+      const dnGroup = document.createElement('div');
+      dnGroup.className = 'control-group';
+      dnGroup.innerHTML = `
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="day-night-toggle">
+          Day / Night Cycle
+        </label>
+        <div id="day-night-info" style="display: none; font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+          <span>Sliders set base outdoor temp &amp; peak irradiance.</span><br>
+          <span>Time of day: <strong id="sim-time-of-day" style="color: var(--text-bright);">08:00</strong></span>
+        </div>
+      `;
+      el.appendChild(dnGroup);
+
+      document.getElementById('day-night-toggle').addEventListener('change', (e) => {
+        params.day_night_cycle = e.target.checked;
+        document.getElementById('day-night-info').style.display = e.target.checked ? '' : 'none';
+        document.getElementById('sim-clock').style.display = e.target.checked ? '' : 'none';
+      });
     }
 
     function resetSim() {
@@ -226,6 +260,39 @@
       updateDisplay(model.getState(), { mode: 'idle', valves: config.modes.idle.valve_states, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
     }
 
+    // ── Day/Night Cycle ──
+    const SIM_START_HOUR = 8; // Simulation starts at 8:00 AM
+
+    /**
+     * Compute effective environment params for day/night cycle.
+     * @param {number} simTime - elapsed simulation seconds
+     * @param {number} baseOutdoor - slider outdoor temp (daily average)
+     * @param {number} peakIrradiance - slider irradiance (peak at solar noon)
+     * @returns {{ t_outdoor: number, irradiance: number }}
+     */
+    function getDayNightEnv(simTime, baseOutdoor, peakIrradiance) {
+      const hour = (SIM_START_HOUR + simTime / 3600) % 24;
+
+      // Irradiance: sin curve between sunrise (6:00) and sunset (20:00), 0 at night
+      let irradiance = 0;
+      if (hour >= 6 && hour <= 20) {
+        irradiance = peakIrradiance * Math.sin((hour - 6) / 14 * Math.PI);
+      }
+
+      // Outdoor temp: ±5°C around base, min at 5am, max at 3pm (thermal lag)
+      const tempAmplitude = 5;
+      const t_outdoor = baseOutdoor + tempAmplitude * Math.cos((hour - 15) / 24 * 2 * Math.PI);
+
+      return { t_outdoor, irradiance };
+    }
+
+    function getTimeOfDay(simTime) {
+      const totalHours = SIM_START_HOUR + simTime / 3600;
+      const hour = Math.floor(totalHours % 24);
+      const minute = Math.floor((totalHours * 60) % 60);
+      return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+    }
+
     // ── Simulation loop ──
     function simLoop(timestamp) {
       if (!running) return;
@@ -240,6 +307,14 @@
 
       let result;
       for (let i = 0; i < steps; i++) {
+        // Compute environment: use day/night cycle or raw slider values
+        let env;
+        if (params.day_night_cycle) {
+          env = getDayNightEnv(model.state.simTime, params.t_outdoor, params.irradiance);
+        } else {
+          env = { t_outdoor: params.t_outdoor, irradiance: params.irradiance };
+        }
+
         const sensors = {
           t_collector: model.state.t_collector,
           t_tank_top: model.state.t_tank_top,
@@ -250,7 +325,7 @@
 
         result = controller.evaluate(sensors, model.state.simTime);
 
-        model.step(DT, { t_outdoor: params.t_outdoor, irradiance: params.irradiance }, result.actuators, result.mode);
+        model.step(DT, env, result.actuators, result.mode);
 
         // Record every ~10 seconds of sim time
         if (Math.floor(model.state.simTime) % 10 === 0) {
@@ -262,6 +337,19 @@
             t_outdoor: model.state.t_outdoor,
           });
         }
+      }
+
+      // Update time of day display
+      const timeStr = getTimeOfDay(model.state.simTime);
+      const clockEl = document.getElementById('sim-clock');
+      const clockTimeEl = document.getElementById('sim-clock-time');
+      const todEl = document.getElementById('sim-time-of-day');
+      if (params.day_night_cycle) {
+        if (todEl) todEl.textContent = timeStr;
+        if (clockEl) clockEl.style.display = '';
+        if (clockTimeEl) clockTimeEl.textContent = timeStr;
+      } else {
+        if (clockEl) clockEl.style.display = 'none';
       }
 
       if (result) updateDisplay(model.getState(), result);
