@@ -23,6 +23,8 @@ const DEFAULTS = {
   tank_UA: 3.0,                 // W/K tank heat loss (insulated)
   greenhouse_UA: 25.0,          // W/K greenhouse envelope loss
   greenhouse_thermal_mass: 50000, // J/K (air + soil + structure)
+  greenhouse_glazing_area: 4.0,  // m² effective south-facing glazing
+  greenhouse_solar_transmittance: 0.15, // fraction of solar radiation transmitted
   radiator_UA: 150.0,           // W/K radiator transfer coefficient
   pump_flow: 6.0,               // L/min
   pipe_loss_per_meter: 0.5,     // W/K per meter of outdoor pipe
@@ -38,11 +40,11 @@ export class ThermalModel {
 
   reset(initial = {}) {
     this.state = {
-      t_tank_top: initial.t_tank_top ?? 40,
-      t_tank_bottom: initial.t_tank_bottom ?? 35,
-      t_collector: initial.t_collector ?? 20,
-      t_greenhouse: initial.t_greenhouse ?? 8,
-      t_outdoor: initial.t_outdoor ?? 5,
+      t_tank_top: initial.t_tank_top ?? 12,
+      t_tank_bottom: initial.t_tank_bottom ?? 9,
+      t_collector: initial.t_collector ?? 10,
+      t_greenhouse: initial.t_greenhouse ?? 11,
+      t_outdoor: initial.t_outdoor ?? 10,
       irradiance: initial.irradiance ?? 500,
       simTime: 0,
     };
@@ -187,9 +189,11 @@ export class ThermalModel {
     const Q_gh_loss = p.greenhouse_UA * (s.t_greenhouse - s.t_outdoor) * dt;
     s.t_greenhouse -= Q_gh_loss / p.greenhouse_thermal_mass;
 
-    // ── Passive solar gain into greenhouse (small) ──
-    if (s.irradiance > 50) {
-      const Q_solar_passive = 0.1 * s.irradiance * 2 * dt; // ~10% of 2m² window
+    // ── Passive solar gain into greenhouse ──
+    // Solar radiation passes through glazing and heats the greenhouse
+    if (s.irradiance > 0) {
+      const Q_solar_passive = p.greenhouse_solar_transmittance * s.irradiance *
+        p.greenhouse_glazing_area * dt; // W·s = J
       s.t_greenhouse += Q_solar_passive / p.greenhouse_thermal_mass;
     }
 
