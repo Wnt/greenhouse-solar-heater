@@ -41,62 +41,14 @@ test.describe('Thermal Simulation Screenshots', () => {
     await expect(page.locator('#controls .control-group')).toHaveCount(7);
   });
 
-  test('initial state - desktop 2D', async ({ page }) => {
+  test('initial state - desktop', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
-    // Ensure we are in 2D view (click toggle if currently 3D)
-    const toggle = page.locator('#btn-toggle-view');
-    if (await toggle.isVisible()) {
-      const text = await toggle.textContent();
-      if (text.includes('2D')) {
-        await toggle.click();
-        await page.waitForTimeout(300);
-      }
-    }
     await page.screenshot(shot('thermal-2d-initial-desktop'));
   });
 
-  test('initial state - desktop 3D', async ({ page }) => {
-    await page.setViewportSize(DESKTOP);
-    const toggle = page.locator('#btn-toggle-view');
-    if (await toggle.isVisible()) {
-      const text = await toggle.textContent();
-      if (text.includes('3D')) {
-        await toggle.click();
-        await page.waitForTimeout(500);
-      }
-      await page.screenshot(shot('thermal-3d-initial-desktop'));
-    } else {
-      // 3D not available, take 2D screenshot as fallback
-      await page.screenshot(shot('thermal-2d-fallback-desktop'));
-    }
-  });
-
-  test('initial state - mobile 2D', async ({ page }) => {
+  test('initial state - mobile', async ({ page }) => {
     await page.setViewportSize(MOBILE);
-    const toggle = page.locator('#btn-toggle-view');
-    if (await toggle.isVisible()) {
-      const text = await toggle.textContent();
-      if (text.includes('2D')) {
-        await toggle.click();
-        await page.waitForTimeout(300);
-      }
-    }
     await page.screenshot(shot('thermal-2d-initial-mobile'));
-  });
-
-  test('initial state - mobile 3D', async ({ page }) => {
-    await page.setViewportSize(MOBILE);
-    const toggle = page.locator('#btn-toggle-view');
-    if (await toggle.isVisible()) {
-      const text = await toggle.textContent();
-      if (text.includes('3D')) {
-        await toggle.click();
-        await page.waitForTimeout(500);
-      }
-      await page.screenshot(shot('thermal-3d-initial-mobile'));
-    } else {
-      await page.screenshot(shot('thermal-2d-fallback-mobile'));
-    }
   });
 
   test('running - solar charging mode', async ({ page }) => {
@@ -119,16 +71,6 @@ test.describe('Thermal Simulation Screenshots', () => {
     const speed = page.locator('#speed');
     await speed.fill('100');
     await speed.dispatchEvent('input');
-
-    // Ensure 2D view for clear pipe visualization
-    const toggle = page.locator('#btn-toggle-view');
-    if (await toggle.isVisible()) {
-      const text = await toggle.textContent();
-      if (text.includes('2D')) {
-        await toggle.click();
-        await page.waitForTimeout(300);
-      }
-    }
 
     // Start simulation
     await page.locator('#btn-play').click();
@@ -166,15 +108,6 @@ test.describe('Thermal Simulation Screenshots', () => {
     await speed.fill('100');
     await speed.dispatchEvent('input');
 
-    const toggle = page.locator('#btn-toggle-view');
-    if (await toggle.isVisible()) {
-      const text = await toggle.textContent();
-      if (text.includes('2D')) {
-        await toggle.click();
-        await page.waitForTimeout(300);
-      }
-    }
-
     await page.locator('#btn-play').click();
 
     await page.waitForFunction(() => {
@@ -192,15 +125,6 @@ test.describe('Thermal Simulation Screenshots', () => {
     if (await dayNight.isVisible()) {
       await dayNight.check();
       await page.waitForTimeout(300);
-    }
-
-    const toggle = page.locator('#btn-toggle-view');
-    if (await toggle.isVisible()) {
-      const text = await toggle.textContent();
-      if (text.includes('2D')) {
-        await toggle.click();
-        await page.waitForTimeout(300);
-      }
     }
 
     await page.screenshot(shot('thermal-daynight-desktop'));
@@ -319,79 +243,5 @@ test.describe('Hydraulic Simulation Screenshots', () => {
       await page.waitForTimeout(1000);
     }
     await page.screenshot(shot('hydraulic-normal-preset-mobile'));
-  });
-});
-
-// ─── Shelly Linter ───────────────────────────────────────────────────────
-
-test.describe('Linter Screenshots', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/playground/linter.html');
-    await expect(page.locator('body')).toBeVisible();
-    await page.waitForTimeout(500);
-  });
-
-  test('initial state - desktop', async ({ page }) => {
-    await page.setViewportSize(DESKTOP);
-    await page.screenshot(shot('linter-initial-desktop'));
-  });
-
-  test('initial state - mobile', async ({ page }) => {
-    await page.setViewportSize(MOBILE);
-    await page.screenshot(shot('linter-initial-mobile'));
-  });
-
-  test('sample with violations loaded', async ({ page }) => {
-    await page.setViewportSize(DESKTOP);
-    // Click "Load Sample" button
-    const sampleBtn = page.locator('button', { hasText: /Sample/i });
-    if (await sampleBtn.isVisible()) {
-      await sampleBtn.click();
-      await page.waitForTimeout(300);
-    }
-
-    // Click lint button
-    const lintBtn = page.locator('button', { hasText: /Lint/i });
-    if (await lintBtn.isVisible()) {
-      await lintBtn.click();
-      await page.waitForTimeout(500);
-    }
-
-    await page.screenshot(shot('linter-violations-desktop'));
-  });
-
-  test('clean script loaded', async ({ page }) => {
-    await page.setViewportSize(DESKTOP);
-    // Load control-logic.js (should be clean)
-    const loadBtn = page.locator('button', { hasText: /control-logic/i });
-    if (await loadBtn.isVisible()) {
-      await loadBtn.click();
-      await page.waitForTimeout(500);
-    }
-
-    const lintBtn = page.locator('button', { hasText: /Lint/i });
-    if (await lintBtn.isVisible()) {
-      await lintBtn.click();
-      await page.waitForTimeout(500);
-    }
-
-    await page.screenshot(shot('linter-clean-desktop'));
-  });
-
-  test('violations - mobile', async ({ page }) => {
-    await page.setViewportSize(MOBILE);
-    const sampleBtn = page.locator('button', { hasText: /Sample/i });
-    if (await sampleBtn.isVisible()) {
-      await sampleBtn.click();
-      await page.waitForTimeout(300);
-    }
-
-    const lintBtn = page.locator('button', { hasText: /Lint/i });
-    if (await lintBtn.isVisible()) {
-      await lintBtn.click();
-      await page.waitForTimeout(500);
-    }
-
-    await page.screenshot(shot('linter-violations-mobile'));
   });
 });

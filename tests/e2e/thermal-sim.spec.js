@@ -147,26 +147,8 @@ test.describe('Thermal Simulation UI', () => {
     expect(height).toBeGreaterThan(14);
   });
 
-  test('view toggle or 2D fallback works', async ({ page }) => {
-    const toggleBtn = page.locator('#btn-toggle-view');
-    const view3d = page.locator('#view-3d');
-    const view2d = page.locator('#view-2d');
-
-    // Wait for 3D init to complete (or fall back)
-    await page.waitForTimeout(500);
-
-    const toggleVisible = await toggleBtn.isVisible();
-    if (toggleVisible) {
-      // 3D available: toggle should switch views
-      await toggleBtn.click();
-      await expect(view2d).toBeVisible();
-      await toggleBtn.click();
-      await expect(view3d).toBeVisible();
-    } else {
-      // 3D unavailable: should fall back to 2D schematic
-      await expect(view2d).toBeVisible();
-      await expect(page.locator('#schematic svg')).toBeAttached();
-    }
+  test('schematic is visible', async ({ page }) => {
+    await expect(page.locator('#view-2d svg')).toBeVisible();
   });
 
   test('sliders update parameter values', async ({ page }) => {
@@ -328,7 +310,7 @@ test.describe('Thermal Simulation UI', () => {
 
   test('navigation links are present and correct', async ({ page }) => {
     const nav = page.locator('.page-header nav');
-    await expect(nav.locator('a')).toHaveCount(4);
+    await expect(nav.locator('a')).toHaveCount(3);
     await expect(nav.locator('a.active')).toHaveText('Thermal Sim');
   });
 });
