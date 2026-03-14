@@ -18,7 +18,6 @@ Web-based tools for simulating and validating the system, deployed via GitHub Pa
 |------|-------------|
 | [Thermal Simulation](playground/thermal.html) | Set outdoor temp, irradiance, tank state — watch the control system respond in real time |
 | [Hydraulic Simulation](playground/hydraulic.html) | Explore communicating vessels, reservoir sizing, drainback dynamics, and air management |
-| [Shelly Linter](playground/linter.html) | Static analysis for Shelly scripts — catches unsupported syntax and resource limit violations |
 
 All tools run entirely client-side (no backend), load `system.yaml` as configuration, and use ES modules with no build step.
 
@@ -28,7 +27,7 @@ All tools run entirely client-side (no backend), load `system.yaml` as configura
 |------|---------|
 | `system.yaml` | **Source of truth** — all component specs, heights, valve states, operating modes |
 | `docs/design.md` | Design specification — architecture, modes, safety rules |
-| `playground/` | Interactive web tools — thermal sim, hydraulic sim, Shelly linter |
+| `playground/` | Interactive web tools — thermal sim, hydraulic sim |
 | `tools/shelly-lint/` | CLI linter for Shelly scripts (Node.js) |
 | `scripts/` | Shelly control software — control logic + shell integration |
 | `tests/` | Unit tests and thermal simulation scenarios |

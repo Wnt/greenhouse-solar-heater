@@ -28,7 +28,7 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `existing-hardware/` → reference photos of owned components
 - `scripts/` → Shelly device scripts and deployment tooling
 - `tools/shelly-lint/` → standalone Shelly platform conformance linter (CLI)
-- `playground/` → interactive browser-based simulators and linter UI
+- `playground/` → interactive browser-based simulators (thermal, hydraulic)
 - `tests/` → unit, simulation, and e2e tests
 - `.github/workflows/` → CI (GitHub Pages deploy, Shelly lint)
 - `IDEAS.md` → raw ideas / wishlist
@@ -60,15 +60,12 @@ The `scripts/` directory contains the actual device scripts deployed to Shelly h
 
 ## Shelly Linter
 
-Two implementations of the platform conformance linter exist:
-
 - **CLI tool**: `tools/shelly-lint/` — standalone Node.js CLI (`node tools/shelly-lint/bin/shelly-lint.js`). Uses Acorn for AST parsing. Has its own `package.json` with acorn and js-yaml dependencies.
-- **Browser UI**: `playground/linter.html` + `playground/js/linter.js` — interactive linter in the playground, using vendored Acorn.
 - **CI**: `.github/workflows/lint-shelly.yml` runs the CLI linter on push/PR when `scripts/` or `tools/shelly-lint/` files change.
 
 ## SVG Diagram Conventions
 
-All SVGs use a dark background (#0d1117), consistent color coding:
+Static SVGs in `diagrams/` use a dark background (#0d1117). Playground inline SVGs use light-theme colors (see Playground Architecture). Color coding for static diagrams:
 - Blue (#42a5f5, #1565c0) = supply/cool water, tank
 - Red (#ef5350, #e53935) = hot water, dip tube path
 - Yellow (#f9a825) = solar collectors
@@ -80,13 +77,12 @@ Height scales in SVGs are approximate — `system-height-layout.svg` is the most
 
 ## Playground Architecture
 
-The `playground/` directory contains interactive browser-based simulators (thermal, hydraulic) and a Shelly script linter. These are static HTML files using ES modules with `<script type="importmap">`.
+The `playground/` directory contains interactive browser-based simulators (thermal, hydraulic). Light theme (Stitch-inspired). These are static HTML files using ES modules with `<script type="importmap">`.
 
 - `playground/index.html` — landing page linking to all playground tools
-- `playground/thermal.html` — thermal simulation (2D + optional 3D view)
+- `playground/thermal.html` — thermal simulation (2D SVG schematic)
 - `playground/hydraulic.html` — hydraulic simulation (water level, air venting)
-- `playground/linter.html` — Shelly script linter UI
-- `playground/js/` — ES modules: physics, control, hydraulics, UI, yaml-loader, scene3d, linter
+- `playground/js/` — ES modules: physics, control, hydraulics, UI, yaml-loader
 - `playground/css/style.css` — shared styles
 
 ### Vendored Dependencies
@@ -94,15 +90,8 @@ The `playground/` directory contains interactive browser-based simulators (therm
 All third-party libraries are vendored locally in `playground/vendor/` to avoid CDN/CORS issues in restricted environments (e.g. Claude Code web runtime, CI, offline):
 
 - `playground/vendor/js-yaml.mjs` — js-yaml 4.1.0 (ESM), used by all playground pages
-- `playground/vendor/three.module.js` — Three.js 0.170.0 (ESM, minified), used by thermal sim 3D view
-- `playground/vendor/three-addons/controls/OrbitControls.js` — Three.js OrbitControls addon
-- `playground/vendor/acorn.js` — Acorn 8.11.3 (UMD), used by the Shelly linter
 
 **Do NOT replace these with CDN URLs.** The importmaps in each HTML file point to `./vendor/...` paths. If upgrading a dependency, download via `npm pack`, extract the dist files, and copy to `playground/vendor/`.
-
-### 3D Visualization (Three.js)
-
-The thermal simulation has a 3D view (`playground/js/scene3d.js`) that is **lazy-loaded** via dynamic `import()`. If Three.js fails to load (e.g. WebGL unavailable), the page falls back to the 2D SVG schematic automatically. The toggle button is hidden when 3D is unavailable.
 
 ## Running Tests
 
@@ -123,7 +112,7 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - **Playwright version**: Must match the cached Chromium browser revision. Currently `@playwright/test@1.56.0` matches `chromium-1194`. If you see "browser not found" errors, check `~/.cache/ms-playwright/` for available revisions and install the matching Playwright version.
 - **Static server**: Tests use `npx serve` on port 3210 to serve the playground. The Playwright config auto-starts this server.
 - **No `-s` flag on serve**: Do NOT use `serve -s` (SPA mode) — it breaks direct HTML file access by redirecting all routes.
-- **E2e tests exercise the 3D view** when Three.js loads successfully (vendored locally). Individual test timeouts are 30s to accommodate WebGL initialization overhead.
+- Individual test timeouts are 30s. E2e tests verify the 2D SVG schematic and simulation behavior.
 
 ## CI / GitHub Actions
 
