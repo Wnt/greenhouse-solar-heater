@@ -119,11 +119,15 @@ export function drawChart(canvas, store, config = {}) {
   yMin -= yPad;
   yMax += yPad;
 
-  // Grid
-  ctx.strokeStyle = '#30363d';
+  // Grid — read theme colors from CSS variables
+  var style = getComputedStyle(document.documentElement);
+  var gridColor = style.getPropertyValue('--border').trim() || '#e2e6ea';
+  var labelColor = style.getPropertyValue('--text-muted').trim() || '#64748b';
+
+  ctx.strokeStyle = gridColor;
   ctx.lineWidth = 0.5;
   ctx.font = '10px -apple-system, sans-serif';
-  ctx.fillStyle = '#8b949e';
+  ctx.fillStyle = labelColor;
 
   const yTicks = 5;
   for (let i = 0; i <= yTicks; i++) {
@@ -153,7 +157,7 @@ export function drawChart(canvas, store, config = {}) {
     t_tank_bottom: '#1565c0',
     t_collector: '#f9a825',
     t_greenhouse: '#76ff03',
-    t_outdoor: '#8b949e',
+    t_outdoor: '#64748b',
   };
 
   for (const key of seriesKeys) {
