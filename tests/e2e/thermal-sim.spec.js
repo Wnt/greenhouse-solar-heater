@@ -34,9 +34,9 @@ test.describe('Thermal Simulation UI', () => {
   test('valve table shows all 8 valves and 3 actuators', async ({ page }) => {
     const valveTable = page.locator('#valve-table');
     await expect(valveTable).toBeVisible();
-    // 8 valves + 3 actuators = 11 rows
+    // 2-column layout: 6 rows (11 items split across 2 columns)
     const rows = valveTable.locator('tr');
-    await expect(rows).toHaveCount(11);
+    await expect(rows).toHaveCount(6);
   });
 
   test('start button toggles simulation', async ({ page }) => {
