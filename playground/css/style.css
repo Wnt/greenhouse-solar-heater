@@ -1,12 +1,13 @@
 /* ── Base ── */
 :root {
-  --bg: #0d1117;
-  --bg-card: #161b22;
-  --bg-input: #21262d;
-  --border: #30363d;
-  --text: #c9d1d9;
-  --text-muted: #8b949e;
-  --text-bright: #f0f6fc;
+  --bg: #f5f7f8;
+  --bg-card: #ffffff;
+  --bg-input: #f0f2f5;
+  --border: #e2e6ea;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --text-bright: #0f172a;
+  --primary: #0056b2;
   --blue: #42a5f5;
   --blue-dark: #1565c0;
   --red: #ef5350;
@@ -28,7 +29,7 @@ body {
   min-height: 100vh;
 }
 
-a { color: var(--blue); text-decoration: none; }
+a { color: var(--primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 /* ── Layout ── */
@@ -45,16 +46,19 @@ a:hover { text-decoration: underline; }
 .page-header nav a {
   padding: 6px 12px;
   border-radius: 6px;
-  color: var(--text);
+  color: var(--text-muted);
   font-size: 14px;
   transition: background 0.15s;
 }
-.page-header nav a:hover, .page-header nav a.active {
+.page-header nav a:hover {
   background: var(--bg-input);
   color: var(--text-bright);
   text-decoration: none;
 }
-.page-header nav a.active { border-bottom: 2px solid var(--blue); }
+.page-header nav a.active {
+  color: var(--primary);
+  border-bottom: 2px solid var(--primary);
+}
 
 .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
 
@@ -62,9 +66,10 @@ a:hover { text-decoration: underline; }
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 20px;
   margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 .card h2 { font-size: 16px; color: var(--text-bright); margin-bottom: 12px; }
 .card h3 { font-size: 14px; color: var(--text-bright); margin-bottom: 8px; }
@@ -96,7 +101,7 @@ a:hover { text-decoration: underline; }
 }
 input[type="range"] {
   flex: 1;
-  accent-color: var(--blue);
+  accent-color: var(--primary);
   height: 6px;
 }
 select, button, input[type="number"] {
@@ -114,11 +119,11 @@ button {
 }
 button:hover { background: var(--border); }
 button.primary {
-  background: var(--blue-dark);
-  border-color: var(--blue);
+  background: var(--primary);
+  border-color: var(--primary);
   color: #fff;
 }
-button.primary:hover { background: var(--blue); }
+button.primary:hover { background: #004494; }
 button.danger {
   background: var(--red-dark);
   border-color: var(--red);
@@ -131,10 +136,12 @@ button.danger {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: var(--bg-input);
-  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
   margin-bottom: 16px;
   flex-wrap: wrap;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 .sim-bar .mode-badge {
   display: inline-block;
@@ -145,10 +152,10 @@ button.danger {
   text-transform: uppercase;
 }
 .mode-idle { background: var(--border); color: var(--text-muted); }
-.mode-solar_charging { background: #f9a82533; color: var(--yellow); }
-.mode-greenhouse_heating { background: #ef535033; color: var(--red); }
-.mode-active_drain { background: #ff980033; color: var(--orange); }
-.mode-overheat_drain { background: #ff980033; color: var(--orange); }
+.mode-solar_charging { background: #dbeafe; color: #1565c0; }
+.mode-greenhouse_heating { background: #fee2e2; color: var(--red-dark); }
+.mode-active_drain { background: #ffedd5; color: #c2410c; }
+.mode-overheat_drain { background: #ffedd5; color: #c2410c; }
 .mode-emergency_heating { background: #e53935; color: #fff; }
 
 /* ── SVG area ── */
@@ -191,28 +198,18 @@ button.danger {
   border-bottom: 1px solid var(--border);
 }
 .status-table td { padding: 4px 8px; }
+.status-table tr:nth-child(even) td { background: #f8fafc; }
 .status-table .val { font-family: 'SF Mono', Consolas, monospace; font-weight: 600; }
 .status-open { color: var(--green); }
 .status-closed { color: var(--text-muted); }
 .status-on { color: var(--green); }
 .status-off { color: var(--text-muted); }
 
-/* ── Linter ── */
-.lint-output {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 16px;
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 13px;
-  white-space: pre-wrap;
-  max-height: 500px;
-  overflow: auto;
-}
-.lint-error { color: var(--red); }
-.lint-warning { color: var(--yellow); }
-.lint-ok { color: var(--green); }
-.lint-info { color: var(--cyan); }
+/* ── Status classes (general purpose) ── */
+.status-error { color: var(--red); }
+.status-warning { color: var(--yellow); }
+.status-ok { color: var(--green); }
+.status-info { color: var(--cyan); }
 
 /* ── Landing page ── */
 .hero {
@@ -245,9 +242,10 @@ button.danger {
   padding: 24px;
   transition: border-color 0.2s, transform 0.2s;
   display: block;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 .tool-card:hover {
-  border-color: var(--blue);
+  border-color: var(--primary);
   transform: translateY(-2px);
   text-decoration: none;
 }
@@ -321,20 +319,20 @@ button.danger {
 
 /* ── Warnings ── */
 .warning-box {
-  background: #f9a82515;
+  background: #fef3c7;
   border: 1px solid var(--yellow);
   border-radius: 6px;
   padding: 10px 14px;
   margin-top: 12px;
   font-size: 13px;
-  color: var(--yellow);
+  color: #92400e;
 }
 .danger-box {
-  background: #ef535015;
+  background: #fee2e2;
   border: 1px solid var(--red);
   border-radius: 6px;
   padding: 10px 14px;
   margin-top: 12px;
   font-size: 13px;
-  color: var(--red);
+  color: #991b1b;
 }
