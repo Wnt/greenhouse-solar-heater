@@ -13,17 +13,22 @@ function shot(name) {
 // ─── Index / Landing Page ───────────────────────────────────────────────
 
 test.describe('Index Page Screenshots', () => {
+  // Use trailing slash so relative CSS path (css/style.css) resolves correctly.
+  // serve's cleanUrls redirects /playground/index.html → /playground (no slash),
+  // which breaks relative asset resolution.
+  const indexUrl = '/playground/';
+
   test('desktop', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
-    await page.goto('/playground/index.html');
-    await expect(page.locator('body')).toBeVisible();
+    await page.goto(indexUrl, { waitUntil: 'load' });
+    await expect(page.locator('.tools-grid')).toBeVisible();
     await page.screenshot(shot('index-desktop'));
   });
 
   test('mobile', async ({ page }) => {
     await page.setViewportSize(MOBILE);
-    await page.goto('/playground/index.html');
-    await expect(page.locator('body')).toBeVisible();
+    await page.goto(indexUrl, { waitUntil: 'load' });
+    await expect(page.locator('.tools-grid')).toBeVisible();
     await page.screenshot(shot('index-mobile'));
   });
 });
