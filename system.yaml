@@ -326,9 +326,10 @@ control:
             CLOSED (normal), relay OFF / power loss = valve OPEN (collectors
             drain automatically as fail-safe).
 
-    shelly_plus_1_addon:
+    shelly_1_gen3_addon:
       quantity: 1
       role: temperature sensor hub
+      model: Shelly 1 Gen3 (replaces discontinued Shelly Plus 1)
       addon: Shelly Plus Add-on (1-Wire interface)
       sensors_connected:
         - t_collector (collector outlet, 280cm)
@@ -345,26 +346,34 @@ control:
         required or sensors can be split across two hubs.
 
   shopping_list:
+    note: >
+      Prices from Nurkan takaa (EUR incl. VAT, March 2026).
+      Full BOM with spares and expansion items in docs/bom-shelly.md.
     - item: Shelly Pro 4PM
       qty: 1
-      est_price: ~60€
+      est_price: ~108€
     - item: Shelly Pro 2PM
       qty: 4
-      est_price: ~45€ each, ~180€ total
-    - item: Shelly Plus 1
+      est_price: ~89€ each, ~356€ total
+    - item: Shelly 1 Gen3
       qty: 1
-      est_price: ~15€
+      est_price: ~19€
+      note: replaces discontinued Shelly Plus 1
     - item: Shelly Plus Add-on
       qty: 1
-      est_price: ~15€
-    - item: DS18B20 temperature sensors
-      qty: 5–7
-      est_price: ~5€ each, ~25–35€ total
-    - item: DIN rail (optional, for tidy enclosure)
+      est_price: ~17€
+    - item: DS18B20 temperature sensors (3m cable)
+      qty: 5
+      est_price: ~7€ each, ~33€ total
+    - item: Zyxel GS-108BV5 (8-port Gigabit switch)
       qty: 1
-      est_price: ~10€
-    - item: Total Shelly + sensors estimate
-      est_price: ~305–315€
+      est_price: ~25€
+      note: wall-mount, for Pro device Ethernet
+    - item: DIN rail adapter (PLUS-size, for 1 Gen3)
+      qty: 1
+      est_price: ~5€
+    - item: Total control electronics estimate (core)
+      est_price: ~563€
 
   air_management:
     collector_loop: automatic air vent at collector top (highest point)
@@ -673,10 +682,15 @@ structure:
 
 budget:
   control_system:
-    shelly_hardware: ~310€  # Pro 4PM + 4× Pro 2PM + Plus 1 + Add-on
-    sensors: ~35€            # 5–7× DS18B20
+    shelly_hardware: ~500€  # Pro 4PM + 4× Pro 2PM + 1 Gen3 + Add-on
+    sensors: ~33€            # 5× DS18B20 (3m cable)
+    networking: ~30€          # Zyxel GS-108BV5 + DIN adapter
     motorized_valves: ~200€  # 8× DN15 on/off @ ~25€ each
     auto_air_vent: ~10€
     manual_service_valves: ~20€  # 2× manual ball valve with hose barb
-    total: ~575€
-  note: On/off valves are cheaper per unit than 3-way valves
+    total: ~793€
+  spares_and_expansion: ~144€  # 1× Pro 2PM + 1× Gen3 + 1× Add-on + 3× DS18B20 + 1× DIN adapter
+  note: >
+    Prices from Nurkan takaa (EUR incl. VAT, March 2026).
+    On/off valves are cheaper per unit than 3-way valves.
+    See docs/bom-shelly.md for detailed order list with spares.

@@ -90,7 +90,7 @@ function evaluate(state, config) {
 Handles all platform concerns:
 
 - 30-second repeating timer for the control loop
-- HTTP RPC to Pro 2PMs (valve commands) and Plus 1 (sensor reads)
+- HTTP RPC to Pro 2PMs (valve commands) and 1 Gen3 (sensor reads)
 - Local relay control for pump, fan, heaters
 - KVS persistence for `collectorsDrained` flag and other state
 - Status endpoint (`/script/1/status`)
@@ -358,4 +358,4 @@ These are ballpark values. The model doesn't need to match reality precisely —
 This testing strategy introduces changes that should be propagated to other documents:
 
 - **Control software spec:** Update architecture from single monolithic script to two-file split (`control-logic.js` + `control.js`). Add overheat drain entry condition (T_tank_top > 85°C) to mode transition rules.
-- **system.yaml:** The flow sensor has been eliminated per the control software spec (replaced by pump power monitoring). References to `flow_sensor` in safety rules and active drain sequence should be updated.
+- **system.yaml:** ~~The flow sensor has been eliminated per the control software spec (replaced by pump power monitoring). References to `flow_sensor` in safety rules and active drain sequence should be updated.~~ Done — flow sensor removed, pump power monitoring is the design, Shelly Plus 1 replaced with 1 Gen3.

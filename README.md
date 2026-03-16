@@ -52,7 +52,7 @@ All tools run entirely client-side (no backend), load `system.yaml` as configura
 - **Unpressurized system** — Jäspi tank used open/vented via reservoir on top
 - **On/off valve manifold** — 8 motorized on/off valves (DN15) in input/output manifolds around pump
 - **Active drainback** — pump empties collectors; air enters via V_air at collector top
-- **Flow sensor** — detects when collectors are empty, prevents pump dry-run
+- **Pump power monitoring** — Pro 4PM detects dry-run via power draw, no physical flow sensor
 - **Auto air vent** — at collector top (highest point), continuously bleeds trapped air
 - **Manual service valves** — SV-drain and SV-fill for system maintenance
-- **Shelly control** — Pro 4PM + 3× Pro 2PM + Plus 1 with Add-on
+- **Shelly control** — Pro 4PM + 4× Pro 2PM + 1 Gen3 with Add-on

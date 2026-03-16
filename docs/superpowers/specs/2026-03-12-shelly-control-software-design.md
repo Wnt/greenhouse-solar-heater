@@ -8,9 +8,9 @@ Design spec for the Shelly scripting layer that controls the solar thermal green
 |--------|-----|------------|------|
 | Shelly Pro 4PM | 1 | Ethernet | Brain — runs control script, drives pump (O1), fan (O2), immersion heater (O3), space heater (O4) |
 | Shelly Pro 2PM | 4 | Ethernet | Valve relays — no custom scripts, commanded via HTTP RPC |
-| Shelly Plus 1 + Add-on | 1 | WiFi | Sensor hub — up to 5x DS18B20 temperature sensors on 1-Wire bus |
+| Shelly 1 Gen3 + Plus Add-on | 1 | WiFi | Sensor hub — up to 5x DS18B20 temperature sensors on 1-Wire bus |
 
-All Pro devices connect via wired Ethernet to a local switch/router. The Plus 1 connects via WiFi. No cloud connection required — all communication is local HTTP RPC.
+All Pro devices connect via wired Ethernet to a Zyxel GS-108BV5 8-port switch. The 1 Gen3 sensor hub connects via WiFi. No cloud connection required — all communication is local HTTP RPC.
 
 ### Relay Mapping
 
@@ -36,7 +36,7 @@ All Pro devices connect via wired Ethernet to a local switch/router. The Plus 1 
 - O1: V_ret (collector top to reservoir, normal return)
 - O2: V_air (collector top to open air, drain air intake) — wired as normally-open spring-return valve; relay ON = closed, relay OFF / power loss = open (fail-safe drain)
 
-### Sensors (Plus 1 + Add-on)
+### Sensors (1 Gen3 + Add-on)
 
 - T_collector — collector outlet (~280cm)
 - T_tank_top — tank upper region (~185cm)
@@ -78,7 +78,7 @@ The minimum mode duration (5 minutes) does NOT apply to safety modes — `ACTIVE
 ### Main Control Loop
 
 30-second repeating timer:
-1. Poll Plus 1 for all temperatures (sequential HTTP calls, one per sensor)
+1. Poll 1 Gen3 for all temperatures (sequential HTTP calls, one per sensor)
 2. Store readings in local variables with timestamps
 3. Evaluate mode transition rules (hysteresis + minimum mode duration)
 4. If transition needed, execute transition sequence (sensor polling must complete before any valve commands are issued — never interleave)
@@ -86,7 +86,7 @@ The minimum mode duration (5 minutes) does NOT apply to safety modes — `ACTIVE
 
 **RPC call serialization:** Sensor polling and valve commands are never concurrent. The control loop completes all sensor reads first, then evaluates, then issues valve commands if needed. This ensures the 5 concurrent HTTP transaction limit is never exceeded.
 
-**Local relay control:** All Pro 4PM relay operations (pump, fan, heaters) use local `Shelly.call("Switch.Set", ...)` which does not count against the HTTP transaction limit. Only remote Pro 2PM and Plus 1 communication uses HTTP.
+**Local relay control:** All Pro 4PM relay operations (pump, fan, heaters) use local `Shelly.call("Switch.Set", ...)` which does not count against the HTTP transaction limit. Only remote Pro 2PM and 1 Gen3 communication uses HTTP.
 
 ### Timer Budget
 
@@ -146,7 +146,7 @@ When `ACTIVE_DRAIN` is active, a separate fast timer (~200ms) monitors pump powe
 1. Set all local relays off (pump, heaters, fan)
 2. Send "all valves closed" to all Pro 2PMs via HTTP RPC
 3. Wait 5 seconds for valves to settle
-4. Read sensors from Plus 1
+4. Read sensors from 1 Gen3
 5. Enter normal control loop (evaluate conditions, pick appropriate mode)
 
 **Open question:** On boot, if freezing conditions exist, the system should verify collectors are empty before resuming normal operation. V_air (normally-open fail-safe) should have opened during power loss, potentially allowing gravity drain. However, collectors are below the reservoir and may not fully gravity-drain. Resolution needed before commissioning — options include a dedicated "verify drain" procedure on boot or a manual confirmation step.
@@ -178,7 +178,7 @@ let VALVES = {
 
 IPs are DHCP reservations configured on the router.
 
-### Sensor Reads (Pro 4PM to Plus 1)
+### Sensor Reads (Pro 4PM to 1 Gen3)
 
 HTTP RPC calls:
 ```
@@ -242,7 +242,7 @@ A `deploy.sh` shell script in this repo:
 2. Pushes to the Pro 4PM via RPC: `Script.PutCode`, `Script.SetConfig` (enable on boot), `Script.Start`
 3. Device IPs read from `devices.conf`
 4. Can target a single device or all devices
-5. Pro 2PMs and Plus 1 run stock firmware — no scripts to deploy
+5. Pro 2PMs and 1 Gen3 run stock firmware — no scripts to deploy
 
 ### Configuration
 
@@ -273,7 +273,7 @@ This spec makes the following design decisions that diverge from the current sys
 1. **Flow sensor eliminated** — replaced by pump power monitoring on Pro 4PM O1 channel. Remove `flow_sensor` component, update safety rules and drain sequence references.
 2. **V_air wiring decided** — system.yaml says "consider fail-safe: V_air normally-open on power loss." This spec promotes it to a firm design decision.
 3. **Exit thresholds added** — system.yaml only specifies entry triggers. This spec adds hysteresis exit thresholds for all modes.
-4. **Plus 1 retained** (not replaced with Pro 1) — Plus 1 Add-on is not compatible with Pro devices. Sensor hub stays on WiFi; all other devices on Ethernet.
+4. **Sensor hub on WiFi** — Shelly 1 Gen3 with Plus Add-on (replaces discontinued Plus 1). Add-on is not compatible with Pro devices. Sensor hub stays on WiFi; all other devices on Ethernet.
 
 ## Open Questions
 

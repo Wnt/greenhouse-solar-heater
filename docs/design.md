@@ -51,11 +51,10 @@ The system uses 8 motorized on/off ball valves (DN15, 230V) arranged in input an
 | V_ret | Collector top → reservoir | Solar charging (return path) |
 | V_air | Collector top → open air | Active drain (air intake) |
 
-**Additional:**
+**Service valves:**
 
 | Component | Type | Purpose |
 |-----------|------|---------|
-| Flow sensor | On collector bottom pipe | Detects empty collectors during drain |
 | SV-drain | Manual ball valve, hose barb | Drain system at lowest point |
 | SV-fill | Manual ball valve, hose barb | Fill system (garden hose) |
 
@@ -99,18 +98,17 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 
 ### Control Hardware — Shelly Components
 
-12 relay outputs needed: 8 motorized valves + pump + fan + 2 heaters.
+12 relay outputs needed: 8 motorized valves + pump + fan + 2 heaters. All Pro devices connect via wired Ethernet; sensor hub connects via WiFi. See `docs/bom-shelly.md` for full order list with pricing.
 
-| Device | Qty | Outputs | Assignment | Est. Price |
-|--------|-----|---------|------------|------------|
-| **Shelly Pro 4PM** | 1 | 4 | Pump, radiator fan, immersion heater, space heater | ~60€ |
-| **Shelly Pro 2PM** | 4 | 2 each | 8 motorized valves (2 per unit) | ~180€ |
-| **Shelly Plus 1 + Add-on** | 1 | — | Temperature sensor hub (DS18B20, 1-Wire) | ~30€ |
-| **DS18B20 sensors** | 5–7 | — | T_coll, T_tank×2, T_greenhouse, T_outdoor (+2 optional) | ~35€ |
+| Device | Qty | Outputs | Assignment |
+|--------|-----|---------|------------|
+| **Shelly Pro 4PM** | 1 | 4 | Pump, radiator fan, immersion heater, space heater |
+| **Shelly Pro 2PM** | 4 | 2 each | 8 motorized valves (2 per unit) |
+| **Shelly 1 Gen3 + Plus Add-on** | 1 | — | Temperature sensor hub (DS18B20, 1-Wire) |
+| **DS18B20 sensors (3m cable)** | 5–7 | — | T_coll, T_tank×2, T_greenhouse, T_outdoor (+2 optional) |
+| **Zyxel GS-108BV5** | 1 | — | 8-port Gigabit Ethernet switch (wall-mount) |
 
-**Total Shelly + sensors: ~305€**
-
-**Pro 4PM** is the main brain — runs Shelly scripts for control logic, has power monitoring on all 4 channels (useful for detecting stuck pump, verifying fan is running).
+**Pro 4PM** is the main brain — runs Shelly scripts for control logic, has power monitoring on all 4 channels (useful for detecting stuck pump via power draw, verifying fan is running).
 
 **Pro 2PM valve assignments:**
 
@@ -123,9 +121,9 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 
 **V_air fail-safe:** Wired with a normally-open spring-return valve. Relay ON = valve closed (normal operation). Relay OFF or power loss = valve opens, allowing air in so collectors drain automatically.
 
-**Sensor hub:** Shelly Plus Add-on connects DS18B20 sensors via 1-Wire bus. Supports up to 5 sensors natively; a second Add-on may be needed if all 7 sensors are used.
+**Sensor hub:** Shelly 1 Gen3 with Plus Add-on connects DS18B20 sensors via 1-Wire bus. Supports up to 5 sensors natively; a second Gen3 + Add-on may be needed if all 7 sensors are used. *(Shelly Plus 1 is discontinued; Gen3 is the replacement.)*
 
-**Flow sensor** connects to a digital input on the Plus 1 or Pro 4PM.
+**Pump dry-run detection:** No physical flow sensor. The Pro 4PM's built-in power monitoring on the pump channel (O1) detects when the pump runs dry — power draw drops measurably. This keeps drain safety logic entirely local on the brain device.
 
 **Communication:** HTTP RPC over local network (Shelly scripting), optionally MQTT.
 
@@ -201,10 +199,10 @@ All valves closed, all actuators off. Shelly monitors sensor temperatures contin
 4. Open VI-coll (pump inlet from collector bottom)
 5. Open VO-tank (pump outlet to tank)
 6. Start pump
-7. Monitor flow sensor
-8. Flow sensor reads zero → stop pump → close all valves
+7. Monitor pump power (Pro 4PM O1)
+8. Power drops below threshold → stop pump → close all valves
 
-**Actuators:** Pump ON (until flow=0)
+**Actuators:** Pump ON (until dry-run detected)
 
 ### Mode 4: Overheat Drain (Stagnation Protection)
 
@@ -288,7 +286,6 @@ Full shutdown for deep winter — no active heating from tank:
 170cm ─── Upper panel bottom / Lower panel top
 
  30cm ─── Collector bottom (lower panel)
-          Flow sensor
 
  20cm ─── Pump (Wilo Star Z20/4)
           Input manifold (VI-btm, VI-top, VI-coll)
@@ -322,7 +319,7 @@ Full shutdown for deep winter — no active heating from tank:
 ## Safety Rules
 
 1. **Always stop pump before switching any valve** — prevents water hammer and valve damage
-2. **Never run pump dry** — flow sensor stops pump when collectors empty
+2. **Never run pump dry** — pump power monitoring (Pro 4PM O1) detects dry-run
 3. **One input, one output** — exactly one input valve and one output valve open at a time
 4. **Drain before freezing** — trigger at 2°C gives safety margin before 0°C
 5. **Slope collector pipes** — 2–3 cm/m toward drain to ensure complete drainage
@@ -333,15 +330,16 @@ Full shutdown for deep winter — no active heating from tank:
 
 | Category | Cost |
 |----------|------|
-| Shelly hardware (Pro 4PM + 4× Pro 2PM + Plus 1 + Add-on) | ~310€ |
-| DS18B20 sensors (5–7×) | ~35€ |
+| Shelly hardware (Pro 4PM + 4× Pro 2PM + 1 Gen3 + Add-on) | ~544€ |
+| DS18B20 sensors (5×, 3m cable) | ~33€ |
+| Ethernet switch (Zyxel GS-108BV5) | ~25€ |
 | 8× motorized on/off valves (DN15) | ~200€ |
-| Flow sensor | ~25€ |
 | Auto air vent | ~10€ |
 | 2× manual service valves | ~20€ |
-| **Control system total** | **~600€** |
+| **Control system total (core)** | **~832€** |
+| Spares & expansion (see `docs/bom-shelly.md`) | ~144€ |
 
-Structural materials (wood, slabs, fasteners) budgeted separately.
+Prices from Nurkan takaa (EUR incl. VAT, March 2026). Structural materials budgeted separately. Full order list in `docs/bom-shelly.md`.
 
 ## Open Design Questions
 
