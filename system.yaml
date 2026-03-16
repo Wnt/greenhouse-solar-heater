@@ -413,7 +413,7 @@ control:
       - item: Plumbing subtotal
         price: ~121€
     # auto air vent removed — sub-atmospheric pressure at collector top
-    total_estimate: ~1395€
+    total_estimate: ~1467€
 
   air_management:
     collector_loop: >
@@ -728,8 +728,9 @@ budget:
     motorized_valves: ~516€    # 8× DN15 ½" + A83 9-24V DC 2-wire actuator @ ~65€ each (hpcontrol.fi)
     manifolds_and_fittings: ~101€  # Biltema: Jakaja 3+4 putkea, tees, service valves, misc
     pex_to_valve_adapters: ~48€   # K-Rauta: 8× puserrusliitin 22mm×½" UK (22mm PEX ↔ ½" BSP reducing)
+    wiring_and_terminals: ~72€   # Triopak: 2×0.75mm² cable, ferrules, DIN rail, terminals, Ethernet
     # auto air vent removed — negative pressure at collector top
-    total: ~1395€
+    total: ~1467€
   future_expansion:
     wood_burner_valve: ~65€    # 1× additional DN15 valve+actuator (hpcontrol.fi)
     wood_burner_plumbing: ~25€ # PEX piping to/from wood burner (Biltema)

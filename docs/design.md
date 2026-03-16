@@ -331,7 +331,8 @@ Full shutdown for deep winter — no active heating from tank:
 | 8× motorized valves DN15 + A83 9-24V DC 2-wire actuator | hpcontrol.fi | ~516€ |
 | Manifolds, tees, service valves, fittings | Biltema | ~101€ |
 | 8× puserrusliitin 22mm×½" UK (PEX-to-valve adapters) | K-Rauta | ~48€ |
-| **Control system total** | | **~1,395€** |
+| Wiring, terminals, DIN rail, Ethernet cables | Triopak | ~72€ |
+| **Control system total** | | **~1,467€** |
 
 Prices EUR incl. VAT, March 2026. Structural materials budgeted separately. Full order list with links in `docs/bom.md`.
 

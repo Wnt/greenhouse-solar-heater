@@ -108,9 +108,33 @@ Pick up in-store.
 
 | | | | **K-Rauta total** | **~48** | |
 
-### Auto air vent — removed
+---
 
-No auto air vent at the collector top. Sub-atmospheric pressure there (80cm water column falling to reservoir at 200cm) draws air IN rather than venting it out — confirmed by testing with a manual valve at the collector top. Trapped air in the collector loop is carried by water flow through V_ret to the open reservoir, where it vents to atmosphere.
+## Vendor 5: [Triopak](https://www.triopak.fi/) — Wiring, terminals, DIN rail
+
+| # | Item | Spec | Qty | Est. price | Role |
+|---|------|------|-----|-----------|------|
+| 24 | 2-conductor cable 2×0.75mm² | MSO2X075 or YSLY | ~30m | ~15.00 | 24V DC valve wiring. 6 ground-level valves × ~2m + 2 collector top valves × ~8m. |
+| 25 | Pääteholkit 0.75mm² (insulated ferrules) | — | 50 pcs | ~8.00 | For every wire end at screw terminals. |
+| 26 | [DIN rail 35mm perforated, 2m](https://www.triopak.fi/fi/tuote/DIN-KISKO) | TS35/F6 | 1 | ~8.00 | Cut to ~60cm for all Shelly devices + PSU. |
+| 27 | DIN rail end stops | — | 4 | ~3.00 | Keep devices from sliding. |
+| 28 | [DIN rail terminal block 2.5mm² red](https://www.triopak.fi/fi/tuote/SR25BL) | SR25 series | 4 | ~5.00 | 24V+ distribution bus: PSU → Pro 2PM relay COMs. |
+| 29 | DIN rail terminal block 2.5mm² blue | SR25 series | 4 | ~5.00 | 24V- (GND) distribution bus: PSU → all valve power- wires. |
+| 30 | DIN rail terminal block 2.5mm² grey | SR25 series | 4 | ~5.00 | Spare / PE / misc connections. |
+| 31 | Terminal block end plates | For SR25 | 4 | ~3.00 | End caps for terminal block rows. |
+| 32 | Cat5e patch cable 0.5m | — | 4 | ~8.00 | Pro 4PM + Pro 2PM #1-#3 (short runs on DIN rail). |
+| 33 | Cat5e patch cable 2m | — | 2 | ~6.00 | Pro 2PM #4 + uplink to router. |
+| 34 | PTFE tape (spare) | — | 1 | ~2.00 | — |
+
+| | | | | **Triopak total** | **~72** |
+
+### 230V installation wiring (not from Triopak)
+
+Fixed installation cables subject to electrical regulations — source from any electrical supplier:
+
+- **1.5mm² 3-conductor** (L/N/PE, e.g. MMJ 3×1.5S): pump (~2m), radiator fan (~5-10m), immersion heater (~2m)
+- **2.5mm² 3-conductor** (e.g. MMJ 3×2.5S): space heater 2kW (~5-10m, draws ~9A)
+- Proper circuit breaker in distribution board
 
 ---
 
@@ -186,15 +210,37 @@ V_air pipe side: valve (½" female) → open to air
 
 ## Wiring
 
-### Valve circuit (24V DC)
+### Full wiring diagram
 
 ```
-DIN rail:  24V PSU ──→ Pro 2PM relays ──→ valve actuators
-                       (1 relay per valve)  (A83 2-wire:
-                                             power+ / power-)
+MAINS 230V ──→ ┌──────────────────────────────────────────────────────┐
+               │ DIN RAIL                                              │
+               │                                                       │
+               │  Pro 4PM ──O1──→ pump (230V, ~2m)                    │
+               │           ──O2──→ radiator fan (230V, ~5-10m)        │
+               │           ──O3──→ immersion heater (230V, ~2m)       │
+               │           ──O4──→ space heater (230V, ~5-10m)        │
+               │                                                       │
+               │  24V PSU ──→ 24V+ bus (red terminals)                 │
+               │          ──→ 24V- bus (blue terminals)                │
+               │                                                       │
+               │  Pro 2PM #1 ─relay1─→ VI-btm  power+ (~1m)           │
+               │             ─relay2─→ VI-top  power+ (~1m)            │
+               │  Pro 2PM #2 ─relay1─→ VI-coll power+ (~1m)           │
+               │             ─relay2─→ VO-coll power+ (~1m)            │
+               │  Pro 2PM #3 ─relay1─→ VO-rad  power+ (~2m)           │
+               │             ─relay2─→ VO-tank power+ (~1m)            │
+               │  Pro 2PM #4 ─relay1─→ V_ret   power+ (~8m, 280cm)   │
+               │             ─relay2─→ V_air   power+ (~8m, 280cm)    │
+               │  Pro 2PM #5 (spare, future VO-wood)                   │
+               │                                                       │
+               │  Gen3 + Add-on ──1-Wire──→ DS18B20 sensors (3m each) │
+               │                                                       │
+               │  Zyxel switch ←──Cat5e──→ all 6 Pro devices           │
+               └──────────────────────────────────────────────────────┘
 ```
 
-No 230V at any valve location. All mains voltage stays on the DIN rail (Shelly devices + PSU).
+No 230V at any valve location. All mains voltage stays on the DIN rail. Valve actuators run on 24V DC via 2×0.75mm² cable from DIN rail terminal blocks.
 
 ### Relay wiring detail (2-wire actuator)
 
@@ -221,7 +267,8 @@ V_air is a standard normally-closed valve (same as all others). A normally-open 
 | hpcontrol.fi | 8× motorized valve DN15 + A83 9-24V DC 2-wire actuator | 516.24 |
 | Biltema | Manifolds, tees, service valves, fittings | ~101 |
 | K-Rauta | 8× puserrusliitin 22mm×½" UK (PEX-to-valve adapters) | ~48 |
-| **Grand total** | | **~1,395** |
+| Triopak | Wiring, terminals, DIN rail, Ethernet cables | ~72 |
+| **Grand total** | | **~1,467** |
 
 ### Future expansion cost (wood burner)
 
