@@ -413,7 +413,7 @@ control:
       - item: Plumbing subtotal
         price: ~121€
     # auto air vent removed — sub-atmospheric pressure at collector top
-    total_estimate: ~1367€
+    total_estimate: ~1395€
 
   air_management:
     collector_loop: >
@@ -726,9 +726,10 @@ budget:
   control_system:
     shelly_electronics: ~730€  # Pro 4PM + 5× Pro 2PM + 2× Gen3 + 2× Add-on + 8× DS18B20 + switch + PSU + DIN adapters
     motorized_valves: ~516€    # 8× DN15 ½" + A83 9-24V DC 2-wire actuator @ ~65€ each (hpcontrol.fi)
-    manifolds_and_fittings: ~121€  # Biltema: Jakaja 3+4 putkea, service valves, PEX adapters, misc
+    manifolds_and_fittings: ~101€  # Biltema: Jakaja 3+4 putkea, tees, service valves, misc
+    pex_to_valve_adapters: ~48€   # K-Rauta: 8× puserrusliitin 22mm×½" UK (22mm PEX ↔ ½" BSP reducing)
     # auto air vent removed — negative pressure at collector top
-    total: ~1367€
+    total: ~1395€
   future_expansion:
     wood_burner_valve: ~65€    # 1× additional DN15 valve+actuator (hpcontrol.fi)
     wood_burner_plumbing: ~25€ # PEX piping to/from wood burner (Biltema)

@@ -80,21 +80,33 @@ When adding the wood-burning heater, order one more valve+actuator set (€64.53
 
 ---
 
-## Vendor 3: [Biltema](https://www.biltema.fi/) — Manifolds, fittings, service valves
+## Vendor 3: [Biltema](https://www.biltema.fi/) — Manifolds, tees, fittings
 
 Pick up in-store.
 
-| # | Item | Art. | Qty | Unit | Total | Role |
-|---|------|------|-----|------|-------|------|
-| 14 | [Jakaja 3 putkea](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/pex-letkut-ja-liittimet/pex-haaroitusputket/jakaja-3-putkea-2000061955) | 84517 | 1 | 19.95 | 19.95 | **Input manifold.** ¾" inlet (pump suction) → 3× ½" outlets for VI-btm, VI-top, VI-coll. |
-| 15 | [Jakaja 4 putkea](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/pex-letkut-ja-liittimet/pex-haaroitusputket/jakaja-4-putkea-2000061956) | 84518 | 1 | 25.95 | 25.95 | **Output manifold.** ¾" inlet (pump pressure) → 4× ½" outlets for VO-coll, VO-rad, VO-tank, VO-wood. 4th port capped until wood burner added. |
-| 16 | [Palloventtiili ½" R15](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/venttiilit-lvi/palloventtiili-lvi/palloventtiili-12-r15-2000058624) | — | 2 | 8.95 | 17.90 | Manual service valves: SV-drain (lowest point) + SV-fill (hose fill). |
-| 17 | [Letkuyhde ½"](https://www.biltema.fi/en-fi/boat/vvs/hose-nipples/hose-nipple-12-x-12-2000049790) | — | 2 | ~4.00 | 8.00 | Hose barb adapters for SV-drain and SV-fill (garden hose). |
-| 18 | Tulppa ½" (plug) | — | 1 | ~2.00 | 2.00 | Cap for the 4th output manifold port (VO-wood future). |
-| 19 | 22mm PEX → ½" UK puserrusliitin | — | 8 | ~4.00 | 32.00 | PEX-to-valve adapters (male ½" BSP → valve female ½" BSP). |
-| 20 | Nipples, PTFE tape, misc fittings | — | — | — | ~15.00 | Short nipples, reducers, sealing. |
+| # | Item | Qty | Unit | Total | Role |
+|---|------|-----|------|-------|------|
+| 14 | [Jakaja 3 putkea](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/pex-letkut-ja-liittimet/pex-haaroitusputket/jakaja-3-putkea-2000061955) | 1 | 19.95 | 19.95 | **Input manifold.** ¾" inlet (pump suction) → 3× ½" outlets. |
+| 15 | [Jakaja 4 putkea](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/pex-letkut-ja-liittimet/pex-haaroitusputket/jakaja-4-putkea-2000061956) | 1 | 25.95 | 25.95 | **Output manifold.** ¾" inlet (pump pressure) → 4× ½" outlets. 4th port capped for future VO-wood. |
+| 16 | [Puserrusliitin T-yhde 22×22×22mm](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/puserrusliittimet/messinkiset-puserrusliittimet/puserrusliitin-t-yhde-22-x-22-x-22-mm-2000053854) | 1 | 12.95 | 12.95 | **Collector bottom tee.** Splits collector bottom pipe to VI-coll and VO-coll branches. |
+| 17 | [T-liitin ½" UK](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/kierreliittimet/t-liittimet/t-liitin-uros-12-2000058695) | 1 | ~5.00 | 5.00 | **Collector top tee.** Splits to V_ret and V_air. |
+| 18 | ½" nipple UK-UK | 2 | ~2.00 | 4.00 | Connect collector top tee to V_ret and V_air valves (tee female → nipple → valve female). |
+| 19 | [Palloventtiili ½" R15](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/venttiilit-lvi/palloventtiili-lvi/palloventtiili-12-r15-2000058624) | 2 | 8.95 | 17.90 | Manual service valves: SV-drain + SV-fill. |
+| 20 | [Letkuyhde ½"](https://www.biltema.fi/en-fi/boat/vvs/hose-nipples/hose-nipple-12-x-12-2000049790) | 2 | ~4.00 | 8.00 | Hose barb adapters for service valves. |
+| 21 | Tulppa ½" | 1 | ~2.00 | 2.00 | Cap for the 4th output manifold port (VO-wood future). |
+| 22 | PTFE tape, misc | — | — | 5.00 | Sealing. |
 
-| | | | | **Biltema total** | **~121** | |
+| | | | **Biltema total** | **~101** | |
+
+## Vendor 4: [K-Rauta](https://www.k-rauta.fi/) — PEX-to-valve adapters
+
+22mm PEX pairs with ¾" BSP in standard plumbing, but the valves are ½" BSP. Biltema doesn't carry the 22mm × ½" reducing compression fitting. K-Rauta does.
+
+| # | Item | Qty | Unit | Total | Role |
+|---|------|-----|------|-------|------|
+| 23 | [Puserrusliitin PROF 22×½" UK erikoismessinki](https://www.k-rauta.fi/tuote/puserrusliitin-prof-22x12-ulkokierre-erikoismessinki/6438313114475) | 8 | ~6.00 | ~48.00 | 22mm PEX → ½" male BSP. One per valve pipe-side connection (see adapter map below). |
+
+| | | | **K-Rauta total** | **~48** | |
 
 ### Auto air vent — removed
 
@@ -130,11 +142,35 @@ No auto air vent at the collector top. Sub-atmospheric pressure there (80cm wate
                  └──────┘
 ```
 
-### Manifold connections
+### Connection interfaces
 
-- Manifold outlets (½" male) thread directly into valve inlets (½" female BSP) — no adapters needed.
+Every joint in the system, from pump to PEX:
+
+```
+PUMP (¾") ←→ manifold inlet (¾")         — direct (check pump unions)
+Manifold outlet (½" male) → valve (½" female) — direct thread
+Valve (½" female) → [22×½" adapter] → 22mm PEX — K-Rauta puserrusliitin
+Collector bottom: 22mm PEX tee (22×22×22)  — Biltema, splits to VI-coll + VO-coll
+Collector top: [22×½" adapter] → ½" tee → [½" nipple] → V_ret / V_air
+V_ret pipe side: valve (½" female) → [22×½" adapter] → 22mm PEX to reservoir
+V_air pipe side: valve (½" female) → open to air
+```
+
+**Adapter map (8× K-Rauta 22mm×½" UK puserrusliitin):**
+
+| # | Location |
+|---|----------|
+| 1 | VI-btm → tank bottom pipe |
+| 2 | VI-top → reservoir pipe |
+| 3 | VI-coll → collector bottom pipe |
+| 4 | VO-coll → collector bottom pipe |
+| 5 | VO-rad → radiator pipe |
+| 6 | VO-tank → tank return pipe |
+| 7 | Collector top pipe → ½" tee |
+| 8 | V_ret → reservoir return pipe |
+
 - Manifold inlets (¾") connect to the pump's ¾" ports.
-- Collector bottom pipe connects to BOTH VI-coll (input manifold) and VO-coll (output manifold) via a tee fitting.
+- Collector bottom pipe connects to BOTH VI-coll and VO-coll via a 22mm PEX tee.
 - Wood burner return pipe goes directly to the reservoir (open top, no valve needed).
 
 ### Operating modes vs manifold ports
@@ -183,8 +219,9 @@ V_air is a standard normally-closed valve (same as all others). A normally-open 
 |--------|-------|-------------|
 | Nurkan takaa | Shelly electronics, sensors, switch, PSU, DIN adapters | 729.50 |
 | hpcontrol.fi | 8× motorized valve DN15 + A83 9-24V DC 2-wire actuator | 516.24 |
-| Biltema | Manifolds, service valves, fittings, adapters | ~121 |
-| **Grand total** | | **~1,367** |
+| Biltema | Manifolds, tees, service valves, fittings | ~101 |
+| K-Rauta | 8× puserrusliitin 22mm×½" UK (PEX-to-valve adapters) | ~48 |
+| **Grand total** | | **~1,395** |
 
 ### Future expansion cost (wood burner)
 
