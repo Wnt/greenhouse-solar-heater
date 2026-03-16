@@ -22,11 +22,10 @@ All component specifications are defined in `system.yaml` (source of truth).
 | Circulation pump | Wilo Star Z20/4 | 34/51/71W, 230V, near ground |
 | Radiator | Car radiator + 230V fan | Inside greenhouse, heat distribution |
 | Space heater | 2kW fan heater | Emergency/backup |
-| Auto air vent | Automatic bleed valve | Collector top (highest point, ~285cm) |
 
 ### Valve Topology: On/Off Manifold
 
-The system uses 8 motorized on/off ball valves (DN15, 230V) arranged in input and output manifolds around the pump. Any input source can be routed to any output destination. Control logic ensures exactly one input and one output valve are open at a time.
+The system uses 8 motorized on/off ball valves (DN15, A83 9-24V DC 2-wire actuator) arranged in input and output manifolds around the pump. Manifolds are brass PEX distribution headers (Biltema Jakaja): 3-port for input, 4-port for output (4th port reserved for future wood burner). Valve actuators run on 24V DC from a DIN rail PSU — no 230V at valve locations. 2-wire actuators are directly compatible with the Shelly Pro 2PM relays: relay ON = valve opens, relay OFF = valve auto-closes. Control logic ensures exactly one input and one output valve are open at a time.
 
 **Input manifold** (pump inlet):
 
@@ -98,7 +97,7 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 
 ### Control Hardware — Shelly Components
 
-12 relay outputs needed: 8 motorized valves + pump + fan + 2 heaters. All Pro devices connect via wired Ethernet; sensor hub connects via WiFi. See `docs/bom-shelly.md` for full order list with pricing.
+12 relay outputs needed: 8 motorized valves + pump + fan + 2 heaters. All Pro devices connect via wired Ethernet; sensor hub connects via WiFi. See `docs/bom.md` for full order list with pricing.
 
 | Device | Qty | Outputs | Assignment |
 |--------|-----|---------|------------|
@@ -119,7 +118,7 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 | #3 | VO-rad | VO-tank | Output manifold (ground) |
 | #4 | V_ret | V_air | Collector top (~280cm) |
 
-**V_air fail-safe:** Wired with a normally-open spring-return valve. Relay ON = valve closed (normal operation). Relay OFF or power loss = valve opens, allowing air in so collectors drain automatically.
+**V_air:** Standard normally-closed valve (same 24V DC actuator as all others). Opens only during active drain to provide high-flow air intake at the collector top. A normally-open or spring-return design was considered and rejected — the sub-atmospheric pressure at the collector top (due to the 250cm water column below) would cause constant air ingress during idle. Fail-safe drain on power loss is not possible in this topology regardless of V_air design: collectors sit below the reservoir and cannot gravity-drain, and the pump requires power.
 
 **Sensor hub:** Shelly 1 Gen3 with Plus Add-on connects DS18B20 sensors via 1-Wire bus. Supports up to 5 sensors natively; a second Gen3 + Add-on may be needed if all 7 sensors are used. *(Shelly Plus 1 is discontinued; Gen3 is the replacement.)*
 
@@ -129,7 +128,7 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 
 ### Air Management
 
-**Collector loop:** Auto air vent at collector top (highest point) continuously bleeds trapped air. Upward flow carries bubbles to the top naturally.
+**Collector loop:** No auto air vent at the collector top — sub-atmospheric pressure there (80cm water column falling to reservoir at 200cm) would draw air in, not vent it out. Confirmed by testing. Trapped air in the collector loop is carried by water flow through V_ret to the open reservoir, where it separates and vents to atmosphere.
 
 **Tank gas venting:** The Jäspi has no top vent — gas trapped above the dip tube (~185cm) cannot escape downward. The reservoir solves this by acting as the primary air separator:
 - Water from the tank top exits via dip tube → enters reservoir at top/mid level
@@ -143,7 +142,7 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 
 ### Idle (Default)
 
-All valves closed, all actuators off. Shelly monitors sensor temperatures continuously and evaluates mode triggers. If V_air is wired normally-open (fail-safe), collectors stay drained during idle.
+All valves closed, all actuators off. Shelly monitors sensor temperatures continuously and evaluates mode triggers.
 
 ### Mode 1: Solar Charging
 
@@ -245,7 +244,7 @@ T_collector reads air temperature when collectors are empty, so it can't reliabl
 8. Check for leaks at all fittings
 9. Add corrosion inhibitor (e.g. Sentinel X100) per manufacturer dosing
 
-Air escapes through the open reservoir during fill. The auto air vent at collector top handles residual air in the collector loop.
+Air escapes through the open reservoir during fill. Residual air in the collector loop is carried by flow through V_ret to the reservoir.
 
 ### Mode 8: Autumn Shutdown
 
@@ -271,10 +270,8 @@ Full shutdown for deep winter — no active heating from tank:
 ### Height Map
 
 ```
-285cm ─── Auto air vent (highest point)
-
 280cm ─── Collector top (upper panel)
-          V_ret, V_air (collector top manifold)
+          V_ret, V_air (collector top valves)
           T_collector sensor
 
 200cm ─── Open reservoir / air separator (on top of Jäspi)
@@ -324,22 +321,18 @@ Full shutdown for deep winter — no active heating from tank:
 4. **Drain before freezing** — trigger at 2°C gives safety margin before 0°C
 5. **Slope collector pipes** — 2–3 cm/m toward drain to ensure complete drainage
 6. **Union fittings** — on all valves for easy replacement
-7. **Fail-safe V_air** — consider wiring V_air as normally-open so collectors drain on power loss
+7. **Freeze protection depends on power** — collectors cannot gravity-drain (below reservoir); active drain requires the pump. The 2°C trigger provides margin before actual freezing.
 
 ## Budget Estimate
 
-| Category | Cost |
-|----------|------|
-| Shelly hardware (Pro 4PM + 4× Pro 2PM + 1 Gen3 + Add-on) | ~544€ |
-| DS18B20 sensors (5×, 3m cable) | ~33€ |
-| Ethernet switch (Zyxel GS-108BV5) | ~25€ |
-| 8× motorized on/off valves (DN15) | ~200€ |
-| Auto air vent | ~10€ |
-| 2× manual service valves | ~20€ |
-| **Control system total (core)** | **~832€** |
-| Spares & expansion (see `docs/bom-shelly.md`) | ~144€ |
+| Category | Source | Cost |
+|----------|--------|------|
+| Shelly electronics (incl. spares, switch, PSU, sensors) | Nurkan takaa | ~730€ |
+| 8× motorized valves DN15 + A83 9-24V DC 2-wire actuator | hpcontrol.fi | ~516€ |
+| Manifolds, service valves, PEX adapters, fittings | Biltema | ~121€ |
+| **Control system total** | | **~1,367€** |
 
-Prices from Nurkan takaa (EUR incl. VAT, March 2026). Structural materials budgeted separately. Full order list in `docs/bom-shelly.md`.
+Prices EUR incl. VAT, March 2026. Structural materials budgeted separately. Full order list with links in `docs/bom.md`.
 
 ## Open Design Questions
 
@@ -347,7 +340,6 @@ Prices from Nurkan takaa (EUR incl. VAT, March 2026). Structural materials budge
 2. **Collector seasonal adjustment:** Fixed angle or seasonally adjustable?
 3. **Wind anchoring:** Required for collector frame?
 4. **Jäspi internal heater:** Use as backup boost, or leave disconnected?
-5. **Fail-safe behavior:** Should V_air be normally-open (drain on power failure)?
 
 ## Documentation Format
 

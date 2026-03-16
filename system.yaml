@@ -115,11 +115,11 @@ components:
     position: inside greenhouse
     purpose: emergency / backup heating
 
-  auto_air_vent:
-    type: automatic air vent
-    position: collector top (highest point in system)
-    height: ~285cm
-    purpose: continuously bleeds trapped air from collector loop
+  # auto_air_vent removed — sub-atmospheric pressure at collector top (due to
+  # 80cm water column falling to reservoir) would draw air IN, not vent it out.
+  # Confirmed by testing with manual valve at collector top. Trapped air in the
+  # collector loop is carried by water flow through V_ret to the open reservoir,
+  # where it vents to atmosphere. No dedicated air vent needed.
 
 # =============================================================================
 # VALVE MANIFOLD (on/off topology)
@@ -133,55 +133,65 @@ valves:
 
   input_manifold:
     description: Three on/off valves selecting pump input source
+    hardware: Biltema Jakaja 3 putkea (¾" inlet → 3× ½" outlets)
     location: near pump, ground level
     rule: exactly ONE input valve open at a time
 
     vi_btm:
       type: motorized on/off ball valve
       size: DN15
-      actuator: 230V
+      actuator: 9-24V DC (A83 2-wire, auto-return close)
       source: tank bottom connection
       purpose: draw cool water from tank bottom (for solar charging)
 
     vi_top:
       type: motorized on/off ball valve
       size: DN15
-      actuator: 230V
+      actuator: 9-24V DC (A83 2-wire, auto-return close)
       source: reservoir bottom outlet (fed by tank dip tube)
       purpose: draw de-aired hot water for greenhouse heating (pump always primed)
 
     vi_coll:
       type: motorized on/off ball valve
       size: DN15
-      actuator: 230V
+      actuator: 9-24V DC (A83 2-wire, auto-return close)
       source: collector bottom pipe
       purpose: draw water from collectors (for active drain)
 
   output_manifold:
-    description: Three on/off valves selecting pump output destination
+    description: Four on/off valves selecting pump output destination
+    hardware: Biltema Jakaja 4 putkea (¾" inlet → 4× ½" outlets)
     location: near pump, ground level
     rule: exactly ONE output valve open at a time
 
     vo_coll:
       type: motorized on/off ball valve
       size: DN15
-      actuator: 230V
+      actuator: 9-24V DC (A83 2-wire, auto-return close)
       destination: collector bottom pipe (supply)
       purpose: push water into collectors (for solar charging / refill)
 
     vo_rad:
       type: motorized on/off ball valve
       size: DN15
-      actuator: 230V
+      actuator: 9-24V DC (A83 2-wire, auto-return close)
       destination: radiator in greenhouse
       purpose: push hot water to radiator (for greenhouse heating)
 
     vo_tank:
       type: motorized on/off ball valve
       size: DN15
-      actuator: 230V
+      actuator: 9-24V DC (A83 2-wire, auto-return close)
       destination: tank return connection
       purpose: return water to tank (for active drain)
+
+    vo_wood:
+      type: motorized on/off ball valve (future)
+      size: DN15
+      actuator: 9-24V DC (A83 2-wire, auto-return close)
+      destination: wood burner heat exchanger
+      purpose: push water through wood burner (manifold port capped until installed)
+      status: future expansion
 
   collector_top:
     description: Two on/off valves at collector top pipe
@@ -190,14 +200,14 @@ valves:
     v_ret:
       type: motorized on/off ball valve
       size: DN15
-      actuator: 230V
+      actuator: 9-24V DC (A83 2-wire, auto-return close)
       path: collector top → reservoir
       purpose: normal return path for heated water
 
     v_air:
       type: motorized on/off ball valve
       size: DN15
-      actuator: 230V
+      actuator: 9-24V DC (A83 2-wire, auto-return close)
       path: collector top → open air
       purpose: air intake for drain mode
 
@@ -217,7 +227,7 @@ valves:
       fitting: hose barb (garden hose compatible)
       purpose: fill system with water (air escapes through open reservoir)
 
-  total_motorized: 8
+  total_motorized: 8  # 9 when wood burner added (VO-wood)
   total_manual: 2
 
 # =============================================================================
@@ -321,10 +331,6 @@ control:
           location: collector top (~280cm, needs weatherproofing or long cable runs)
           O1: v_ret (collector top → reservoir, return path)
           O2: v_air (collector top → open air, drain air intake)
-          note: >
-            V_air wired as normally-open (spring-return valve): relay ON = valve
-            CLOSED (normal), relay OFF / power loss = valve OPEN (collectors
-            drain automatically as fail-safe).
 
     shelly_1_gen3_addon:
       quantity: 1
@@ -347,36 +353,74 @@ control:
 
   shopping_list:
     note: >
-      Prices from Nurkan takaa (EUR incl. VAT, March 2026).
-      Full BOM with spares and expansion items in docs/bom-shelly.md.
-    - item: Shelly Pro 4PM
-      qty: 1
-      est_price: ~108€
-    - item: Shelly Pro 2PM
-      qty: 4
-      est_price: ~89€ each, ~356€ total
-    - item: Shelly 1 Gen3
-      qty: 1
-      est_price: ~19€
-      note: replaces discontinued Shelly Plus 1
-    - item: Shelly Plus Add-on
-      qty: 1
-      est_price: ~17€
-    - item: DS18B20 temperature sensors (3m cable)
-      qty: 5
-      est_price: ~7€ each, ~33€ total
-    - item: Zyxel GS-108BV5 (8-port Gigabit switch)
-      qty: 1
-      est_price: ~25€
-      note: wall-mount, for Pro device Ethernet
-    - item: DIN rail adapter (PLUS-size, for 1 Gen3)
-      qty: 1
-      est_price: ~5€
-    - item: Total control electronics estimate (core)
-      est_price: ~563€
+      Full BOM with vendor links, stock status, and spares in docs/bom.md.
+      Three vendors: Nurkan takaa (Shelly), hpcontrol.fi (valves), Biltema (fittings).
+      Prices EUR incl. VAT, March 2026.
+    electronics:
+      source: Nurkan takaa (verkkokauppa.nurkantakaa.fi)
+      - item: Shelly Pro 4PM
+        qty: 1
+        price: ~108€
+      - item: Shelly Pro 2PM
+        qty: 5
+        price: ~89€ each, ~445€ total
+        note: 4 core + 1 spare/expansion
+      - item: Shelly 1 Gen3
+        qty: 2
+        price: ~19€ each, ~38€ total
+        note: replaces discontinued Shelly Plus 1; 1 core + 1 spare
+      - item: Shelly Plus Add-on
+        qty: 2
+        price: ~17€ each, ~34€ total
+      - item: DS18B20 temperature sensors (3m cable)
+        qty: 8
+        price: ~7€ each, ~52€ total
+        note: 5 core + 2 optional radiator + 1 spare
+      - item: Zyxel GS-108BV5 (8-port Gigabit switch)
+        qty: 1
+        price: ~25€
+        note: wall-mount, for Pro device Ethernet
+      - item: DIN rail adapters (PLUS-size, for 1 Gen3)
+        qty: 2
+        price: ~5€ each, ~9€ total
+      - item: Mean Well DIN rail PSU 24V 15W
+        qty: 1
+        price: ~19€
+        note: powers all motorized valve actuators (24V DC)
+      - item: Electronics subtotal
+        price: ~730€
+    valves:
+      source: hpcontrol.fi
+      - item: DN15 ½" brass ball valve + A83 9-24V DC 2-wire actuator
+        qty: 8
+        price: ~65€ each, ~516€ total
+        note: 2-wire (relay ON = open, relay OFF = auto-close). Compatible with 1 relay per valve on Pro 2PM.
+        note: in stock, ships within 24h
+      - item: Valves subtotal
+        price: ~455€
+    plumbing:
+      source: Biltema (in-store)
+      - item: Jakaja 3 putkea (input manifold ¾" → 3× ½")
+        qty: 1
+        price: ~20€
+      - item: Jakaja 4 putkea (output manifold ¾" → 4× ½")
+        qty: 1
+        price: ~26€
+        note: 4th port for future wood burner (VO-wood), capped until needed
+      - item: Manual ball valves, hose barbs, PEX adapters, fittings
+        qty: various
+        price: ~75€
+      - item: Plumbing subtotal
+        price: ~121€
+    # auto air vent removed — sub-atmospheric pressure at collector top
+    total_estimate: ~1367€
 
   air_management:
-    collector_loop: automatic air vent at collector top (highest point)
+    collector_loop: >
+      No auto air vent at collector top — sub-atmospheric pressure there
+      (80cm falling water column to reservoir) would draw air in rather
+      than vent it. Trapped air in collector loop is carried by water flow
+      through V_ret to the open reservoir, where it separates and vents.
     tank_gas_venting: >
       Reservoir acts as primary air separator. Water from the tank top
       (via dip tube) enters the reservoir at top/mid level. Trapped gas
@@ -417,8 +461,6 @@ modes:
     notes: >
       All valves closed, all actuators off. Shelly monitors sensor
       temperatures and evaluates mode triggers continuously.
-      V_air fail-safe: if wired normally-open, V_air is actually OPEN
-      during idle when relay is OFF — collectors stay drained.
 
   solar_charging:
     description: Heat tank water using solar collectors
@@ -577,8 +619,8 @@ modes:
     notes: >
       Air escapes through the open reservoir during fill. Running each
       flow loop with the pump pushes remaining trapped air through the
-      system to the reservoir where it vents. The auto air vent at
-      collector top handles residual air in the collector loop.
+      system to the reservoir where it vents. Residual air in the
+      collector loop is carried by flow through V_ret to the reservoir.
 
   autumn_shutdown:
     description: Seasonal shutdown — drain entire outdoor system
@@ -620,7 +662,7 @@ safety:
   - Drain collectors before t_outdoor reaches 0°C (2°C safety margin)
   - Use union fittings for easy valve replacement
   - Collector pipes must slope toward drain point (2–3 cm/m)
-  - V_air is normally-open (fail-safe): power loss opens valve, enabling gravity drain
+  - V_air is normally-closed (same as all valves): opens only during active drain for air intake
 
 # =============================================================================
 # WATER TREATMENT
@@ -682,15 +724,17 @@ structure:
 
 budget:
   control_system:
-    shelly_hardware: ~500€  # Pro 4PM + 4× Pro 2PM + 1 Gen3 + Add-on
-    sensors: ~33€            # 5× DS18B20 (3m cable)
-    networking: ~30€          # Zyxel GS-108BV5 + DIN adapter
-    motorized_valves: ~200€  # 8× DN15 on/off @ ~25€ each
-    auto_air_vent: ~10€
-    manual_service_valves: ~20€  # 2× manual ball valve with hose barb
-    total: ~793€
-  spares_and_expansion: ~144€  # 1× Pro 2PM + 1× Gen3 + 1× Add-on + 3× DS18B20 + 1× DIN adapter
+    shelly_electronics: ~730€  # Pro 4PM + 5× Pro 2PM + 2× Gen3 + 2× Add-on + 8× DS18B20 + switch + PSU + DIN adapters
+    motorized_valves: ~516€    # 8× DN15 ½" + A83 9-24V DC 2-wire actuator @ ~65€ each (hpcontrol.fi)
+    manifolds_and_fittings: ~121€  # Biltema: Jakaja 3+4 putkea, service valves, PEX adapters, misc
+    # auto air vent removed — negative pressure at collector top
+    total: ~1367€
+  future_expansion:
+    wood_burner_valve: ~65€    # 1× additional DN15 valve+actuator (hpcontrol.fi)
+    wood_burner_plumbing: ~25€ # PEX piping to/from wood burner (Biltema)
   note: >
-    Prices from Nurkan takaa (EUR incl. VAT, March 2026).
-    On/off valves are cheaper per unit than 3-way valves.
-    See docs/bom-shelly.md for detailed order list with spares.
+    Prices EUR incl. VAT, March 2026. Three vendors: Nurkan takaa
+    (electronics), hpcontrol.fi (valves), Biltema (plumbing). Valve
+    actuators are 24V DC — no 230V at valve locations. Output manifold
+    has a pre-installed 4th port (capped) for future wood burner.
+    See docs/bom.md for full order list with links.

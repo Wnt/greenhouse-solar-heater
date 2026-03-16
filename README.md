@@ -53,6 +53,6 @@ All tools run entirely client-side (no backend), load `system.yaml` as configura
 - **On/off valve manifold** — 8 motorized on/off valves (DN15) in input/output manifolds around pump
 - **Active drainback** — pump empties collectors; air enters via V_air at collector top
 - **Pump power monitoring** — Pro 4PM detects dry-run via power draw, no physical flow sensor
-- **Auto air vent** — at collector top (highest point), continuously bleeds trapped air
+- **Open reservoir** — primary air separator; trapped air from collector loop and tank vents here
 - **Manual service valves** — SV-drain and SV-fill for system maintenance
 - **Shelly control** — Pro 4PM + 4× Pro 2PM + 1 Gen3 with Add-on

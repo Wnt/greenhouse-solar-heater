@@ -75,7 +75,7 @@ function evaluate(state, config) {
 }
 ```
 
-**Valve values are logical states** (true = open, false = closed), matching system.yaml semantics. The Shelly shell is responsible for inverting V_air for the relay command (relay OFF = valve open due to normally-open wiring). The `evaluate()` function has no knowledge of relay wiring.
+**Valve values are logical states** (true = open, false = closed), matching system.yaml semantics. All valves including V_air use the same logic (true = open). The `evaluate()` function has no knowledge of relay wiring.
 
 **Optional sensors** (T_radiator_in, T_radiator_out) are excluded from the `evaluate()` interface — they are for monitoring only and not used in control decisions.
 
@@ -128,7 +128,7 @@ Tests exercise the pure `evaluate()` function directly. Fast — pure function c
 **Valve and actuator mapping:**
 - Each mode produces exactly the correct valve states and actuator states (pump, fan, heaters)
 - One-input-one-output invariant holds across all mode outputs
-- V_air logical state correct per mode (inversion is the shell's responsibility, not tested here)
+- V_air logical state correct per mode (same logic as all other valves)
 
 **Priority and preemption:**
 - ACTIVE_DRAIN preempts SOLAR_CHARGING when T_outdoor drops
@@ -342,7 +342,7 @@ These are ballpark values. The model doesn't need to match reality precisely —
 7. **Zero dependencies** — `node --test` built-in runner, no npm packages
 8. **Trace log on failure** — full diagnostic without cluttering passing runs
 9. **Configuration as parameter** — tests use tight timings; production uses real values
-10. **Logical valve states** — `evaluate()` returns open/closed, shell handles V_air relay inversion
+10. **Logical valve states** — `evaluate()` returns open/closed, all valves use same logic (true = open)
 11. **No separate overheat/refill modes** — overheat drain returns ACTIVE_DRAIN, speculative refill returns SOLAR_CHARGING; flag-based logic, not extra mode states
 
 ## Known Testing Gaps

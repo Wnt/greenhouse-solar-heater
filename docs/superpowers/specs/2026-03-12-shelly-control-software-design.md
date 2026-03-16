@@ -34,7 +34,7 @@ All Pro devices connect via wired Ethernet to a Zyxel GS-108BV5 8-port switch. T
 
 **Pro 2PM #4 — Collector Top:**
 - O1: V_ret (collector top to reservoir, normal return)
-- O2: V_air (collector top to open air, drain air intake) — wired as normally-open spring-return valve; relay ON = closed, relay OFF / power loss = open (fail-safe drain)
+- O2: V_air (collector top to open air, drain air intake) — normally closed, same as all other valves
 
 ### Sensors (1 Gen3 + Add-on)
 
@@ -149,7 +149,7 @@ When `ACTIVE_DRAIN` is active, a separate fast timer (~200ms) monitors pump powe
 4. Read sensors from 1 Gen3
 5. Enter normal control loop (evaluate conditions, pick appropriate mode)
 
-**Open question:** On boot, if freezing conditions exist, the system should verify collectors are empty before resuming normal operation. V_air (normally-open fail-safe) should have opened during power loss, potentially allowing gravity drain. However, collectors are below the reservoir and may not fully gravity-drain. Resolution needed before commissioning — options include a dedicated "verify drain" procedure on boot or a manual confirmation step.
+**Open question:** On boot, if freezing conditions exist, the system should verify collectors are empty before resuming normal operation. Collectors cannot gravity-drain (they sit below the reservoir), so if power was lost while collectors were full, they may still contain water. The `collectors_drained` flag is persisted in KVS across reboots. If T_outdoor < 2°C and the flag is not set, the system should immediately enter ACTIVE_DRAIN before any other mode.
 
 ## Device Communication
 
@@ -174,7 +174,7 @@ let VALVES = {
 };
 ```
 
-**V_air inverted logic:** V_air is wired as normally-open (relay OFF = valve open). In the script, when a mode requires V_air OPEN, send `on=false`; when it should be CLOSED, send `on=true`. All other valves use normal logic (`on=true` = open).
+All valves use the same logic: `on=true` = valve open, `on=false` = valve closed. V_air is normally-closed like all other valves (no inverted logic needed).
 
 IPs are DHCP reservations configured on the router.
 
@@ -270,13 +270,14 @@ scripts/
 
 This spec makes the following design decisions that diverge from the current system.yaml. If accepted, system.yaml should be updated to reflect these:
 
-1. **Flow sensor eliminated** — replaced by pump power monitoring on Pro 4PM O1 channel. Remove `flow_sensor` component, update safety rules and drain sequence references.
-2. **V_air wiring decided** — system.yaml says "consider fail-safe: V_air normally-open on power loss." This spec promotes it to a firm design decision.
+1. **Flow sensor eliminated** — replaced by pump power monitoring on Pro 4PM O1 channel. Done — system.yaml updated.
+2. **V_air is normally-closed** — same as all other valves. A normally-open design was rejected: sub-atmospheric pressure at the collector top (~0.25 bar vacuum from 250cm water column) would cause constant air ingress. Fail-safe drain on power loss is not possible regardless (collectors below reservoir, pump required). Done — system.yaml updated.
 3. **Exit thresholds added** — system.yaml only specifies entry triggers. This spec adds hysteresis exit thresholds for all modes.
 4. **Sensor hub on WiFi** — Shelly 1 Gen3 with Plus Add-on (replaces discontinued Plus 1). Add-on is not compatible with Pro devices. Sensor hub stays on WiFi; all other devices on Ethernet.
+5. **Valve actuators are 24V DC 2-wire** — A83 9-24V DC 2-wire actuators powered by a DIN rail 24V PSU. No 230V at valve locations. Each Pro 2PM relay directly switches 24V to one valve: relay ON = open, relay OFF = auto-close. No inverted logic for any valve.
 
 ## Open Questions
 
-1. **Boot-time freeze verification**: How to confirm collectors are empty when booting during freezing conditions. V_air fail-safe opens on power loss, but collectors may not fully gravity-drain since they sit below the reservoir. The `collectors_drained` flag is persisted in KVS across reboots, but could be stale if power was lost mid-operation.
+1. **Boot-time freeze verification**: If T_outdoor < 2°C on boot and `collectors_drained` flag is not set, the system should immediately enter ACTIVE_DRAIN. The flag is persisted in KVS across reboots but could be stale if power was lost mid-operation.
 2. **Drain power threshold calibration**: Exact wattage threshold for detecting pump dry-run must be determined empirically during commissioning. Expected range: pump draws 34-71W under load, significantly less when dry.
 3. Items carried from system.yaml open questions: reservoir sizing, collector seasonal angle, wind anchoring, Jäspi internal heater usage.

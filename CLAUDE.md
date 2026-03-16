@@ -20,7 +20,7 @@ When making changes, **update system.yaml first**, then propagate to affected do
 
 - `system.yaml` → authoritative specs (heights, valve states, modes, components)
 - `docs/design.md` → prose explanation of the YAML, for human review
-- `docs/bom-shelly.md` → Shelly hardware order list with pricing (core + spares)
+- `docs/bom.md` → full control system BOM: electronics, valves, manifolds, fittings (3 vendors + IKH)
 - `docs/ideas/` → idea specs and implementation plans (thermal sim, hydraulic playground, linter)
 - `docs/superpowers/specs/` → detailed design specs (Shelly control software, testing strategy)
 - `diagrams/*.svg` → hand-authored SVG with `data-` attributes mapping to YAML values
