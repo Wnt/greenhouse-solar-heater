@@ -33,27 +33,43 @@ echo "Deploying control-logic.js + control.js to $DEVICE (script $SCRIPT_ID)..."
 curl -s "http://$DEVICE/rpc/Script.Stop?id=$SCRIPT_ID" > /dev/null 2>&1 || true
 sleep 1
 
-# Concatenate logic + shell and JSON-escape for upload
-CODE=$(python3 -c "
-import json, sys
+# Upload code in chunks (Shelly PutCode limit is ~1024 bytes per request)
+echo "Uploading code..."
+python3 -c "
+import json, sys, urllib.request
+
+CHUNK_SIZE = 512
+
 content = ''
-for path in sys.argv[1:]:
+for path in sys.argv[1:-2]:
     with open(path) as f:
         content += f.read() + '\n'
-print(json.dumps(content))
-" "$LOGIC_JS" "$CONTROL_JS")
 
-# Upload code
-echo "Uploading code..."
-RESULT=$(curl -s -X POST "http://$DEVICE/rpc/Script.PutCode" \
-  -H "Content-Type: application/json" \
-  -d "{\"id\":$SCRIPT_ID,\"code\":$CODE}")
+script_id = int(sys.argv[-2])
+base_url = 'http://' + sys.argv[-1] + '/rpc/Script.PutCode'
+total = len(content)
+offset = 0
+chunk_num = 0
 
-if echo "$RESULT" | grep -q '"error"'; then
-  echo "Error uploading code: $RESULT" >&2
-  exit 1
-fi
-echo "Upload OK"
+while offset < total:
+    chunk = content[offset:offset + CHUNK_SIZE]
+    append = offset > 0
+    payload = json.dumps({'id': script_id, 'code': chunk, 'append': append}, ensure_ascii=False).encode('utf-8')
+    req = urllib.request.Request(base_url, data=payload,
+        headers={'Content-Type': 'application/json'})
+    try:
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print('  ERROR on chunk %d (append=%s): HTTP %d: %s' % (chunk_num + 1, append, e.code, body))
+        sys.exit(1)
+    chunk_num += 1
+    offset += CHUNK_SIZE
+    print('  chunk %d: %d/%d bytes' % (chunk_num, min(offset, total), total))
+
+print('Upload OK (%d bytes in %d chunks)' % (total, chunk_num))
+" "$LOGIC_JS" "$CONTROL_JS" "$SCRIPT_ID" "$DEVICE"
 
 # Enable auto-start on boot
 curl -s -X POST "http://$DEVICE/rpc/Script.SetConfig" \
