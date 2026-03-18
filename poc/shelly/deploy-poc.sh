@@ -1,12 +1,23 @@
 #!/bin/bash
 # Deploy the PoC sensor-display script to Shelly Pro 4PM.
 #
-# Usage: ./deploy-poc.sh [device_ip]
-#   device_ip  - Pro 4PM IP (default: 192.168.1.174)
+# Usage: ./deploy-poc.sh [--no-reboot] [device_ip]
+#   --no-reboot  - Skip device reboot after deploy
+#   device_ip    - Pro 4PM IP (default: 192.168.1.174)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REBOOT=true
+
+# Parse flags
+while [[ "${1:-}" == --* ]]; do
+  case "$1" in
+    --no-reboot) REBOOT=false; shift ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
+
 DEVICE_IP="${1:-192.168.1.174}"
 SCRIPT_NAME="sensor-display"
 SCRIPT_FILE="$SCRIPT_DIR/sensor-display.js"
@@ -99,14 +110,20 @@ curl -s -X POST "http://$DEVICE_IP/rpc/Script.SetConfig" \
   -H "Content-Type: application/json" \
   -d "{\"id\": $SCRIPT_ID, \"config\": {\"enable\": true}}" > /dev/null
 
-# Start the script
-echo "Starting script..."
-curl -s -X POST "http://$DEVICE_IP/rpc/Script.Start" \
-  -H "Content-Type: application/json" \
-  -d "{\"id\": $SCRIPT_ID}" > /dev/null
+# Reboot device to cleanly start the script (auto-start is enabled)
+if [ "$REBOOT" = true ]; then
+  echo "Rebooting device..."
+  curl -s "http://$DEVICE_IP/rpc/Shelly.Reboot" > /dev/null 2>&1 || true
+  echo "Device rebooting — script will auto-start in ~10s"
+else
+  echo "Starting script..."
+  curl -s -X POST "http://$DEVICE_IP/rpc/Script.Start" \
+    -H "Content-Type: application/json" \
+    -d "{\"id\": $SCRIPT_ID}" > /dev/null
+fi
 
 echo ""
-echo "Done! Script '$SCRIPT_NAME' deployed and running on $DEVICE_IP (slot $SCRIPT_ID)"
+echo "Done! Script '$SCRIPT_NAME' deployed on $DEVICE_IP (slot $SCRIPT_ID)"
 echo ""
 echo "Check status:"
 echo "  curl \"http://$DEVICE_IP/rpc/Script.GetStatus?id=$SCRIPT_ID\""
