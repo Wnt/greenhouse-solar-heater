@@ -57,26 +57,36 @@ curl -s "http://$DEVICE_IP/rpc/Script.Stop" \
   -d "{\"id\": $SCRIPT_ID}" > /dev/null 2>&1 || true
 sleep 1
 
-# Upload code using PutCode with JSON body built by python
+# Upload code in chunks (Shelly PutCode limit is ~1024 bytes per request)
 echo "Uploading script..."
-UPLOAD_RESP=$(python3 -c "
-import json, sys, urllib.request
+python3 -c "
+import json, sys, urllib.request, time
+
+CHUNK_SIZE = 1024
+
 with open(sys.argv[1]) as f:
     code = f.read()
-payload = json.dumps({'id': int(sys.argv[2]), 'code': code}).encode()
-req = urllib.request.Request(
-    'http://' + sys.argv[3] + '/rpc/Script.PutCode',
-    data=payload,
-    headers={'Content-Type': 'application/json'})
-resp = urllib.request.urlopen(req, timeout=10)
-data = json.loads(resp.read())
-if 'len' in data:
-    print('Upload OK (%d bytes)' % data['len'])
-else:
-    print('Upload failed: ' + json.dumps(data))
-    sys.exit(1)
-" "$SCRIPT_FILE" "$SCRIPT_ID" "$DEVICE_IP")
-echo "$UPLOAD_RESP"
+
+script_id = int(sys.argv[2])
+base_url = 'http://' + sys.argv[3] + '/rpc/Script.PutCode'
+total = len(code)
+offset = 0
+chunk_num = 0
+
+while offset < total:
+    chunk = code[offset:offset + CHUNK_SIZE]
+    append = offset > 0
+    payload = json.dumps({'id': script_id, 'code': chunk, 'append': append}).encode()
+    req = urllib.request.Request(base_url, data=payload,
+        headers={'Content-Type': 'application/json'})
+    resp = urllib.request.urlopen(req, timeout=10)
+    data = json.loads(resp.read())
+    chunk_num += 1
+    offset += CHUNK_SIZE
+    print('  chunk %d: %d/%d bytes' % (chunk_num, min(offset, total), total))
+
+print('Upload OK (%d bytes in %d chunks)' % (total, chunk_num))
+" "$SCRIPT_FILE" "$SCRIPT_ID" "$DEVICE_IP"
 
 # Enable auto-start
 echo "Enabling auto-start..."
