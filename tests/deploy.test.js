@@ -1,4 +1,4 @@
-const { describe, it, beforeEach, afterEach } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
@@ -76,14 +76,16 @@ function createMockServer(handler) {
     server,
     calls,
     getUploadedCode: () => uploadedCode,
-    resetUploadedCode: () => { uploadedCode = ''; },
   };
 }
 
+// Run deploy.sh once and share results across assertions
 describe('deploy.sh', () => {
   let mock;
   let port;
-  beforeEach(async () => {
+  let deployResult;
+
+  before(async () => {
     mock = createMockServer();
     await new Promise((resolve) => {
       mock.server.listen(0, '127.0.0.1', () => {
@@ -94,57 +96,47 @@ describe('deploy.sh', () => {
     fs.writeFileSync(CONF_PATH,
       `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\n`
     );
+    deployResult = await runDeploy(`127.0.0.1:${port}`, 1);
   });
 
-  afterEach(async () => {
+  after(async () => {
     fs.writeFileSync(CONF_PATH, ORIGINAL_CONF);
     await new Promise((resolve) => mock.server.close(resolve));
   });
 
-  it('stops the script before uploading', async () => {
-    const result = await runDeploy(`127.0.0.1:${port}`, 1);
-    assert.strictEqual(result.code, 0, 'deploy should succeed: ' + result.stderr);
+  it('exits successfully', () => {
+    assert.strictEqual(deployResult.code, 0, 'deploy should succeed: ' + deployResult.stderr);
+  });
 
+  it('stops the script before uploading', () => {
     const stopCalls = mock.calls.filter(c => c.url.includes('Script.Stop'));
     assert.strictEqual(stopCalls.length, 1, 'should call Script.Stop once');
     assert.ok(stopCalls[0].url.includes('id=1'), 'should stop script id 1');
   });
 
-  it('uploads code in chunks with append flag', async () => {
-    const result = await runDeploy(`127.0.0.1:${port}`, 1);
-    assert.strictEqual(result.code, 0, 'deploy should succeed: ' + result.stderr);
-
+  it('uploads code in chunks with append flag', () => {
     const putCalls = mock.calls.filter(c => c.url.includes('Script.PutCode'));
     assert.ok(putCalls.length > 1, `should upload in multiple chunks, got ${putCalls.length}`);
 
-    // First chunk: append=false
     const first = JSON.parse(putCalls[0].body);
     assert.strictEqual(first.append, false, 'first chunk append should be false');
     assert.strictEqual(first.id, 1, 'script id should be 1');
 
-    // Subsequent chunks: append=true
     for (let i = 1; i < putCalls.length; i++) {
       const chunk = JSON.parse(putCalls[i].body);
       assert.strictEqual(chunk.append, true, `chunk ${i + 1} append should be true`);
     }
   });
 
-  it('uploads the full concatenated content of control-logic.js + control.js', async () => {
-    const result = await runDeploy(`127.0.0.1:${port}`, 1);
-    assert.strictEqual(result.code, 0, 'deploy should succeed: ' + result.stderr);
-
+  it('reassembles to the full concatenated source', () => {
     const logicContent = fs.readFileSync(path.join(SCRIPTS_DIR, 'control-logic.js'), 'utf8');
     const controlContent = fs.readFileSync(path.join(SCRIPTS_DIR, 'control.js'), 'utf8');
     const expected = logicContent + '\n' + controlContent + '\n';
 
-    assert.strictEqual(mock.getUploadedCode(), expected,
-      'reassembled chunks should equal concatenated source files');
+    assert.strictEqual(mock.getUploadedCode(), expected);
   });
 
-  it('chunks are at most 512 bytes each', async () => {
-    const result = await runDeploy(`127.0.0.1:${port}`, 1);
-    assert.strictEqual(result.code, 0, 'deploy should succeed: ' + result.stderr);
-
+  it('chunks are at most 512 bytes each', () => {
     const putCalls = mock.calls.filter(c => c.url.includes('Script.PutCode'));
     for (let i = 0; i < putCalls.length; i++) {
       const chunk = JSON.parse(putCalls[i].body);
@@ -153,51 +145,67 @@ describe('deploy.sh', () => {
     }
   });
 
-  it('enables auto-start after upload', async () => {
-    const result = await runDeploy(`127.0.0.1:${port}`, 1);
-    assert.strictEqual(result.code, 0, 'deploy should succeed: ' + result.stderr);
-
+  it('enables auto-start after upload', () => {
     const configCalls = mock.calls.filter(c => c.url.includes('Script.SetConfig'));
     assert.strictEqual(configCalls.length, 1, 'should call Script.SetConfig once');
     const configBody = JSON.parse(configCalls[0].body);
-    assert.strictEqual(configBody.config.enable, true, 'should enable auto-start');
+    assert.strictEqual(configBody.config.enable, true);
   });
 
-  it('calls RPC endpoints in correct order: Stop, PutCode, SetConfig, Start', async () => {
-    const result = await runDeploy(`127.0.0.1:${port}`, 1);
-    assert.strictEqual(result.code, 0, 'deploy should succeed: ' + result.stderr);
-
+  it('calls RPCs in order: Stop, PutCode, SetConfig, Start', () => {
     const stopIdx = mock.calls.findIndex(c => c.url.includes('Script.Stop'));
     const firstPutIdx = mock.calls.findIndex(c => c.url.includes('Script.PutCode'));
     const configIdx = mock.calls.findIndex(c => c.url.includes('Script.SetConfig'));
     const startIdx = mock.calls.findIndex(c => c.url.includes('Script.Start'));
 
-    assert.ok(stopIdx >= 0, 'should call Script.Stop');
-    assert.ok(firstPutIdx >= 0, 'should call Script.PutCode');
-    assert.ok(configIdx >= 0, 'should call Script.SetConfig');
-    assert.ok(startIdx >= 0, 'should call Script.Start');
+    assert.ok(stopIdx < firstPutIdx, 'Stop before PutCode');
+    assert.ok(firstPutIdx < configIdx, 'PutCode before SetConfig');
+    assert.ok(configIdx < startIdx, 'SetConfig before Start');
+  });
+});
 
-    assert.ok(stopIdx < firstPutIdx, 'Stop should come before PutCode');
-    assert.ok(firstPutIdx < configIdx, 'PutCode should come before SetConfig');
-    assert.ok(configIdx < startIdx, 'SetConfig should come before Start');
+// Separate deploy run for custom script ID
+describe('deploy.sh with custom script ID', () => {
+  let mock;
+  let port;
+  let deployResult;
+
+  before(async () => {
+    mock = createMockServer();
+    await new Promise((resolve) => {
+      mock.server.listen(0, '127.0.0.1', () => {
+        port = mock.server.address().port;
+        resolve();
+      });
+    });
+    fs.writeFileSync(CONF_PATH,
+      `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\n`
+    );
+    deployResult = await runDeploy(`127.0.0.1:${port}`, 3);
   });
 
-  it('uses the provided script ID', async () => {
-    const result = await runDeploy(`127.0.0.1:${port}`, 3);
-    assert.strictEqual(result.code, 0, 'deploy should succeed: ' + result.stderr);
+  after(async () => {
+    fs.writeFileSync(CONF_PATH, ORIGINAL_CONF);
+    await new Promise((resolve) => mock.server.close(resolve));
+  });
 
+  it('passes script ID through to all PutCode calls', () => {
+    assert.strictEqual(deployResult.code, 0);
     const putCalls = mock.calls.filter(c => c.url.includes('Script.PutCode'));
     for (const call of putCalls) {
       const body = JSON.parse(call.body);
-      assert.strictEqual(body.id, 3, 'should use script id 3');
+      assert.strictEqual(body.id, 3);
     }
   });
+});
 
-  it('fails on PutCode HTTP error', async () => {
-    // Replace mock with one that errors on PutCode
-    await new Promise((resolve) => mock.server.close(resolve));
+// Separate deploy run for error handling
+describe('deploy.sh error handling', () => {
+  let mock;
+  let port;
 
-    mock = createMockServer((req, res, body) => {
+  before(async () => {
+    mock = createMockServer((req, res) => {
       if (req.url.includes('Script.Stop')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ id: 1 }));
@@ -209,11 +217,23 @@ describe('deploy.sh', () => {
         res.end('{}');
       }
     });
-
     await new Promise((resolve) => {
-      mock.server.listen(port, '127.0.0.1', resolve);
+      mock.server.listen(0, '127.0.0.1', () => {
+        port = mock.server.address().port;
+        resolve();
+      });
     });
+    fs.writeFileSync(CONF_PATH,
+      `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\n`
+    );
+  });
 
+  after(async () => {
+    fs.writeFileSync(CONF_PATH, ORIGINAL_CONF);
+    await new Promise((resolve) => mock.server.close(resolve));
+  });
+
+  it('fails on PutCode HTTP error', async () => {
     const result = await runDeploy(`127.0.0.1:${port}`, 1);
     assert.ok(result.code !== 0, 'should exit with non-zero status');
     assert.ok(result.stdout.includes('ERROR'), 'should print error message');
