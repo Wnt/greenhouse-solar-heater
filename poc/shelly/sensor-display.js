@@ -5,7 +5,7 @@
 // Deploy to Pro 4PM via: ./deploy-poc.sh
 // Requires: Shelly 1 with sensor add-on at SENSOR_IP
 
-var SENSOR_IP = "192.168.1.20";
+var SENSOR_IP = "192.168.1.86";
 var SENSOR_IDS = [0, 1];
 var SENSOR_NAMES = ["S1", "S2"];
 var POLL_INTERVAL = 30; // seconds
