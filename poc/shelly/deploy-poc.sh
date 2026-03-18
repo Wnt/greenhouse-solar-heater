@@ -79,8 +79,13 @@ while offset < total:
     payload = json.dumps({'id': script_id, 'code': chunk, 'append': append}).encode()
     req = urllib.request.Request(base_url, data=payload,
         headers={'Content-Type': 'application/json'})
-    resp = urllib.request.urlopen(req, timeout=10)
-    data = json.loads(resp.read())
+    try:
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print('  ERROR on chunk %d (append=%s): HTTP %d: %s' % (chunk_num + 1, append, e.code, body))
+        sys.exit(1)
     chunk_num += 1
     offset += CHUNK_SIZE
     print('  chunk %d: %d/%d bytes' % (chunk_num, min(offset, total), total))
