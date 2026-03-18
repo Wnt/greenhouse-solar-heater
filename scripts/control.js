@@ -153,6 +153,25 @@ function pollAllSensors(cb) {
   next(0);
 }
 
+// ── Display: update Pro 4PM channel names to show status ──
+// formatDuration, formatTemp, buildDisplayLabels are in control-logic.js
+
+function updateDisplay() {
+  var labels = buildDisplayLabels({
+    mode: state.mode,
+    modeDurationMs: Date.now() - state.mode_start,
+    temps: state.temps,
+    lastError: state.last_error,
+    collectorsDrained: state.collectors_drained,
+  });
+  for (var i = 0; i < 4; i++) {
+    Shelly.call("Switch.SetConfig", {
+      id: i,
+      config: { name: labels[i] }
+    }, function() {});
+  }
+}
+
 function buildEvalState() {
   var now = Date.now();
   var sensorAge = {};
@@ -307,6 +326,7 @@ function controlLoop() {
   if (state.transitioning) return;
 
   pollAllSensors(function() {
+    updateDisplay();
     if (state.transitioning) return;
 
     var evalState = buildEvalState();

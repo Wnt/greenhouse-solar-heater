@@ -223,6 +223,47 @@ function evaluate(state, config) {
   return makeResult(MODES.IDLE, flags);
 }
 
+// ── Display label helpers (pure, no Shelly calls) ──
+
+var MODE_SHORT = {
+  IDLE: "IDLE",
+  SOLAR_CHARGING: "SOLAR",
+  GREENHOUSE_HEATING: "HEAT",
+  ACTIVE_DRAIN: "DRAIN",
+  EMERGENCY_HEATING: "EMERG",
+};
+
+function formatDuration(ms) {
+  var s = Math.floor(ms / 1000);
+  if (s < 60) return s + "s";
+  var m = Math.floor(s / 60);
+  if (m < 60) return m + "m";
+  var h = Math.floor(m / 60);
+  return h + "h" + (m % 60) + "m";
+}
+
+function formatTemp(t) {
+  if (t === null || t === undefined) return "--";
+  return Math.round(t) + "C";
+}
+
+function buildDisplayLabels(displayState) {
+  var dur = formatDuration(displayState.modeDurationMs);
+  var prefix = MODE_SHORT[displayState.mode] || displayState.mode;
+  var ch0 = prefix + " " + dur;
+  if (displayState.lastError) ch0 = "!" + ch0;
+  if (displayState.collectorsDrained && displayState.mode === MODES.IDLE) ch0 = ch0 + " D";
+
+  var t = displayState.temps;
+  var ch1 = "Coll " + formatTemp(t.collector)
+    + " Tk" + formatTemp(t.tank_top)
+    + "/" + formatTemp(t.tank_bottom);
+  var ch2 = "GH " + formatTemp(t.greenhouse);
+  var ch3 = "Out " + formatTemp(t.outdoor);
+
+  return [ch0, ch1, ch2, ch3];
+}
+
 // Export for Node.js testing (Shelly ignores this)
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -230,6 +271,10 @@ if (typeof module !== "undefined" && module.exports) {
     MODES: MODES,
     MODE_VALVES: MODE_VALVES,
     MODE_ACTUATORS: MODE_ACTUATORS,
-    DEFAULT_CONFIG: DEFAULT_CONFIG
+    DEFAULT_CONFIG: DEFAULT_CONFIG,
+    formatDuration: formatDuration,
+    formatTemp: formatTemp,
+    buildDisplayLabels: buildDisplayLabels,
+    MODE_SHORT: MODE_SHORT
   };
 }

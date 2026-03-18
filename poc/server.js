@@ -11,6 +11,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const PORT = parseInt(process.argv[2] || '3000', 10);
 const STATIC_DIR = __dirname;
@@ -88,8 +89,50 @@ var server = http.createServer(function (req, res) {
   }
 });
 
-server.listen(PORT, function () {
-  console.log('PoC server running at http://localhost:' + PORT);
-  console.log('Serving static files from ' + STATIC_DIR);
-  console.log('Proxying /api/rpc/* to Shelly devices');
+function getNetworkAddress() {
+  var interfaces = os.networkInterfaces();
+  for (var name in interfaces) {
+    var addrs = interfaces[name];
+    for (var i = 0; i < addrs.length; i++) {
+      if (addrs[i].family === 'IPv4' && !addrs[i].internal) {
+        return addrs[i].address;
+      }
+    }
+  }
+  return null;
+}
+
+function printBanner(port, networkIp) {
+  var local = 'http://localhost:' + port;
+  var network = networkIp ? 'http://' + networkIp + ':' + port : null;
+
+  var lines = [
+    '',
+    '   Serving!',
+    '',
+    '   - Local:    ' + local,
+  ];
+  if (network) {
+    lines.push('   - Network:  ' + network);
+  }
+  lines.push('');
+
+  var maxLen = 0;
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].length > maxLen) maxLen = lines[i].length;
+  }
+  var width = maxLen + 4;
+
+  console.log('');
+  console.log('   \u250c' + '\u2500'.repeat(width) + '\u2510');
+  for (var j = 0; j < lines.length; j++) {
+    var padded = lines[j] + ' '.repeat(width - lines[j].length);
+    console.log('   \u2502' + padded + '\u2502');
+  }
+  console.log('   \u2514' + '\u2500'.repeat(width) + '\u2518');
+  console.log('');
+}
+
+server.listen(PORT, '0.0.0.0', function () {
+  printBanner(PORT, getNetworkAddress());
 });
