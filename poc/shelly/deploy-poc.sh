@@ -62,7 +62,7 @@ echo "Uploading script..."
 python3 -c "
 import json, sys, urllib.request, time
 
-CHUNK_SIZE = 1024
+CHUNK_SIZE = 512
 
 with open(sys.argv[1]) as f:
     code = f.read()
