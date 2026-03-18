@@ -154,43 +154,16 @@ function pollAllSensors(cb) {
 }
 
 // ── Display: update Pro 4PM channel names to show status ──
-
-var MODE_SHORT = {
-  IDLE: "IDLE",
-  SOLAR_CHARGING: "SOLAR",
-  GREENHOUSE_HEATING: "HEAT",
-  ACTIVE_DRAIN: "DRAIN",
-  EMERGENCY_HEATING: "EMERG",
-};
-
-function formatDuration(ms) {
-  var s = Math.floor(ms / 1000);
-  if (s < 60) return s + "s";
-  var m = Math.floor(s / 60);
-  if (m < 60) return m + "m";
-  var h = Math.floor(m / 60);
-  return h + "h" + (m % 60) + "m";
-}
-
-function formatTemp(t) {
-  if (t === null || t === undefined) return "--";
-  return Math.round(t) + "C";
-}
+// formatDuration, formatTemp, buildDisplayLabels are in control-logic.js
 
 function updateDisplay() {
-  var dur = formatDuration(Date.now() - state.mode_start);
-  var prefix = MODE_SHORT[state.mode] || state.mode;
-  var ch0 = prefix + " " + dur;
-  if (state.last_error) ch0 = "!" + ch0;
-  if (state.collectors_drained && state.mode === MODES.IDLE) ch0 = ch0 + " D";
-
-  var ch1 = "Coll " + formatTemp(state.temps.collector)
-    + " Tk" + formatTemp(state.temps.tank_top)
-    + "/" + formatTemp(state.temps.tank_bottom);
-  var ch2 = "GH " + formatTemp(state.temps.greenhouse);
-  var ch3 = "Out " + formatTemp(state.temps.outdoor);
-
-  var labels = [ch0, ch1, ch2, ch3];
+  var labels = buildDisplayLabels({
+    mode: state.mode,
+    modeDurationMs: Date.now() - state.mode_start,
+    temps: state.temps,
+    lastError: state.last_error,
+    collectorsDrained: state.collectors_drained,
+  });
   for (var i = 0; i < 4; i++) {
     Shelly.call("Switch.SetConfig", {
       id: i,
