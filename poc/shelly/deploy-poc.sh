@@ -77,6 +77,8 @@ while offset < total:
     chunk = code[offset:offset + CHUNK_SIZE]
     append = offset > 0
     payload = json.dumps({'id': script_id, 'code': chunk, 'append': append}).encode()
+    if chunk_num == 0:
+        print('  DEBUG payload (%d bytes): %s...' % (len(payload), payload[:200]))
     req = urllib.request.Request(base_url, data=payload,
         headers={'Content-Type': 'application/json'})
     try:
