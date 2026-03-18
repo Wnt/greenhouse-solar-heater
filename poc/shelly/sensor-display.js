@@ -1,6 +1,6 @@
 // ── Shelly Pro 4PM: Sensor Poll + Display Script ──
 // ES5-compatible. Polls DS18B20 sensors from Shelly 1 add-on
-// and updates the Pro 4PM device name to show temperatures.
+// and updates the Pro 4PM switch names on the display to show temperatures.
 //
 // Deploy to Pro 4PM via: ./deploy-poc.sh
 // Requires: Shelly 1 with sensor add-on at SENSOR_IP
@@ -48,27 +48,27 @@ function pollAll() {
     pollCount++;
     lastPollOk = true;
 
-    // Update device name with temperatures for display
-    var parts = [];
+    // Update switch names on the Pro 4PM display (OUTPUT-0..3)
+    // Each switch label is shown on the device screen
+    var displayParts = [];
     for (var i = 0; i < SENSOR_NAMES.length; i++) {
       var name = SENSOR_NAMES[i];
       var t = temps[name];
+      var label;
       if (t !== null && t !== undefined) {
-        parts.push(name + ":" + t.toFixed(1) + "C");
+        label = name + " " + t.toFixed(1) + " C";
       } else {
-        parts.push(name + ":--");
+        label = name + " --";
       }
+      displayParts.push(label);
+      // Rename switch i to show the temperature
+      Shelly.call("Switch.SetConfig", {
+        id: i,
+        config: { name: label }
+      }, function () {});
     }
-    var displayStr = parts.join(" | ");
 
-    // Update device name so it shows on the Pro 4PM screen
-    Shelly.call("Sys.SetConfig", {
-      config: { device: { name: displayStr } }
-    }, function () {
-      // Name updated — visible on device display and in Shelly app
-    });
-
-    print("Poll #" + pollCount + ": " + displayStr);
+    print("Poll #" + pollCount + ": " + displayParts.join(" | "));
   });
 }
 
