@@ -8,7 +8,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DEVICE_IP="${1:-192.168.1.10}"
+DEVICE_IP="${1:-192.168.1.174}"
 SCRIPT_ID="${2:-1}"
 SCRIPT_FILE="$SCRIPT_DIR/sensor-display.js"
 

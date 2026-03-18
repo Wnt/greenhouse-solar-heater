@@ -1,31 +1,33 @@
 /**
  * Shelly HTTP RPC client for browser.
  * Polls DS18B20 sensors from a Shelly device with sensor add-on.
+ *
+ * Routes requests through a local proxy server (/api/rpc/*) to avoid
+ * CORS issues — Shelly devices don't send CORS headers.
  */
 
 export class ShellyAPI {
   constructor(sensorDeviceIp) {
     this.sensorDeviceIp = sensorDeviceIp;
-    this.baseUrl = `http://${sensorDeviceIp}`;
     this.timeout = 5000;
   }
 
   setDeviceIp(ip) {
     this.sensorDeviceIp = ip;
-    this.baseUrl = `http://${ip}`;
   }
 
   /**
-   * Call a Shelly RPC method via HTTP GET.
+   * Call a Shelly RPC method via the local proxy.
    * @param {string} method - RPC method name (e.g. 'Temperature.GetStatus')
    * @param {object} params - Query parameters
    * @returns {Promise<object>} Parsed JSON response
    */
   async rpc(method, params = {}) {
-    const query = Object.entries(params)
-      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
-      .join('&');
-    const url = `${this.baseUrl}/rpc/${method}${query ? '?' + query : ''}`;
+    const searchParams = new URLSearchParams({ _host: this.sensorDeviceIp });
+    for (const [k, v] of Object.entries(params)) {
+      searchParams.set(k, v);
+    }
+    const url = `/api/rpc/${method}?${searchParams}`;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeout);
