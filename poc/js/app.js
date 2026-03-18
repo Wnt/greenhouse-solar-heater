@@ -6,7 +6,7 @@ import { renderGauge, renderGaugeNoData } from './gauge.js';
 import { TimeSeriesStore, drawChart } from './chart.js';
 
 // ── Configuration ──
-const SENSOR_IDS = [0, 1];
+const SENSOR_IDS = [100, 101];
 const SENSOR_LABELS = ['Sensor 1', 'Sensor 2'];
 const POLL_INTERVAL_MS = 10000; // 10 seconds
 const HISTORY_WINDOWS = {
