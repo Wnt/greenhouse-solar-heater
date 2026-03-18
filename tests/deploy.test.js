@@ -9,6 +9,12 @@ const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
 const DEPLOY_SH = path.join(SCRIPTS_DIR, 'deploy.sh');
 const CONF_PATH = path.join(SCRIPTS_DIR, 'devices.conf');
 
+// Safety net: always restore devices.conf on process exit
+const ORIGINAL_CONF = fs.readFileSync(CONF_PATH, 'utf8');
+process.on('exit', () => {
+  try { fs.writeFileSync(CONF_PATH, ORIGINAL_CONF); } catch (_) {}
+});
+
 function runDeploy(ip, scriptId) {
   return new Promise((resolve, reject) => {
     const child = spawn('bash', [DEPLOY_SH, ip, String(scriptId)], {
@@ -77,8 +83,6 @@ function createMockServer(handler) {
 describe('deploy.sh', () => {
   let mock;
   let port;
-  let originalConf;
-
   beforeEach(async () => {
     mock = createMockServer();
     await new Promise((resolve) => {
@@ -87,14 +91,13 @@ describe('deploy.sh', () => {
         resolve();
       });
     });
-    originalConf = fs.readFileSync(CONF_PATH, 'utf8');
     fs.writeFileSync(CONF_PATH,
       `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\n`
     );
   });
 
   afterEach(async () => {
-    fs.writeFileSync(CONF_PATH, originalConf);
+    fs.writeFileSync(CONF_PATH, ORIGINAL_CONF);
     await new Promise((resolve) => mock.server.close(resolve));
   });
 
