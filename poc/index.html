@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shelly Temperature Monitor — PoC</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="page-header">
+    <h1>Shelly Temperature Monitor</h1>
+    <nav>
+      <a href="../playground/index.html">Playground</a>
+    </nav>
+  </header>
+
+  <!-- Connection bar -->
+  <div class="container">
+    <div class="connection-bar">
+      <label>Sensor Device IP:</label>
+      <input type="text" id="device-ip" placeholder="192.168.1.20" value="">
+      <button id="connect-btn">Connect</button>
+      <span id="status-dot" class="status-dot disconnected"></span>
+      <span id="status-text" class="status-text">Disconnected</span>
+      <span style="flex:1"></span>
+      <span style="font-size:12px; color:var(--text-muted)">
+        Device: <strong id="device-name">-</strong>
+        &nbsp;|&nbsp; Last poll: <span id="last-poll">-</span>
+      </span>
+    </div>
+
+    <!-- Gauges -->
+    <div class="gauge-grid">
+      <div class="gauge-card">
+        <h3>Sensor 1 (id:0)</h3>
+        <div id="gauge-0"></div>
+      </div>
+      <div class="gauge-card">
+        <h3>Sensor 2 (id:1)</h3>
+        <div id="gauge-1"></div>
+      </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h2>Temperature History</h2>
+        <div class="time-range-btns">
+          <button data-range="30m">30m</button>
+          <button data-range="1h">1h</button>
+          <button data-range="3h">3h</button>
+          <button data-range="6h" class="active">6h</button>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="history-chart"></canvas>
+      </div>
+      <div class="chart-legend">
+        <span class="chart-legend-item">
+          <span class="chart-legend-swatch" style="background:#0056b2"></span>
+          Sensor 1
+        </span>
+        <span class="chart-legend-item">
+          <span class="chart-legend-swatch" style="background:#e53935"></span>
+          Sensor 2
+        </span>
+      </div>
+    </div>
+
+    <!-- Event log -->
+    <div class="card">
+      <h2>Event Log</h2>
+      <div id="event-log" class="event-log"></div>
+    </div>
+
+    <!-- Setup info -->
+    <div class="card">
+      <h2>Setup</h2>
+      <table class="info-table">
+        <tr><th>Component</th><th>Role</th><th>Notes</th></tr>
+        <tr>
+          <td>Shelly 1 + Add-on</td>
+          <td>Temperature sensor hub</td>
+          <td>DS18B20 sensors connected to 1-Wire add-on. Enter this device's IP above.</td>
+        </tr>
+        <tr>
+          <td>Shelly Pro 4PM</td>
+          <td>Main controller</td>
+          <td>Runs sensor-display script (optional). Can show temps on built-in display.</td>
+        </tr>
+        <tr>
+          <td>Shelly Pro 2PM</td>
+          <td>Relay controller</td>
+          <td>Not used in this PoC — available for valve control in full system.</td>
+        </tr>
+        <tr>
+          <td>2x DS18B20</td>
+          <td>Temperature probes</td>
+          <td>Sensor id:0 and id:1. Rename labels in app.js if needed.</td>
+        </tr>
+      </table>
+      <p style="margin-top:12px; font-size:13px; color:var(--text-muted);">
+        This web UI polls the Shelly device directly via HTTP RPC from your browser.
+        Both the browser and the Shelly device must be on the same local network.
+        No server or backend required.
+      </p>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

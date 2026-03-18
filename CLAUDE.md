@@ -28,6 +28,7 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `construction/` → physical build instructions
 - `existing-hardware/` → reference photos of owned components
 - `scripts/` → Shelly device scripts and deployment tooling
+- `poc/` → hardware PoC app (live temperature monitor with Shelly devices)
 - `tools/shelly-lint/` → standalone Shelly platform conformance linter (CLI)
 - `playground/` → interactive browser-based simulators (thermal, hydraulic)
 - `tests/` → unit, simulation, and e2e tests
@@ -93,6 +94,18 @@ All third-party libraries are vendored locally in `playground/vendor/` to avoid 
 - `playground/vendor/js-yaml.mjs` — js-yaml 4.1.0 (ESM), used by all playground pages
 
 **Do NOT replace these with CDN URLs.** The importmaps in each HTML file point to `./vendor/...` paths. If upgrading a dependency, download via `npm pack`, extract the dist files, and copy to `playground/vendor/`.
+
+## PoC Temperature Monitor
+
+The `poc/` directory contains a hardware proof-of-concept app that reads live DS18B20 temperatures from a Shelly 1 sensor add-on and displays them in a browser-based UI.
+
+- `poc/index.html` — Web UI: SVG gauges + Canvas time-series chart (last 6h)
+- `poc/js/` — ES modules: `shelly-api.js` (HTTP RPC client), `gauge.js` (SVG gauge), `chart.js` (Canvas chart), `app.js` (orchestration)
+- `poc/css/style.css` — Standalone styles (not shared with playground)
+- `poc/shelly/sensor-display.js` — ES5 Shelly script for Pro 4PM: polls sensors, updates device name to show temperatures on the built-in display
+- `poc/shelly/deploy-poc.sh` — Deploys the script to Pro 4PM via HTTP RPC
+
+**Requirements**: Browser and Shelly devices must be on the same local network. The web UI polls the Shelly 1 add-on directly via `fetch()` → HTTP RPC.
 
 ## Running Tests
 
