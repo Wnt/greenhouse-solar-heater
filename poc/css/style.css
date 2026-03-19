@@ -182,6 +182,132 @@ a:hover { text-decoration: underline; }
   border-radius: 2px;
 }
 
+/* ── Valve control panel ── */
+.valve-panel.hidden { display: none; }
+.valve-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.valve-header h2 { margin-bottom: 0; }
+
+.valve-mode-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.valve-mode-badge.auto { background: #e8f5e9; color: #2e7d32; }
+.valve-mode-badge.override { background: #fff3e0; color: #e65100; }
+
+.valve-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.valve-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.valve-label {
+  font-weight: 600;
+  min-width: 120px;
+  color: var(--text-bright);
+}
+.valve-label-sub {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.valve-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.valve-dot.open { background: var(--green); }
+.valve-dot.closed { background: var(--red); }
+
+.valve-state {
+  font-weight: 700;
+  font-size: 12px;
+  min-width: 56px;
+  letter-spacing: 0.3px;
+}
+.valve-state.open { color: var(--green); }
+.valve-state.closed { color: var(--red); }
+
+.valve-cooldown-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-left: auto;
+}
+.valve-cooldown {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 40px;
+  color: var(--text-muted);
+}
+.valve-cooldown.active { color: var(--orange); }
+
+.valve-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.valve-controls-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.valve-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.valve-btn-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+.valve-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.valve-btn:hover { background: #e2e6ea; color: var(--text-bright); }
+.valve-btn.on.active { background: #e8f5e9; border-color: var(--green); color: #2e7d32; }
+.valve-btn.off.active { background: #ffebee; border-color: var(--red); color: #c62828; }
+.valve-btn.auto-btn.active { background: #e8f5e9; border-color: var(--green); color: #2e7d32; }
+
+.valve-info {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 /* ── Info table ── */
 .info-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .info-table th {

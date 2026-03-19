@@ -17,8 +17,10 @@
   <!-- Connection bar -->
   <div class="container">
     <div class="connection-bar">
-      <label>Sensor Device IP:</label>
+      <label>Sensor IP:</label>
       <input type="text" id="device-ip" placeholder="192.168.1.86" value="192.168.1.86">
+      <label>Controller IP:</label>
+      <input type="text" id="controller-ip" placeholder="192.168.1.174" value="192.168.1.174">
       <button id="connect-btn">Connect</button>
       <span id="status-dot" class="status-dot disconnected"></span>
       <span id="status-text" class="status-text">Disconnected</span>
@@ -39,6 +41,51 @@
         <h3>Sensor 2 (id:1)</h3>
         <div id="gauge-1"></div>
       </div>
+    </div>
+
+    <!-- Valve control panel -->
+    <div id="valve-panel" class="card valve-panel hidden">
+      <div class="valve-header">
+        <h2>Valve Control</h2>
+        <span id="valve-mode" class="valve-mode-badge auto">AUTO</span>
+      </div>
+
+      <div class="valve-grid">
+        <div class="valve-row">
+          <span class="valve-label">Valve 1 <span class="valve-label-sub">(relay 0)</span></span>
+          <span id="v1-dot" class="valve-dot closed"></span>
+          <span id="v1-status" class="valve-state closed">CLOSED</span>
+          <span class="valve-cooldown-label">Cooldown:</span>
+          <span id="v1-cooldown" class="valve-cooldown">—</span>
+        </div>
+        <div class="valve-row">
+          <span class="valve-label">Valve 2 <span class="valve-label-sub">(relay 1)</span></span>
+          <span id="v2-dot" class="valve-dot closed"></span>
+          <span id="v2-status" class="valve-state closed">CLOSED</span>
+          <span class="valve-cooldown-label">Cooldown:</span>
+          <span id="v2-cooldown" class="valve-cooldown">—</span>
+        </div>
+      </div>
+
+      <div class="valve-controls">
+        <span class="valve-controls-label">Override:</span>
+        <div class="valve-btn-group">
+          <span class="valve-btn-label">V1</span>
+          <button id="v1-on-btn" class="valve-btn on" title="Override Valve 1 OPEN">Open</button>
+          <button id="v1-off-btn" class="valve-btn off" title="Override Valve 1 CLOSED">Close</button>
+        </div>
+        <div class="valve-btn-group">
+          <span class="valve-btn-label">V2</span>
+          <button id="v2-on-btn" class="valve-btn on" title="Override Valve 2 OPEN">Open</button>
+          <button id="v2-off-btn" class="valve-btn off" title="Override Valve 2 CLOSED">Close</button>
+        </div>
+        <button id="auto-btn" class="valve-btn auto-btn active" title="Return to automatic temperature-based control">Auto</button>
+      </div>
+
+      <p class="valve-info">
+        Auto mode: Valve 1 opens when Sensor 1 &gt; Sensor 2, Valve 2 opens when Sensor 2 &gt; Sensor 1.
+        Minimum 30 s between valve switches (cooldown applies to both auto and override).
+      </p>
     </div>
 
     <!-- Chart -->
@@ -81,28 +128,28 @@
         <tr>
           <td>Shelly 1 + Add-on</td>
           <td>Temperature sensor hub</td>
-          <td>DS18B20 sensors connected to 1-Wire add-on. Enter this device's IP above.</td>
+          <td>DS18B20 sensors connected to 1-Wire add-on. Enter this device's IP as Sensor IP.</td>
         </tr>
         <tr>
           <td>Shelly Pro 4PM</td>
-          <td>Main controller</td>
-          <td>Runs sensor-display script (optional). Can show temps on built-in display.</td>
+          <td>Controller</td>
+          <td>Runs sensor-display script: polls temps, decides valve state, controls 2PM relays. Enter as Controller IP.</td>
         </tr>
         <tr>
           <td>Shelly Pro 2PM</td>
-          <td>Relay controller</td>
-          <td>Not used in this PoC — available for valve control in full system.</td>
+          <td>Valve relays</td>
+          <td>Two motorized valves on relay 0 and 1. Controlled by the Pro 4PM script.</td>
         </tr>
         <tr>
           <td>2x DS18B20</td>
           <td>Temperature probes</td>
-          <td>Sensor id:0 and id:1. Rename labels in app.js if needed.</td>
+          <td>Sensor id:100 and id:101. S1 &gt; S2 opens V1, S2 &gt; S1 opens V2.</td>
         </tr>
       </table>
       <p style="margin-top:12px; font-size:13px; color:var(--text-muted);">
-        This web UI polls the Shelly device directly via HTTP RPC from your browser.
-        Both the browser and the Shelly device must be on the same local network.
-        No server or backend required.
+        This web UI polls the Shelly sensor directly for temperatures and the Pro 4PM controller
+        for valve status. Both devices must be on the same local network as your browser.
+        Valve overrides are sent to the 4PM script, which forwards commands to the 2PM.
       </p>
     </div>
   </div>
