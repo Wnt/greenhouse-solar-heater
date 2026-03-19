@@ -9,10 +9,14 @@
 var SENSOR_IP = "192.168.1.86";
 var SENSOR_IDS = [100, 101];
 var SENSOR_NAMES = ["S1", "S2"];
-var POLL_INTERVAL = 30; // seconds
+var POLL_INTERVAL = 3; // seconds
+var HTTP_TIMEOUT = 2; // seconds — must complete well within poll interval
 
 var VALVE_IP = "192.168.1.136"; // Pro 2PM
 var MIN_SWITCH_TIME = 30; // seconds — minimum time valve must stay in one state
+var SETTLE_TIME = 15; // seconds — temps must stay crossed before switching
+
+var DISPLAY_UPDATE_POLLS = 10; // update 4PM display every N polls (~30s)
 
 var temps = {};
 var lastPollOk = false;
@@ -27,6 +31,13 @@ var valves = {
 };
 
 var override = { active: false, v1: false, v2: false };
+
+var settling = {
+  active: false,
+  desiredV1: false,
+  desiredV2: false,
+  sinceUptime: 0
+};
 
 function getUptime() {
   return Shelly.getComponentStatus("sys").uptime;
@@ -46,7 +57,7 @@ function setValve(id, on, valve) {
   valve.output = on;
   valve.lastSwitchUptime = getUptime();
   var url = "http://" + VALVE_IP + "/rpc/Switch.Set?id=" + id + "&on=" + on;
-  Shelly.call("HTTP.GET", { url: url, timeout: 5 }, function (res, err) {
+  Shelly.call("HTTP.GET", { url: url, timeout: HTTP_TIMEOUT }, function (res, err) {
     if (err || !res || res.code !== 200) {
       print("Valve " + id + " switch error");
       errorCount++;
@@ -61,24 +72,60 @@ function applyValveLogic() {
   var s2 = temps["S2"];
 
   if (override.active) {
+    // Override bypasses settling
+    settling.active = false;
     setValve(0, override.v1, valves.v1);
     setValve(1, override.v2, valves.v2);
     return;
   }
 
-  // Auto mode: S1 > S2 → V1 open, V2 closed; S2 > S1 → V2 open, V1 closed
   if (s1 === null || s1 === undefined || s2 === null || s2 === undefined) {
     return; // no data, keep current state
   }
 
+  // Determine desired state from temperature comparison
+  var wantV1, wantV2;
   if (s1 > s2) {
-    setValve(0, true, valves.v1);
-    setValve(1, false, valves.v2);
+    wantV1 = true;
+    wantV2 = false;
   } else if (s2 > s1) {
-    setValve(0, false, valves.v1);
-    setValve(1, true, valves.v2);
+    wantV1 = false;
+    wantV2 = true;
+  } else {
+    // Equal — no change desired, clear settling
+    settling.active = false;
+    return;
   }
-  // If equal, maintain current state
+
+  // Already in desired state?
+  if (valves.v1.output === wantV1 && valves.v2.output === wantV2) {
+    settling.active = false;
+    return;
+  }
+
+  // Need to switch — apply settling delay
+  var now = getUptime();
+
+  if (!settling.active || settling.desiredV1 !== wantV1 || settling.desiredV2 !== wantV2) {
+    // Start or restart settling (desired state changed)
+    settling.active = true;
+    settling.desiredV1 = wantV1;
+    settling.desiredV2 = wantV2;
+    settling.sinceUptime = now;
+    print("Settling: temps crossed, waiting " + SETTLE_TIME + "s");
+    return;
+  }
+
+  // Already settling for this desired state — check if enough time passed
+  if ((now - settling.sinceUptime) < SETTLE_TIME) {
+    return; // still waiting for readings to settle
+  }
+
+  // Settled! Apply the switch
+  print("Settled: applying valve switch after " + SETTLE_TIME + "s");
+  settling.active = false;
+  setValve(0, wantV1, valves.v1);
+  setValve(1, wantV2, valves.v2);
 }
 
 // ── Override control (called via Script.Eval from web UI) ──
@@ -108,7 +155,7 @@ function pollSensor(idx, cb) {
   var name = SENSOR_NAMES[idx];
   var url = "http://" + SENSOR_IP + "/rpc/Temperature.GetStatus?id=" + id;
 
-  Shelly.call("HTTP.GET", { url: url, timeout: 5 }, function (res, err) {
+  Shelly.call("HTTP.GET", { url: url, timeout: HTTP_TIMEOUT }, function (res, err) {
     if (res && res.code === 200) {
       try {
         var data = JSON.parse(res.body);
@@ -130,25 +177,23 @@ function pollAll() {
     pollCount++;
     lastPollOk = true;
 
-    // Update switch names on the Pro 4PM display (OUTPUT-0..3)
-    var displayParts = [];
-    for (var i = 0; i < SENSOR_NAMES.length; i++) {
-      var name = SENSOR_NAMES[i];
-      var t = temps[name];
-      var label;
-      if (t !== null && t !== undefined) {
-        label = name + " " + t.toFixed(1) + " C";
-      } else {
-        label = name + " --";
+    // Update switch names on the Pro 4PM display (throttled)
+    if (pollCount % DISPLAY_UPDATE_POLLS === 0) {
+      for (var i = 0; i < SENSOR_NAMES.length; i++) {
+        var name = SENSOR_NAMES[i];
+        var t = temps[name];
+        var label;
+        if (t !== null && t !== undefined) {
+          label = name + " " + t.toFixed(1) + " C";
+        } else {
+          label = name + " --";
+        }
+        Shelly.call("Switch.SetConfig", {
+          id: i,
+          config: { name: label }
+        }, function () {});
       }
-      displayParts.push(label);
-      Shelly.call("Switch.SetConfig", {
-        id: i,
-        config: { name: label }
-      }, function () {});
     }
-
-    print("Poll #" + pollCount + ": " + displayParts.join(" | "));
 
     // Apply valve logic after getting fresh temperatures
     applyValveLogic();
@@ -165,6 +210,8 @@ function getStatus() {
   var now = getUptime();
   var v1Cooldown = Math.max(0, MIN_SWITCH_TIME - (now - valves.v1.lastSwitchUptime));
   var v2Cooldown = Math.max(0, MIN_SWITCH_TIME - (now - valves.v2.lastSwitchUptime));
+  var settleElapsed = settling.active ? (now - settling.sinceUptime) : 0;
+  var settleRemaining = settling.active ? Math.max(0, SETTLE_TIME - settleElapsed) : 0;
   return JSON.stringify({
     temps: temps,
     valves: {
@@ -172,6 +219,12 @@ function getStatus() {
       v2: { output: valves.v2.output, cooldownLeft: Math.round(v2Cooldown) }
     },
     override: override,
+    settling: {
+      active: settling.active,
+      settleTime: SETTLE_TIME,
+      elapsed: Math.round(settleElapsed),
+      remaining: Math.round(settleRemaining)
+    },
     minSwitchTime: MIN_SWITCH_TIME,
     pollCount: pollCount,
     errorCount: errorCount,
@@ -183,9 +236,9 @@ function getStatus() {
 // ── Start ──
 
 print("Sensor display + valve control script starting...");
-print("Polling " + SENSOR_IDS.length + " sensors from " + SENSOR_IP);
+print("Polling " + SENSOR_IDS.length + " sensors from " + SENSOR_IP + " every " + POLL_INTERVAL + "s");
 print("Controlling valves on " + VALVE_IP);
-print("Min switch time: " + MIN_SWITCH_TIME + "s");
+print("Settle time: " + SETTLE_TIME + "s, min switch time: " + MIN_SWITCH_TIME + "s");
 
 // Initial poll
 pollAll();
