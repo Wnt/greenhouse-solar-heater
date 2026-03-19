@@ -377,6 +377,8 @@ a:hover { text-decoration: underline; }
 .event-log .valve-open { color: var(--green); font-weight: 600; }
 .event-log .valve-closed { color: var(--red); font-weight: 600; }
 .event-log .settling { color: var(--orange); font-style: italic; }
+.event-log .cooldown { color: #8d6e63; font-style: italic; }
+.event-log .info { color: #546e7a; }
 
 /* ── Responsive ── */
 @media (max-width: 700px) {

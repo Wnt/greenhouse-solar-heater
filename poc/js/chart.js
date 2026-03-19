@@ -62,12 +62,16 @@ const SERIES_COLORS = [
 ];
 
 const BAND_COLORS = [
-  { on: '#4caf50', off: '#e8e8e8', label: '#64748b' }, // green
-  { on: '#ff9800', off: '#e8e8e8', label: '#64748b' }, // orange
+  { on: '#4caf50', off: '#e8e8e8', label: '#64748b' }, // V1 green
+  { on: '#ff9800', off: '#e8e8e8', label: '#64748b' }, // V2 orange
+  { on: 'rgba(255, 152, 0, 0.35)', off: 'transparent', label: '#94a3b8' }, // V1 cooldown amber
+  { on: 'rgba(255, 152, 0, 0.35)', off: 'transparent', label: '#94a3b8' }, // V2 cooldown amber
 ];
 
 const BAND_HEIGHT = 14;
+const BAND_HEIGHT_SMALL = 6;
 const BAND_GAP = 3;
+const BAND_GAP_TIGHT = 1;
 const BAND_LABEL_WIDTH = 50;
 
 /**
@@ -87,9 +91,17 @@ export function drawChart(canvas, store, opts = {}) {
   const w = rect.width;
   const h = rect.height;
 
-  // Calculate band area height
+  // Calculate band area height — cooldown bands (index 2+) are small and tight
   const bandCount = store.bandSeriesNames.length;
-  const bandAreaH = bandCount > 0 ? bandCount * (BAND_HEIGHT + BAND_GAP) + 6 : 0;
+  let bandAreaH = 0;
+  if (bandCount > 0) {
+    bandAreaH = 6;
+    for (let bi = 0; bi < bandCount; bi++) {
+      const isCooldown = bi >= 2;
+      bandAreaH += (isCooldown ? BAND_HEIGHT_SMALL : BAND_HEIGHT);
+      bandAreaH += (isCooldown ? BAND_GAP_TIGHT : BAND_GAP);
+    }
+  }
 
   const pad = { top: 16, right: 16, bottom: 32 + bandAreaH, left: 50 };
   const plotW = w - pad.left - pad.right;
@@ -181,63 +193,68 @@ export function drawChart(canvas, store, opts = {}) {
   if (bandCount > 0) {
     const bandTop = pad.top + plotH + 6;
 
+    let bandYOffset = 0;
     store.bandSeriesNames.forEach((name, bi) => {
-      const bandY = bandTop + bi * (BAND_HEIGHT + BAND_GAP);
+      const isCooldown = bi >= 2;
+      const bh = isCooldown ? BAND_HEIGHT_SMALL : BAND_HEIGHT;
+      const gap = isCooldown ? BAND_GAP_TIGHT : BAND_GAP;
+      const bandY = bandTop + bandYOffset;
+      bandYOffset += bh + gap;
       const bc = BAND_COLORS[bi % BAND_COLORS.length];
 
       // Band label
       ctx.fillStyle = bc.label;
-      ctx.font = '10px -apple-system, sans-serif';
+      ctx.font = (isCooldown ? '8' : '10') + 'px -apple-system, sans-serif';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      ctx.fillText(name, pad.left - 6, bandY + BAND_HEIGHT / 2);
+      ctx.fillText(name, pad.left - 6, bandY + bh / 2);
 
-      // Draw background strip
-      ctx.fillStyle = bc.off;
-      ctx.fillRect(pad.left, bandY, plotW, BAND_HEIGHT);
+      // Draw background strip (skip for transparent backgrounds)
+      if (bc.off !== 'transparent') {
+        ctx.fillStyle = bc.off;
+        ctx.fillRect(pad.left, bandY, plotW, bh);
+      }
 
       // Draw "on" segments
       if (store.data.length > 0) {
         ctx.fillStyle = bc.on;
         let segStart = null;
-        let prevTime = null;
 
         for (let i = 0; i < store.data.length; i++) {
           const pt = store.data[i];
           const t = pt.time.getTime();
-          if (t < tMin) { prevTime = t; continue; }
+          if (t < tMin) continue;
           if (t > tMax) break;
 
           const val = pt.values[name];
 
           if (val === 1 || val === true) {
             if (segStart === null) {
-              // Start of on-segment; extend back to previous point if it was also on
               segStart = t;
             }
           } else {
             if (segStart !== null) {
-              // End of on-segment
               const x1 = Math.max(mapX(segStart), pad.left);
               const x2 = Math.min(mapX(t), pad.left + plotW);
-              if (x2 > x1) ctx.fillRect(x1, bandY, x2 - x1, BAND_HEIGHT);
+              if (x2 > x1) ctx.fillRect(x1, bandY, x2 - x1, bh);
               segStart = null;
             }
           }
-          prevTime = t;
         }
         // Close trailing on-segment
         if (segStart !== null) {
           const x1 = Math.max(mapX(segStart), pad.left);
           const x2 = pad.left + plotW;
-          if (x2 > x1) ctx.fillRect(x1, bandY, x2 - x1, BAND_HEIGHT);
+          if (x2 > x1) ctx.fillRect(x1, bandY, x2 - x1, bh);
         }
       }
 
-      // Band border
-      ctx.strokeStyle = '#d0d0d0';
-      ctx.lineWidth = 0.5;
-      ctx.strokeRect(pad.left, bandY, plotW, BAND_HEIGHT);
+      // Band border (skip for cooldown bands)
+      if (!isCooldown) {
+        ctx.strokeStyle = '#d0d0d0';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(pad.left, bandY, plotW, bh);
+      }
     });
   }
 

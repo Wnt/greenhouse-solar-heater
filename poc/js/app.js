@@ -25,7 +25,8 @@ let api = null;
 let pollTimer = null;
 let chartWindowMs = HISTORY_WINDOWS['30m'];
 const VALVE_LABELS = ['V1', 'V2'];
-const store = new TimeSeriesStore(MAX_HISTORY, SENSOR_LABELS, VALVE_LABELS);
+const COOLDOWN_LABELS = ['V1 cd', 'V2 cd'];
+const store = new TimeSeriesStore(MAX_HISTORY, SENSOR_LABELS, [...VALVE_LABELS, ...COOLDOWN_LABELS]);
 let connected = false;
 let lastPollTime = null;
 let controllerIp = null; // Pro 4PM IP
@@ -37,6 +38,8 @@ let prevV1 = null;
 let prevV2 = null;
 let prevMode = null; // 'auto' | 'override'
 let prevSettling = null; // boolean
+let prevV1Cooldown = null; // boolean
+let prevV2Cooldown = null; // boolean
 
 // ── DOM refs ──
 const elIpInput = document.getElementById('device-ip');
@@ -208,6 +211,8 @@ function disconnect() {
   prevV2 = null;
   prevMode = null;
   prevSettling = null;
+  prevV1Cooldown = null;
+  prevV2Cooldown = null;
   elConnectBtn.textContent = 'Connect';
   setStatus('disconnected');
   elDeviceName.textContent = '-';
@@ -259,10 +264,12 @@ async function pollOnce() {
       }
     });
 
-    // Include valve positions if available
+    // Include valve positions and cooldown state if available
     if (valveStatus) {
       values['V1'] = valveStatus.valves.v1.output ? 1 : 0;
       values['V2'] = valveStatus.valves.v2.output ? 1 : 0;
+      values['V1 cd'] = valveStatus.valves.v1.cooldownLeft > 0 ? 1 : 0;
+      values['V2 cd'] = valveStatus.valves.v2.cooldownLeft > 0 ? 1 : 0;
     }
 
     store.add(values);
@@ -295,6 +302,14 @@ async function pollOnce() {
 
 // ── State change detection ──
 
+function tempSummary() {
+  if (!valveStatus || !valveStatus.temps) return '';
+  const s1 = valveStatus.temps.S1;
+  const s2 = valveStatus.temps.S2;
+  if (s1 == null || s2 == null) return '';
+  return `S1 ${s1.toFixed(1)}°C ${s1 > s2 ? '>' : s1 < s2 ? '<' : '='} S2 ${s2.toFixed(1)}°C`;
+}
+
 function detectStateChanges() {
   if (!valveStatus) return;
 
@@ -302,34 +317,51 @@ function detectStateChanges() {
   const v2 = valveStatus.valves.v2.output;
   const mode = valveStatus.override.active ? 'override' : 'auto';
   const isSettling = valveStatus.settling && valveStatus.settling.active;
+  const v1InCooldown = valveStatus.valves.v1.cooldownLeft > 0;
+  const v2InCooldown = valveStatus.valves.v2.cooldownLeft > 0;
 
   // Mode change
   if (prevMode !== null && mode !== prevMode) {
     if (mode === 'override') {
-      logEvent('Mode switched to OVERRIDE', 'warn');
+      logEvent('Mode → OVERRIDE (manual control)', 'warn');
     } else {
-      logEvent('Mode switched to AUTO');
+      logEvent('Mode → AUTO (' + tempSummary() + ')', 'info');
     }
   }
 
   // Settling state change
   if (prevSettling !== null && isSettling !== prevSettling) {
     if (isSettling) {
-      logEvent('Temps crossed — waiting for readings to settle', 'settling');
+      logEvent('Temps crossed — ' + tempSummary() + ', settling ' + valveStatus.settling.settleTime + 's', 'settling');
     } else if (prevV1 === v1 && prevV2 === v2) {
-      // Settling ended without a switch — temps went back
-      logEvent('Temps returned — settling cancelled', 'settling');
+      logEvent('Temps returned — settling cancelled (' + tempSummary() + ')', 'settling');
     }
   }
 
-  // Valve 1 change
+  // Valve changes with reason
   if (prevV1 !== null && v1 !== prevV1) {
-    logEvent(`V1 ${v1 ? 'OPENED' : 'CLOSED'}`, v1 ? 'valve-open' : 'valve-closed');
+    const reason = mode === 'override' ? 'manual override' : tempSummary();
+    logEvent(`V1 ${v1 ? 'OPENED' : 'CLOSED'} — ${reason}`, v1 ? 'valve-open' : 'valve-closed');
+  }
+  if (prevV2 !== null && v2 !== prevV2) {
+    const reason = mode === 'override' ? 'manual override' : tempSummary();
+    logEvent(`V2 ${v2 ? 'OPENED' : 'CLOSED'} — ${reason}`, v2 ? 'valve-open' : 'valve-closed');
   }
 
-  // Valve 2 change
-  if (prevV2 !== null && v2 !== prevV2) {
-    logEvent(`V2 ${v2 ? 'OPENED' : 'CLOSED'}`, v2 ? 'valve-open' : 'valve-closed');
+  // Cooldown state changes
+  if (prevV1Cooldown !== null && v1InCooldown !== prevV1Cooldown) {
+    if (v1InCooldown) {
+      logEvent('V1 cooldown started (' + valveStatus.minSwitchTime + 's)', 'cooldown');
+    } else {
+      logEvent('V1 cooldown ended — ready', 'cooldown');
+    }
+  }
+  if (prevV2Cooldown !== null && v2InCooldown !== prevV2Cooldown) {
+    if (v2InCooldown) {
+      logEvent('V2 cooldown started (' + valveStatus.minSwitchTime + 's)', 'cooldown');
+    } else {
+      logEvent('V2 cooldown ended — ready', 'cooldown');
+    }
   }
 
   // Update favicon on any valve change
@@ -341,6 +373,8 @@ function detectStateChanges() {
   prevV2 = v2;
   prevMode = mode;
   prevSettling = isSettling;
+  prevV1Cooldown = v1InCooldown;
+  prevV2Cooldown = v2InCooldown;
 }
 
 // ── Dynamic favicon ──
