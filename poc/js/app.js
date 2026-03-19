@@ -32,6 +32,11 @@ let controllerIp = null; // Pro 4PM IP
 let valveStatus = null; // latest valve status from 4PM
 let cooldownTimer = null; // UI countdown interval
 
+// Previous state for change detection
+let prevV1 = null;
+let prevV2 = null;
+let prevMode = null; // 'auto' | 'override'
+
 // ── DOM refs ──
 const elIpInput = document.getElementById('device-ip');
 const elControllerIpInput = document.getElementById('controller-ip');
@@ -60,6 +65,12 @@ const elV2OnBtn = document.getElementById('v2-on-btn');
 const elV2OffBtn = document.getElementById('v2-off-btn');
 const elAutoBtn = document.getElementById('auto-btn');
 
+// Favicon
+const elFavicon = document.getElementById('favicon');
+const faviconCanvas = document.createElement('canvas');
+faviconCanvas.width = 32;
+faviconCanvas.height = 32;
+
 // ── Init ──
 export function init() {
   loadConfig();
@@ -67,6 +78,7 @@ export function init() {
   renderGaugeNoData(elGauge0, { min: -20, max: 80 });
   renderGaugeNoData(elGauge1, { min: -20, max: 80 });
   drawChart(elChart, store);
+  updateFavicon(null, null);
 
   // Auto-connect if we have a saved IP
   if (elIpInput.value) {
@@ -158,16 +170,16 @@ async function connect() {
     const info = await api.getDeviceInfo();
     const name = info.name || info.id || 'Unknown';
     elDeviceName.textContent = name;
-    logEvent(`Connected to ${name} (${info.model || 'Shelly'})`, 'ok');
+    logEvent(`Connected to ${name} (${info.model || 'Shelly'})`);
 
     // Test controller connection if IP provided
     if (controllerIp) {
       try {
         const ctrlInfo = await api.rpcTo(controllerIp, 'Shelly.GetDeviceInfo');
-        logEvent(`Controller: ${ctrlInfo.name || ctrlInfo.id} (${ctrlInfo.model || '4PM'})`, 'ok');
+        logEvent(`Controller: ${ctrlInfo.name || ctrlInfo.id} (${ctrlInfo.model || '4PM'})`);
         elValvePanel.classList.remove('hidden');
       } catch (e) {
-        logEvent(`Controller at ${controllerIp} not reachable: ${e.message}`, 'error');
+        logEvent(`Controller at ${controllerIp} not reachable`, 'error');
         controllerIp = null;
       }
     }
@@ -189,12 +201,16 @@ function disconnect() {
   api = null;
   controllerIp = null;
   valveStatus = null;
+  prevV1 = null;
+  prevV2 = null;
+  prevMode = null;
   elConnectBtn.textContent = 'Connect';
   setStatus('disconnected');
   elDeviceName.textContent = '-';
   elValvePanel.classList.add('hidden');
   stopCooldownTimer();
-  logEvent('Disconnected', 'ok');
+  updateFavicon(null, null);
+  logEvent('Disconnected');
 }
 
 function setStatus(state) {
@@ -264,12 +280,97 @@ async function pollOnce() {
   if (controllerIp && api) {
     try {
       valveStatus = await api.getValveStatus(controllerIp, SCRIPT_ID);
+      detectStateChanges();
       updateValveUI();
     } catch (e) {
       // Don't log every poll failure for valves — just update UI
       updateValveUIError();
     }
   }
+}
+
+// ── State change detection ──
+
+function detectStateChanges() {
+  if (!valveStatus) return;
+
+  const v1 = valveStatus.valves.v1.output;
+  const v2 = valveStatus.valves.v2.output;
+  const mode = valveStatus.override.active ? 'override' : 'auto';
+
+  // Mode change
+  if (prevMode !== null && mode !== prevMode) {
+    if (mode === 'override') {
+      logEvent('Mode switched to OVERRIDE', 'warn');
+    } else {
+      logEvent('Mode switched to AUTO');
+    }
+  }
+
+  // Valve 1 change
+  if (prevV1 !== null && v1 !== prevV1) {
+    logEvent(`V1 ${v1 ? 'OPENED' : 'CLOSED'}`, v1 ? 'valve-open' : 'valve-closed');
+  }
+
+  // Valve 2 change
+  if (prevV2 !== null && v2 !== prevV2) {
+    logEvent(`V2 ${v2 ? 'OPENED' : 'CLOSED'}`, v2 ? 'valve-open' : 'valve-closed');
+  }
+
+  // Update favicon on any valve change
+  if (prevV1 !== v1 || prevV2 !== v2 || prevV1 === null) {
+    updateFavicon(v1, v2);
+  }
+
+  prevV1 = v1;
+  prevV2 = v2;
+  prevMode = mode;
+}
+
+// ── Dynamic favicon ──
+
+function updateFavicon(v1, v2) {
+  const ctx = faviconCanvas.getContext('2d');
+  const s = 32;
+
+  // Background
+  ctx.fillStyle = '#f5f7f8';
+  ctx.fillRect(0, 0, s, s);
+
+  // Border
+  ctx.strokeStyle = '#d0d0d0';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, s - 1, s - 1);
+
+  if (v1 === null && v2 === null) {
+    // Disconnected: gray circles
+    drawValveCircle(ctx, 10, 16, '#ccc');
+    drawValveCircle(ctx, 22, 16, '#ccc');
+  } else {
+    // V1 left, V2 right
+    drawValveCircle(ctx, 10, 16, v1 ? '#4caf50' : '#e53935');
+    drawValveCircle(ctx, 22, 16, v2 ? '#ff9800' : '#e53935');
+  }
+
+  // Labels
+  ctx.fillStyle = '#333';
+  ctx.font = 'bold 7px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('V1', 10, 25);
+  ctx.fillText('V2', 22, 25);
+
+  elFavicon.href = faviconCanvas.toDataURL('image/png');
+}
+
+function drawValveCircle(ctx, x, y, color) {
+  ctx.beginPath();
+  ctx.arc(x, y, 7, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
 }
 
 // ── Valve UI ──
@@ -378,10 +479,10 @@ function stopCooldownTimer() {
 async function sendOverride(v1, v2) {
   if (!api || !controllerIp) return;
   try {
-    const result = await api.setValveOverride(controllerIp, SCRIPT_ID, v1, v2);
-    logEvent(`Override set: V1=${v1 ? 'OPEN' : 'CLOSED'}, V2=${v2 ? 'OPEN' : 'CLOSED'}`, 'ok');
-    // Refresh valve status immediately
+    await api.setValveOverride(controllerIp, SCRIPT_ID, v1, v2);
+    // Refresh valve status immediately — detectStateChanges will log the switch
     valveStatus = await api.getValveStatus(controllerIp, SCRIPT_ID);
+    detectStateChanges();
     updateValveUI();
   } catch (e) {
     logEvent(`Override failed: ${e.message}`, 'error');
@@ -392,15 +493,15 @@ async function sendClearOverride() {
   if (!api || !controllerIp) return;
   try {
     await api.clearValveOverride(controllerIp, SCRIPT_ID);
-    logEvent('Returned to AUTO mode', 'ok');
     valveStatus = await api.getValveStatus(controllerIp, SCRIPT_ID);
+    detectStateChanges();
     updateValveUI();
   } catch (e) {
     logEvent(`Clear override failed: ${e.message}`, 'error');
   }
 }
 
-// ── Event log ──
+// ── Event log (state changes only) ──
 function logEvent(message, type = '') {
   const entry = document.createElement('div');
   entry.className = 'entry';
