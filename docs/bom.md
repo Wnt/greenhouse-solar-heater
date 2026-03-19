@@ -118,46 +118,92 @@ Pick up in-store.
 | 25 | Pääteholkit 0.75mm² (insulated ferrules) | — | 50 pcs | ~8.00 | For every wire end at screw terminals. |
 | 26 | [DIN rail 35mm perforated, 2m](https://www.triopak.fi/fi/tuote/DIN-KISKO) | TS35/F6 | 1 | ~8.00 | Cut to ~60cm for all Shelly devices + PSU. |
 | 27 | DIN rail end stops | — | 4 | ~3.00 | Keep devices from sliding. |
-| 28 | [DIN rail terminal block 2.5mm² red](https://www.triopak.fi/fi/tuote/SR25BL) | SR25 series | 4 | ~5.00 | 24V+ distribution bus: PSU → Pro 2PM relay COMs. |
-| 29 | DIN rail terminal block 2.5mm² blue | SR25 series | 4 | ~5.00 | 24V- (GND) distribution bus: PSU → all valve power- wires. |
+| 28 | [DIN rail terminal block 2.5mm² red](https://www.triopak.fi/fi/tuote/SR25BL) | SR25 series | 6 | ~8.00 | 24V+ distribution bus (6 positions): PSU out → 5× Pro 2PM relay COMs + 1 spare. |
+| 29 | DIN rail terminal block 2.5mm² blue | SR25 series | 10 | ~12.00 | 24V- (GND) distribution bus (10 positions): PSU GND → 8× valve power- returns + 2 spare. |
 | 30 | DIN rail terminal block 2.5mm² grey | SR25 series | 4 | ~5.00 | Spare / PE / misc connections. |
-| 31 | Terminal block end plates | For SR25 | 4 | ~3.00 | End caps for terminal block rows. |
-| 32 | [Shorting bridge 4-pole](https://www.triopak.fi/fi/tuote/QVB4) | QVB4, 20A, SR25 | 2 | ~2.00 | Bridge 24V+ red terminals into bus; bridge 24V- blue terminals into bus. |
+| 31 | Terminal block end plates | For SR25 | 6 | ~5.00 | End caps for terminal block rows (2 per bus × 3 buses). |
+| 32 | [Shorting bridge 4-pole](https://www.triopak.fi/fi/tuote/QVB4) | QVB4, 20A, SR25 | 5 | ~5.00 | Bridge terminals into buses: 2× for 24V+ red (overlapping, 6 positions), 3× for 24V- blue (overlapping, 10 positions). |
 | 33 | Cat5e patch cable 0.5m | — | 4 | ~8.00 | Pro 4PM + Pro 2PM #1-#3 (short runs on DIN rail). |
 | 34 | Cat5e patch cable 2m | — | 2 | ~6.00 | Pro 2PM #4 + uplink to router. |
 | 35 | PTFE tape (spare) | — | 1 | ~2.00 | — |
 
-| | | | | **Triopak total** | **~76** |
+| | | | | **Triopak total** | **~91** |
 
 ## Vendor 6: [Puuilo](https://www.puuilo.fi/) — 230V distribution, wire management
 
 | # | Item | Spec | Qty | Est. price | Role |
 |---|------|------|-----|-----------|------|
-| 36 | [Wago N-jakoliitin 2 kpl](https://www.puuilo.fi/wago-n-jakoliitin-2-kpl) | 1×6/10mm² → 6×1.5/2.5mm² | 1 pkg (2 pcs) | 15.95 | **230V L and N distribution.** One block splits mains L to Pro 4PM outputs + PSU, the other splits N. DIN rail mount, spring-clamp, no ferrules needed. |
+| 36 | [Wago N-jakoliitin 2 kpl](https://www.puuilo.fi/wago-n-jakoliitin-2-kpl) | 1×6/10mm² → 6×1.5/2.5mm² | 2 pkg (4 pcs) | 31.90 | **230V L and N distribution.** Two blocks per bus: L bus (7 devices) and N bus (7 devices). DIN rail mount, spring-clamp, no ferrules needed. Daisy-chain second block from first block's output. |
 | 37 | [Wago riviliitinpaketti 8-os harmaa/sininen/kevi](https://www.puuilo.fi/wago-riviliitinpaketti-8-os-harm-sin-kevi) | DIN rail, 0.08–2.5mm² | 1 pkg (8 pcs) | ~12.00 | **PE bus + spare terminals.** Colour-coded (grey=L, blue=N, green-yellow=PE) DIN rail terminals for field wiring connections. |
-| 38 | [Finbullet vipurasialiitin DIN-kisko 10 kpl](https://www.puuilo.fi/finbullet-vipurasialiitin-din-kisko-10kpl) | 0.08–4mm², 450V/32A | 1 pkg (10+4 bridges) | 12.19 | **Extra terminals** for 24V valve field wiring breakout. Lever-type for easy re-wiring during commissioning. |
+| 38 | [Finbullet vipurasialiitin DIN-kisko 10 kpl](https://www.puuilo.fi/finbullet-vipurasialiitin-din-kisko-10kpl) | 0.08–4mm², 450V/32A | 1 pkg (10+4 bridges) | 12.19 | **Spare DIN rail terminals.** Lever-type for easy re-wiring during commissioning. Useful for signal breakout or future expansion. |
 
-| | | | | **Puuilo total** | **~40** |
+| | | | | **Puuilo total** | **~56** |
 
 ### 230V distribution detail
 
-The Wago N-jakoliitin blocks replace the need for separate 230V terminal strips with shorting bridges. Each block accepts one thick feed wire (up to 10mm²) and distributes to 6 thinner branch wires (up to 2.5mm²):
+The Wago N-jakoliitin blocks replace the need for separate 230V terminal strips with shorting bridges. Each block accepts one thick feed wire (up to 10mm²) and distributes to 6 thinner branch wires (up to 2.5mm²). Two blocks are daisy-chained per bus (second block fed from first block's output) to provide 11 output slots — 7 used, 4 spare:
 
 ```
-MAINS 230V L ──→ [Wago N-jakoliitin #1] ──→ Pro 4PM L-in
-                                          ──→ 24V PSU L-in
-                                          ──→ (4 spare slots)
+                                  Block A (6 slots)            Block B (6 slots)
+MAINS 230V L ──→ [Wago N-jakoliitin #1] ──→ Pro 4PM L-in    [Wago N-jakoliitin #2] ──→ Pro 2PM #4 L-in
+                                          ──→ 24V PSU L-in                           ──→ Pro 2PM #5 L-in
+                                          ──→ Pro 2PM #1 L-in                        ──→ (4 spare slots)
+                                          ──→ Pro 2PM #2 L-in
+                                          ──→ Pro 2PM #3 L-in
+                                          ──→ jumper to block B ─────────────────────────┘
 
-MAINS 230V N ──→ [Wago N-jakoliitin #2] ──→ Pro 4PM N-in
-                                          ──→ 24V PSU N-in
-                                          ──→ (4 spare slots)
+                                  Block C (6 slots)            Block D (6 slots)
+MAINS 230V N ──→ [Wago N-jakoliitin #3] ──→ Pro 4PM N-in    [Wago N-jakoliitin #4] ──→ Pro 2PM #4 N-in
+                                          ──→ 24V PSU N-in                           ──→ Pro 2PM #5 N-in
+                                          ──→ Pro 2PM #1 N-in                        ──→ (4 spare slots)
+                                          ──→ Pro 2PM #2 N-in
+                                          ──→ Pro 2PM #3 N-in
+                                          ──→ jumper to block D ─────────────────────────┘
 
 PE ──→ [Wago 8-os kevi terminals] ──→ all PE connections
 ```
 
+### 24V distribution detail
+
+The SR25 DIN rail terminal blocks with QVB4 shorting bridges form the 24V DC buses:
+
+```
+24V PSU + ──→ [SR25 red bus, 6 positions, 2× QVB4 bridged]
+              ──→ Pro 2PM #1 relay COM (switches to VI-btm, VI-top)
+              ──→ Pro 2PM #2 relay COM (switches to VI-coll, VO-coll)
+              ──→ Pro 2PM #3 relay COM (switches to VO-rad, VO-tank)
+              ──→ Pro 2PM #4 relay COM (switches to V_ret, V_air)
+              ──→ Pro 2PM #5 relay COM (spare / VO-wood)
+
+24V PSU - ──→ [SR25 blue bus, 10 positions, 3× QVB4 bridged]
+              ──→ VI-btm power-   ──→ VO-rad power-
+              ──→ VI-top power-   ──→ VO-tank power-
+              ──→ VI-coll power-  ──→ V_ret power-
+              ──→ VO-coll power-  ──→ V_air power-
+```
+
+Each Pro 2PM has two relay channels — 24V+ enters relay COM and is internally jumped to both channel inputs at the device terminals.
+
 ### Wire management note
 
 None of the checked stores (Biltema, Puuilo, Motonet) carry proper **rei'itetty johtokouru** (slotted panel wiring duct) for electrical cabinets — their cable ducts are decorative surface-mount products. For proper panel duct (e.g. 25×40mm slotted), order from an electrical wholesaler like [Finnparttia](https://www.finnparttia.fi/), [SLO](https://www.slo.fi/), or [Onninen](https://www.onninen.fi/). Alternatively, tidy cable routing with DIN-rail-mounted cable tie bases and nippusiteet (zip ties) works fine for a small cabinet like this.
+
+### DIN rail distribution — design rationale
+
+**Why Wago N-jakoliitin for 230V?** Three alternatives were considered for distributing mains L and N to 7 devices:
+
+| Option | Pros | Cons | Verdict |
+|--------|------|------|---------|
+| **Wago N-jakoliitin** (chosen) | DIN rail mount, spring-clamp (no ferrules), compact 2-level design, thick feed + thin branches in one block, rated 450V/32A | Max 6 outputs per block — need 2 blocks daisy-chained per bus (7 devices) | **Best fit.** Solid mount, no dangling, purpose-built for star distribution. |
+| **SR25 terminals + QVB bridges** | Flexible position count, same DIN rail, easy to extend | Takes more rail space (1 terminal per connection vs 6-in-1), needs ferrules, requires calculating bridge overlaps | Good for 24V buses where position counts vary. Overkill for 230V star distribution. |
+| **Wago 221 lever connectors** (inline) | Cheap, tool-free, available everywhere | **Dangle loose in the enclosure** — no DIN rail mount, hard to label, messy in a cabinet with 7+ branches | Rejected. Fine for junction boxes, wrong for DIN rail cabinets. |
+| **Phoenix Contact PT/UT series** | Industrial standard, wide range | Expensive for hobby project, harder to source in Finland at retail | Not justified for this scale. |
+
+**Why SR25 + QVB4 bridges for 24V?** The 24V buses have different needs than 230V:
+
+- **24V+ bus (6 positions)**: One PSU output fans out to 5 relay COMs + spare. 6 bridged SR25 red terminals work well — each position is a clear breakout point per Pro 2PM device.
+- **24V- bus (10 positions)**: Eight individual valve return wires + PSU GND + spare. Each valve gets its own labeled terminal position for easy fault tracing. N-jakoliitin would work here too (2 blocks = 12 slots) but SR25 terminals give better per-wire labeling and the QVB4 bridges are already stocked for other uses.
+- **Finbullet lever terminals**: Kept as spare/expansion stock. Their lever mechanism is handy during commissioning when wires get re-routed frequently.
 
 ### 230V installation wiring (not from Triopak)
 
@@ -304,9 +350,9 @@ V_air is a standard normally-closed valve (same as all others). A normally-open 
 | hpcontrol.fi | 8× motorized valve DN15 + A83 9-24V DC 2-wire actuator | 516.24 |
 | Biltema | Manifolds, tees, service valves, fittings | ~101 |
 | K-Rauta | 8× puserrusliitin 22mm×½" UK (PEX-to-valve adapters) | ~48 |
-| Triopak | Wiring, terminals, DIN rail, Ethernet cables | ~76 |
-| Puuilo | 230V distribution (Wago), extra DIN rail terminals | ~40 |
-| **Grand total** | | **~1,511** |
+| Triopak | Wiring, terminals, DIN rail, Ethernet cables | ~91 |
+| Puuilo | 230V distribution (Wago), extra DIN rail terminals | ~56 |
+| **Grand total** | | **~1,542** |
 
 ### Future expansion cost (wood burner)
 
