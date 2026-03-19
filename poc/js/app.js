@@ -23,8 +23,9 @@ const SCRIPT_ID = 1; // Pro 4PM script slot for sensor-display
 // ── State ──
 let api = null;
 let pollTimer = null;
-let chartWindowMs = HISTORY_WINDOWS['6h'];
-const store = new TimeSeriesStore(MAX_HISTORY, SENSOR_LABELS);
+let chartWindowMs = HISTORY_WINDOWS['30m'];
+const VALVE_LABELS = ['V1', 'V2'];
+const store = new TimeSeriesStore(MAX_HISTORY, SENSOR_LABELS, VALVE_LABELS);
 let connected = false;
 let lastPollTime = null;
 let controllerIp = null; // Pro 4PM IP
@@ -237,6 +238,12 @@ async function pollOnce() {
         values[label] = r.tC;
       }
     });
+
+    // Include valve positions if available
+    if (valveStatus) {
+      values['V1'] = valveStatus.valves.v1.output ? 1 : 0;
+      values['V2'] = valveStatus.valves.v2.output ? 1 : 0;
+    }
 
     store.add(values);
     drawChart(elChart, store, { windowMs: chartWindowMs });

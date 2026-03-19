@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Shelly Temperature Monitor — PoC</title>
+  <title>Shelly Monitor — PoC</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <header class="page-header">
-    <h1>Shelly Temperature Monitor</h1>
+    <h1>Shelly Monitor</h1>
     <nav>
       <a href="../playground/index.html">Playground</a>
     </nav>
@@ -34,11 +34,11 @@
     <!-- Gauges -->
     <div class="gauge-grid">
       <div class="gauge-card">
-        <h3>Sensor 1 (id:0)</h3>
+        <h3>Sensor 1 (id:100)</h3>
         <div id="gauge-0"></div>
       </div>
       <div class="gauge-card">
-        <h3>Sensor 2 (id:1)</h3>
+        <h3>Sensor 2 (id:101)</h3>
         <div id="gauge-1"></div>
       </div>
     </div>
@@ -91,12 +91,12 @@
     <!-- Chart -->
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-        <h2>Temperature History</h2>
+        <h2>History</h2>
         <div class="time-range-btns">
-          <button data-range="30m">30m</button>
+          <button data-range="30m" class="active">30m</button>
           <button data-range="1h">1h</button>
           <button data-range="3h">3h</button>
-          <button data-range="6h" class="active">6h</button>
+          <button data-range="6h">6h</button>
         </div>
       </div>
       <div class="chart-wrap">
@@ -110,6 +110,14 @@
         <span class="chart-legend-item">
           <span class="chart-legend-swatch" style="background:#e53935"></span>
           Sensor 2
+        </span>
+        <span class="chart-legend-item">
+          <span class="chart-legend-swatch valve-swatch" style="background:#4caf50"></span>
+          V1 open
+        </span>
+        <span class="chart-legend-item">
+          <span class="chart-legend-swatch valve-swatch" style="background:#ff9800"></span>
+          V2 open
         </span>
       </div>
     </div>
@@ -138,7 +146,7 @@
         <tr>
           <td>Shelly Pro 2PM</td>
           <td>Valve relays</td>
-          <td>Two motorized valves on relay 0 and 1. Controlled by the Pro 4PM script.</td>
+          <td>Two motorized valves on relay 0 and 1. Controlled by Pro 4PM script. 30 s min switch time.</td>
         </tr>
         <tr>
           <td>2x DS18B20</td>
@@ -147,9 +155,10 @@
         </tr>
       </table>
       <p style="margin-top:12px; font-size:13px; color:var(--text-muted);">
-        This web UI polls the Shelly sensor directly for temperatures and the Pro 4PM controller
-        for valve status. Both devices must be on the same local network as your browser.
-        Valve overrides are sent to the 4PM script, which forwards commands to the 2PM.
+        Requests are proxied through the dev server (<code>node server.js</code>) to bypass CORS.
+        All Shelly devices must be on the same local network. The UI polls the sensor for
+        temperatures and the Pro 4PM for valve status. Overrides go to the 4PM script, which
+        forwards relay commands to the 2PM.
       </p>
     </div>
   </div>
