@@ -1,6 +1,7 @@
 /**
  * Shelly HTTP RPC client for browser.
  * Polls DS18B20 sensors from a Shelly device with sensor add-on.
+ * Controls valves via Shelly Pro 4PM script (Script.Eval).
  *
  * Routes requests through a local proxy server (/api/rpc/*) to avoid
  * CORS issues — Shelly devices don't send CORS headers.
@@ -17,13 +18,24 @@ export class ShellyAPI {
   }
 
   /**
-   * Call a Shelly RPC method via the local proxy.
+   * Call a Shelly RPC method via the local proxy (uses default sensorDeviceIp).
    * @param {string} method - RPC method name (e.g. 'Temperature.GetStatus')
    * @param {object} params - Query parameters
    * @returns {Promise<object>} Parsed JSON response
    */
   async rpc(method, params = {}) {
-    const searchParams = new URLSearchParams({ _host: this.sensorDeviceIp });
+    return this.rpcTo(this.sensorDeviceIp, method, params);
+  }
+
+  /**
+   * Call a Shelly RPC method on a specific device via the local proxy.
+   * @param {string} host - Device IP address
+   * @param {string} method - RPC method name
+   * @param {object} params - Query parameters
+   * @returns {Promise<object>} Parsed JSON response
+   */
+  async rpcTo(host, method, params = {}) {
+    const searchParams = new URLSearchParams({ _host: host });
     for (const [k, v] of Object.entries(params)) {
       searchParams.set(k, v);
     }
@@ -81,5 +93,54 @@ export class ShellyAPI {
    */
   async getStatus() {
     return this.rpc('Shelly.GetStatus');
+  }
+
+  // ── Valve control (via Pro 4PM script) ──
+
+  /**
+   * Evaluate code on a Shelly script via Script.Eval.
+   * @param {string} host - Device IP (e.g. Pro 4PM)
+   * @param {number} scriptId - Script slot ID
+   * @param {string} code - JavaScript expression to evaluate
+   * @returns {Promise<object>} Parsed result from the script
+   */
+  async evalScript(host, scriptId, code) {
+    const raw = await this.rpcTo(host, 'Script.Eval', { id: scriptId, code });
+    if (raw && raw.result !== undefined) {
+      return JSON.parse(raw.result);
+    }
+    throw new Error('Invalid Script.Eval response');
+  }
+
+  /**
+   * Get valve status + temps from the Pro 4PM control script.
+   * @param {string} host - Pro 4PM IP
+   * @param {number} scriptId - Script slot ID (default 1)
+   * @returns {Promise<object>} Status object with temps, valves, override, cooldowns
+   */
+  async getValveStatus(host, scriptId = 1) {
+    return this.evalScript(host, scriptId, 'getStatus()');
+  }
+
+  /**
+   * Set manual valve override on the Pro 4PM script.
+   * @param {string} host - Pro 4PM IP
+   * @param {number} scriptId - Script slot ID
+   * @param {boolean} v1 - Valve 1 desired state (true = open/powered)
+   * @param {boolean} v2 - Valve 2 desired state (true = open/powered)
+   * @returns {Promise<object>} Confirmation with override state
+   */
+  async setValveOverride(host, scriptId, v1, v2) {
+    return this.evalScript(host, scriptId, 'setOverride(' + v1 + ',' + v2 + ')');
+  }
+
+  /**
+   * Clear manual override — return to automatic temperature-based control.
+   * @param {string} host - Pro 4PM IP
+   * @param {number} scriptId - Script slot ID
+   * @returns {Promise<object>} Confirmation
+   */
+  async clearValveOverride(host, scriptId) {
+    return this.evalScript(host, scriptId, 'clearOverride()');
   }
 }
