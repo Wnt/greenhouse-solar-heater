@@ -1,15 +1,17 @@
 /**
- * Canvas-based time series chart for temperature history.
+ * Canvas-based time series chart for temperature history and valve state bands.
  */
 
 export class TimeSeriesStore {
   /**
    * @param {number} maxAge - Maximum data age in milliseconds
-   * @param {string[]} series - Series names
+   * @param {string[]} series - Line series names (temperatures)
+   * @param {string[]} [bandSeries] - Band series names (valve states, 0/1)
    */
-  constructor(maxAge, series) {
+  constructor(maxAge, series, bandSeries = []) {
     this.maxAge = maxAge;
     this.seriesNames = series;
+    this.bandSeriesNames = bandSeries;
     this.data = []; // [{time: Date, values: {name: number|null, ...}}]
   }
 
@@ -26,6 +28,7 @@ export class TimeSeriesStore {
     }
   }
 
+  /** Range calculation only considers line series, not bands. */
   getRange() {
     if (this.data.length === 0) return { minT: 0, maxT: 0, minV: 0, maxV: 30 };
     let minV = Infinity, maxV = -Infinity;
@@ -58,6 +61,15 @@ const SERIES_COLORS = [
   '#9c27b0', // purple
 ];
 
+const BAND_COLORS = [
+  { on: '#4caf50', off: '#e8e8e8', label: '#64748b' }, // green
+  { on: '#ff9800', off: '#e8e8e8', label: '#64748b' }, // orange
+];
+
+const BAND_HEIGHT = 14;
+const BAND_GAP = 3;
+const BAND_LABEL_WIDTH = 50;
+
 /**
  * Draw the time series chart on a canvas.
  * @param {HTMLCanvasElement} canvas
@@ -74,7 +86,12 @@ export function drawChart(canvas, store, opts = {}) {
 
   const w = rect.width;
   const h = rect.height;
-  const pad = { top: 16, right: 16, bottom: 32, left: 50 };
+
+  // Calculate band area height
+  const bandCount = store.bandSeriesNames.length;
+  const bandAreaH = bandCount > 0 ? bandCount * (BAND_HEIGHT + BAND_GAP) + 6 : 0;
+
+  const pad = { top: 16, right: 16, bottom: 32 + bandAreaH, left: 50 };
   const plotW = w - pad.left - pad.right;
   const plotH = h - pad.top - pad.bottom;
 
@@ -125,14 +142,14 @@ export function drawChart(canvas, store, opts = {}) {
     ctx.moveTo(x, pad.top);
     ctx.lineTo(x, h - pad.bottom);
     ctx.stroke();
-    ctx.fillText(formatTime(new Date(t)), x, h - pad.bottom + 4);
+    ctx.fillText(formatTime(new Date(t)), x, h - pad.bottom + bandAreaH + 4);
   }
 
   // Plot area border
   ctx.strokeStyle = '#e2e6ea';
   ctx.strokeRect(pad.left, pad.top, plotW, plotH);
 
-  // Draw series
+  // Draw temperature series
   const colors = opts.seriesColors || SERIES_COLORS;
   store.seriesNames.forEach((name, si) => {
     const color = colors[si % colors.length];
@@ -159,6 +176,70 @@ export function drawChart(canvas, store, opts = {}) {
     }
     ctx.stroke();
   });
+
+  // Draw valve state bands below the temperature plot
+  if (bandCount > 0) {
+    const bandTop = pad.top + plotH + 6;
+
+    store.bandSeriesNames.forEach((name, bi) => {
+      const bandY = bandTop + bi * (BAND_HEIGHT + BAND_GAP);
+      const bc = BAND_COLORS[bi % BAND_COLORS.length];
+
+      // Band label
+      ctx.fillStyle = bc.label;
+      ctx.font = '10px -apple-system, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(name, pad.left - 6, bandY + BAND_HEIGHT / 2);
+
+      // Draw background strip
+      ctx.fillStyle = bc.off;
+      ctx.fillRect(pad.left, bandY, plotW, BAND_HEIGHT);
+
+      // Draw "on" segments
+      if (store.data.length > 0) {
+        ctx.fillStyle = bc.on;
+        let segStart = null;
+        let prevTime = null;
+
+        for (let i = 0; i < store.data.length; i++) {
+          const pt = store.data[i];
+          const t = pt.time.getTime();
+          if (t < tMin) { prevTime = t; continue; }
+          if (t > tMax) break;
+
+          const val = pt.values[name];
+
+          if (val === 1 || val === true) {
+            if (segStart === null) {
+              // Start of on-segment; extend back to previous point if it was also on
+              segStart = t;
+            }
+          } else {
+            if (segStart !== null) {
+              // End of on-segment
+              const x1 = Math.max(mapX(segStart), pad.left);
+              const x2 = Math.min(mapX(t), pad.left + plotW);
+              if (x2 > x1) ctx.fillRect(x1, bandY, x2 - x1, BAND_HEIGHT);
+              segStart = null;
+            }
+          }
+          prevTime = t;
+        }
+        // Close trailing on-segment
+        if (segStart !== null) {
+          const x1 = Math.max(mapX(segStart), pad.left);
+          const x2 = pad.left + plotW;
+          if (x2 > x1) ctx.fillRect(x1, bandY, x2 - x1, BAND_HEIGHT);
+        }
+      }
+
+      // Band border
+      ctx.strokeStyle = '#d0d0d0';
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(pad.left, bandY, plotW, BAND_HEIGHT);
+    });
+  }
 
   // "No data" message
   if (store.data.length === 0) {

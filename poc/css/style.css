@@ -181,6 +181,10 @@ a:hover { text-decoration: underline; }
   height: 3px;
   border-radius: 2px;
 }
+.chart-legend-swatch.valve-swatch {
+  height: 10px;
+  border-radius: 2px;
+}
 
 /* ── Valve control panel ── */
 .valve-panel.hidden { display: none; }
@@ -356,6 +360,9 @@ a:hover { text-decoration: underline; }
 .event-log .time { color: var(--text-muted); }
 .event-log .error { color: var(--red); }
 .event-log .ok { color: var(--green); }
+.event-log .warn { color: var(--orange); }
+.event-log .valve-open { color: var(--green); font-weight: 600; }
+.event-log .valve-closed { color: var(--red); font-weight: 600; }
 
 /* ── Responsive ── */
 @media (max-width: 700px) {
