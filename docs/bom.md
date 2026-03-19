@@ -122,11 +122,42 @@ Pick up in-store.
 | 29 | DIN rail terminal block 2.5mm² blue | SR25 series | 4 | ~5.00 | 24V- (GND) distribution bus: PSU → all valve power- wires. |
 | 30 | DIN rail terminal block 2.5mm² grey | SR25 series | 4 | ~5.00 | Spare / PE / misc connections. |
 | 31 | Terminal block end plates | For SR25 | 4 | ~3.00 | End caps for terminal block rows. |
-| 32 | Cat5e patch cable 0.5m | — | 4 | ~8.00 | Pro 4PM + Pro 2PM #1-#3 (short runs on DIN rail). |
-| 33 | Cat5e patch cable 2m | — | 2 | ~6.00 | Pro 2PM #4 + uplink to router. |
-| 34 | PTFE tape (spare) | — | 1 | ~2.00 | — |
+| 32 | [Shorting bridge 4-pole](https://www.triopak.fi/fi/tuote/QVB4) | QVB4, 20A, SR25 | 2 | ~2.00 | Bridge 24V+ red terminals into bus; bridge 24V- blue terminals into bus. |
+| 33 | Cat5e patch cable 0.5m | — | 4 | ~8.00 | Pro 4PM + Pro 2PM #1-#3 (short runs on DIN rail). |
+| 34 | Cat5e patch cable 2m | — | 2 | ~6.00 | Pro 2PM #4 + uplink to router. |
+| 35 | PTFE tape (spare) | — | 1 | ~2.00 | — |
 
-| | | | | **Triopak total** | **~72** |
+| | | | | **Triopak total** | **~76** |
+
+## Vendor 6: [Puuilo](https://www.puuilo.fi/) — 230V distribution, wire management
+
+| # | Item | Spec | Qty | Est. price | Role |
+|---|------|------|-----|-----------|------|
+| 36 | [Wago N-jakoliitin 2 kpl](https://www.puuilo.fi/wago-n-jakoliitin-2-kpl) | 1×6/10mm² → 6×1.5/2.5mm² | 1 pkg (2 pcs) | 15.95 | **230V L and N distribution.** One block splits mains L to Pro 4PM outputs + PSU, the other splits N. DIN rail mount, spring-clamp, no ferrules needed. |
+| 37 | [Wago riviliitinpaketti 8-os harmaa/sininen/kevi](https://www.puuilo.fi/wago-riviliitinpaketti-8-os-harm-sin-kevi) | DIN rail, 0.08–2.5mm² | 1 pkg (8 pcs) | ~12.00 | **PE bus + spare terminals.** Colour-coded (grey=L, blue=N, green-yellow=PE) DIN rail terminals for field wiring connections. |
+| 38 | [Finbullet vipurasialiitin DIN-kisko 10 kpl](https://www.puuilo.fi/finbullet-vipurasialiitin-din-kisko-10kpl) | 0.08–4mm², 450V/32A | 1 pkg (10+4 bridges) | 12.19 | **Extra terminals** for 24V valve field wiring breakout. Lever-type for easy re-wiring during commissioning. |
+
+| | | | | **Puuilo total** | **~40** |
+
+### 230V distribution detail
+
+The Wago N-jakoliitin blocks replace the need for separate 230V terminal strips with shorting bridges. Each block accepts one thick feed wire (up to 10mm²) and distributes to 6 thinner branch wires (up to 2.5mm²):
+
+```
+MAINS 230V L ──→ [Wago N-jakoliitin #1] ──→ Pro 4PM L-in
+                                          ──→ 24V PSU L-in
+                                          ──→ (4 spare slots)
+
+MAINS 230V N ──→ [Wago N-jakoliitin #2] ──→ Pro 4PM N-in
+                                          ──→ 24V PSU N-in
+                                          ──→ (4 spare slots)
+
+PE ──→ [Wago 8-os kevi terminals] ──→ all PE connections
+```
+
+### Wire management note
+
+None of the checked stores (Biltema, Puuilo, Motonet) carry proper **rei'itetty johtokouru** (slotted panel wiring duct) for electrical cabinets — their cable ducts are decorative surface-mount products. For proper panel duct (e.g. 25×40mm slotted), order from an electrical wholesaler like [Finnparttia](https://www.finnparttia.fi/), [SLO](https://www.slo.fi/), or [Onninen](https://www.onninen.fi/). Alternatively, tidy cable routing with DIN-rail-mounted cable tie bases and nippusiteet (zip ties) works fine for a small cabinet like this.
 
 ### 230V installation wiring (not from Triopak)
 
@@ -216,6 +247,12 @@ V_air pipe side: valve (½" female) → open to air
 MAINS 230V ──→ ┌──────────────────────────────────────────────────────┐
                │ DIN RAIL                                              │
                │                                                       │
+               │  Wago L-dist ──→ Pro 4PM L-in                        │
+               │              ──→ 24V PSU L-in                         │
+               │  Wago N-dist ──→ Pro 4PM N-in                        │
+               │              ──→ 24V PSU N-in                         │
+               │  PE bus (kevi terminals)                               │
+               │                                                       │
                │  Pro 4PM ──O1──→ pump (230V, ~2m)                    │
                │           ──O2──→ radiator fan (230V, ~5-10m)        │
                │           ──O3──→ immersion heater (230V, ~2m)       │
@@ -267,8 +304,9 @@ V_air is a standard normally-closed valve (same as all others). A normally-open 
 | hpcontrol.fi | 8× motorized valve DN15 + A83 9-24V DC 2-wire actuator | 516.24 |
 | Biltema | Manifolds, tees, service valves, fittings | ~101 |
 | K-Rauta | 8× puserrusliitin 22mm×½" UK (PEX-to-valve adapters) | ~48 |
-| Triopak | Wiring, terminals, DIN rail, Ethernet cables | ~72 |
-| **Grand total** | | **~1,467** |
+| Triopak | Wiring, terminals, DIN rail, Ethernet cables | ~76 |
+| Puuilo | 230V distribution (Wago), extra DIN rail terminals | ~40 |
+| **Grand total** | | **~1,511** |
 
 ### Future expansion cost (wood burner)
 
