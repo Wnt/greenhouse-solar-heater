@@ -36,6 +36,7 @@ let cooldownTimer = null; // UI countdown interval
 let prevV1 = null;
 let prevV2 = null;
 let prevMode = null; // 'auto' | 'override'
+let prevSettling = null; // boolean
 
 // ── DOM refs ──
 const elIpInput = document.getElementById('device-ip');
@@ -53,6 +54,8 @@ const elLastPoll = document.getElementById('last-poll');
 // Valve DOM refs
 const elValvePanel = document.getElementById('valve-panel');
 const elValveMode = document.getElementById('valve-mode');
+const elSettlingBar = document.getElementById('settling-bar');
+const elSettlingText = document.getElementById('settling-text');
 const elV1Status = document.getElementById('v1-status');
 const elV2Status = document.getElementById('v2-status');
 const elV1Dot = document.getElementById('v1-dot');
@@ -204,6 +207,7 @@ function disconnect() {
   prevV1 = null;
   prevV2 = null;
   prevMode = null;
+  prevSettling = null;
   elConnectBtn.textContent = 'Connect';
   setStatus('disconnected');
   elDeviceName.textContent = '-';
@@ -297,6 +301,7 @@ function detectStateChanges() {
   const v1 = valveStatus.valves.v1.output;
   const v2 = valveStatus.valves.v2.output;
   const mode = valveStatus.override.active ? 'override' : 'auto';
+  const isSettling = valveStatus.settling && valveStatus.settling.active;
 
   // Mode change
   if (prevMode !== null && mode !== prevMode) {
@@ -304,6 +309,16 @@ function detectStateChanges() {
       logEvent('Mode switched to OVERRIDE', 'warn');
     } else {
       logEvent('Mode switched to AUTO');
+    }
+  }
+
+  // Settling state change
+  if (prevSettling !== null && isSettling !== prevSettling) {
+    if (isSettling) {
+      logEvent('Temps crossed — waiting for readings to settle', 'settling');
+    } else if (prevV1 === v1 && prevV2 === v2) {
+      // Settling ended without a switch — temps went back
+      logEvent('Temps returned — settling cancelled', 'settling');
     }
   }
 
@@ -325,6 +340,7 @@ function detectStateChanges() {
   prevV1 = v1;
   prevV2 = v2;
   prevMode = mode;
+  prevSettling = isSettling;
 }
 
 // ── Dynamic favicon ──
@@ -403,6 +419,15 @@ function updateValveUI() {
   updateCooldownDisplay(elV1Cooldown, v.v1.cooldownLeft);
   updateCooldownDisplay(elV2Cooldown, v.v2.cooldownLeft);
 
+  // Settling display
+  const stl = valveStatus.settling;
+  if (stl && stl.active) {
+    elSettlingBar.classList.remove('hidden');
+    elSettlingText.textContent = 'Temps crossed — settling ' + stl.remaining + 's';
+  } else {
+    elSettlingBar.classList.add('hidden');
+  }
+
   // Start countdown timer for smoother UI
   startCooldownTimer();
 
@@ -464,6 +489,13 @@ function startCooldownTimer() {
     const v2Left = Math.max(0, Math.round(v.v2.cooldownLeft - elapsed));
     updateCooldownDisplay(elV1Cooldown, v1Left);
     updateCooldownDisplay(elV2Cooldown, v2Left);
+
+    // Tick settling countdown
+    const stl = valveStatus.settling;
+    if (stl && stl.active) {
+      const rem = Math.max(0, Math.round(stl.remaining - elapsed));
+      elSettlingText.textContent = 'Temps crossed — settling ' + rem + 's';
+    }
   }, 1000);
 }
 

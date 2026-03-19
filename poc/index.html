@@ -68,6 +68,10 @@
         </div>
       </div>
 
+      <div id="settling-bar" class="settling-bar hidden">
+        <span id="settling-text"></span>
+      </div>
+
       <div class="valve-controls">
         <span class="valve-controls-label">Override:</span>
         <div class="valve-btn-group">
@@ -85,7 +89,9 @@
 
       <p class="valve-info">
         Auto mode: Valve 1 opens when Sensor 1 &gt; Sensor 2, Valve 2 opens when Sensor 2 &gt; Sensor 1.
+        Temperatures must stay crossed for 15 s before switching (settling).
         Minimum 30 s between valve switches (cooldown applies to both auto and override).
+        Sensors polled every 3 s.
       </p>
     </div>
 
