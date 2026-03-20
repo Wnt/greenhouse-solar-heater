@@ -1,4 +1,4 @@
-# Kasvihuone Solar Heating System
+# Greenhouse Solar Heating System
 
 Solar thermal heating system for a greenhouse in Southwest Finland.
 

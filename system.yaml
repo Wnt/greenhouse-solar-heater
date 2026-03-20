@@ -1,9 +1,9 @@
-# Kasvihuone Solar Heating System — Source of Truth
+# Greenhouse Solar Heating System — Source of Truth
 # All component specs, heights, and operating modes defined here.
 # Diagrams (Mermaid, SVG) are visual views of this data.
 
 project:
-  name: Kasvihuone Solar Heating System
+  name: Greenhouse Solar Heating System
   location: Southwest Finland
   winter_design_temp: -25°C
   greenhouse_target_temp: 10°C
