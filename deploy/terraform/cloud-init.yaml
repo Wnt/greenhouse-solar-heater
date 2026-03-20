@@ -33,22 +33,21 @@ runcmd:
   - mkdir -p /opt/app/data /opt/app/caddy_data
   - chown deploy:deploy /opt/app/data /opt/app/caddy_data
 
-  # Enable IP forwarding for WireGuard
+  # Enable IP forwarding for WireGuard (ready for later)
   - echo "net.ipv4.ip_forward=1" >> /etc/sysctl.d/99-wireguard.conf
   - sysctl -p /etc/sysctl.d/99-wireguard.conf
 
-  # Generate WireGuard keypair
+  # Generate WireGuard keypair (ready for later)
   - mkdir -p /etc/wireguard
   - wg genkey | tee /etc/wireguard/private.key | wg pubkey > /etc/wireguard/public.key
   - chmod 600 /etc/wireguard/private.key
 
-  # Create placeholder wg0.conf (operator fills in peer details)
+  # Create placeholder wg0.conf (operator fills in peer details when enabling VPN)
   - |
     cat > /etc/wireguard/wg0.conf << 'EOF'
     [Interface]
     Address = 10.10.10.1/24
     ListenPort = 51820
-    # PrivateKey is loaded from file below
     PostUp = wg set %i private-key /etc/wireguard/private.key; iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o $(ip route show default | awk '{print $5}') -j MASQUERADE
     PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o $(ip route show default | awk '{print $5}') -j MASQUERADE
 
@@ -59,5 +58,5 @@ runcmd:
     EOF
   - chmod 600 /etc/wireguard/wg0.conf
 
-  # Enable WireGuard (will start once peer is configured)
-  - systemctl enable wg-quick@wg0
+  # WireGuard is installed but NOT enabled — enable manually when VPN is needed:
+  #   systemctl enable --now wg-quick@wg0
