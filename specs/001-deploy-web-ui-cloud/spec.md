@@ -106,7 +106,7 @@ As the system maintainer, I want the production instance to update automatically
 - **FR-007**: System MUST run all application components as Docker containers with automatic restart on failure
 - **FR-008**: System MUST serve the UI over HTTPS with a valid TLS certificate
 - **FR-009**: System MUST return meaningful error responses when the VPN tunnel or Shelly devices are unreachable
-- **FR-010**: System MUST maintain authenticated sessions so users don't need to re-authenticate on every page load
+- **FR-010**: System MUST maintain authenticated sessions with a 30-day expiry so users don't need to re-authenticate on every page load
 - **FR-011**: System MUST automatically deploy the updated application to production when changes are merged to main and all CI tests pass, via GitHub Actions
 - **FR-012**: System MUST NOT deploy to production if any CI test fails
 - **FR-013**: All application components MUST produce structured log output (machine-parseable format) to enable future integration with centralized logging, metrics, and alerting systems without code changes
@@ -134,6 +134,7 @@ As the system maintainer, I want the production instance to update automatically
 
 - Q: How is the initial passkey registration secured against unauthorized access? → A: Time-window — registration is only possible within 30 minutes of first deployment.
 - Q: What level of monitoring/observability is needed? → A: No monitoring infrastructure for now. All application log output must use structured formatting from the start so a full observability stack (logging, metrics, alerting) can be added later without code changes.
+- Q: How long should authenticated sessions last before requiring re-authentication? → A: 30-day sessions.
 
 ## Assumptions
 
