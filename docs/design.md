@@ -1,4 +1,4 @@
-# Kasvihuone Solar Heating System — Design Specification
+# Greenhouse Solar Heating System — Design Specification
 
 ## Overview
 

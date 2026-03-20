@@ -1,6 +1,6 @@
 # Control System — Bill of Materials
 
-Complete order list for the kasvihuone solar heating control system. Three vendors, all in stock, March 2026 pricing (EUR incl. VAT).
+Complete order list for the greenhouse solar heating control system. Three vendors, all in stock, March 2026 pricing (EUR incl. VAT).
 
 ## Vendor 1: [Nurkan takaa](https://verkkokauppa.nurkantakaa.fi/) — Shelly electronics
 

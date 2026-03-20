@@ -12,7 +12,7 @@ Solar thermal greenhouse heating system for Southwest Finland. The repo contains
 
 ## Source of Truth
 
-`system.yaml` is the **single authoritative source** for all specifications: component dimensions, heights, valve states, operating modes, sensor assignments, and Shelly relay mappings. All other documentation and diagrams are derived views of this file.
+For the hardware system `system.yaml` is the **single authoritative source** for all specifications: component dimensions, heights, valve states, operating modes, sensor assignments, and Shelly relay mappings. All other documentation and diagrams are derived views of this file.
 
 When making changes, **update system.yaml first**, then propagate to affected docs and diagrams.
 
