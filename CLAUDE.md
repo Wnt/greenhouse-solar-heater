@@ -133,3 +133,10 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - `.github/workflows/ci.yml` — runs the full test suite (unit, simulation, e2e) on every push. Triggers on `push` only (not `pull_request`) so tests run exactly once — opening a PR from an already-pushed branch does not re-trigger.
 - `.github/workflows/deploy-pages.yml` — deploys playground to GitHub Pages on push to main/master
 - `.github/workflows/lint-shelly.yml` — runs Shelly linter on push/PR when scripts or linter files change
+
+## Active Technologies
+- Node.js 20 LTS (existing `server.js` uses CommonJS `http` module) + @simplewebauthn/server, @simplewebauthn/browser (vendored), Caddy (reverse proxy) (001-deploy-web-ui-cloud)
+- JSON file for passkey credentials and sessions (single-user, no database) (001-deploy-web-ui-cloud)
+
+## Recent Changes
+- 001-deploy-web-ui-cloud: Added Node.js 20 LTS (existing `server.js` uses CommonJS `http` module) + @simplewebauthn/server, @simplewebauthn/browser (vendored), Caddy (reverse proxy)
