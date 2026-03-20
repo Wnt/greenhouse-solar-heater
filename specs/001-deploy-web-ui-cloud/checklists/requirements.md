@@ -31,5 +31,7 @@
 
 ## Notes
 
-- All items pass validation. Spec is ready for `/speckit.clarify` or `/speckit.plan`.
-- The Assumptions section documents reasonable defaults for unspecified details (VPN protocol, domain name, single-user scope).
+- All items pass validation after clarification session on 2026-03-20.
+- 3 clarifications resolved: registration security (time-window), observability (structured logs, no monitoring yet), session expiry (30 days).
+- CD pipeline requirement added from user input (GitHub Actions deploys on merge to main after tests pass).
+- VPN protocol choice deferred to planning phase (low spec-level impact).
