@@ -4,12 +4,15 @@
   "private": true,
   "description": "Solar thermal greenhouse heating system — specs, simulation, and tools",
   "scripts": {
-    "test": "node tests/control-logic.test.js && node tests/simulation/simulation.test.js && node tests/deploy.test.js && npx playwright test",
-    "test:unit": "node tests/control-logic.test.js && node tests/simulation/simulation.test.js && node tests/deploy.test.js",
+    "test": "node tests/control-logic.test.js && node tests/simulation/simulation.test.js && node tests/deploy.test.js && node tests/auth.test.js && npx playwright test",
+    "test:unit": "node tests/control-logic.test.js && node tests/simulation/simulation.test.js && node tests/deploy.test.js && node tests/auth.test.js",
     "test:e2e": "npx playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",
     "serve": "^14.2.6"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "^13.3.0"
   }
 }

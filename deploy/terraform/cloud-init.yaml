@@ -1,0 +1,63 @@
+#cloud-config
+# Bootstrap Docker, WireGuard, and deploy user on Ubuntu 24.04 LTS
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - wireguard
+  - wireguard-tools
+  - curl
+  - jq
+
+# Install Docker from official repo
+runcmd:
+  # Docker
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable docker
+  - systemctl start docker
+
+  # Deploy user with Docker group
+  - useradd -m -s /bin/bash -G docker deploy
+  - mkdir -p /home/deploy/.ssh
+  - cp /root/.ssh/authorized_keys /home/deploy/.ssh/authorized_keys
+  - chown -R deploy:deploy /home/deploy/.ssh
+  - chmod 700 /home/deploy/.ssh
+  - chmod 600 /home/deploy/.ssh/authorized_keys
+
+  # Application directory
+  - mkdir -p /opt/app
+  - chown deploy:deploy /opt/app
+
+  # Persistent volume for credentials and Caddy certs
+  - mkdir -p /opt/app/data /opt/app/caddy_data
+  - chown deploy:deploy /opt/app/data /opt/app/caddy_data
+
+  # Enable IP forwarding for WireGuard
+  - echo "net.ipv4.ip_forward=1" >> /etc/sysctl.d/99-wireguard.conf
+  - sysctl -p /etc/sysctl.d/99-wireguard.conf
+
+  # Generate WireGuard keypair
+  - mkdir -p /etc/wireguard
+  - wg genkey | tee /etc/wireguard/private.key | wg pubkey > /etc/wireguard/public.key
+  - chmod 600 /etc/wireguard/private.key
+
+  # Create placeholder wg0.conf (operator fills in peer details)
+  - |
+    cat > /etc/wireguard/wg0.conf << 'EOF'
+    [Interface]
+    Address = 10.10.10.1/24
+    ListenPort = 51820
+    # PrivateKey is loaded from file below
+    PostUp = wg set %i private-key /etc/wireguard/private.key; iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o $(ip route show default | awk '{print $5}') -j MASQUERADE
+    PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o $(ip route show default | awk '{print $5}') -j MASQUERADE
+
+    [Peer]
+    # UniFi gateway — fill in after configuring WireGuard VPN Client on UniFi
+    PublicKey = REPLACE_WITH_UNIFI_PUBLIC_KEY
+    AllowedIPs = 10.10.10.2/32, 192.168.1.0/24
+    EOF
+  - chmod 600 /etc/wireguard/wg0.conf
+
+  # Enable WireGuard (will start once peer is configured)
+  - systemctl enable wg-quick@wg0

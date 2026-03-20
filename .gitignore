@@ -4,3 +4,16 @@
 tests/output/
 test-results/
 node_modules/
+
+# Auth credentials (created at runtime, contains secrets)
+poc/auth/credentials.json
+
+# Terraform
+deploy/terraform/.terraform/
+deploy/terraform/*.tfstate*
+deploy/terraform/terraform.tfvars
+deploy/terraform/.terraform.lock.hcl
+
+# Environment files
+.env
+.env.*

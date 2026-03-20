@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — Shelly Monitor</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .login-container {
+      max-width: 400px;
+      margin: 80px auto;
+      padding: 24px;
+    }
+    .login-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .login-card h1 {
+      font-size: 22px;
+      color: var(--text-bright);
+      margin-bottom: 8px;
+    }
+    .login-card p {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+    .login-btn {
+      display: inline-block;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 32px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      width: 100%;
+    }
+    .login-btn:hover { background: #004494; }
+    .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .login-error {
+      margin-top: 16px;
+      padding: 10px;
+      background: #ffebee;
+      border: 1px solid #ef9a9a;
+      border-radius: 6px;
+      color: #c62828;
+      font-size: 13px;
+      display: none;
+    }
+    .login-info {
+      margin-top: 16px;
+      padding: 10px;
+      background: #e3f2fd;
+      border: 1px solid #90caf9;
+      border-radius: 6px;
+      color: #1565c0;
+      font-size: 13px;
+      display: none;
+    }
+    .setup-section { display: none; }
+    .setup-section.visible { display: block; }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <h1>Shelly Monitor</h1>
+  </header>
+
+  <div class="login-container">
+    <div class="login-card">
+      <h1>Authentication Required</h1>
+      <p id="login-subtitle">Sign in with your passkey to access the monitoring dashboard.</p>
+
+      <div id="login-section">
+        <button id="login-btn" class="login-btn">Sign in with Passkey</button>
+      </div>
+
+      <div id="register-section" class="setup-section">
+        <p style="margin-bottom:12px; font-weight:600; color:var(--text-bright);">Initial Setup</p>
+        <p style="font-size:13px; margin-bottom:16px;">Register your first passkey to secure this instance.</p>
+        <button id="register-btn" class="login-btn" style="background:#2e7d32;">Register Passkey</button>
+      </div>
+
+      <div id="login-error" class="login-error"></div>
+      <div id="login-info" class="login-info"></div>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "@simplewebauthn/browser": "./vendor/simplewebauthn-browser.mjs"
+    }
+  }
+  </script>
+  <script type="module" src="js/login.js"></script>
+</body>
+</html>
