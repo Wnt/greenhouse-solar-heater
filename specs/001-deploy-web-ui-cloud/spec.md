@@ -70,6 +70,22 @@ As the system maintainer, I want all cloud infrastructure defined as code, so I 
 
 ---
 
+### User Story 5 - Continuous Deployment via GitHub Actions (Priority: P2)
+
+As the system maintainer, I want the production instance to update automatically when changes are merged to main and all tests pass, so deployments are reliable and hands-free.
+
+**Why this priority**: Automates the deployment workflow, reducing manual effort and human error. Depends on the infrastructure being in place first (Stories 1 & 4).
+
+**Independent Test**: Can be tested by merging a visible change (e.g., page title) to main and verifying it appears on the production instance after the pipeline completes.
+
+**Acceptance Scenarios**:
+
+1. **Given** a pull request is merged to main, **When** all tests pass in CI, **Then** the updated application is automatically deployed to the production UpCloud instance
+2. **Given** a pull request is merged to main, **When** tests fail in CI, **Then** the deployment does not proceed and the current production version remains unchanged
+3. **Given** a deployment is in progress, **When** it completes successfully, **Then** the running application serves the new version with zero downtime
+
+---
+
 ### Edge Cases
 
 - What happens when the VPN tunnel drops and reconnects? The proxy server should gracefully handle timeouts and resume when the tunnel recovers.
@@ -91,6 +107,8 @@ As the system maintainer, I want all cloud infrastructure defined as code, so I 
 - **FR-008**: System MUST serve the UI over HTTPS with a valid TLS certificate
 - **FR-009**: System MUST return meaningful error responses when the VPN tunnel or Shelly devices are unreachable
 - **FR-010**: System MUST maintain authenticated sessions so users don't need to re-authenticate on every page load
+- **FR-011**: System MUST automatically deploy the updated application to production when changes are merged to main and all CI tests pass, via GitHub Actions
+- **FR-012**: System MUST NOT deploy to production if any CI test fails
 
 ### Key Entities
 
