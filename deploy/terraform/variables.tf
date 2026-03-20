@@ -4,12 +4,7 @@ variable "ssh_public_key" {
 }
 
 variable "domain" {
-  description = "Domain name for the monitoring UI (e.g., monitor.example.com)"
-  type        = string
-}
-
-variable "cloudflare_zone_id" {
-  description = "Cloudflare zone ID for DNS record management"
+  description = "Domain name for the monitoring UI (e.g., greenhouse.madekivi.fi)"
   type        = string
 }
 

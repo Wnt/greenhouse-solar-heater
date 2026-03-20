@@ -2,10 +2,7 @@
 ssh_public_key = "ssh-ed25519 AAAA..."
 
 # Domain name for the monitoring UI
-domain = "monitor.example.com"
-
-# Cloudflare zone ID (find in Cloudflare dashboard → domain → Overview → API section)
-cloudflare_zone_id = "your-zone-id"
+domain = "greenhouse.madekivi.fi"
 
 # UpCloud zone (default: fi-hel1 = Helsinki)
 # upcloud_zone = "fi-hel1"
@@ -16,4 +13,6 @@ cloudflare_zone_id = "your-zone-id"
 # Required environment variables (not in tfvars for security):
 #   export UPCLOUD_USERNAME="your-username"
 #   export UPCLOUD_PASSWORD="your-password"
-#   export CLOUDFLARE_API_TOKEN="your-token"
+#
+# After `terraform apply`, note the server_ip output and create
+# an A record in Gandi DNS pointing your domain to that IP.

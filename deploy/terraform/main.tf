@@ -5,19 +5,11 @@ terraform {
       source  = "UpCloudLtd/upcloud"
       version = "~> 5.0"
     }
-    cloudflare = {
-      source  = "cloudflare/cloudflare"
-      version = "~> 4.0"
-    }
   }
 }
 
 provider "upcloud" {
   # Credentials via UPCLOUD_USERNAME and UPCLOUD_PASSWORD env vars
-}
-
-provider "cloudflare" {
-  # Credentials via CLOUDFLARE_API_TOKEN env var
 }
 
 # ── Server ──
@@ -87,7 +79,7 @@ resource "upcloud_firewall_rules" "monitor" {
     protocol               = "udp"
     destination_port_start = 51820
     destination_port_end   = 51820
-    comment                = "WireGuard VPN"
+    comment                = "WireGuard VPN (not active yet, ready for later)"
   }
 
   firewall_rule {
@@ -103,15 +95,4 @@ resource "upcloud_firewall_rules" "monitor" {
     family    = "IPv6"
     comment   = "Drop all inbound IPv6"
   }
-}
-
-# ── DNS ──
-
-resource "cloudflare_record" "monitor" {
-  zone_id = var.cloudflare_zone_id
-  name    = var.domain
-  content = upcloud_server.monitor.network_interface[0].ip_address
-  type    = "A"
-  ttl     = 300
-  proxied = false
 }
