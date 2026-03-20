@@ -101,7 +101,7 @@ As the system maintainer, I want the production instance to update automatically
 - **FR-002**: System MUST establish a VPN tunnel between the UpCloud server and the on-site network where Shelly devices reside, using the UniFi gateway as the on-site VPN endpoint
 - **FR-003**: System MUST proxy RPC requests from the cloud-hosted UI to Shelly devices over the VPN tunnel (the existing proxy pattern in `server.js` continues to work, but reaches devices via VPN instead of LAN)
 - **FR-004**: System MUST require passkey (WebAuthn/FIDO2) authentication before granting access to any part of the UI
-- **FR-005**: System MUST support an initial passkey registration flow for the first user (owner bootstrap)
+- **FR-005**: System MUST support an initial passkey registration flow for the first user (owner bootstrap). Registration is only available during the first 30 minutes after initial deployment; after that window closes, the registration endpoint is permanently disabled until the next fresh deployment
 - **FR-006**: System MUST define all cloud infrastructure (server, networking, firewall rules) using Infrastructure as Code
 - **FR-007**: System MUST run all application components as Docker containers with automatic restart on failure
 - **FR-008**: System MUST serve the UI over HTTPS with a valid TLS certificate
@@ -126,6 +126,12 @@ As the system maintainer, I want the production instance to update automatically
 - **SC-003**: A complete deployment can be created from scratch using only the IaC definitions and documented credentials, with no manual configuration steps on the UpCloud console
 - **SC-004**: The system recovers automatically from a server restart — containers and VPN tunnel are operational again without manual intervention within 2 minutes
 - **SC-005**: Valve control commands issued remotely are delivered to the Shelly controller within 5 seconds under normal VPN conditions
+
+## Clarifications
+
+### Session 2026-03-20
+
+- Q: How is the initial passkey registration secured against unauthorized access? → A: Time-window — registration is only possible within 30 minutes of first deployment.
 
 ## Assumptions
 
