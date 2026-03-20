@@ -9,7 +9,8 @@ terraform {
 }
 
 provider "upcloud" {
-  # Credentials via UPCLOUD_USERNAME and UPCLOUD_PASSWORD env vars
+  # Credentials via UPCLOUD_TOKEN env var (API token from UpCloud profile)
+  # No basic auth (username/password) needed
 }
 
 # ── Server ──

@@ -11,8 +11,7 @@ domain = "greenhouse.madekivi.fi"
 # server_plan = "1xCPU-2GB"
 
 # Required environment variables (not in tfvars for security):
-#   export UPCLOUD_USERNAME="your-username"
-#   export UPCLOUD_PASSWORD="your-password"
+#   export UPCLOUD_TOKEN="your-api-token"
 #
 # After `terraform apply`, note the server_ip output and create
 # an A record in Gandi DNS pointing your domain to that IP.

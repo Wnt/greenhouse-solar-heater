@@ -58,8 +58,7 @@ docker compose up
 cd deploy/terraform
 
 # Set credentials
-export UPCLOUD_USERNAME="your-username"
-export UPCLOUD_PASSWORD="your-password"
+export UPCLOUD_TOKEN="your-api-token"
 export CLOUDFLARE_API_TOKEN="your-token"
 
 # Configure variables
