@@ -1,6 +1,6 @@
 .DS_Store
 .superpowers/
-.claude/
+.claude/settings.local.json
 tests/output/
 test-results/
 node_modules/
