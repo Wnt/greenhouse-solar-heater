@@ -1,0 +1,31 @@
+# WireGuard server configuration for UpCloud server
+# See research.md R1 for architecture decisions
+#
+# After provisioning with Terraform, cloud-init generates keys at:
+#   /etc/wireguard/private.key
+#   /etc/wireguard/public.key
+#
+# Steps:
+# 1. Copy this file to /etc/wireguard/wg0.conf on the server
+# 2. Replace <SERVER_PRIVATE_KEY> with contents of /etc/wireguard/private.key
+# 3. Replace <UNIFI_PUBLIC_KEY> with the public key shown in UniFi VPN Client config
+# 4. systemctl enable --now wg-quick@wg0
+
+[Interface]
+# Cloud server is .1 on the tunnel subnet
+Address = 10.10.10.1/24
+ListenPort = 51820
+PrivateKey = <SERVER_PRIVATE_KEY>
+
+# Enable forwarding for packets coming through the tunnel
+# (also requires net.ipv4.ip_forward=1 in sysctl, set by cloud-init)
+PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+[Peer]
+# UniFi gateway (VPN client)
+PublicKey = <UNIFI_PUBLIC_KEY>
+# Allow traffic from the tunnel subnet and the on-site LAN where Shelly devices reside
+AllowedIPs = 10.10.10.2/32, 192.168.1.0/24
+# UniFi gateway initiates the connection, so no Endpoint is needed here
+# PersistentKeepalive not needed — the UniFi client side handles keepalives

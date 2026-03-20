@@ -1,0 +1,19 @@
+# SSH public key — paste your Ed25519 or RSA public key here
+ssh_public_key = "ssh-ed25519 AAAA..."
+
+# Domain name for the monitoring UI
+domain = "monitor.example.com"
+
+# Cloudflare zone ID (find in Cloudflare dashboard → domain → Overview → API section)
+cloudflare_zone_id = "your-zone-id"
+
+# UpCloud zone (default: fi-hel1 = Helsinki)
+# upcloud_zone = "fi-hel1"
+
+# UpCloud server plan (default: 1xCPU-2GB, ~11-13 EUR/month)
+# server_plan = "1xCPU-2GB"
+
+# Required environment variables (not in tfvars for security):
+#   export UPCLOUD_USERNAME="your-username"
+#   export UPCLOUD_PASSWORD="your-password"
+#   export CLOUDFLARE_API_TOKEN="your-token"

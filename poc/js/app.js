@@ -542,6 +542,28 @@ function stopCooldownTimer() {
 
 // ── Valve override commands ──
 
+function isVpnError(e) {
+  var msg = (e.message || '').toLowerCase();
+  return msg.includes('vpn') || msg.includes('unreachable') || msg.includes('503');
+}
+
+function showValveError(msg) {
+  var banner = document.getElementById('valve-error-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'valve-error-banner';
+    banner.style.cssText = 'padding:8px 12px;background:#ffebee;border:1px solid #ef9a9a;border-radius:6px;color:#c62828;font-size:13px;font-weight:600;margin-bottom:12px;';
+    elValvePanel.insertBefore(banner, elValvePanel.children[1]);
+  }
+  banner.textContent = msg;
+  banner.style.display = 'block';
+}
+
+function clearValveError() {
+  var banner = document.getElementById('valve-error-banner');
+  if (banner) banner.style.display = 'none';
+}
+
 async function sendOverride(v1, v2) {
   if (!api || !controllerIp) return;
   try {
@@ -550,8 +572,14 @@ async function sendOverride(v1, v2) {
     valveStatus = await api.getValveStatus(controllerIp, SCRIPT_ID);
     detectStateChanges();
     updateValveUI();
+    clearValveError();
   } catch (e) {
-    logEvent(`Override failed: ${e.message}`, 'error');
+    if (isVpnError(e)) {
+      showValveError('Cannot reach controller — VPN may be disconnected');
+      logEvent('Valve command failed: VPN disconnected', 'error');
+    } else {
+      logEvent(`Override failed: ${e.message}`, 'error');
+    }
   }
 }
 
@@ -562,8 +590,14 @@ async function sendClearOverride() {
     valveStatus = await api.getValveStatus(controllerIp, SCRIPT_ID);
     detectStateChanges();
     updateValveUI();
+    clearValveError();
   } catch (e) {
-    logEvent(`Clear override failed: ${e.message}`, 'error');
+    if (isVpnError(e)) {
+      showValveError('Cannot reach controller — VPN may be disconnected');
+      logEvent('Clear override failed: VPN disconnected', 'error');
+    } else {
+      logEvent(`Clear override failed: ${e.message}`, 'error');
+    }
   }
 }
 

@@ -1,0 +1,53 @@
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: ghcr.io/${GITHUB_REPO:-local/greenhouse-solar-heater}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - AUTH_ENABLED=true
+      - RPID=${RPID}
+      - ORIGIN=${ORIGIN}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - CREDENTIALS_PATH=/data/credentials.json
+      - VPN_CHECK_HOST=${VPN_CHECK_HOST:-192.168.1.86:80}
+      - SETUP_WINDOW_MINUTES=${SETUP_WINDOW_MINUTES:-30}
+      - NODE_ENV=production
+    volumes:
+      - app_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - internal
+
+volumes:
+  app_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:

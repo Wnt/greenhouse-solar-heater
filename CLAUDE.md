@@ -29,10 +29,16 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `existing-hardware/` → reference photos of owned components
 - `scripts/` → Shelly device scripts and deployment tooling
 - `poc/` → hardware PoC app (live temperature monitor with Shelly devices)
+- `poc/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers)
+- `poc/lib/logger.js` → structured JSON logger (used by server and auth modules)
+- `deploy/` → cloud deployment infrastructure
+- `deploy/terraform/` → UpCloud server, Cloudflare DNS, firewall rules (Terraform)
+- `deploy/docker/` → Dockerfile, docker-compose.yml, Caddyfile
+- `deploy/wireguard/` → WireGuard VPN server config template
 - `tools/shelly-lint/` → standalone Shelly platform conformance linter (CLI)
 - `playground/` → interactive browser-based simulators (thermal, hydraulic)
-- `tests/` → unit, simulation, and e2e tests
-- `.github/workflows/` → CI (GitHub Pages deploy, Shelly lint)
+- `tests/` → unit, simulation, auth, and e2e tests
+- `.github/workflows/` → CI (test suite, GitHub Pages deploy, Shelly lint, CD deploy)
 - `IDEAS.md` → raw ideas / wishlist
 
 ## Documentation Formats
@@ -97,15 +103,23 @@ All third-party libraries are vendored locally in `playground/vendor/` to avoid 
 
 ## PoC Temperature Monitor
 
-The `poc/` directory contains a hardware proof-of-concept app that reads live DS18B20 temperatures from a Shelly 1 sensor add-on and displays them in a browser-based UI.
+The `poc/` directory contains a hardware proof-of-concept app that reads live DS18B20 temperatures from a Shelly 1 sensor add-on and displays them in a browser-based UI. It can run locally (direct LAN access) or deployed to the cloud (via VPN).
 
+- `poc/server.js` — Node.js HTTP server: serves static files, proxies RPC to Shelly devices, health endpoint, auth middleware (when `AUTH_ENABLED=true`)
 - `poc/index.html` — Web UI: SVG gauges + Canvas time-series chart (last 6h)
-- `poc/js/` — ES modules: `shelly-api.js` (HTTP RPC client), `gauge.js` (SVG gauge), `chart.js` (Canvas chart), `app.js` (orchestration)
+- `poc/login.html` — Passkey authentication page (registration + login)
+- `poc/js/` — ES modules: `shelly-api.js` (HTTP RPC client), `gauge.js` (SVG gauge), `chart.js` (Canvas chart), `app.js` (orchestration), `login.js` (passkey auth)
+- `poc/auth/` — Server-side auth: `credentials.js` (JSON store), `session.js` (HMAC cookies), `webauthn.js` (WebAuthn handlers)
+- `poc/lib/logger.js` — Structured JSON logger
+- `poc/vendor/simplewebauthn-browser.mjs` — Vendored @simplewebauthn/browser 13.3.0 (ESM)
 - `poc/css/style.css` — Standalone styles (not shared with playground)
-- `poc/shelly/sensor-display.js` — ES5 Shelly script for Pro 4PM: polls sensors, updates device name to show temperatures on the built-in display
+- `poc/shelly/sensor-display.js` — ES5 Shelly script for Pro 4PM
 - `poc/shelly/deploy-poc.sh` — Deploys the script to Pro 4PM via HTTP RPC
 
-**Requirements**: Browser and Shelly devices must be on the same local network. The web UI polls the Shelly 1 add-on directly via `fetch()` → HTTP RPC.
+**Local mode**: `node poc/server.js` — no auth, direct LAN access to Shelly devices.
+**Cloud mode**: `AUTH_ENABLED=true RPID=domain ORIGIN=https://domain node poc/server.js` — passkey auth required, VPN tunnel to reach devices.
+
+**Do NOT replace vendored libs with CDN URLs.** The importmap in `login.html` points to `./vendor/...` paths.
 
 ## Running Tests
 
@@ -118,6 +132,7 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 ### Test Structure
 
 - `tests/control-logic.test.js` — unit tests for the pure control logic (`scripts/control-logic.js`)
+- `tests/auth.test.js` — unit tests for auth modules (session signing, credential store)
 - `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
 - `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
 
@@ -130,6 +145,28 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 
 ## CI / GitHub Actions
 
-- `.github/workflows/ci.yml` — runs the full test suite (unit, simulation, e2e) on every push. Triggers on `push` only (not `pull_request`) so tests run exactly once — opening a PR from an already-pushed branch does not re-trigger.
+- `.github/workflows/ci.yml` — runs the full test suite (unit, simulation, auth, e2e) on every push. Triggers on `push` only (not `pull_request`) so tests run exactly once — opening a PR from an already-pushed branch does not re-trigger.
+- `.github/workflows/deploy.yml` — CD pipeline: test → build Docker image → push to GHCR → SSH deploy to UpCloud. Triggers on push to main/master.
 - `.github/workflows/deploy-pages.yml` — deploys playground to GitHub Pages on push to main/master
 - `.github/workflows/lint-shelly.yml` — runs Shelly linter on push/PR when scripts or linter files change
+
+## Active Technologies
+- Node.js 20 LTS (existing `server.js` uses CommonJS `http` module) + @simplewebauthn/server, @simplewebauthn/browser (vendored), Caddy (reverse proxy) (001-deploy-web-ui-cloud)
+- JSON file for passkey credentials and sessions (single-user, no database) (001-deploy-web-ui-cloud)
+
+## Cloud Deployment Architecture
+
+```
+Internet → Caddy (:443, HTTPS) → Node.js app (:3000) → WireGuard VPN → Shelly devices
+```
+
+- **Infrastructure**: UpCloud 1xCPU-2GB server (fi-hel1), provisioned via Terraform
+- **Containers**: Docker Compose with `app` (Node.js) + `caddy` (reverse proxy, auto TLS)
+- **VPN**: WireGuard (host-level on server, UniFi gateway as client)
+- **Auth**: WebAuthn passkeys via @simplewebauthn, HMAC-signed session cookies (30-day expiry)
+- **CD**: GitHub Actions → GHCR → SSH deploy on merge to main
+
+Environment variables for cloud deployment: `AUTH_ENABLED`, `RPID`, `ORIGIN`, `SESSION_SECRET`, `VPN_CHECK_HOST`, `CREDENTIALS_PATH`, `SETUP_WINDOW_MINUTES`.
+
+## Recent Changes
+- 001-deploy-web-ui-cloud: Cloud deployment with Docker, Terraform (UpCloud), WireGuard VPN, WebAuthn passkey auth, GitHub Actions CD, structured logging
