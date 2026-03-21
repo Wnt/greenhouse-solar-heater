@@ -23,14 +23,14 @@ function emptyStore() {
   };
 }
 
-function load() {
+function load(callback) {
   if (storage.isS3Enabled()) {
-    // S3 mode: start with empty store, load async in background
     store = emptyStore();
     log.info('S3 storage enabled, loading credentials');
     storage.read(function (err, data) {
       if (err) {
         log.error('failed to load credentials from S3', { error: err.message });
+        if (callback) callback(err);
         return;
       }
       if (data) {
@@ -39,6 +39,7 @@ function load() {
       } else {
         log.info('no credentials in S3, starting fresh');
       }
+      if (callback) callback(null);
     });
   } else {
     var data = storage.readSync();
@@ -49,6 +50,7 @@ function load() {
       store = emptyStore();
       log.info('no credentials file, starting fresh');
     }
+    if (callback) callback(null);
   }
   return store;
 }

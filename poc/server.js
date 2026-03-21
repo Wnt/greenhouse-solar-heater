@@ -134,7 +134,6 @@ function handleHealth(req, res) {
 var authMiddleware = null;
 if (AUTH_ENABLED) {
   authMiddleware = require('./auth/webauthn');
-  authMiddleware.init();
   log.info('auth enabled', { rpId: process.env.RPID || 'localhost' });
 }
 
@@ -406,8 +405,21 @@ function startValvePoller() {
   }
 }
 
-server.listen(PORT, '0.0.0.0', function () {
-  printBanner(PORT, getNetworkAddress());
-  log.info('server started', { port: PORT, auth: AUTH_ENABLED });
-  startValvePoller();
-});
+function startServer() {
+  server.listen(PORT, '0.0.0.0', function () {
+    printBanner(PORT, getNetworkAddress());
+    log.info('server started', { port: PORT, auth: AUTH_ENABLED });
+    startValvePoller();
+  });
+}
+
+if (AUTH_ENABLED) {
+  authMiddleware.init(function (err) {
+    if (err) {
+      log.error('auth init failed, starting with empty credentials', { error: err.message });
+    }
+    startServer();
+  });
+} else {
+  startServer();
+}
