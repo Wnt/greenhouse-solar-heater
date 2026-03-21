@@ -17,9 +17,9 @@
 
 **Purpose**: Install dependencies and create shared infrastructure files
 
-- [ ] T001 Add `web-push` dependency to package.json and run `npm install`
-- [ ] T002 [P] Create push storage adapter in poc/lib/push-storage.js — S3/local persistence for VAPID keys (key: `push-config.json`) and push subscriptions (key: `push-subscriptions.json`), reusing the pattern from poc/lib/s3-storage.js. Exports: `loadVapidKeys(callback)`, `saveVapidKeys(data, callback)`, `loadSubscriptions(callback)`, `saveSubscriptions(data, callback)`, `addSubscription(sub, callback)`, `removeSubscription(endpoint, callback)`
-- [ ] T003 [P] Create valve poller module in poc/lib/valve-poller.js — polls Shelly controller via HTTP GET to `/rpc/Script.Eval?id={scriptId}&code=getStatus()` at 10s interval. Compares valve states (v1, v2) against previous poll. Emits a callback on change with `{valve, state, mode, timestamp}`. Skips first poll (no previous state). Skips comparison on poll error (retains previous state). Reads `CONTROLLER_IP` and `CONTROLLER_SCRIPT_ID` env vars. Exports: `start(onChange)`, `stop()`
+- [x] T001 Add `web-push` dependency to package.json and run `npm install`
+- [x] T002 [P] Create push storage adapter in poc/lib/push-storage.js — S3/local persistence for VAPID keys (key: `push-config.json`) and push subscriptions (key: `push-subscriptions.json`), reusing the pattern from poc/lib/s3-storage.js. Exports: `loadVapidKeys(callback)`, `saveVapidKeys(data, callback)`, `loadSubscriptions(callback)`, `saveSubscriptions(data, callback)`, `addSubscription(sub, callback)`, `removeSubscription(endpoint, callback)`
+- [x] T003 [P] Create valve poller module in poc/lib/valve-poller.js — polls Shelly controller via HTTP GET to `/rpc/Script.Eval?id={scriptId}&code=getStatus()` at 10s interval. Compares valve states (v1, v2) against previous poll. Emits a callback on change with `{valve, state, mode, timestamp}`. Skips first poll (no previous state). Skips comparison on poll error (retains previous state). Reads `CONTROLLER_IP` and `CONTROLLER_SCRIPT_ID` env vars. Exports: `start(onChange)`, `stop()`
 
 ---
 
@@ -29,9 +29,9 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 [P] Write unit tests in tests/push-storage.test.js — test loadVapidKeys returns null when no data, saveVapidKeys round-trips data, addSubscription appends and deduplicates by endpoint, removeSubscription removes by endpoint and returns boolean, loadSubscriptions returns empty array when no data. Use local filesystem fallback mode (no S3 env vars)
-- [ ] T005 [P] Write unit tests in tests/valve-poller.test.js — test that: first poll stores baseline without calling onChange, second poll with same state does not call onChange, second poll with v1 changed calls onChange with correct payload, poll error retains previous state without calling onChange, stop() clears the interval. Mock HTTP calls to Shelly controller
-- [ ] T006 Run `npm run test:unit` and verify all existing + new tests pass
+- [x] T004 [P] Write unit tests in tests/push-storage.test.js — test loadVapidKeys returns null when no data, saveVapidKeys round-trips data, addSubscription appends and deduplicates by endpoint, removeSubscription removes by endpoint and returns boolean, loadSubscriptions returns empty array when no data. Use local filesystem fallback mode (no S3 env vars)
+- [x] T005 [P] Write unit tests in tests/valve-poller.test.js — test that: first poll stores baseline without calling onChange, second poll with same state does not call onChange, second poll with v1 changed calls onChange with correct payload, poll error retains previous state without calling onChange, stop() clears the interval. Mock HTTP calls to Shelly controller
+- [x] T006 Run `npm run test:unit` and verify all existing + new tests pass
 
 **Checkpoint**: Foundation ready — push-storage and valve-poller modules work correctly in isolation
 
@@ -45,12 +45,12 @@
 
 ### Implementation for User Story 1
 
-- [ ] T007 [P] [US1] Create PWA manifest in poc/manifest.json — name: "Greenhouse Monitor", short_name: "Monitor", start_url: "/", display: "standalone", theme_color and background_color matching poc/css/style.css, icons array pointing to /icons/icon-192.png and /icons/icon-512.png
-- [ ] T008 [P] [US1] Create PWA icons in poc/icons/ — generate icon-192.png (192x192) and icon-512.png (512x512). Simple green/plant-themed placeholder icons (can be programmatically generated or minimal SVG-to-PNG)
-- [ ] T009 [P] [US1] Create service worker in poc/sw.js — handle `install` event (skip waiting), `activate` event (claim clients), `push` event (parse JSON payload, call `self.registration.showNotification(title, options)`), `notificationclick` event (focus existing client or open new window to `/`). No fetch interception or offline caching
-- [ ] T010 [US1] Add manifest link and service worker registration to poc/index.html — add `<link rel="manifest" href="/manifest.json">` in `<head>`, add `<meta name="theme-color">` tag, add SW registration script in a `<script>` block after page load: `navigator.serviceWorker.register('/sw.js')`
-- [ ] T011 [US1] Add `.webmanifest` MIME type to MIME map in poc/server.js and ensure `/manifest.json` is served with `application/manifest+json` content type
-- [ ] T012 [US1] Update npm test script in package.json to include `node tests/push-storage.test.js && node tests/valve-poller.test.js` in both `test` and `test:unit` commands
+- [x] T007 [P] [US1] Create PWA manifest in poc/manifest.json — name: "Greenhouse Monitor", short_name: "Monitor", start_url: "/", display: "standalone", theme_color and background_color matching poc/css/style.css, icons array pointing to /icons/icon-192.png and /icons/icon-512.png
+- [x] T008 [P] [US1] Create PWA icons in poc/icons/ — generate icon-192.png (192x192) and icon-512.png (512x512). Simple green/plant-themed placeholder icons (can be programmatically generated or minimal SVG-to-PNG)
+- [x] T009 [P] [US1] Create service worker in poc/sw.js — handle `install` event (skip waiting), `activate` event (claim clients), `push` event (parse JSON payload, call `self.registration.showNotification(title, options)`), `notificationclick` event (focus existing client or open new window to `/`). No fetch interception or offline caching
+- [x] T010 [US1] Add manifest link and service worker registration to poc/index.html — add `<link rel="manifest" href="/manifest.json">` in `<head>`, add `<meta name="theme-color">` tag, add SW registration script in a `<script>` block after page load: `navigator.serviceWorker.register('/sw.js')`
+- [x] T011 [US1] Add `.webmanifest` MIME type to MIME map in poc/server.js and ensure `/manifest.json` is served with `application/manifest+json` content type
+- [x] T012 [US1] Update npm test script in package.json to include `node tests/push-storage.test.js && node tests/valve-poller.test.js` in both `test` and `test:unit` commands
 
 **Checkpoint**: The monitor app is installable as a PWA. Service worker is registered. No push functionality yet but the SW is ready to receive push events.
 
@@ -64,10 +64,10 @@
 
 ### Implementation for User Story 2
 
-- [ ] T013 [P] [US2] Create browser-side push module in poc/js/push.js — ES module that exports: `async subscribe(vapidPublicKey)` (calls `pushManager.subscribe()`, POSTs to `/api/push/subscribe`), `async unsubscribe()` (calls `pushSubscription.unsubscribe()`, POSTs to `/api/push/unsubscribe`), `async getSubscriptionState()` (returns current subscription from `pushManager.getSubscription()`), `async getVapidKey()` (fetches from `/api/push/vapid-public-key`)
-- [ ] T014 [P] [US2] Add push API endpoints to poc/server.js — `GET /api/push/vapid-public-key` (returns public key from push-storage), `POST /api/push/subscribe` (validates body, calls addSubscription), `POST /api/push/unsubscribe` (calls removeSubscription). All behind existing auth gate. Initialize VAPID keys on server startup: load from S3, generate if missing, save back. Use `web-push.setVapidDetails()` to configure the library
-- [ ] T015 [US2] Add notification subscribe/unsubscribe UI to poc/index.html — add a notification toggle section (button + status text) below the connection bar. Import poc/js/push.js. On page load, check subscription state and update button text ("Subscribe" / "Unsubscribe"). On click: subscribe or unsubscribe accordingly. Show error message if permission denied. Add minimal styles to poc/css/style.css for the notification toggle
-- [ ] T016 [US2] Wire push.js into poc/js/app.js — after service worker registration succeeds, check if push is supported (`'PushManager' in window`), then initialize the notification UI by calling into push.js functions
+- [x] T013 [P] [US2] Create browser-side push module in poc/js/push.js — ES module that exports: `async subscribe(vapidPublicKey)` (calls `pushManager.subscribe()`, POSTs to `/api/push/subscribe`), `async unsubscribe()` (calls `pushSubscription.unsubscribe()`, POSTs to `/api/push/unsubscribe`), `async getSubscriptionState()` (returns current subscription from `pushManager.getSubscription()`), `async getVapidKey()` (fetches from `/api/push/vapid-public-key`)
+- [x] T014 [P] [US2] Add push API endpoints to poc/server.js — `GET /api/push/vapid-public-key` (returns public key from push-storage), `POST /api/push/subscribe` (validates body, calls addSubscription), `POST /api/push/unsubscribe` (calls removeSubscription). All behind existing auth gate. Initialize VAPID keys on server startup: load from S3, generate if missing, save back. Use `web-push.setVapidDetails()` to configure the library
+- [x] T015 [US2] Add notification subscribe/unsubscribe UI to poc/index.html — add a notification toggle section (button + status text) below the connection bar. Import poc/js/push.js. On page load, check subscription state and update button text ("Subscribe" / "Unsubscribe"). On click: subscribe or unsubscribe accordingly. Show error message if permission denied. Add minimal styles to poc/css/style.css for the notification toggle
+- [x] T016 [US2] Wire push.js into poc/js/app.js — after service worker registration succeeds, check if push is supported (`'PushManager' in window`), then initialize the notification UI by calling into push.js functions
 
 **Checkpoint**: Users can subscribe and unsubscribe. Subscriptions are persisted in S3. No notifications sent yet.
 
@@ -81,9 +81,9 @@
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Integrate valve poller into poc/server.js — import valve-poller.js, start polling on server startup if `CONTROLLER_IP` is set. On valve change callback: load subscriptions from push-storage, send notification to each via `web-push.sendNotification()`. Build payload per contracts/push-api.md format (`{title, body, tag, data}`). On send failure with status 404 or 410: remove stale subscription via `removeSubscription()`
-- [ ] T018 [US3] Add notification payload handling to poc/sw.js — in the `push` event listener, parse the JSON payload, extract `title` and build notification options (`body`, `tag`, `icon`, `data`). In `notificationclick`, use `clients.matchAll()` to find and focus existing window, or `clients.openWindow('/')` if none open
-- [ ] T019 [US3] Log valve polling and notification events in poc/server.js — use existing logger (`createLogger('push')`) to log: poller start/stop, valve state changes detected, notifications sent (count), stale subscriptions removed, poll errors
+- [x] T017 [US3] Integrate valve poller into poc/server.js — import valve-poller.js, start polling on server startup if `CONTROLLER_IP` is set. On valve change callback: load subscriptions from push-storage, send notification to each via `web-push.sendNotification()`. Build payload per contracts/push-api.md format (`{title, body, tag, data}`). On send failure with status 404 or 410: remove stale subscription via `removeSubscription()`
+- [x] T018 [US3] Add notification payload handling to poc/sw.js — in the `push` event listener, parse the JSON payload, extract `title` and build notification options (`body`, `tag`, `icon`, `data`). In `notificationclick`, use `clients.matchAll()` to find and focus existing window, or `clients.openWindow('/')` if none open
+- [x] T019 [US3] Log valve polling and notification events in poc/server.js — use existing logger (`createLogger('push')`) to log: poller start/stop, valve state changes detected, notifications sent (count), stale subscriptions removed, poll errors
 
 **Checkpoint**: Full push notification flow works end-to-end. Valve changes trigger notifications to all subscribers.
 
@@ -97,7 +97,7 @@
 
 ### Implementation for User Story 4
 
-- [ ] T020 [US4] Verify unsubscribe flow end-to-end — the unsubscribe UI (T015) and API endpoint (T014) are already implemented in Phase 4. This task validates that after unsubscribing: the subscription is removed from S3, the server no longer sends notifications to that endpoint, and re-subscribing creates a fresh subscription. Fix any issues found during validation
+- [x] T020 [US4] Verify unsubscribe flow end-to-end — the unsubscribe UI (T015) and API endpoint (T014) are already implemented in Phase 4. This task validates that after unsubscribing: the subscription is removed from S3, the server no longer sends notifications to that endpoint, and re-subscribing creates a fresh subscription. Fix any issues found during validation
 
 **Checkpoint**: Complete subscribe/unsubscribe lifecycle works. Users can opt in and out freely.
 
@@ -107,11 +107,11 @@
 
 **Purpose**: Deployment config, documentation, final validation
 
-- [ ] T021 [P] Update deploy/docker/Dockerfile — ensure `npm install` picks up the new `web-push` dependency
-- [ ] T022 [P] Update deploy/deployer/docker-compose.yml — add `CONTROLLER_IP`, `CONTROLLER_SCRIPT_ID`, and `VAPID_SUBJECT` environment variables to the app service
-- [ ] T023 [P] Update CLAUDE.md — document new files (manifest.json, sw.js, push.js, push-storage.js, valve-poller.js), new env vars (CONTROLLER_IP, CONTROLLER_SCRIPT_ID, VAPID_SUBJECT), new S3 keys (push-config.json, push-subscriptions.json), and new test files
-- [ ] T024 Run full test suite (`npm test`) and verify all tests pass including existing ones
-- [ ] T025 Run quickstart.md validation — start server with `CONTROLLER_IP` set, verify PWA manifest loads, service worker registers, subscribe flow works, and VAPID keys persist in S3/local storage
+- [x] T021 [P] Update deploy/docker/Dockerfile — ensure `npm install` picks up the new `web-push` dependency
+- [x] T022 [P] Update deploy/deployer/docker-compose.yml — add `CONTROLLER_IP`, `CONTROLLER_SCRIPT_ID`, and `VAPID_SUBJECT` environment variables to the app service
+- [x] T023 [P] Update CLAUDE.md — document new files (manifest.json, sw.js, push.js, push-storage.js, valve-poller.js), new env vars (CONTROLLER_IP, CONTROLLER_SCRIPT_ID, VAPID_SUBJECT), new S3 keys (push-config.json, push-subscriptions.json), and new test files
+- [x] T024 Run full test suite (`npm test`) and verify all tests pass including existing ones
+- [x] T025 Run quickstart.md validation — start server with `CONTROLLER_IP` set, verify PWA manifest loads, service worker registers, subscribe flow works, and VAPID keys persist in S3/local storage
 
 ---
 
