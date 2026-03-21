@@ -178,6 +178,8 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - S3-compatible object storage (UpCloud Managed Object Storage) — two new keys: `push-config.json`, `push-subscriptions.json` (004-pwa-push-notifications)
 - HCL (Terraform >= 1.5), POSIX shell (deployer), YAML (cloud-init, docker-compose) + UpCloud Terraform provider ~> 5.0, Docker Compose v2, systemd (005-fix-vpn-immutable-config)
 - UpCloud Managed Object Storage (S3-compatible) for VPN config and credentials (005-fix-vpn-immutable-config)
+- JavaScript ES5 (Shelly), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + @simplewebauthn/server, @aws-sdk/client-s3, web-push, Playwright, Acorn (linter) (006-organize-repo-structure)
+- S3-compatible object storage (UpCloud), local filesystem fallback (006-organize-repo-structure)
 
 ## Cloud Deployment Architecture
 
@@ -208,7 +210,6 @@ Server environment is split into two sources, merged by the deployer:
 To toggle VPN: set `COMPOSE_PROFILES=vpn` in `deploy/deployer/config.env` + `enable_vpn=true` in Terraform (firewall only, no server recreation).
 
 ## Recent Changes
+- 006-organize-repo-structure: Added JavaScript ES5 (Shelly), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + @simplewebauthn/server, @aws-sdk/client-s3, web-push, Playwright, Acorn (linter)
 - 005-fix-vpn-immutable-config: Added HCL (Terraform >= 1.5), POSIX shell (deployer), YAML (cloud-init, docker-compose) + UpCloud Terraform provider ~> 5.0, Docker Compose v2, systemd
 - 004-pwa-push-notifications: PWA manifest + service worker, Web Push notifications on valve state changes, push subscription API, valve polling module, S3 persistence for subscriptions and VAPID keys, `web-push` dependency
-- 004-vpn-key-persistence: Added Node.js 20 LTS (CommonJS), POSIX shell (deployer) + `@aws-sdk/client-s3` (already in app image)
-- 004-add-logout-feature: Added JavaScript ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + None new — uses existing auth endpoints and vendored libs
