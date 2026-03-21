@@ -77,6 +77,9 @@ const faviconCanvas = document.createElement('canvas');
 faviconCanvas.width = 32;
 faviconCanvas.height = 32;
 
+// Logout DOM ref
+const elLogoutBtn = document.getElementById('logout-btn');
+
 // ── Init ──
 export function init() {
   loadConfig();
@@ -85,10 +88,38 @@ export function init() {
   renderGaugeNoData(elGauge1, { min: -20, max: 80 });
   drawChart(elChart, store);
   updateFavicon(null, null);
+  checkAuthStatus();
 
   // Auto-connect if we have a saved IP
   if (elIpInput.value) {
     connect();
+  }
+}
+
+// ── Auth ──
+async function checkAuthStatus() {
+  try {
+    const res = await fetch('/auth/status');
+    if (!res.ok) return; // auth disabled (404) or error — keep button hidden
+    const data = await res.json();
+    if (data.authenticated) {
+      elLogoutBtn.hidden = false;
+    }
+  } catch (e) {
+    // Network error or auth not available — keep button hidden
+  }
+}
+
+async function logout() {
+  try {
+    const res = await fetch('/auth/logout', { method: 'POST' });
+    if (res.ok || res.status === 401) {
+      window.location.href = '/login.html';
+      return;
+    }
+    logEvent('Logout failed — please try again', 'error');
+  } catch (e) {
+    logEvent('Logout failed — network error', 'error');
   }
 }
 
@@ -126,6 +157,9 @@ function setupEventListeners() {
   elControllerIpInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') connect();
   });
+
+  // Logout button
+  elLogoutBtn.addEventListener('click', () => logout());
 
   // Time range buttons
   document.querySelectorAll('.time-range-btns button').forEach(btn => {

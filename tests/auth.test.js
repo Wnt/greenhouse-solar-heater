@@ -192,6 +192,33 @@ describe('credential store', function () {
     assert.strictEqual(raw.credentials[0].id, 'persist-test');
   });
 
+  it('removeSession is idempotent for unknown tokens', function () {
+    var store = require('../poc/auth/credentials');
+    store.load();
+    // Should not throw when removing a token that doesn't exist
+    store.removeSession('nonexistent-token');
+    assert.strictEqual(store.validateSession('nonexistent-token'), null);
+  });
+
+  it('clearSessionCookie sets Max-Age=0', function () {
+    var session = require('../poc/auth/session');
+    var headers = {};
+    var res = { setHeader: function (k, v) { headers[k] = v; } };
+    session.clearSessionCookie(res);
+    assert.ok(headers['Set-Cookie'], 'should set Set-Cookie header');
+    assert.ok(headers['Set-Cookie'].includes('Max-Age=0'), 'should set Max-Age=0');
+    assert.ok(headers['Set-Cookie'].includes('session=;') || headers['Set-Cookie'].startsWith('session=;'), 'should clear session value');
+  });
+
+  it('logout flow: create session, remove it, validate returns null', function () {
+    var store = require('../poc/auth/credentials');
+    store.load();
+    var sess = store.createSession();
+    assert.ok(store.validateSession(sess.token), 'session should be valid before logout');
+    store.removeSession(sess.token);
+    assert.strictEqual(store.validateSession(sess.token), null, 'session should be invalid after logout');
+  });
+
   it('expireSessions removes expired sessions', function () {
     var store = require('../poc/auth/credentials');
     store.load();
