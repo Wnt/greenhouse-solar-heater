@@ -28,6 +28,7 @@ const MIME = {
   '.json': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.mjs': 'application/javascript',
   '.ico': 'image/x-icon',
 };
 
@@ -158,7 +159,7 @@ var server = http.createServer(function (req, res) {
   }
 
   // Login page and its assets — accessible without auth
-  if (urlPath === '/login.html' || urlPath === '/js/login.js' || urlPath === '/vendor/simplewebauthn-browser.mjs') {
+  if (urlPath === '/login.html' || urlPath === '/js/login.js' || urlPath === '/vendor/simplewebauthn-browser.mjs' || urlPath === '/css/style.css') {
     serveStatic(req, res);
     return;
   }
