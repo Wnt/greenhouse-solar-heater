@@ -26,7 +26,7 @@ jobs:
 
       - run: npm test
 
-  build-and-push:
+  build-app:
     needs: test
     runs-on: ubuntu-latest
     permissions:
@@ -57,5 +57,36 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # No SSH deploy job — Watchtower on the server auto-pulls new :latest images from GHCR.
-  # See deploy/terraform/cloud-init.yaml for the Watchtower configuration.
+  build-deployer:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}-deployer" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: deploy/deployer
+          file: deploy/deployer/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # No SSH deploy job — systemd timer on the server pulls the deployer image
+  # every 5 minutes. The deployer writes config and runs docker compose up -d.

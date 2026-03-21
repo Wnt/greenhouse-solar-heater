@@ -5,15 +5,18 @@
 ```
 Internet → Caddy (:443, TLS) → Node.js app (:3000) → S3 Object Storage (credentials)
                                                     → WireGuard VPN (optional) → Shelly devices
+
+Update flow:
+  git push → CI builds app + deployer images → GHCR
+  systemd timer (5 min) → pulls deployer → writes config → docker compose up -d
 ```
 
-All containers run with **read-only root filesystems** and as **non-root users**.
-Credentials are stored in UpCloud Managed Object Storage (S3-compatible), not on the host.
-No SSH is exposed — deployments are handled by Watchtower auto-pulling from GHCR.
+All service configuration lives in the **deployer image** (`deploy/deployer/`), not in cloud-init.
+Config changes are applied by pushing to main — no server recreation, no SSH, no manual steps.
 
 ## Prerequisites
 
-- UpCloud account with API credentials
+- UpCloud account with API token
 - Terraform >= 1.5
 - Domain name with DNS access
 
@@ -33,40 +36,59 @@ terraform apply
 
 After apply, create a DNS A record pointing your domain to the `server_ip` output.
 
-The server boots, cloud-init installs Docker, writes configuration files, and starts all containers automatically. The app should be accessible at `https://your-domain` within ~5 minutes.
+The server boots, cloud-init installs Docker and starts a systemd timer. The timer pulls the deployer image, which writes config and starts all services. The app should be accessible at `https://your-domain` within ~5 minutes.
 
-## GitHub Actions (CI/CD)
+## How Updates Work
 
-The CD pipeline builds and pushes the Docker image to GHCR on merge to main. **Watchtower** on the server automatically detects and pulls new `:latest` images every 5 minutes.
+1. Push to `main`
+2. GitHub Actions builds two images: **app** + **deployer** (in parallel)
+3. Both are pushed to GHCR as `:latest`
+4. The systemd timer on the server fires every 5 minutes
+5. It pulls the deployer image and runs it
+6. The deployer copies config, validates, pulls service images, and runs `docker compose up -d`
 
-No SSH deploy secrets are needed. Only the GHCR token (provided automatically by GitHub Actions) is required.
+No SSH, no Watchtower, no manual steps.
+
+## Changing Config
+
+Edit files in `deploy/deployer/`:
+- `docker-compose.yml` — service definitions
+- `Caddyfile` — reverse proxy rules
+
+Push to main. The deployer image is rebuilt and the server picks it up within 5 minutes.
 
 ## Terraform Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ssh_public_key` | Yes | — | SSH public key (required by UpCloud, but SSH port is NOT exposed) |
+| `ssh_public_key` | Yes | — | SSH public key (required by UpCloud, SSH port NOT exposed) |
 | `domain` | Yes | — | Domain name for the monitoring UI |
 | `github_repo` | Yes | — | GitHub repo in `owner/name` format |
 | `session_secret` | Yes | — | HMAC secret for cookies (`openssl rand -hex 32`) |
 | `upcloud_zone` | No | `fi-hel1` | UpCloud zone |
 | `server_plan` | No | `DEV-1xCPU-1GB-10GB` | Server plan (€3/month, limit 2/account) |
 | `objsto_region` | No | `europe-1` | Object Storage region (~€5/month) |
-| `enable_vpn` | No | `false` | Enable WireGuard VPN container |
+| `enable_vpn` | No | `false` | Enable WireGuard VPN firewall rule |
 
-## Enabling VPN (later)
+## Enabling VPN
 
-```bash
-# In terraform.tfvars:
-enable_vpn = true
-
-terraform apply
-# Then configure WireGuard peer details via UpCloud web console
-```
+1. Edit `deploy/deployer/docker-compose.yml` — the wireguard service is already defined with `profiles: ["vpn"]`
+2. Add `COMPOSE_PROFILES=vpn` to the `.env` on the server (via UpCloud web console)
+3. In Terraform: `enable_vpn = true` then `terraform apply` (adds firewall rule for UDP 51820)
+4. Configure WireGuard peer details via UpCloud web console
 
 ## Emergency Access
 
 Use the **UpCloud Control Panel web console** (HTML5) — always available regardless of firewall rules.
+
+## Deployer Status
+
+Via UpCloud web console:
+```bash
+systemctl status deployer.service     # last run
+journalctl -u deployer.service -n 50  # logs
+systemctl list-timers deployer.timer  # schedule
+```
 
 ## Container Stack
 
@@ -74,5 +96,6 @@ Use the **UpCloud Control Panel web console** (HTML5) — always available regar
 |-----------|-------|---------|-----------|
 | app | `ghcr.io/<repo>:latest` | Monitoring UI | Non-root (UID 1000), RO root |
 | caddy | `caddy:2-alpine` | TLS termination | RO root, writable cert volumes |
-| watchtower | `containrrr/watchtower` | Auto-deploy from GHCR | RO root, Docker socket (RO) |
-| wireguard | `linuxserver/wireguard` | VPN tunnel (optional) | NET_ADMIN cap, RO root |
+| wireguard | `linuxserver/wireguard` | VPN tunnel (optional, via profiles) | NET_ADMIN cap, RO root |
+
+The deployer runs as a **one-shot container** via systemd — it is not a long-lived service.
