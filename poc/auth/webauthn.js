@@ -23,14 +23,20 @@ const RP_NAME = 'Shelly Monitor';
 // In-memory challenge store (short-lived, per-request)
 var pendingChallenges = {};
 
-function init() {
-  credStore.load();
-  // If no credentials exist, start setup window
-  if (credStore.getCredentials().length === 0) {
-    credStore.initSetup();
-  }
-  // Clean expired sessions on startup
-  credStore.expireSessions();
+function init(callback) {
+  credStore.load(function (err) {
+    if (err) {
+      if (callback) callback(err);
+      return;
+    }
+    // If no credentials exist, start setup window
+    if (credStore.getCredentials().length === 0) {
+      credStore.initSetup();
+    }
+    // Clean expired sessions on startup
+    credStore.expireSessions();
+    if (callback) callback(null);
+  });
 }
 
 function jsonResponse(res, statusCode, data) {
