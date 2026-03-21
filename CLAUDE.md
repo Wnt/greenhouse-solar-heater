@@ -153,6 +153,8 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 ## Active Technologies
 - Node.js 20 LTS (existing `server.js` uses CommonJS `http` module) + @simplewebauthn/server, @simplewebauthn/browser (vendored), Caddy (reverse proxy) (001-deploy-web-ui-cloud)
 - JSON file for passkey credentials and sessions (single-user, no database) (001-deploy-web-ui-cloud)
+- Node.js 20 LTS (CommonJS), Terraform >= 1.5 (HCL), Docker Compose v2 + @aws-sdk/client-s3 (new, for S3 persistence), Caddy 2-alpine, containrrr/watchtower, linuxserver/wireguard (optional) (002-containerize-upcloud-deploy)
+- UpCloud Managed Object Storage (S3-compatible, €5/month, 250GB min) (002-containerize-upcloud-deploy)
 
 ## Cloud Deployment Architecture
 
@@ -169,4 +171,5 @@ Internet → Caddy (:443, HTTPS) → Node.js app (:3000) → WireGuard VPN → S
 Environment variables for cloud deployment: `AUTH_ENABLED`, `RPID`, `ORIGIN`, `SESSION_SECRET`, `VPN_CHECK_HOST`, `CREDENTIALS_PATH`, `SETUP_WINDOW_MINUTES`.
 
 ## Recent Changes
+- 002-containerize-upcloud-deploy: Added Node.js 20 LTS (CommonJS), Terraform >= 1.5 (HCL), Docker Compose v2 + @aws-sdk/client-s3 (new, for S3 persistence), Caddy 2-alpine, containrrr/watchtower, linuxserver/wireguard (optional)
 - 001-deploy-web-ui-cloud: Cloud deployment with Docker, Terraform (UpCloud), WireGuard VPN, WebAuthn passkey auth, GitHub Actions CD, structured logging
