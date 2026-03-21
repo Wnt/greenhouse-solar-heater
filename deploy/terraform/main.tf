@@ -88,7 +88,7 @@ resource "upcloud_server" "monitor" {
   user_data = templatefile("${path.module}/cloud-init.yaml", {
     domain           = var.domain
     session_secret   = var.session_secret
-    s3_endpoint      = "https://${upcloud_managed_object_storage.credentials.id}.upcloudobjects.com"
+    s3_endpoint      = "https://${[for e in upcloud_managed_object_storage.credentials.endpoint : e.domain_name if e.type == "public"][0]}"
     s3_bucket        = upcloud_managed_object_storage_bucket.credentials.name
     s3_access_key_id = upcloud_managed_object_storage_user_access_key.app.access_key_id
     s3_secret_key    = upcloud_managed_object_storage_user_access_key.app.secret_access_key
