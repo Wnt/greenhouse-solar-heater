@@ -31,8 +31,9 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `poc/` → hardware PoC app (live temperature monitor with Shelly devices)
 - `poc/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers)
 - `poc/lib/logger.js` → structured JSON logger (used by server and auth modules)
+- `poc/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
 - `deploy/` → cloud deployment infrastructure
-- `deploy/terraform/` → UpCloud server, Cloudflare DNS, firewall rules (Terraform)
+- `deploy/terraform/` → UpCloud server, firewall rules, Managed Object Storage (Terraform)
 - `deploy/docker/` → Dockerfile, docker-compose.yml, Caddyfile
 - `deploy/wireguard/` → WireGuard VPN server config template
 - `tools/shelly-lint/` → standalone Shelly platform conformance linter (CLI)
@@ -109,8 +110,9 @@ The `poc/` directory contains a hardware proof-of-concept app that reads live DS
 - `poc/index.html` — Web UI: SVG gauges + Canvas time-series chart (last 6h)
 - `poc/login.html` — Passkey authentication page (registration + login)
 - `poc/js/` — ES modules: `shelly-api.js` (HTTP RPC client), `gauge.js` (SVG gauge), `chart.js` (Canvas chart), `app.js` (orchestration), `login.js` (passkey auth)
-- `poc/auth/` — Server-side auth: `credentials.js` (JSON store), `session.js` (HMAC cookies), `webauthn.js` (WebAuthn handlers)
+- `poc/auth/` — Server-side auth: `credentials.js` (credential store via S3 adapter), `session.js` (HMAC cookies), `webauthn.js` (WebAuthn handlers)
 - `poc/lib/logger.js` — Structured JSON logger
+- `poc/lib/s3-storage.js` — S3/local storage adapter (reads/writes credentials to UpCloud Object Storage or local filesystem)
 - `poc/vendor/simplewebauthn-browser.mjs` — Vendored @simplewebauthn/browser 13.3.0 (ESM)
 - `poc/css/style.css` — Standalone styles (not shared with playground)
 - `poc/shelly/sensor-display.js` — ES5 Shelly script for Pro 4PM
@@ -133,6 +135,7 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 
 - `tests/control-logic.test.js` — unit tests for the pure control logic (`scripts/control-logic.js`)
 - `tests/auth.test.js` — unit tests for auth modules (session signing, credential store)
+- `tests/s3-storage.test.js` — unit tests for S3 storage adapter (local fallback mode, S3 detection)
 - `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
 - `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
 
@@ -146,7 +149,7 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 ## CI / GitHub Actions
 
 - `.github/workflows/ci.yml` — runs the full test suite (unit, simulation, auth, e2e) on every push. Triggers on `push` only (not `pull_request`) so tests run exactly once — opening a PR from an already-pushed branch does not re-trigger.
-- `.github/workflows/deploy.yml` — CD pipeline: test → build Docker image → push to GHCR → SSH deploy to UpCloud. Triggers on push to main/master.
+- `.github/workflows/deploy.yml` — CD pipeline: test → build Docker image → push to GHCR. Watchtower on the server auto-pulls new images. Triggers on push to main/master.
 - `.github/workflows/deploy-pages.yml` — deploys playground to GitHub Pages on push to main/master
 - `.github/workflows/lint-shelly.yml` — runs Shelly linter on push/PR when scripts or linter files change
 
@@ -159,16 +162,20 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 ## Cloud Deployment Architecture
 
 ```
-Internet → Caddy (:443, HTTPS) → Node.js app (:3000) → WireGuard VPN → Shelly devices
+Internet → Caddy (:443, TLS) → Node.js app (:3000) → S3 Object Storage (credentials)
+                                                    → WireGuard VPN (optional) → Shelly devices
 ```
 
-- **Infrastructure**: UpCloud 1xCPU-2GB server (fi-hel1), provisioned via Terraform
-- **Containers**: Docker Compose with `app` (Node.js) + `caddy` (reverse proxy, auto TLS)
-- **VPN**: WireGuard (host-level on server, UniFi gateway as client)
+- **Infrastructure**: UpCloud 1xCPU-2GB server (fi-hel1) + Managed Object Storage (europe-1), provisioned via Terraform
+- **Containers**: Docker Compose with `app` (Node.js) + `caddy` (reverse proxy, auto TLS) + `watchtower` (auto-deploy) + optional `wireguard` (VPN)
+- **Container hardening**: All containers run with read-only root filesystems and as non-root users (except wireguard which needs NET_ADMIN)
+- **Persistence**: UpCloud Managed Object Storage (S3-compatible, €5/month) — no Docker volumes for app data
+- **VPN**: WireGuard container (disabled by default, controlled by `enable_vpn` Terraform variable)
 - **Auth**: WebAuthn passkeys via @simplewebauthn, HMAC-signed session cookies (30-day expiry)
-- **CD**: GitHub Actions → GHCR → SSH deploy on merge to main
+- **CD**: GitHub Actions → GHCR → Watchtower auto-pulls new images (no SSH needed)
+- **No SSH exposed**: Firewall blocks port 22. Emergency access via UpCloud web console.
 
-Environment variables for cloud deployment: `AUTH_ENABLED`, `RPID`, `ORIGIN`, `SESSION_SECRET`, `VPN_CHECK_HOST`, `CREDENTIALS_PATH`, `SETUP_WINDOW_MINUTES`.
+Environment variables for cloud deployment: `AUTH_ENABLED`, `RPID`, `ORIGIN`, `SESSION_SECRET`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `VPN_CHECK_HOST`, `SETUP_WINDOW_MINUTES`.
 
 ## Recent Changes
 - 002-containerize-upcloud-deploy: Added Node.js 20 LTS (CommonJS), Terraform >= 1.5 (HCL), Docker Compose v2 + @aws-sdk/client-s3 (new, for S3 persistence), Caddy 2-alpine, containrrr/watchtower, linuxserver/wireguard (optional)

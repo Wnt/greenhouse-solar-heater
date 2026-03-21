@@ -1,8 +1,14 @@
-# SSH public key — paste your Ed25519 or RSA public key here
+# SSH public key — required by UpCloud cloud-init templates (SSH port is NOT exposed)
 ssh_public_key = "ssh-ed25519 AAAA..."
 
 # Domain name for the monitoring UI
 domain = "greenhouse.madekivi.fi"
+
+# GitHub repository for GHCR image (owner/name format)
+github_repo = "Wnt/greenhouse-solar-heater"
+
+# Session secret for signed cookies (generate with: openssl rand -hex 32)
+session_secret = "REPLACE_ME"
 
 # UpCloud zone (default: fi-hel1 = Helsinki)
 # upcloud_zone = "fi-hel1"
@@ -10,9 +16,15 @@ domain = "greenhouse.madekivi.fi"
 # UpCloud server plan (default: 1xCPU-2GB, ~11-13 EUR/month)
 # server_plan = "1xCPU-2GB"
 
+# Object Storage region (default: europe-1)
+# objsto_region = "europe-1"
+
+# Enable WireGuard VPN (default: false — enable when ready for on-site device access)
+# enable_vpn = false
+
 # Required environment variables (not in tfvars for security):
 #   export UPCLOUD_USERNAME="your-username"
 #   export UPCLOUD_PASSWORD="your-password"
 #
 # After `terraform apply`, note the server_ip output and create
-# an A record in Gandi DNS pointing your domain to that IP.
+# an A record in your DNS pointing your domain to that IP.

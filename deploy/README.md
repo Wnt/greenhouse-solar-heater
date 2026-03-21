@@ -1,44 +1,79 @@
 # Deployment
 
-## Required GitHub Secrets
+## Architecture
 
-Configure these in **Settings > Secrets and variables > Actions**:
+```
+Internet → Caddy (:443, TLS) → Node.js app (:3000) → S3 Object Storage (credentials)
+                                                    → WireGuard VPN (optional) → Shelly devices
+```
 
-| Secret | Description |
-|--------|-------------|
-| `DEPLOY_SSH_KEY` | Ed25519 private key for the `deploy` user on UpCloud |
-| `DEPLOY_HOST` | UpCloud server IP or domain name |
-| `DEPLOY_USER` | SSH username (typically `deploy`) |
+All containers run with **read-only root filesystems** and as **non-root users**.
+Credentials are stored in UpCloud Managed Object Storage (S3-compatible), not on the host.
+No SSH is exposed — deployments are handled by Watchtower auto-pulling from GHCR.
 
-## Server Setup (deploy user)
+## Prerequisites
 
-After Terraform provisions the server, cloud-init creates a `deploy` user with Docker group membership. The SSH key from `DEPLOY_SSH_KEY` must match the authorized key on the server.
+- UpCloud account with API credentials
+- Terraform >= 1.5
+- Domain name with DNS access
 
-### Generate deploy key
+## Quick Start
 
 ```bash
-ssh-keygen -t ed25519 -C "github-actions-deploy" -f deploy_key -N ""
-# Add deploy_key.pub to /home/deploy/.ssh/authorized_keys on the server
-# Add deploy_key (private) as DEPLOY_SSH_KEY in GitHub Secrets
+cd deploy/terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
+
+export UPCLOUD_USERNAME="your-username"
+export UPCLOUD_PASSWORD="your-password"
+
+terraform init
+terraform plan
+terraform apply
 ```
 
-### Server directory structure
+After apply, create a DNS A record pointing your domain to the `server_ip` output.
 
-```
-/opt/app/
-├── docker-compose.yml   # Copy from deploy/docker/docker-compose.yml
-├── Caddyfile            # Copy from deploy/docker/Caddyfile
-├── .env                 # Environment variables (RPID, ORIGIN, SESSION_SECRET, etc.)
-├── data/                # Persistent credentials.json
-└── caddy_data/          # Caddy TLS certificates
-```
+The server boots, cloud-init installs Docker, writes configuration files, and starts all containers automatically. The app should be accessible at `https://your-domain` within ~5 minutes.
 
-### Required .env on server
+## GitHub Actions (CI/CD)
+
+The CD pipeline builds and pushes the Docker image to GHCR on merge to main. **Watchtower** on the server automatically detects and pulls new `:latest` images every 5 minutes.
+
+No SSH deploy secrets are needed. Only the GHCR token (provided automatically by GitHub Actions) is required.
+
+## Terraform Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ssh_public_key` | Yes | — | SSH public key (required by UpCloud, but SSH port is NOT exposed) |
+| `domain` | Yes | — | Domain name for the monitoring UI |
+| `github_repo` | Yes | — | GitHub repo in `owner/name` format |
+| `session_secret` | Yes | — | HMAC secret for cookies (`openssl rand -hex 32`) |
+| `upcloud_zone` | No | `fi-hel1` | UpCloud zone |
+| `server_plan` | No | `1xCPU-2GB` | Server plan (~€11-13/month) |
+| `objsto_region` | No | `europe-1` | Object Storage region (~€5/month) |
+| `enable_vpn` | No | `false` | Enable WireGuard VPN container |
+
+## Enabling VPN (later)
 
 ```bash
-RPID=monitor.example.com
-ORIGIN=https://monitor.example.com
-SESSION_SECRET=$(openssl rand -hex 32)
-DOMAIN=monitor.example.com
-VPN_CHECK_HOST=192.168.1.86:80
+# In terraform.tfvars:
+enable_vpn = true
+
+terraform apply
+# Then configure WireGuard peer details via UpCloud web console
 ```
+
+## Emergency Access
+
+Use the **UpCloud Control Panel web console** (HTML5) — always available regardless of firewall rules.
+
+## Container Stack
+
+| Container | Image | Purpose | Hardening |
+|-----------|-------|---------|-----------|
+| app | `ghcr.io/<repo>:latest` | Monitoring UI | Non-root (UID 1000), RO root |
+| caddy | `caddy:2-alpine` | TLS termination | RO root, writable cert volumes |
+| watchtower | `containrrr/watchtower` | Auto-deploy from GHCR | RO root, Docker socket (RO) |
+| wireguard | `linuxserver/wireguard` | VPN tunnel (optional) | NET_ADMIN cap, RO root |
