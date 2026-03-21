@@ -17,8 +17,8 @@
 
 **Purpose**: Add the VPN config S3 helper and environment variable
 
-- [ ] T001 Create VPN config S3 helper script in poc/lib/vpn-config.js — CLI that accepts `download <path>` and `upload <path>` commands, reuses S3 client config from existing env vars, uses `VPN_CONFIG_KEY` (default: `wg0.conf`) as object key
-- [ ] T002 [P] Add `VPN_CONFIG_KEY` env var to deploy/terraform/cloud-init.yaml in the .env template (default: `wg0.conf`)
+- [x] T001 Create VPN config S3 helper script in poc/lib/vpn-config.js — CLI that accepts `download <path>` and `upload <path>` commands, reuses S3 client config from existing env vars, uses `VPN_CONFIG_KEY` (default: `wg0.conf`) as object key
+- [x] T002 [P] Add `VPN_CONFIG_KEY` env var to deploy/terraform/cloud-init.yaml in the .env template (default: `wg0.conf`)
 
 ---
 
@@ -26,7 +26,7 @@
 
 **Purpose**: Tests for the S3 helper — must pass before integration into deployer
 
-- [ ] T003 Create unit tests for vpn-config.js in tests/vpn-config.test.js — test download (S3 hit, S3 miss, S3 error), upload (success, already-exists skip, S3 error), and CLI argument parsing. Mock S3 calls following the pattern in tests/s3-storage.test.js
+- [x] T003 Create unit tests for vpn-config.js in tests/vpn-config.test.js — test download (S3 hit, S3 miss, S3 error), upload (success, already-exists skip, S3 error), and CLI argument parsing. Mock S3 calls following the pattern in tests/s3-storage.test.js
 
 **Checkpoint**: vpn-config.js works correctly in isolation (`npm run test:unit` passes)
 
@@ -40,9 +40,9 @@
 
 ### Implementation for User Story 1
 
-- [ ] T004 [US1] Add VPN config download step to deploy/deployer/deploy.sh — after image pull (step 3), run `docker run --rm --env-file "$APP_DIR/.env" -v "$APP_DIR:/opt/app" "$APP_IMAGE" node poc/lib/vpn-config.js download /opt/app/wg0.conf`. Log result. Continue on failure (non-fatal).
-- [ ] T005 [US1] Determine APP_IMAGE name in deploy/deployer/deploy.sh — extract the app image reference from docker-compose.yml (e.g., via `docker compose config` or grep) so the one-shot container uses the correct image.
-- [ ] T006 [US1] Handle S3 download errors gracefully in deploy/deployer/deploy.sh — if the docker run command fails (S3 unreachable, image issue), log a warning and continue deployment without VPN config.
+- [x] T004 [US1] Add VPN config download step to deploy/deployer/deploy.sh — after image pull (step 3), run `docker run --rm --env-file "$APP_DIR/.env" -v "$APP_DIR:/opt/app" "$APP_IMAGE" node poc/lib/vpn-config.js download /opt/app/wg0.conf`. Log result. Continue on failure (non-fatal).
+- [x] T005 [US1] Determine APP_IMAGE name in deploy/deployer/deploy.sh — extract the app image reference from docker-compose.yml (e.g., via `docker compose config` or grep) so the one-shot container uses the correct image.
+- [x] T006 [US1] Handle S3 download errors gracefully in deploy/deployer/deploy.sh — if the docker run command fails (S3 unreachable, image issue), log a warning and continue deployment without VPN config.
 
 **Checkpoint**: Deployer restores VPN config from S3 on fresh server. Existing deploys without VPN unaffected.
 
@@ -56,8 +56,8 @@
 
 ### Implementation for User Story 2
 
-- [ ] T007 [US2] Add VPN config upload step to deploy/deployer/deploy.sh — after download step, check if `/opt/app/wg0.conf` exists locally. If yes, run upload via `docker run --rm --env-file "$APP_DIR/.env" -v "$APP_DIR:/opt/app" "$APP_IMAGE" node poc/lib/vpn-config.js upload /opt/app/wg0.conf`. The script should skip upload if S3 already has the config (avoid unnecessary writes).
-- [ ] T008 [US2] Handle upload errors gracefully in deploy/deployer/deploy.sh — log warning on failure, continue deployment.
+- [x] T007 [US2] Add VPN config upload step to deploy/deployer/deploy.sh — after download step, check if `/opt/app/wg0.conf` exists locally. If yes, run upload via `docker run --rm --env-file "$APP_DIR/.env" -v "$APP_DIR:/opt/app" "$APP_IMAGE" node poc/lib/vpn-config.js upload /opt/app/wg0.conf`. The script should skip upload if S3 already has the config (avoid unnecessary writes).
+- [x] T008 [US2] Handle upload errors gracefully in deploy/deployer/deploy.sh — log warning on failure, continue deployment.
 
 **Checkpoint**: Full round-trip works: operator places config → deployer uploads to S3 → server recreated → deployer downloads from S3 → VPN starts.
 
@@ -67,9 +67,9 @@
 
 **Purpose**: Documentation and validation
 
-- [ ] T009 [P] Update CLAUDE.md to document vpn-config.js and the VPN persistence flow
-- [ ] T010 [P] Update deploy/wireguard/wg0.conf.example comments to mention S3 persistence (config is now automatically persisted after first manual setup)
-- [ ] T011 Run full test suite (`npm test`) and verify all existing tests still pass
+- [x] T009 [P] Update CLAUDE.md to document vpn-config.js and the VPN persistence flow
+- [x] T010 [P] Update deploy/wireguard/wg0.conf.example comments to mention S3 persistence (config is now automatically persisted after first manual setup)
+- [x] T011 Run full test suite (`npm test`) and verify all existing tests still pass
 
 ---
 

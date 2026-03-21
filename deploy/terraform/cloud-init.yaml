@@ -29,6 +29,7 @@ write_files:
       DOMAIN=${domain}
       GITHUB_REPO=${github_repo}
       VPN_CHECK_HOST=${vpn_check_host}
+      VPN_CONFIG_KEY=wg0.conf
       SETUP_WINDOW_MINUTES=30
       NODE_ENV=production
 
