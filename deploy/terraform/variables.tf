@@ -45,6 +45,6 @@ variable "objsto_region" {
 }
 
 variable "github_repo" {
-  description = "GitHub repository in owner/name format for GHCR image (e.g., Wnt/greenhouse-solar-heater)"
+  description = "GitHub repository in owner/name format for GHCR image. Automatically lowercased for Docker compatibility."
   type        = string
 }

@@ -93,7 +93,7 @@ resource "upcloud_server" "monitor" {
     s3_access_key_id = upcloud_managed_object_storage_user_access_key.app.access_key_id
     s3_secret_key    = upcloud_managed_object_storage_user_access_key.app.secret_access_key
     s3_region        = var.objsto_region
-    github_repo      = var.github_repo
+    github_repo      = lower(var.github_repo)
     vpn_check_host   = ""
   })
 }
