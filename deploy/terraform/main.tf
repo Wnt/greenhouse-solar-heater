@@ -82,6 +82,7 @@ resource "upcloud_server" "monitor" {
     keys = [var.ssh_public_key]
   }
 
+  firewall = true
   metadata = true
 
   user_data = templatefile("${path.module}/cloud-init.yaml", {
