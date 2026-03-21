@@ -165,6 +165,8 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - UpCloud Managed Object Storage (existing, for app credentials) (003-deployer-container-config)
 - Node.js 20 LTS (CommonJS), POSIX shell (deployer) + `@aws-sdk/client-s3` (already in app image) (004-vpn-key-persistence)
 - UpCloud Managed Object Storage (S3-compatible, existing bucket) (004-vpn-key-persistence)
+- JavaScript ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + None new — uses existing auth endpoints and vendored libs (004-add-logout-feature)
+- N/A (sessions already managed by existing credential store) (004-add-logout-feature)
 
 ## Cloud Deployment Architecture
 
@@ -188,5 +190,6 @@ Environment variables for cloud deployment: `AUTH_ENABLED`, `RPID`, `ORIGIN`, `S
 
 ## Recent Changes
 - 004-vpn-key-persistence: Added Node.js 20 LTS (CommonJS), POSIX shell (deployer) + `@aws-sdk/client-s3` (already in app image)
+- 004-add-logout-feature: Added JavaScript ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + None new — uses existing auth endpoints and vendored libs
 - 003-deployer-container-config: Added Shell (deploy script), HCL (Terraform), YAML (cloud-init, compose), Dockerfile + `docker:cli` base image (Alpine + Docker CLI), Docker Compose v2, systemd
 - 002-containerize-upcloud-deploy: Added Node.js 20 LTS (CommonJS), Terraform >= 1.5 (HCL), Docker Compose v2 + @aws-sdk/client-s3 (new, for S3 persistence), Caddy 2-alpine, linuxserver/wireguard (optional)
