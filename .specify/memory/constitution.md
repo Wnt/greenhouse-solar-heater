@@ -1,16 +1,13 @@
 <!--
 Sync Impact Report
 ==================
-- Version change: 0.0.0 → 1.0.0 (initial ratification)
+- Version change: 1.0.0 → 1.1.0 (new principle added)
 - Added principles:
-  - I. Hardware Specification as Single Source of Truth
-  - II. Pure Logic / IO Separation
-  - III. Safe by Default, Explicit to Override (NON-NEGOTIABLE)
-  - IV. Proportional Test Coverage
-- Added sections:
-  - Platform Constraints
-  - Development Workflow
-  - Governance
+  - V. Token-Based Cloud Authentication
+- Modified principles: none
+- Removed principles: none
+- Added sections: none
+- Removed sections: none
 - Templates reviewed:
   - .specify/templates/plan-template.md — Constitution Check section
     references constitution generically ✅ (no updates needed)
@@ -18,6 +15,10 @@ Sync Impact Report
   - .specify/templates/tasks-template.md — no constitution refs ✅
   - .specify/templates/checklist-template.md — no constitution refs ✅
   - .specify/templates/commands/*.md — no files exist ✅
+- Code artifacts updated:
+  - deploy/terraform/main.tf — provider comment updated ✅
+  - deploy/terraform/terraform.tfvars.example — updated ✅
+  - CLAUDE.md — updated ✅
 - Follow-up TODOs: none
 -->
 
@@ -93,6 +94,26 @@ behavior MUST be updated. A change that modifies control logic
 without updating the corresponding unit and simulation tests is
 incomplete.
 
+### V. Token-Based Cloud Authentication
+
+All authentication towards UpCloud MUST use token-based auth via
+the `UPCLOUD_TOKEN` environment variable. Username/password
+authentication (`UPCLOUD_USERNAME`/`UPCLOUD_PASSWORD`) MUST NOT
+be used in any configuration, documentation, CI/CD pipeline, or
+code.
+
+This applies to:
+- Terraform provider configuration
+- CI/CD workflows and GitHub Actions secrets
+- CLI tools (`upctl`)
+- Any scripts or documentation that reference UpCloud API access
+
+API tokens are more secure than username/password credentials:
+they can be scoped, rotated independently, and work with
+two-factor authentication enabled on the account. New code or
+documentation referencing UpCloud authentication MUST use
+`UPCLOUD_TOKEN` exclusively.
+
 ## Platform Constraints
 
 - **Shelly device scripts**: ES5-only JavaScript. No `const`/`let`,
@@ -134,4 +155,4 @@ code reviews MUST verify compliance with these principles.
 - **Runtime guidance**: `CLAUDE.md` provides operational development
   guidance and MUST remain consistent with this constitution.
 
-**Version**: 1.0.0 | **Ratified**: 2025-07-20 | **Last Amended**: 2025-07-20
+**Version**: 1.1.0 | **Ratified**: 2025-07-20 | **Last Amended**: 2026-03-21

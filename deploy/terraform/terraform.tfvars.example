@@ -22,9 +22,11 @@ session_secret = "REPLACE_ME"
 # Enable WireGuard VPN (default: false — enable when ready for on-site device access)
 # enable_vpn = false
 
-# Required environment variables (not in tfvars for security):
-#   export UPCLOUD_USERNAME="your-username"
-#   export UPCLOUD_PASSWORD="your-password"
+# Required environment variable (not in tfvars for security):
+#   export UPCLOUD_TOKEN="your-api-token"
+#
+# Create an API token in UpCloud Control Panel > Account > API Tokens.
+# See: https://upcloud.com/docs/guides/managing-api-tokens/
 #
 # After `terraform apply`, note the server_ip output and create
 # an A record in your DNS pointing your domain to that IP.

@@ -24,8 +24,7 @@ cd deploy/terraform
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars with your values
 
-export UPCLOUD_USERNAME="your-username"
-export UPCLOUD_PASSWORD="your-password"
+export UPCLOUD_TOKEN="your-api-token"
 
 terraform init
 terraform plan

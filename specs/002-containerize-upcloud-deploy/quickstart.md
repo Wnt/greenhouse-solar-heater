@@ -23,8 +23,7 @@ cp terraform.tfvars.example terraform.tfvars
 
 Set UpCloud API credentials:
 ```bash
-export UPCLOUD_USERNAME="your-username"
-export UPCLOUD_PASSWORD="your-password"
+export UPCLOUD_TOKEN="your-api-token"
 ```
 
 ## Step 2: Provision Infrastructure
