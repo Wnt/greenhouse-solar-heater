@@ -2,7 +2,7 @@
 ssh_public_key = "ssh-ed25519 AAAA..."
 
 # Allow SSH from this IP address (optional — leave commented out to disable SSH access)
-# ssh_allow_ip = "88.192.35.229"
+# ssh_allow_ip = "your.ip.address.here"
 
 # Domain name for the monitoring UI
 domain = "greenhouse.madekivi.fi"
