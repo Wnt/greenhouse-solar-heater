@@ -1,10 +1,12 @@
 <!--
 Sync Impact Report
 ==================
-- Version change: 1.0.0 → 1.1.0 (new principle added)
+- Version change: 1.1.0 → 1.2.0 (new principle added)
 - Added principles:
-  - V. Token-Based Cloud Authentication
-- Modified principles: none
+  - VI. Durable Data Persistence
+- Modified principles:
+  - VI. Durable Data Persistence: broadened from PoC-specific to
+    project-wide scope (v1.2.0 → v1.2.1)
 - Removed principles: none
 - Added sections: none
 - Removed sections: none
@@ -15,10 +17,6 @@ Sync Impact Report
   - .specify/templates/tasks-template.md — no constitution refs ✅
   - .specify/templates/checklist-template.md — no constitution refs ✅
   - .specify/templates/commands/*.md — no files exist ✅
-- Code artifacts updated:
-  - deploy/terraform/main.tf — provider comment updated ✅
-  - deploy/terraform/terraform.tfvars.example — updated ✅
-  - CLAUDE.md — updated ✅
 - Follow-up TODOs: none
 -->
 
@@ -114,6 +112,36 @@ two-factor authentication enabled on the account. New code or
 documentation referencing UpCloud authentication MUST use
 `UPCLOUD_TOKEN` exclusively.
 
+### VI. Durable Data Persistence
+
+All application data MUST survive server restarts and container
+recreation. No data may be stored solely in container-local
+filesystems, in-memory stores, or Docker volumes that are
+destroyed on redeployment.
+
+Data MUST be persisted to an external durable store such as:
+- **Object storage** (UpCloud Managed Object Storage / S3-compatible)
+- **External database** (if introduced in the future)
+
+This applies to all services and infrastructure created in this
+project, including but not limited to:
+- Authentication credentials (passkeys, sessions)
+- Sensor readings and time-series data
+- Configuration and user preferences
+- Any operational state an application accumulates over time
+
+The rationale: the deployment architecture uses a stateless
+deployer that recreates containers via `docker compose up -d`.
+Any data written only to the container filesystem is lost on
+every deploy cycle. Treating containers as ephemeral and storing
+all state externally is mandatory for operational reliability.
+
+New features that produce or consume persistent data MUST use
+an external persistence mechanism (e.g., the S3 storage adapter
+in `poc/lib/s3-storage.js`). Local filesystem fallback is
+acceptable only for development/testing — production deployments
+MUST use external storage.
+
 ## Platform Constraints
 
 - **Shelly device scripts**: ES5-only JavaScript. No `const`/`let`,
@@ -155,4 +183,4 @@ code reviews MUST verify compliance with these principles.
 - **Runtime guidance**: `CLAUDE.md` provides operational development
   guidance and MUST remain consistent with this constitution.
 
-**Version**: 1.1.0 | **Ratified**: 2025-07-20 | **Last Amended**: 2026-03-21
+**Version**: 1.2.1 | **Ratified**: 2025-07-20 | **Last Amended**: 2026-03-21
