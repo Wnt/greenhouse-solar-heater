@@ -158,6 +158,8 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - JSON file for passkey credentials and sessions (single-user, no database) (001-deploy-web-ui-cloud)
 - Node.js 20 LTS (CommonJS), Terraform >= 1.5 (HCL), Docker Compose v2 + @aws-sdk/client-s3 (new, for S3 persistence), Caddy 2-alpine, containrrr/watchtower, linuxserver/wireguard (optional) (002-containerize-upcloud-deploy)
 - UpCloud Managed Object Storage (S3-compatible, €5/month, 250GB min) (002-containerize-upcloud-deploy)
+- Shell (deploy script), HCL (Terraform), YAML (cloud-init, compose), Dockerfile + `docker:cli` base image (Alpine + Docker CLI), Docker Compose v2, systemd (003-deployer-container-config)
+- UpCloud Managed Object Storage (existing, for app credentials) (003-deployer-container-config)
 
 ## Cloud Deployment Architecture
 
@@ -178,5 +180,6 @@ Internet → Caddy (:443, TLS) → Node.js app (:3000) → S3 Object Storage (cr
 Environment variables for cloud deployment: `AUTH_ENABLED`, `RPID`, `ORIGIN`, `SESSION_SECRET`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `VPN_CHECK_HOST`, `SETUP_WINDOW_MINUTES`.
 
 ## Recent Changes
+- 003-deployer-container-config: Added Shell (deploy script), HCL (Terraform), YAML (cloud-init, compose), Dockerfile + `docker:cli` base image (Alpine + Docker CLI), Docker Compose v2, systemd
 - 002-containerize-upcloud-deploy: Added Node.js 20 LTS (CommonJS), Terraform >= 1.5 (HCL), Docker Compose v2 + @aws-sdk/client-s3 (new, for S3 persistence), Caddy 2-alpine, containrrr/watchtower, linuxserver/wireguard (optional)
 - 001-deploy-web-ui-cloud: Cloud deployment with Docker, Terraform (UpCloud), WireGuard VPN, WebAuthn passkey auth, GitHub Actions CD, structured logging
