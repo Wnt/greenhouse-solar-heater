@@ -4,7 +4,9 @@ Sync Impact Report
 - Version change: 1.1.0 → 1.2.0 (new principle added)
 - Added principles:
   - VI. Durable Data Persistence
-- Modified principles: none
+- Modified principles:
+  - VI. Durable Data Persistence: broadened from PoC-specific to
+    project-wide scope (v1.2.0 → v1.2.1)
 - Removed principles: none
 - Added sections: none
 - Removed sections: none
@@ -112,21 +114,21 @@ documentation referencing UpCloud authentication MUST use
 
 ### VI. Durable Data Persistence
 
-All application data produced by the Shelly monitor PoC MUST
-survive server restarts and container recreation. No data may be
-stored solely in container-local filesystems, in-memory stores,
-or Docker volumes that are destroyed on redeployment.
+All application data MUST survive server restarts and container
+recreation. No data may be stored solely in container-local
+filesystems, in-memory stores, or Docker volumes that are
+destroyed on redeployment.
 
 Data MUST be persisted to an external durable store such as:
 - **Object storage** (UpCloud Managed Object Storage / S3-compatible)
 - **External database** (if introduced in the future)
 
-This applies to all categories of PoC data, including but not
-limited to:
+This applies to all services and infrastructure created in this
+project, including but not limited to:
 - Authentication credentials (passkeys, sessions)
 - Sensor readings and time-series data
 - Configuration and user preferences
-- Any operational state the application accumulates over time
+- Any operational state an application accumulates over time
 
 The rationale: the deployment architecture uses a stateless
 deployer that recreates containers via `docker compose up -d`.
@@ -135,10 +137,10 @@ every deploy cycle. Treating containers as ephemeral and storing
 all state externally is mandatory for operational reliability.
 
 New features that produce or consume persistent data MUST use
-the established S3 storage adapter (`poc/lib/s3-storage.js`) or
-an equivalent external persistence mechanism. Local filesystem
-fallback is acceptable only for development/testing — production
-deployments MUST use external storage.
+an external persistence mechanism (e.g., the S3 storage adapter
+in `poc/lib/s3-storage.js`). Local filesystem fallback is
+acceptable only for development/testing — production deployments
+MUST use external storage.
 
 ## Platform Constraints
 
@@ -181,4 +183,4 @@ code reviews MUST verify compliance with these principles.
 - **Runtime guidance**: `CLAUDE.md` provides operational development
   guidance and MUST remain consistent with this constitution.
 
-**Version**: 1.2.0 | **Ratified**: 2025-07-20 | **Last Amended**: 2026-03-21
+**Version**: 1.2.1 | **Ratified**: 2025-07-20 | **Last Amended**: 2026-03-21
