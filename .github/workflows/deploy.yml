@@ -82,6 +82,8 @@ jobs:
           context: deploy/deployer
           file: deploy/deployer/Dockerfile
           push: true
+          build-args: |
+            GITHUB_REPO=${{ github.repository }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest

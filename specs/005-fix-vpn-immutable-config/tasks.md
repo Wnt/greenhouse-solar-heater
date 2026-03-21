@@ -17,8 +17,8 @@
 
 **Purpose**: Create the new config file and update the deployer image to include it
 
-- [ ] T001 Create mutable service config file at `deploy/deployer/config.env` with all non-secret environment variables (PORT, AUTH_ENABLED, RPID, ORIGIN, DOMAIN, GITHUB_REPO, VPN_CHECK_HOST, VPN_CONFIG_KEY, SETUP_WINDOW_MINUTES, NODE_ENV, COMPOSE_PROFILES) using placeholder values for domain/repo
-- [ ] T002 Update deployer image to include config.env by adding `COPY config.env /config/config.env` to `deploy/deployer/Dockerfile`
+- [x] T001 Create mutable service config file at `deploy/deployer/config.env` with all non-secret environment variables (PORT, AUTH_ENABLED, RPID, ORIGIN, DOMAIN, GITHUB_REPO, VPN_CHECK_HOST, VPN_CONFIG_KEY, SETUP_WINDOW_MINUTES, NODE_ENV, COMPOSE_PROFILES) using placeholder values for domain/repo
+- [x] T002 Update deployer image to include config.env by adding `COPY config.env /config/config.env` to `deploy/deployer/Dockerfile`
 
 ---
 
@@ -28,7 +28,7 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T003 Add env merge step to `deploy/deployer/deploy.sh`: copy `config.env` from image to host, then merge `.env.secrets` + `config.env` → `.env` (secrets win on duplicate keys). Must use POSIX shell (Alpine). Must handle legacy fallback: if `.env.secrets` does not exist but `.env` does, skip merge and use existing `.env` as-is.
+- [x] T003 Add env merge step to `deploy/deployer/deploy.sh`: copy `config.env` from image to host, then merge `.env.secrets` + `config.env` → `.env` (secrets win on duplicate keys). Must use POSIX shell (Alpine). Must handle legacy fallback: if `.env.secrets` does not exist but `.env` does, skip merge and use existing `.env` as-is.
 
 **Checkpoint**: Deployer can now merge two config sources into a single `.env`. Legacy servers continue working unchanged.
 
@@ -42,9 +42,9 @@
 
 ### Implementation for User Story 1
 
-- [ ] T004 [P] [US1] Update `deploy/terraform/cloud-init.yaml`: change file path from `/opt/app/.env` to `/opt/app/.env.secrets`, remove all non-secret variables (PORT, AUTH_ENABLED, RPID, ORIGIN, DOMAIN, GITHUB_REPO, VPN_CHECK_HOST, VPN_CONFIG_KEY, SETUP_WINDOW_MINUTES, NODE_ENV), keep only SESSION_SECRET, S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_REGION
-- [ ] T005 [P] [US1] Update `deploy/terraform/main.tf` templatefile call: remove `domain`, `github_repo`, `vpn_check_host` from template variables passed to cloud-init.yaml, keep only secret-related variables (session_secret, s3_endpoint, s3_bucket, s3_access_key_id, s3_secret_key, s3_region)
-- [ ] T006 [US1] Verify terraform validates: run `terraform validate` in `deploy/terraform/` to confirm the HCL is syntactically correct after the template variable removal
+- [x] T004 [P] [US1] Update `deploy/terraform/cloud-init.yaml`: change file path from `/opt/app/.env` to `/opt/app/.env.secrets`, remove all non-secret variables (PORT, AUTH_ENABLED, RPID, ORIGIN, DOMAIN, GITHUB_REPO, VPN_CHECK_HOST, VPN_CONFIG_KEY, SETUP_WINDOW_MINUTES, NODE_ENV), keep only SESSION_SECRET, S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_REGION
+- [x] T005 [P] [US1] Update `deploy/terraform/main.tf` templatefile call: remove `domain`, `github_repo`, `vpn_check_host` from template variables passed to cloud-init.yaml, keep only secret-related variables (session_secret, s3_endpoint, s3_bucket, s3_access_key_id, s3_secret_key, s3_region)
+- [x] T006 [US1] Verify terraform validates: run `terraform validate` in `deploy/terraform/` to confirm the HCL is syntactically correct after the template variable removal
 
 **Checkpoint**: Cloud-init now writes only secrets. `enable_vpn` changes cannot trigger server recreation. VPN toggle works: firewall via Terraform, container via `COMPOSE_PROFILES` in `deploy/deployer/config.env`.
 
@@ -58,8 +58,8 @@
 
 ### Implementation for User Story 2
 
-- [ ] T007 [US2] Review `deploy/deployer/config.env` and add inline comments documenting the purpose of each variable and how to add new ones (operator guidance for future extensibility)
-- [ ] T008 [US2] Update GitHub Actions CD workflow (`.github/workflows/deploy.yml`) if needed: ensure the deployer image build includes `config.env`. If `GITHUB_REPO` should be injected at build time via Docker build arg rather than hardcoded, add `ARG GITHUB_REPO` to `deploy/deployer/Dockerfile` and pass it from the workflow
+- [x] T007 [US2] Review `deploy/deployer/config.env` and add inline comments documenting the purpose of each variable and how to add new ones (operator guidance for future extensibility)
+- [x] T008 [US2] Update GitHub Actions CD workflow (`.github/workflows/deploy.yml`) if needed: ensure the deployer image build includes `config.env`. If `GITHUB_REPO` should be injected at build time via Docker build arg rather than hardcoded, add `ARG GITHUB_REPO` to `deploy/deployer/Dockerfile` and pass it from the workflow
 
 **Checkpoint**: Any future service-level config change can be made by editing `deploy/deployer/config.env` and pushing — no cloud-init or Terraform server changes needed.
 
@@ -73,9 +73,9 @@
 
 ### Implementation for User Story 3
 
-- [ ] T009 [US3] Audit `deploy/deployer/config.env` to confirm it contains zero secret values (no SESSION_SECRET, no S3_ACCESS_KEY_ID, no S3_SECRET_ACCESS_KEY). Add a comment header warning not to add secrets to this file.
-- [ ] T010 [US3] Verify `deploy/terraform/cloud-init.yaml` preserves `permissions: "0600"` on the `.env.secrets` file and that the file ownership is correct (deploy user, not root)
-- [ ] T011 [US3] Verify the merge logic in `deploy/deployer/deploy.sh` does not log secret values — ensure the merge step does not echo `.env.secrets` contents to stdout
+- [x] T009 [US3] Audit `deploy/deployer/config.env` to confirm it contains zero secret values (no SESSION_SECRET, no S3_ACCESS_KEY_ID, no S3_SECRET_ACCESS_KEY). Add a comment header warning not to add secrets to this file.
+- [x] T010 [US3] Verify `deploy/terraform/cloud-init.yaml` preserves `permissions: "0600"` on the `.env.secrets` file and that the file ownership is correct (deploy user, not root)
+- [x] T011 [US3] Verify the merge logic in `deploy/deployer/deploy.sh` does not log secret values — ensure the merge step does not echo `.env.secrets` contents to stdout
 
 **Checkpoint**: Security posture is equivalent or better than the original single `.env` approach.
 
@@ -85,9 +85,9 @@
 
 **Purpose**: Documentation updates and final validation
 
-- [ ] T012 Update `CLAUDE.md` to document the new config architecture: `.env.secrets` (cloud-init, secrets only), `config.env` (deployer image, mutable service config), `.env` (deployer merge output, consumed by Docker Compose). Update the File Relationships and Cloud Deployment Architecture sections.
-- [ ] T013 Update `specs/005-fix-vpn-immutable-config/quickstart.md` with actual domain and repo values once config.env is finalized
-- [ ] T014 Validate the full flow end-to-end: confirm `terraform plan` with `enable_vpn=true` shows zero server changes, only firewall rule changes
+- [x] T012 Update `CLAUDE.md` to document the new config architecture: `.env.secrets` (cloud-init, secrets only), `config.env` (deployer image, mutable service config), `.env` (deployer merge output, consumed by Docker Compose). Update the File Relationships and Cloud Deployment Architecture sections.
+- [x] T013 Update `specs/005-fix-vpn-immutable-config/quickstart.md` with actual domain and repo values once config.env is finalized
+- [x] T014 Validate the full flow end-to-end: confirm `terraform plan` with `enable_vpn=true` shows zero server changes, only firewall rule changes
 
 ---
 

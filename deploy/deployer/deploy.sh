@@ -20,26 +20,58 @@ log() {
 log "Copying config files to $APP_DIR"
 cp "$CONFIG_SRC/docker-compose.yml" "$APP_DIR/docker-compose.yml"
 cp "$CONFIG_SRC/Caddyfile" "$APP_DIR/Caddyfile"
+cp "$CONFIG_SRC/config.env" "$APP_DIR/config.env"
 
-# Step 2: Validate compose config
+# Step 2: Merge .env.secrets + config.env → .env
+# Secrets (cloud-init) win on duplicate keys. Legacy fallback: if .env.secrets
+# does not exist but .env does, skip merge to avoid breaking existing servers.
+SECRETS_FILE="$APP_DIR/.env.secrets"
+CONFIG_FILE="$APP_DIR/config.env"
+ENV_FILE="$APP_DIR/.env"
+
+if [ -f "$SECRETS_FILE" ]; then
+  log "Merging .env.secrets + config.env → .env"
+  # Start with config.env (mutable service config)
+  cp "$CONFIG_FILE" "$ENV_FILE.tmp"
+  # Overlay secrets: for each key in .env.secrets, replace or append in merged file
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Skip empty lines and comments
+    case "$line" in
+      ''|'#'*) continue ;;
+    esac
+    key="${line%%=*}"
+    # Remove existing key from merged file (if present) and append secret value
+    grep -v "^${key}=" "$ENV_FILE.tmp" > "$ENV_FILE.tmp2" || true
+    mv "$ENV_FILE.tmp2" "$ENV_FILE.tmp"
+    echo "$line" >> "$ENV_FILE.tmp"
+  done < "$SECRETS_FILE"
+  mv "$ENV_FILE.tmp" "$ENV_FILE"
+  chmod 0600 "$ENV_FILE"
+elif [ -f "$ENV_FILE" ]; then
+  log "No .env.secrets found — using existing .env (legacy mode)"
+else
+  log "WARNING: No .env.secrets or .env found — services may fail to start"
+fi
+
+# Step 3: Validate compose config
 log "Validating docker-compose.yml"
 if ! docker compose -f "$COMPOSE_FILE" config --quiet 2>/dev/null; then
   log "ERROR: Invalid docker-compose.yml — aborting. Existing services unaffected."
   exit 1
 fi
 
-# Step 3: Pull service images
+# Step 4: Pull service images
 log "Pulling service images"
 if ! docker compose -f "$COMPOSE_FILE" pull --quiet 2>/dev/null; then
   log "WARNING: Some images failed to pull — continuing with available images"
 fi
 
-# Step 4: Resolve app image name for one-shot S3 operations
+# Step 5: Resolve app image name for one-shot S3 operations
 APP_IMAGE=$(docker compose -f "$COMPOSE_FILE" config --images 2>/dev/null | head -1)
 if [ -z "$APP_IMAGE" ]; then
   log "WARNING: Could not determine app image — skipping VPN config sync"
 else
-  # Step 5: Download VPN config from S3 (if available)
+  # Step 6: Download VPN config from S3 (if available)
   log "Checking S3 for VPN config"
   if ! docker run --rm --env-file "$APP_DIR/.env" \
     -v "$APP_DIR:/opt/app" \
@@ -48,7 +80,7 @@ else
     log "WARNING: VPN config download failed — continuing without VPN config"
   fi
 
-  # Step 6: Upload VPN config to S3 if local exists but S3 doesn't (bootstrap)
+  # Step 7: Upload VPN config to S3 if local exists but S3 doesn't (bootstrap)
   if [ -f "$VPN_CONFIG" ]; then
     log "Local VPN config found — ensuring S3 backup exists"
     if ! docker run --rm --env-file "$APP_DIR/.env" \
@@ -60,7 +92,7 @@ else
   fi
 fi
 
-# Step 7: Apply the service stack
+# Step 8: Apply the service stack
 log "Applying service stack"
 docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
 
