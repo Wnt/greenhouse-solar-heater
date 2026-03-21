@@ -16,6 +16,7 @@ const os = require('os');
 const createLogger = require('./lib/logger');
 const webpush = require('web-push');
 const pushStorage = require('./lib/push-storage');
+const valvePoller = require('./lib/valve-poller');
 
 const log = createLogger('server');
 const pushLog = createLogger('push');
@@ -351,7 +352,62 @@ function printBanner(port, networkIp) {
   console.log('');
 }
 
+// ── Valve poller + push notification delivery ──
+
+function sendValveNotification(change) {
+  if (!vapidReady) return;
+
+  var valveLabel = change.valve.toUpperCase();
+  var title = 'Valve ' + valveLabel + ' ' + change.state;
+  var body = valveLabel + ' changed to ' + change.state + ' (' + change.mode + ' mode)';
+  var payload = JSON.stringify({
+    title: title,
+    body: body,
+    tag: 'valve-change',
+    data: change,
+  });
+
+  pushStorage.loadSubscriptions(function (err, subs) {
+    if (err) {
+      pushLog.error('failed to load subscriptions', { error: err.message });
+      return;
+    }
+    if (subs.length === 0) return;
+
+    pushLog.info('sending notifications', { valve: change.valve, state: change.state, subscribers: subs.length });
+
+    subs.forEach(function (sub) {
+      webpush.sendNotification(sub, payload).catch(function (sendErr) {
+        if (sendErr.statusCode === 404 || sendErr.statusCode === 410) {
+          pushLog.info('removing stale subscription', { endpoint: sub.endpoint, status: sendErr.statusCode });
+          pushStorage.removeSubscription(sub.endpoint, function () {});
+        } else {
+          pushLog.error('push delivery failed', { endpoint: sub.endpoint, status: sendErr.statusCode, error: sendErr.message });
+        }
+      });
+    });
+  });
+}
+
+function startValvePoller() {
+  var started = valvePoller.start(
+    function onChange(change) {
+      pushLog.info('valve state changed', change);
+      sendValveNotification(change);
+    },
+    function onError(err) {
+      pushLog.warn('valve poll error', { error: err.message });
+    }
+  );
+  if (started) {
+    pushLog.info('valve poller started', { host: process.env.CONTROLLER_IP });
+  } else {
+    pushLog.info('valve poller not started (CONTROLLER_IP not set)');
+  }
+}
+
 server.listen(PORT, '0.0.0.0', function () {
   printBanner(PORT, getNetworkAddress());
   log.info('server started', { port: PORT, auth: AUTH_ENABLED });
+  startValvePoller();
 });
