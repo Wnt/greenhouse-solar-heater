@@ -34,7 +34,8 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `poc/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
 - `deploy/` → cloud deployment infrastructure
 - `deploy/terraform/` → UpCloud server, firewall rules, Managed Object Storage (Terraform)
-- `deploy/docker/` → Dockerfile, docker-compose.yml, Caddyfile
+- `deploy/docker/` → App Dockerfile only
+- `deploy/deployer/` → Deployer image: Dockerfile, deploy.sh, docker-compose.yml, Caddyfile
 - `deploy/wireguard/` → WireGuard VPN server config template
 - `tools/shelly-lint/` → standalone Shelly platform conformance linter (CLI)
 - `playground/` → interactive browser-based simulators (thermal, hydraulic)
@@ -149,7 +150,7 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 ## CI / GitHub Actions
 
 - `.github/workflows/ci.yml` — runs the full test suite (unit, simulation, auth, e2e) on every push. Triggers on `push` only (not `pull_request`) so tests run exactly once — opening a PR from an already-pushed branch does not re-trigger.
-- `.github/workflows/deploy.yml` — CD pipeline: test → build Docker image → push to GHCR. Watchtower on the server auto-pulls new images. Triggers on push to main/master.
+- `.github/workflows/deploy.yml` — CD pipeline: test → build app + deployer images → push to GHCR. Systemd timer on the server pulls deployer, which applies config and updates services. Triggers on push to main/master.
 - `.github/workflows/deploy-pages.yml` — deploys playground to GitHub Pages on push to main/master
 - `.github/workflows/lint-shelly.yml` — runs Shelly linter on push/PR when scripts or linter files change
 
@@ -168,13 +169,14 @@ Internet → Caddy (:443, TLS) → Node.js app (:3000) → S3 Object Storage (cr
                                                     → WireGuard VPN (optional) → Shelly devices
 ```
 
-- **Infrastructure**: UpCloud 1xCPU-2GB server (fi-hel1) + Managed Object Storage (europe-1), provisioned via Terraform
-- **Containers**: Docker Compose with `app` (Node.js) + `caddy` (reverse proxy, auto TLS) + `watchtower` (auto-deploy) + optional `wireguard` (VPN)
+- **Infrastructure**: UpCloud DEV-1xCPU-1GB-10GB server (fi-hel1) + Managed Object Storage (europe-1), provisioned via Terraform
+- **Deployer**: Config lives in a deployer container image (`deploy/deployer/`), not cloud-init. Systemd timer pulls and runs the deployer every 5 minutes.
+- **Containers**: Docker Compose with `app` (Node.js) + `caddy` (reverse proxy, auto TLS) + optional `wireguard` (VPN via profiles)
 - **Container hardening**: All containers run with read-only root filesystems and as non-root users (except wireguard which needs NET_ADMIN)
 - **Persistence**: UpCloud Managed Object Storage (S3-compatible, €5/month) — no Docker volumes for app data
-- **VPN**: WireGuard container (disabled by default, controlled by `enable_vpn` Terraform variable)
+- **VPN**: WireGuard container (disabled by default, enabled via Compose profiles + `enable_vpn` Terraform firewall rule)
 - **Auth**: WebAuthn passkeys via @simplewebauthn, HMAC-signed session cookies (30-day expiry)
-- **CD**: GitHub Actions → GHCR → Watchtower auto-pulls new images (no SSH needed)
+- **CD**: GitHub Actions → GHCR (app + deployer images) → systemd timer pulls deployer → deployer runs `docker compose up -d`
 - **No SSH exposed**: Firewall blocks port 22. Emergency access via UpCloud web console.
 
 Environment variables for cloud deployment: `AUTH_ENABLED`, `RPID`, `ORIGIN`, `SESSION_SECRET`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `VPN_CHECK_HOST`, `SETUP_WINDOW_MINUTES`.

@@ -85,16 +85,15 @@ resource "upcloud_server" "monitor" {
   metadata = true
 
   user_data = templatefile("${path.module}/cloud-init.yaml", {
-    domain            = var.domain
-    session_secret    = var.session_secret
-    s3_endpoint       = "https://${upcloud_managed_object_storage.credentials.id}.upcloudobjects.com"
-    s3_bucket         = upcloud_managed_object_storage_bucket.credentials.name
-    s3_access_key_id  = upcloud_managed_object_storage_user_access_key.app.access_key_id
-    s3_secret_key     = upcloud_managed_object_storage_user_access_key.app.secret_access_key
-    s3_region         = var.objsto_region
-    github_repo       = var.github_repo
-    vpn_check_host    = var.enable_vpn ? "192.168.1.86:80" : ""
-    enable_vpn        = var.enable_vpn
+    domain           = var.domain
+    session_secret   = var.session_secret
+    s3_endpoint      = "https://${upcloud_managed_object_storage.credentials.id}.upcloudobjects.com"
+    s3_bucket        = upcloud_managed_object_storage_bucket.credentials.name
+    s3_access_key_id = upcloud_managed_object_storage_user_access_key.app.access_key_id
+    s3_secret_key    = upcloud_managed_object_storage_user_access_key.app.secret_access_key
+    s3_region        = var.objsto_region
+    github_repo      = var.github_repo
+    vpn_check_host   = ""
   })
 }
 

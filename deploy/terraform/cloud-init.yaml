@@ -1,7 +1,7 @@
 #cloud-config
-# Bootstrap Docker and deploy containers on Ubuntu 24.04 LTS
-# No WireGuard on host — VPN runs as a container when enabled.
-# No SSH exposed — management via UpCloud web console + Watchtower auto-deploy.
+# Minimal bootstrap: install Docker + systemd deployer timer.
+# All service config lives in the deployer image, NOT in cloud-init.
+# No SSH exposed — management via UpCloud web console.
 
 package_update: true
 package_upgrade: true
@@ -11,110 +11,8 @@ packages:
   - jq
 
 write_files:
-  - path: /opt/app/docker-compose.yml
-    permissions: "0644"
-    content: |
-      services:
-        app:
-          image: ghcr.io/${github_repo}:latest
-          restart: unless-stopped
-          read_only: true
-          user: "1000:1000"
-          env_file: .env
-          tmpfs:
-            - /tmp:noexec,nosuid,size=64m
-          healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-            interval: 30s
-            timeout: 5s
-            start_period: 10s
-            retries: 3
-          labels:
-            - "com.centurylinklabs.watchtower.enable=true"
-          networks:
-            - internal
-
-        caddy:
-          image: caddy:2-alpine
-          restart: unless-stopped
-          read_only: true
-          ports:
-            - "80:80"
-            - "443:443"
-          environment:
-            - DOMAIN=$${DOMAIN}
-          volumes:
-            - ./Caddyfile:/etc/caddy/Caddyfile:ro
-            - caddy_data:/data
-            - caddy_config:/config
-          tmpfs:
-            - /tmp:noexec,nosuid,size=64m
-          depends_on:
-            app:
-              condition: service_healthy
-          labels:
-            - "com.centurylinklabs.watchtower.enable=false"
-          networks:
-            - internal
-
-        watchtower:
-          image: containrrr/watchtower
-          restart: unless-stopped
-          read_only: true
-          environment:
-            - WATCHTOWER_CLEANUP=true
-            - WATCHTOWER_POLL_INTERVAL=300
-            - WATCHTOWER_LABEL_ENABLE=true
-          volumes:
-            - /var/run/docker.sock:/var/run/docker.sock:ro
-          tmpfs:
-            - /tmp:noexec,nosuid,size=64m
-          labels:
-            - "com.centurylinklabs.watchtower.enable=false"
-          networks:
-            - internal
-%{ if enable_vpn }
-        wireguard:
-          image: lscr.io/linuxserver/wireguard
-          restart: unless-stopped
-          read_only: true
-          cap_add:
-            - NET_ADMIN
-            - SYS_MODULE
-          environment:
-            - PUID=1000
-            - PGID=1000
-          volumes:
-            - ./wg0.conf:/config/wg_confs/wg0.conf:ro
-          tmpfs:
-            - /tmp:noexec,nosuid,size=64m
-            - /run:size=16m
-          ports:
-            - "51820:51820/udp"
-          sysctls:
-            - net.ipv4.ip_forward=1
-          networks:
-            - internal
-%{ endif }
-      volumes:
-        caddy_data:
-        caddy_config:
-
-      networks:
-        internal:
-
-  - path: /opt/app/Caddyfile
-    permissions: "0644"
-    content: |
-      ${domain} {
-        reverse_proxy app:3000
-
-        log {
-          output stdout
-          format json
-        }
-      }
-
+  # Secrets — the only file that needs Terraform templatefile variables.
+  # Everything else comes from the deployer image.
   - path: /opt/app/.env
     permissions: "0600"
     content: |
@@ -129,9 +27,41 @@ write_files:
       S3_SECRET_ACCESS_KEY=${s3_secret_key}
       S3_REGION=${s3_region}
       DOMAIN=${domain}
+      GITHUB_REPO=${github_repo}
       VPN_CHECK_HOST=${vpn_check_host}
       SETUP_WINDOW_MINUTES=30
       NODE_ENV=production
+
+  # Deployer systemd service — one-shot: pull deployer image, run it
+  - path: /etc/systemd/system/deployer.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Pull and run deployer container
+      Requires=docker.service
+      After=docker.service
+
+      [Service]
+      Type=oneshot
+      User=deploy
+      Group=deploy
+      ExecStart=/bin/bash -c 'docker pull ghcr.io/${github_repo}-deployer:latest && docker run --rm -v /opt/app:/opt/app -v /var/run/docker.sock:/var/run/docker.sock ghcr.io/${github_repo}-deployer:latest'
+      TimeoutStartSec=300
+
+  # Deployer systemd timer — periodic trigger
+  - path: /etc/systemd/system/deployer.timer
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Periodically run deployer to check for updates
+
+      [Timer]
+      OnBootSec=30s
+      OnUnitActiveSec=5min
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
 
 runcmd:
   # Install Docker from official repo
@@ -147,8 +77,14 @@ runcmd:
   - chmod 700 /home/deploy/.ssh
   - chmod 600 /home/deploy/.ssh/authorized_keys
 
-  # Set ownership of app directory
+  # Application directory
+  - mkdir -p /opt/app
   - chown -R deploy:deploy /opt/app
 
-  # Pull and start containers
-  - cd /opt/app && docker compose pull && docker compose up -d
+  # Enable and start the deployer timer
+  - systemctl daemon-reload
+  - systemctl enable deployer.timer
+  - systemctl start deployer.timer
+
+  # Run deployer immediately for first boot
+  - systemctl start deployer.service
