@@ -53,23 +53,5 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to UpCloud
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            cd /opt/app
-            export IMAGE_TAG=${{ github.sha }}
-            export GITHUB_REPO=${{ github.repository }}
-            docker compose pull
-            docker compose up -d --wait
-            docker image prune -f
+  # No SSH deploy job — Watchtower on the server auto-pulls new :latest images from GHCR.
+  # See deploy/terraform/cloud-init.yaml for the Watchtower configuration.

@@ -4,13 +4,11 @@
  * See data-model.md for entity definitions.
  */
 
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const createLogger = require('../lib/logger');
+const storage = require('../lib/s3-storage');
 
 const log = createLogger('credentials');
-const CREDENTIALS_PATH = process.env.CREDENTIALS_PATH || path.join(__dirname, 'credentials.json');
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SETUP_WINDOW_MS = parseInt(process.env.SETUP_WINDOW_MINUTES || '30', 10) * 60 * 1000;
 
@@ -26,28 +24,45 @@ function emptyStore() {
 }
 
 function load() {
-  try {
-    var data = fs.readFileSync(CREDENTIALS_PATH, 'utf8');
-    store = JSON.parse(data);
-    log.info('credentials loaded', { credentials: store.credentials.length, sessions: store.sessions.length });
-  } catch (err) {
-    if (err.code === 'ENOENT') {
+  if (storage.isS3Enabled()) {
+    // S3 mode: start with empty store, load async in background
+    store = emptyStore();
+    log.info('S3 storage enabled, loading credentials');
+    storage.read(function (err, data) {
+      if (err) {
+        log.error('failed to load credentials from S3', { error: err.message });
+        return;
+      }
+      if (data) {
+        store = data;
+        log.info('credentials loaded from S3', { credentials: store.credentials.length, sessions: store.sessions.length });
+      } else {
+        log.info('no credentials in S3, starting fresh');
+      }
+    });
+  } else {
+    var data = storage.readSync();
+    if (data) {
+      store = data;
+      log.info('credentials loaded', { credentials: store.credentials.length, sessions: store.sessions.length });
+    } else {
       store = emptyStore();
       log.info('no credentials file, starting fresh');
-    } else {
-      log.error('failed to load credentials', { error: err.message });
-      store = emptyStore();
     }
   }
   return store;
 }
 
 function save() {
-  var dir = path.dirname(CREDENTIALS_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  if (storage.isS3Enabled()) {
+    storage.write(store, function (err) {
+      if (err) {
+        log.error('failed to save credentials to S3', { error: err.message });
+      }
+    });
+  } else {
+    storage.writeSync(store);
   }
-  fs.writeFileSync(CREDENTIALS_PATH, JSON.stringify(store, null, 2));
 }
 
 function getStore() {
