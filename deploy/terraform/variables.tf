@@ -1,6 +1,12 @@
 variable "ssh_public_key" {
-  description = "SSH public key for server access (required by UpCloud cloud-init templates, but SSH port is not exposed)"
+  description = "SSH public key for server access"
   type        = string
+}
+
+variable "ssh_allow_ip" {
+  description = "IP address allowed to SSH into the server (e.g., 88.192.35.229). Leave empty to disable SSH access."
+  type        = string
+  default     = ""
 }
 
 variable "domain" {

@@ -124,6 +124,21 @@ resource "upcloud_firewall_rules" "monitor" {
   }
 
   dynamic "firewall_rule" {
+    for_each = var.ssh_allow_ip != "" ? [1] : []
+    content {
+      action                    = "accept"
+      direction                 = "in"
+      family                    = "IPv4"
+      protocol                  = "tcp"
+      destination_port_start    = 22
+      destination_port_end      = 22
+      source_address_start      = var.ssh_allow_ip
+      source_address_end        = var.ssh_allow_ip
+      comment                   = "SSH (restricted to admin IP)"
+    }
+  }
+
+  dynamic "firewall_rule" {
     for_each = var.enable_vpn ? [1] : []
     content {
       action                 = "accept"
