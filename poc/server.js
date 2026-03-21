@@ -30,6 +30,7 @@ const MIME = {
   '.png': 'image/png',
   '.mjs': 'application/javascript',
   '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json',
 };
 
 function serveStatic(req, res) {
@@ -51,7 +52,10 @@ function serveStatic(req, res) {
       return;
     }
     var ext = path.extname(filePath);
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    var contentType = MIME[ext] || 'application/octet-stream';
+    // Serve manifest.json with proper PWA content type
+    if (urlPath === '/manifest.json') contentType = 'application/manifest+json';
+    res.writeHead(200, { 'Content-Type': contentType });
     res.end(data);
   });
 }
