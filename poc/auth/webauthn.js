@@ -79,7 +79,7 @@ async function handleRegisterOptions(req, res) {
       rpID: RPID,
       userName: user.name,
       userDisplayName: user.name,
-      userID: user.id,
+      userID: Uint8Array.from(Buffer.from(user.id, 'base64url')),
       attestationType: 'none',
       authenticatorSelection: {
         residentKey: 'preferred',

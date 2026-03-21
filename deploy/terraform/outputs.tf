@@ -10,7 +10,7 @@ output "domain" {
 
 output "s3_endpoint" {
   description = "S3-compatible endpoint URL for the credentials object storage"
-  value       = "https://${upcloud_managed_object_storage.credentials.id}.upcloudobjects.com"
+  value       = "https://${[for e in upcloud_managed_object_storage.credentials.endpoint : e.domain_name if e.type == "public"][0]}"
 }
 
 output "s3_bucket" {
