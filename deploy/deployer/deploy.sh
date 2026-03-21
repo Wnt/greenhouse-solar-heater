@@ -53,6 +53,16 @@ else
   log "WARNING: No .env.secrets or .env found — services may fail to start"
 fi
 
+# Step 2b: Ensure GITHUB_REPO is lowercase (Docker image refs require it)
+if grep -q '^GITHUB_REPO=' "$ENV_FILE" 2>/dev/null; then
+  REPO_VAL=$(grep '^GITHUB_REPO=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+  REPO_LC=$(echo "$REPO_VAL" | tr '[:upper:]' '[:lower:]')
+  if [ "$REPO_VAL" != "$REPO_LC" ]; then
+    log "Lowercasing GITHUB_REPO: $REPO_VAL → $REPO_LC"
+    sed -i "s|^GITHUB_REPO=.*|GITHUB_REPO=$REPO_LC|" "$ENV_FILE"
+  fi
+fi
+
 # Step 3: Validate compose config
 log "Validating docker-compose.yml"
 if ! docker compose -f "$COMPOSE_FILE" config --quiet 2>/dev/null; then
