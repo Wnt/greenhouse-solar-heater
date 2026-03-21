@@ -14,8 +14,12 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const createLogger = require('./lib/logger');
+const webpush = require('web-push');
+const pushStorage = require('./lib/push-storage');
+const valvePoller = require('./lib/valve-poller');
 
 const log = createLogger('server');
+const pushLog = createLogger('push');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
 const STATIC_DIR = __dirname;
 const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
@@ -30,6 +34,7 @@ const MIME = {
   '.png': 'image/png',
   '.mjs': 'application/javascript',
   '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json',
 };
 
 function serveStatic(req, res) {
@@ -51,7 +56,10 @@ function serveStatic(req, res) {
       return;
     }
     var ext = path.extname(filePath);
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    var contentType = MIME[ext] || 'application/octet-stream';
+    // Serve manifest.json with proper PWA content type
+    if (urlPath === '/manifest.json') contentType = 'application/manifest+json';
+    res.writeHead(200, { 'Content-Type': contentType });
     res.end(data);
   });
 }
@@ -141,6 +149,111 @@ function jsonResponse(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
+// ── Push notification setup ──
+
+var vapidReady = false;
+var vapidPublicKey = null;
+
+function initVapid() {
+  pushStorage.loadVapidKeys(function (err, keys) {
+    if (err) {
+      pushLog.error('failed to load VAPID keys', { error: err.message });
+      return;
+    }
+    if (keys) {
+      webpush.setVapidDetails(keys.subject, keys.publicKey, keys.privateKey);
+      vapidPublicKey = keys.publicKey;
+      vapidReady = true;
+      pushLog.info('VAPID keys loaded');
+      return;
+    }
+    // Generate new keys
+    var generated = webpush.generateVAPIDKeys();
+    var config = {
+      publicKey: generated.publicKey,
+      privateKey: generated.privateKey,
+      subject: process.env.VAPID_SUBJECT || 'mailto:noreply@localhost',
+    };
+    pushStorage.saveVapidKeys(config, function (saveErr) {
+      if (saveErr) {
+        pushLog.error('failed to save VAPID keys', { error: saveErr.message });
+        return;
+      }
+      webpush.setVapidDetails(config.subject, config.publicKey, config.privateKey);
+      vapidPublicKey = config.publicKey;
+      vapidReady = true;
+      pushLog.info('VAPID keys generated and saved');
+    });
+  });
+}
+
+initVapid();
+
+function handlePushApi(req, res, urlPath, body) {
+  if (urlPath === '/api/push/vapid-public-key' && req.method === 'GET') {
+    if (!vapidReady) {
+      jsonResponse(res, 503, { error: 'Push notifications not available' });
+      return;
+    }
+    jsonResponse(res, 200, { publicKey: vapidPublicKey });
+    return;
+  }
+
+  if (urlPath === '/api/push/subscribe' && req.method === 'POST') {
+    var sub;
+    try {
+      sub = JSON.parse(body);
+    } catch (e) {
+      jsonResponse(res, 400, { error: 'Invalid JSON' });
+      return;
+    }
+    if (!sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
+      jsonResponse(res, 400, { error: 'Invalid subscription: missing endpoint or keys' });
+      return;
+    }
+    pushStorage.addSubscription(sub, function (err, existing) {
+      if (err) {
+        pushLog.error('failed to save subscription', { error: err.message });
+        jsonResponse(res, 500, { error: 'Failed to save subscription' });
+        return;
+      }
+      pushLog.info('subscription saved', { endpoint: sub.endpoint, existing: existing });
+      jsonResponse(res, existing ? 200 : 201, { ok: true, existing: !!existing });
+    });
+    return;
+  }
+
+  if (urlPath === '/api/push/unsubscribe' && req.method === 'POST') {
+    var data;
+    try {
+      data = JSON.parse(body);
+    } catch (e) {
+      jsonResponse(res, 400, { error: 'Invalid JSON' });
+      return;
+    }
+    if (!data.endpoint) {
+      jsonResponse(res, 400, { error: 'Missing endpoint' });
+      return;
+    }
+    pushStorage.removeSubscription(data.endpoint, function (err, removed) {
+      if (err) {
+        pushLog.error('failed to remove subscription', { error: err.message });
+        jsonResponse(res, 500, { error: 'Failed to remove subscription' });
+        return;
+      }
+      if (!removed) {
+        jsonResponse(res, 404, { error: 'Subscription not found' });
+        return;
+      }
+      pushLog.info('subscription removed', { endpoint: data.endpoint });
+      jsonResponse(res, 200, { ok: true });
+    });
+    return;
+  }
+
+  jsonResponse(res, 404, { error: 'Not found' });
+}
+
 var server = http.createServer(function (req, res) {
   var urlPath = new URL(req.url, 'http://localhost').pathname;
 
@@ -180,7 +293,15 @@ var server = http.createServer(function (req, res) {
   }
 
   // Authenticated routes
-  if (req.url.startsWith('/api/rpc/')) {
+  if (urlPath.startsWith('/api/push/')) {
+    if (req.method === 'GET') {
+      handlePushApi(req, res, urlPath, '');
+    } else {
+      readBody(req, function (body) {
+        handlePushApi(req, res, urlPath, body);
+      });
+    }
+  } else if (req.url.startsWith('/api/rpc/')) {
     proxyRpc(req, res);
   } else {
     serveStatic(req, res);
@@ -231,7 +352,62 @@ function printBanner(port, networkIp) {
   console.log('');
 }
 
+// ── Valve poller + push notification delivery ──
+
+function sendValveNotification(change) {
+  if (!vapidReady) return;
+
+  var valveLabel = change.valve.toUpperCase();
+  var title = 'Valve ' + valveLabel + ' ' + change.state;
+  var body = valveLabel + ' changed to ' + change.state + ' (' + change.mode + ' mode)';
+  var payload = JSON.stringify({
+    title: title,
+    body: body,
+    tag: 'valve-change',
+    data: change,
+  });
+
+  pushStorage.loadSubscriptions(function (err, subs) {
+    if (err) {
+      pushLog.error('failed to load subscriptions', { error: err.message });
+      return;
+    }
+    if (subs.length === 0) return;
+
+    pushLog.info('sending notifications', { valve: change.valve, state: change.state, subscribers: subs.length });
+
+    subs.forEach(function (sub) {
+      webpush.sendNotification(sub, payload).catch(function (sendErr) {
+        if (sendErr.statusCode === 404 || sendErr.statusCode === 410) {
+          pushLog.info('removing stale subscription', { endpoint: sub.endpoint, status: sendErr.statusCode });
+          pushStorage.removeSubscription(sub.endpoint, function () {});
+        } else {
+          pushLog.error('push delivery failed', { endpoint: sub.endpoint, status: sendErr.statusCode, error: sendErr.message });
+        }
+      });
+    });
+  });
+}
+
+function startValvePoller() {
+  var started = valvePoller.start(
+    function onChange(change) {
+      pushLog.info('valve state changed', change);
+      sendValveNotification(change);
+    },
+    function onError(err) {
+      pushLog.warn('valve poll error', { error: err.message });
+    }
+  );
+  if (started) {
+    pushLog.info('valve poller started', { host: process.env.CONTROLLER_IP });
+  } else {
+    pushLog.info('valve poller not started (CONTROLLER_IP not set)');
+  }
+}
+
 server.listen(PORT, '0.0.0.0', function () {
   printBanner(PORT, getNetworkAddress());
   log.info('server started', { port: PORT, auth: AUTH_ENABLED });
+  startValvePoller();
 });

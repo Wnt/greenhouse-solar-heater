@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Shelly Monitor — PoC</title>
   <link rel="stylesheet" href="css/style.css">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0056b2">
   <link rel="icon" id="favicon" type="image/png">
 </head>
 <body>
@@ -31,6 +33,12 @@
         Device: <strong id="device-name">-</strong>
         &nbsp;|&nbsp; Last poll: <span id="last-poll">-</span>
       </span>
+    </div>
+
+    <!-- Notification toggle -->
+    <div id="push-section" class="push-toggle" style="display:none">
+      <button id="push-btn" class="push-btn">Subscribe to notifications</button>
+      <span id="push-status" class="push-status"></span>
     </div>
 
     <!-- Gauges -->
@@ -172,5 +180,14 @@
   </div>
 
   <script type="module" src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').catch(function (err) {
+          console.warn('SW registration failed:', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>
