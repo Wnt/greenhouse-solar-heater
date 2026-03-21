@@ -9,7 +9,7 @@ terraform {
 }
 
 provider "upcloud" {
-  # Credentials via UPCLOUD_USERNAME and UPCLOUD_PASSWORD env vars
+  # Credentials via UPCLOUD_TOKEN env var (token-based auth, see constitution V)
 }
 
 # ── Object Storage ──
