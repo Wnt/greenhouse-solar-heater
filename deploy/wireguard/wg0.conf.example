@@ -1,15 +1,16 @@
 # WireGuard server configuration for UpCloud server
 # See research.md R1 for architecture decisions
 #
-# After provisioning with Terraform, cloud-init generates keys at:
-#   /etc/wireguard/private.key
-#   /etc/wireguard/public.key
+# Initial setup:
+# 1. Generate keys: wg genkey | tee private.key | wg pubkey > public.key
+# 2. Copy this file to /opt/app/wg0.conf on the server
+# 3. Replace <SERVER_PRIVATE_KEY> with the generated private key
+# 4. Replace <UNIFI_PUBLIC_KEY> with the public key from UniFi VPN Client config
+# 5. Set COMPOSE_PROFILES=vpn in /opt/app/.env
+# 6. On the next deployer run, the config is automatically uploaded to S3
 #
-# Steps:
-# 1. Copy this file to /etc/wireguard/wg0.conf on the server
-# 2. Replace <SERVER_PRIVATE_KEY> with contents of /etc/wireguard/private.key
-# 3. Replace <UNIFI_PUBLIC_KEY> with the public key shown in UniFi VPN Client config
-# 4. systemctl enable --now wg-quick@wg0
+# After server recreation, the deployer restores wg0.conf from S3 automatically.
+# No manual key regeneration or UniFi reconfiguration needed.
 
 [Interface]
 # Cloud server is .1 on the tunnel subnet
