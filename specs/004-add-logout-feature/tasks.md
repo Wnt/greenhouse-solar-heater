@@ -23,10 +23,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T001 [P] [US1] Add logout button markup (hidden by default) to the header nav in poc/index.html
-- [ ] T002 [P] [US1] Add logout button styles matching existing nav link appearance in poc/css/style.css
-- [ ] T003 [US1] Add auth status check on app init and logout click handler in poc/js/app.js — on load, fetch GET /auth/status; if authenticated, show the logout button; on click, POST /auth/logout, then redirect to /login.html on success or show error message on failure
-- [ ] T004 [US1] Handle edge case: if session is already expired when logout is clicked, treat the response as success and redirect to /login.html in poc/js/app.js
+- [x] T001 [P] [US1] Add logout button markup (hidden by default) to the header nav in poc/index.html
+- [x] T002 [P] [US1] Add logout button styles matching existing nav link appearance in poc/css/style.css
+- [x] T003 [US1] Add auth status check on app init and logout click handler in poc/js/app.js — on load, fetch GET /auth/status; if authenticated, show the logout button; on click, POST /auth/logout, then redirect to /login.html on success or show error message on failure
+- [x] T004 [US1] Handle edge case: if session is already expired when logout is clicked, treat the response as success and redirect to /login.html in poc/js/app.js
 
 **Checkpoint**: At this point, User Story 1 should be fully functional — an authenticated user can log out via the header button.
 
@@ -40,7 +40,7 @@
 
 ### Implementation for User Story 2
 
-- [ ] T005 [US2] Ensure the auth status check in poc/js/app.js handles the 404 case (auth disabled) by keeping the logout button hidden — no additional action needed if T003 already treats non-200 as "auth disabled"
+- [x] T005 [US2] Ensure the auth status check in poc/js/app.js handles the 404 case (auth disabled) by keeping the logout button hidden — no additional action needed if T003 already treats non-200 as "auth disabled"
 
 **Checkpoint**: Both user stories work independently — button appears only when auth is enabled, and clicking it terminates the session.
 
@@ -50,8 +50,8 @@
 
 **Purpose**: Proportional test coverage for the logout feature.
 
-- [ ] T006 [P] Add unit test for the logout endpoint behavior (session removal, cookie clearing) in tests/auth.test.js
-- [ ] T007 [P] Add e2e Playwright test for the logout flow: verify logout button visibility when authenticated, click logout, verify redirect to login page, verify protected page access denied — create tests/e2e/logout.spec.js or extend tests/e2e/thermal-sim.spec.js
+- [x] T006 [P] Add unit test for the logout endpoint behavior (session removal, cookie clearing) in tests/auth.test.js
+- [x] T007 [P] Add e2e Playwright test for the logout flow: verify logout button visibility when authenticated, click logout, verify redirect to login page, verify protected page access denied — create tests/e2e/logout.spec.js
 
 **Checkpoint**: All tests pass. Feature is complete.
 
@@ -61,8 +61,8 @@
 
 **Purpose**: Final validation and cleanup.
 
-- [ ] T008 Verify existing tests still pass (npm run test:unit and npm run test:e2e)
-- [ ] T009 Run quickstart.md validation — start server in both auth and non-auth modes, verify logout behavior
+- [x] T008 Verify existing tests still pass (npm run test:unit and npm run test:e2e)
+- [x] T009 Run quickstart.md validation — start server in both auth and non-auth modes, verify logout behavior
 
 ---
 
