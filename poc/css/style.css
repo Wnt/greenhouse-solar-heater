@@ -402,3 +402,34 @@ a:hover { text-decoration: underline; }
   .gauge-grid { grid-template-columns: 1fr; }
   .page-header { flex-direction: column; align-items: flex-start; }
 }
+
+/* ── Push Notification Toggle ── */
+.push-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.push-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+.push-btn:hover { background: var(--border); }
+.push-btn.subscribed {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
+}
+.push-status {
+  font-size: 12px;
+  color: var(--text-muted);
+}

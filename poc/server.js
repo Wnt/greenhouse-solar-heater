@@ -14,8 +14,11 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const createLogger = require('./lib/logger');
+const webpush = require('web-push');
+const pushStorage = require('./lib/push-storage');
 
 const log = createLogger('server');
+const pushLog = createLogger('push');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
 const STATIC_DIR = __dirname;
 const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
@@ -145,6 +148,111 @@ function jsonResponse(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
+// ── Push notification setup ──
+
+var vapidReady = false;
+var vapidPublicKey = null;
+
+function initVapid() {
+  pushStorage.loadVapidKeys(function (err, keys) {
+    if (err) {
+      pushLog.error('failed to load VAPID keys', { error: err.message });
+      return;
+    }
+    if (keys) {
+      webpush.setVapidDetails(keys.subject, keys.publicKey, keys.privateKey);
+      vapidPublicKey = keys.publicKey;
+      vapidReady = true;
+      pushLog.info('VAPID keys loaded');
+      return;
+    }
+    // Generate new keys
+    var generated = webpush.generateVAPIDKeys();
+    var config = {
+      publicKey: generated.publicKey,
+      privateKey: generated.privateKey,
+      subject: process.env.VAPID_SUBJECT || 'mailto:noreply@localhost',
+    };
+    pushStorage.saveVapidKeys(config, function (saveErr) {
+      if (saveErr) {
+        pushLog.error('failed to save VAPID keys', { error: saveErr.message });
+        return;
+      }
+      webpush.setVapidDetails(config.subject, config.publicKey, config.privateKey);
+      vapidPublicKey = config.publicKey;
+      vapidReady = true;
+      pushLog.info('VAPID keys generated and saved');
+    });
+  });
+}
+
+initVapid();
+
+function handlePushApi(req, res, urlPath, body) {
+  if (urlPath === '/api/push/vapid-public-key' && req.method === 'GET') {
+    if (!vapidReady) {
+      jsonResponse(res, 503, { error: 'Push notifications not available' });
+      return;
+    }
+    jsonResponse(res, 200, { publicKey: vapidPublicKey });
+    return;
+  }
+
+  if (urlPath === '/api/push/subscribe' && req.method === 'POST') {
+    var sub;
+    try {
+      sub = JSON.parse(body);
+    } catch (e) {
+      jsonResponse(res, 400, { error: 'Invalid JSON' });
+      return;
+    }
+    if (!sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
+      jsonResponse(res, 400, { error: 'Invalid subscription: missing endpoint or keys' });
+      return;
+    }
+    pushStorage.addSubscription(sub, function (err, existing) {
+      if (err) {
+        pushLog.error('failed to save subscription', { error: err.message });
+        jsonResponse(res, 500, { error: 'Failed to save subscription' });
+        return;
+      }
+      pushLog.info('subscription saved', { endpoint: sub.endpoint, existing: existing });
+      jsonResponse(res, existing ? 200 : 201, { ok: true, existing: !!existing });
+    });
+    return;
+  }
+
+  if (urlPath === '/api/push/unsubscribe' && req.method === 'POST') {
+    var data;
+    try {
+      data = JSON.parse(body);
+    } catch (e) {
+      jsonResponse(res, 400, { error: 'Invalid JSON' });
+      return;
+    }
+    if (!data.endpoint) {
+      jsonResponse(res, 400, { error: 'Missing endpoint' });
+      return;
+    }
+    pushStorage.removeSubscription(data.endpoint, function (err, removed) {
+      if (err) {
+        pushLog.error('failed to remove subscription', { error: err.message });
+        jsonResponse(res, 500, { error: 'Failed to remove subscription' });
+        return;
+      }
+      if (!removed) {
+        jsonResponse(res, 404, { error: 'Subscription not found' });
+        return;
+      }
+      pushLog.info('subscription removed', { endpoint: data.endpoint });
+      jsonResponse(res, 200, { ok: true });
+    });
+    return;
+  }
+
+  jsonResponse(res, 404, { error: 'Not found' });
+}
+
 var server = http.createServer(function (req, res) {
   var urlPath = new URL(req.url, 'http://localhost').pathname;
 
@@ -184,7 +292,15 @@ var server = http.createServer(function (req, res) {
   }
 
   // Authenticated routes
-  if (req.url.startsWith('/api/rpc/')) {
+  if (urlPath.startsWith('/api/push/')) {
+    if (req.method === 'GET') {
+      handlePushApi(req, res, urlPath, '');
+    } else {
+      readBody(req, function (body) {
+        handlePushApi(req, res, urlPath, body);
+      });
+    }
+  } else if (req.url.startsWith('/api/rpc/')) {
     proxyRpc(req, res);
   } else {
     serveStatic(req, res);

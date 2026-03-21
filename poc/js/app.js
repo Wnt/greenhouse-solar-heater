@@ -5,6 +5,7 @@
 import { ShellyAPI } from './shelly-api.js';
 import { renderGauge, renderGaugeNoData } from './gauge.js';
 import { TimeSeriesStore, drawChart } from './chart.js';
+import * as push from './push.js';
 
 // ── Configuration ──
 const SENSOR_IDS = [100, 101];
@@ -89,6 +90,7 @@ export function init() {
   drawChart(elChart, store);
   updateFavicon(null, null);
   checkAuthStatus();
+  initPushUI();
 
   // Auto-connect if we have a saved IP
   if (elIpInput.value) {
@@ -121,6 +123,53 @@ async function logout() {
   } catch (e) {
     logEvent('Logout failed — network error', 'error');
   }
+}
+
+// ── Push notification UI ──
+
+function initPushUI() {
+  if (!push.isSupported()) return;
+  var section = document.getElementById('push-section');
+  var btn = document.getElementById('push-btn');
+  var status = document.getElementById('push-status');
+  if (!section || !btn) return;
+
+  section.style.display = 'flex';
+
+  function updateUI(subscribed) {
+    btn.textContent = subscribed ? 'Unsubscribe' : 'Subscribe to notifications';
+    btn.classList.toggle('subscribed', subscribed);
+    status.textContent = subscribed ? 'Notifications enabled' : '';
+  }
+
+  // Check initial state
+  push.getSubscriptionState().then(function (sub) {
+    updateUI(!!sub);
+  });
+
+  btn.addEventListener('click', async function () {
+    btn.disabled = true;
+    status.textContent = '';
+    try {
+      var sub = await push.getSubscriptionState();
+      if (sub) {
+        await push.unsubscribe();
+        updateUI(false);
+      } else {
+        var key = await push.getVapidKey();
+        await push.subscribe(key);
+        updateUI(true);
+      }
+    } catch (err) {
+      if (err.name === 'NotAllowedError' || (err.message && err.message.indexOf('permission') !== -1)) {
+        status.textContent = 'Permission denied — enable notifications in browser settings';
+      } else {
+        status.textContent = 'Error: ' + err.message;
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 function loadConfig() {
