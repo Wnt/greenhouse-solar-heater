@@ -17,7 +17,7 @@ variable "upcloud_zone" {
 variable "server_plan" {
   description = "UpCloud server plan (CPU-RAM)"
   type        = string
-  default     = "1xCPU-2GB"
+  default     = "DEV-1xCPU-1GB-10GB"
 }
 
 variable "enable_vpn" {

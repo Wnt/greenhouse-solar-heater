@@ -71,7 +71,7 @@ resource "upcloud_server" "monitor" {
 
   template {
     storage = "Ubuntu Server 24.04 LTS (Noble Numbat)"
-    size    = 25
+    size    = 10
   }
 
   network_interface {

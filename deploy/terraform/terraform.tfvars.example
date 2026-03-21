@@ -13,8 +13,8 @@ session_secret = "REPLACE_ME"
 # UpCloud zone (default: fi-hel1 = Helsinki)
 # upcloud_zone = "fi-hel1"
 
-# UpCloud server plan (default: 1xCPU-2GB, ~11-13 EUR/month)
-# server_plan = "1xCPU-2GB"
+# UpCloud server plan (default: DEV-1xCPU-1GB-10GB, €3/month, limit 2 per account)
+# server_plan = "DEV-1xCPU-1GB-10GB"
 
 # Object Storage region (default: europe-1)
 # objsto_region = "europe-1"

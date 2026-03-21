@@ -50,7 +50,7 @@ No SSH deploy secrets are needed. Only the GHCR token (provided automatically by
 | `github_repo` | Yes | — | GitHub repo in `owner/name` format |
 | `session_secret` | Yes | — | HMAC secret for cookies (`openssl rand -hex 32`) |
 | `upcloud_zone` | No | `fi-hel1` | UpCloud zone |
-| `server_plan` | No | `1xCPU-2GB` | Server plan (~€11-13/month) |
+| `server_plan` | No | `DEV-1xCPU-1GB-10GB` | Server plan (€3/month, limit 2/account) |
 | `objsto_region` | No | `europe-1` | Object Storage region (~€5/month) |
 | `enable_vpn` | No | `false` | Enable WireGuard VPN container |
 
