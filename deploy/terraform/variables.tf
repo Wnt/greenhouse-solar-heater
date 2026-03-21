@@ -4,7 +4,7 @@ variable "ssh_public_key" {
 }
 
 variable "ssh_allow_ip" {
-  description = "IP address allowed to SSH into the server (e.g., 88.192.35.229). Leave empty to disable SSH access."
+  description = "IP address allowed to SSH into the server. Leave empty to disable SSH access."
   type        = string
   default     = ""
 }
