@@ -403,6 +403,116 @@ a:hover { text-decoration: underline; }
   .page-header { flex-direction: column; align-items: flex-start; }
 }
 
+/* ── Invitation UI ── */
+.invite-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.invite-btn:hover { background: #004494; }
+
+.invite-modal {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.invite-modal[hidden] { display: none; }
+.invite-modal-backdrop {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+}
+.invite-modal-content {
+  position: relative;
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 32px;
+  max-width: 360px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.invite-modal-content h2 {
+  font-size: 20px;
+  color: var(--text-bright);
+  margin-bottom: 8px;
+}
+.invite-modal-content p {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+.invite-code {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: 8px;
+  color: var(--text-bright);
+  padding: 12px;
+  background: var(--bg-input);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.invite-qr {
+  display: block;
+  margin: 0 auto 12px;
+  max-width: 200px;
+  max-height: 200px;
+}
+.invite-timer {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.invite-timer.expiring { color: var(--red); }
+
+/* ── Invitation input on login page ── */
+.invite-link {
+  display: inline-block;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border: none;
+  background: none;
+  text-decoration: underline;
+}
+.invite-link:hover { color: var(--primary); }
+
+.invite-section {
+  display: none;
+  margin-top: 16px;
+}
+.invite-section.visible { display: block; }
+
+.invite-input {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  text-align: center;
+  width: 100%;
+  padding: 10px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-bright);
+  margin-bottom: 12px;
+}
+.invite-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
 /* ── Push Notification Toggle ── */
 .push-toggle {
   display: flex;

@@ -17,8 +17,8 @@
 
 **Purpose**: Vendor the QR code library and prepare shared infrastructure
 
-- [ ] T001 Vendor the `qrcode` npm package browser bundle to `monitor/vendor/qrcode.mjs` — download via `npm pack qrcode`, extract the browser-ready ESM/UMD build, copy to vendor directory
-- [ ] T002 Add `qrcode.mjs` to the public static routes allowlist in `monitor/server.js` (line ~274, alongside existing vendor entries)
+- [x] T001 Vendor the `qrcode` npm package browser bundle to `monitor/vendor/qrcode.mjs` — download via `npm pack qrcode`, extract the browser-ready ESM/UMD build, copy to vendor directory
+- [x] T002 Add `qrcode.mjs` to the public static routes allowlist in `monitor/server.js` (line ~274, alongside existing vendor entries)
 
 ---
 
@@ -28,14 +28,14 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T003 Implement invitation data structures and CRUD functions in `monitor/auth/webauthn.js`: add `activeInvitations` object (keyed by code), `createInvitation(sessionToken)` (generates 6-digit code via `crypto.randomInt`, sets 5-min expiry, invalidates previous invitation from same session, returns `{ code, expiresAt, expiresInSeconds }`), `validateInvitation(code)` (checks existence and expiry, returns boolean), `consumeInvitation(code)` (deletes from store, returns boolean)
-- [ ] T004 Implement rate limiting functions in `monitor/auth/webauthn.js`: add `rateLimits` object (keyed by IP), `checkRateLimit(ip)` (returns boolean — true if allowed, false if blocked; prunes entries older than 60s, checks count < 5), `recordAttempt(ip)` (adds timestamp to attempts array)
-- [ ] T005 Add `POST /auth/invite/create` route handler in `monitor/auth/webauthn.js` `handleRequest` router: require authenticated session (check session cookie via `session.verify`), call `createInvitation(sessionToken)`, return `{ code, expiresAt, expiresInSeconds }`; return 401 if not authenticated
-- [ ] T006 Add `POST /auth/invite/validate` route handler in `monitor/auth/webauthn.js` `handleRequest` router: parse `{ code }` from body, call `checkRateLimit(clientIp)` (return 429 if blocked), call `recordAttempt(clientIp)`, call `validateInvitation(code)`, return `{ valid: true }` or 400 error
-- [ ] T007 Modify `handleRegisterOptions` in `monitor/auth/webauthn.js` (line ~69): extend the authorization check to also accept `invitationCode` from request body — registration allowed if `isRegistrationOpen() || isAuthenticated(req) || validateInvitation(body.invitationCode)`; apply rate limiting to invitation code path
-- [ ] T008 Modify `handleRegisterVerify` in `monitor/auth/webauthn.js` (line ~110): if `body.invitationCode` is present, re-validate and consume the invitation on successful verification via `consumeInvitation(body.invitationCode)`; ensure session cookie is set (existing behavior)
-- [ ] T009 [P] Write unit tests for invitation CRUD in `tests/auth.test.js`: new `describe('invitations')` block testing `createInvitation` (returns 6-digit code, sets expiry), `validateInvitation` (valid code returns true, expired code returns false, nonexistent code returns false), `consumeInvitation` (deletes code, subsequent validate returns false), and same-session replacement (creating new invitation invalidates previous one)
-- [ ] T010 [P] Write unit tests for rate limiting in `tests/auth.test.js`: new `describe('rate limiting')` block testing `checkRateLimit` (allows first 5 attempts, blocks 6th), `recordAttempt` (adds entry), and pruning (attempts older than 60s are ignored)
+- [x] T003 Implement invitation data structures and CRUD functions in `monitor/auth/webauthn.js`: add `activeInvitations` object (keyed by code), `createInvitation(sessionToken)` (generates 6-digit code via `crypto.randomInt`, sets 5-min expiry, invalidates previous invitation from same session, returns `{ code, expiresAt, expiresInSeconds }`), `validateInvitation(code)` (checks existence and expiry, returns boolean), `consumeInvitation(code)` (deletes from store, returns boolean)
+- [x] T004 Implement rate limiting functions in `monitor/auth/webauthn.js`: add `rateLimits` object (keyed by IP), `checkRateLimit(ip)` (returns boolean — true if allowed, false if blocked; prunes entries older than 60s, checks count < 5), `recordAttempt(ip)` (adds timestamp to attempts array)
+- [x] T005 Add `POST /auth/invite/create` route handler in `monitor/auth/webauthn.js` `handleRequest` router: require authenticated session (check session cookie via `session.verify`), call `createInvitation(sessionToken)`, return `{ code, expiresAt, expiresInSeconds }`; return 401 if not authenticated
+- [x] T006 Add `POST /auth/invite/validate` route handler in `monitor/auth/webauthn.js` `handleRequest` router: parse `{ code }` from body, call `checkRateLimit(clientIp)` (return 429 if blocked), call `recordAttempt(clientIp)`, call `validateInvitation(code)`, return `{ valid: true }` or 400 error
+- [x] T007 Modify `handleRegisterOptions` in `monitor/auth/webauthn.js` (line ~69): extend the authorization check to also accept `invitationCode` from request body — registration allowed if `isRegistrationOpen() || isAuthenticated(req) || validateInvitation(body.invitationCode)`; apply rate limiting to invitation code path
+- [x] T008 Modify `handleRegisterVerify` in `monitor/auth/webauthn.js` (line ~110): if `body.invitationCode` is present, re-validate and consume the invitation on successful verification via `consumeInvitation(body.invitationCode)`; ensure session cookie is set (existing behavior)
+- [x] T009 [P] Write unit tests for invitation CRUD in `tests/auth.test.js`: new `describe('invitations')` block testing `createInvitation` (returns 6-digit code, sets expiry), `validateInvitation` (valid code returns true, expired code returns false, nonexistent code returns false), `consumeInvitation` (deletes code, subsequent validate returns false), and same-session replacement (creating new invitation invalidates previous one)
+- [x] T010 [P] Write unit tests for rate limiting in `tests/auth.test.js`: new `describe('rate limiting')` block testing `checkRateLimit` (allows first 5 attempts, blocks 6th), `recordAttempt` (adds entry), and pruning (attempts older than 60s are ignored)
 
 **Checkpoint**: Server-side invitation API is functional — can be tested via curl/HTTP client
 
@@ -49,10 +49,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Add "Add Device" button and invitation modal markup to `monitor/index.html`: add a button in the header area (near the existing logout button), add a hidden modal/overlay div containing: invitation code display (large, monospace, 6 digits), QR code canvas element, expiry countdown text, "Close" button. Use semantic IDs: `invite-btn`, `invite-modal`, `invite-code`, `invite-qr`, `invite-timer`
-- [ ] T012 [US1] Add invitation modal styles to `monitor/css/style.css`: modal overlay (centered, semi-transparent backdrop), code display (large monospace font, letter-spacing for readability), QR canvas container, countdown timer text, responsive layout for mobile
-- [ ] T013 [US1] Add invitation generation logic to `monitor/js/app.js`: import QR library from importmap, add click handler for `#invite-btn` that calls `POST /auth/invite/create`, displays the returned code in `#invite-code`, generates QR code encoding `${ORIGIN}/login.html?invite=CODE` into `#invite-qr` canvas, starts a countdown timer that updates `#invite-timer` every second and auto-closes the modal on expiry
-- [ ] T014 [US1] Add QR code library to importmap in `monitor/index.html`: add `"qrcode": "./vendor/qrcode.mjs"` to the existing importmap script block
+- [x] T011 [US1] Add "Add Device" button and invitation modal markup to `monitor/index.html`: add a button in the header area (near the existing logout button), add a hidden modal/overlay div containing: invitation code display (large, monospace, 6 digits), QR code canvas element, expiry countdown text, "Close" button. Use semantic IDs: `invite-btn`, `invite-modal`, `invite-code`, `invite-qr`, `invite-timer`
+- [x] T012 [US1] Add invitation modal styles to `monitor/css/style.css`: modal overlay (centered, semi-transparent backdrop), code display (large monospace font, letter-spacing for readability), QR canvas container, countdown timer text, responsive layout for mobile
+- [x] T013 [US1] Add invitation generation logic to `monitor/js/app.js`: import QR library from importmap, add click handler for `#invite-btn` that calls `POST /auth/invite/create`, displays the returned code in `#invite-code`, generates QR code encoding `${ORIGIN}/login.html?invite=CODE` into `#invite-qr` canvas, starts a countdown timer that updates `#invite-timer` every second and auto-closes the modal on expiry
+- [x] T014 [US1] Add QR code library to importmap in `monitor/index.html`: add `"qrcode": "./vendor/qrcode.mjs"` to the existing importmap script block
 
 **Checkpoint**: Authenticated user can generate and view invitation codes with QR on the monitor page
 
@@ -66,11 +66,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Add invitation code input section to `monitor/login.html`: below the login button, add a "Have an invitation code?" link/button (`#invite-link`), a hidden section (`#invite-section`) containing a 6-digit numeric input field (`#invite-code-input`, inputmode="numeric", maxlength=6, pattern="[0-9]{6}"), a "Register" button (`#invite-register-btn`), and an inline error/status area. Add `"qrcode": "./vendor/qrcode.mjs"` to the importmap (needed only for index.html, but keep importmaps consistent)
-- [ ] T016 [US2] Add invitation code input styles to `monitor/css/style.css`: invite link styling, collapsible invite section, numeric input field (centered, large, monospace, letter-spacing), register button styling consistent with existing login button, error message styling
-- [ ] T017 [US2] Implement invitation-based registration flow in `monitor/js/login.js`: add toggle handler for `#invite-link` (shows/hides `#invite-section`), add handler for `#invite-register-btn` that: (1) reads 6-digit code from input, (2) calls `POST /auth/invite/validate` with `{ code }`, (3) on success calls `POST /auth/register/options` with `{ invitationCode: code }`, (4) calls `startRegistration(options)` from @simplewebauthn/browser, (5) calls `POST /auth/register/verify` with attestation response + `{ invitationCode: code }`, (6) on success redirects to `/`. Handle errors: show "Invalid or expired code" for 400, "Too many attempts" for 429, "Registration failed" for verification errors
-- [ ] T018 [US2] Handle `?invite=CODE` URL parameter in `monitor/js/login.js`: on page load, check `URLSearchParams` for `invite` param, if present pre-fill `#invite-code-input`, show `#invite-section`, and auto-trigger validation (used by QR code flow in US3)
-- [ ] T019 [US2] Write unit tests for invitation API endpoint behavior in `tests/auth.test.js`: test `POST /auth/invite/create` returns code + expiry (mock authenticated session), test `POST /auth/invite/validate` returns valid/invalid, test `POST /auth/register/options` accepts invitationCode, test `POST /auth/register/verify` consumes invitation on success, test 429 response after 5 rapid validate attempts
+- [x] T015 [US2] Add invitation code input section to `monitor/login.html`: below the login button, add a "Have an invitation code?" link/button (`#invite-link`), a hidden section (`#invite-section`) containing a 6-digit numeric input field (`#invite-code-input`, inputmode="numeric", maxlength=6, pattern="[0-9]{6}"), a "Register" button (`#invite-register-btn`), and an inline error/status area. Add `"qrcode": "./vendor/qrcode.mjs"` to the importmap (needed only for index.html, but keep importmaps consistent)
+- [x] T016 [US2] Add invitation code input styles to `monitor/css/style.css`: invite link styling, collapsible invite section, numeric input field (centered, large, monospace, letter-spacing), register button styling consistent with existing login button, error message styling
+- [x] T017 [US2] Implement invitation-based registration flow in `monitor/js/login.js`: add toggle handler for `#invite-link` (shows/hides `#invite-section`), add handler for `#invite-register-btn` that: (1) reads 6-digit code from input, (2) calls `POST /auth/invite/validate` with `{ code }`, (3) on success calls `POST /auth/register/options` with `{ invitationCode: code }`, (4) calls `startRegistration(options)` from @simplewebauthn/browser, (5) calls `POST /auth/register/verify` with attestation response + `{ invitationCode: code }`, (6) on success redirects to `/`. Handle errors: show "Invalid or expired code" for 400, "Too many attempts" for 429, "Registration failed" for verification errors
+- [x] T018 [US2] Handle `?invite=CODE` URL parameter in `monitor/js/login.js`: on page load, check `URLSearchParams` for `invite` param, if present pre-fill `#invite-code-input`, show `#invite-section`, and auto-trigger validation (used by QR code flow in US3)
+- [x] T019 [US2] Write unit tests for invitation API endpoint behavior in `tests/auth.test.js`: test `POST /auth/invite/create` returns code + expiry (mock authenticated session), test `POST /auth/invite/validate` returns valid/invalid, test `POST /auth/register/options` accepts invitationCode, test `POST /auth/register/verify` consumes invitation on success, test 429 response after 5 rapid validate attempts
 
 **Checkpoint**: Full invitation redemption flow works — new device can register a passkey via numeric code entry
 
@@ -84,8 +84,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T020 [US3] Verify QR code URL format in `monitor/js/app.js`: ensure the QR code generated in T013 encodes `${window.location.origin}/login.html?invite=CODE` — the `?invite=` parameter is read by the handler implemented in T018. No additional server-side changes needed.
-- [ ] T021 [US3] Test QR→login page flow end-to-end: manually verify that scanning the QR code (or clicking the encoded URL) opens the login page with the code pre-filled and the invitation section visible. Document any adjustments needed to the auto-validation timing in `monitor/js/login.js`
+- [x] T020 [US3] Verify QR code URL format in `monitor/js/app.js`: ensure the QR code generated in T013 encodes `${window.location.origin}/login.html?invite=CODE` — the `?invite=` parameter is read by the handler implemented in T018. No additional server-side changes needed.
+- [x] T021 [US3] Test QR→login page flow end-to-end: manually verify that scanning the QR code (or clicking the encoded URL) opens the login page with the code pre-filled and the invitation section visible. Document any adjustments needed to the auto-validation timing in `monitor/js/login.js`
 
 **Checkpoint**: QR code scanning completes the full registration flow without manual code entry
 
@@ -95,10 +95,10 @@
 
 **Purpose**: Cleanup, edge cases, documentation
 
-- [ ] T022 [P] Add invitation expiry cleanup: in `monitor/auth/webauthn.js`, add a periodic cleanup that removes expired invitations from `activeInvitations` (e.g., on each `handleRequest` call or via a simple interval). Also add rate limit entry cleanup for IPs with no recent attempts
-- [ ] T023 [P] Update CLAUDE.md: add invitation-related files to the File Relationships section, document the new auth endpoints in the Monitor section, note the vendored qrcode library
-- [ ] T024 Run `npm run test:unit` to verify all existing and new tests pass
-- [ ] T025 Run quickstart.md validation: follow the manual test flow described in `specs/008-add-passkey-registration/quickstart.md` to verify the end-to-end invitation flow
+- [x] T022 [P] Add invitation expiry cleanup: in `monitor/auth/webauthn.js`, add a periodic cleanup that removes expired invitations from `activeInvitations` (e.g., on each `handleRequest` call or via a simple interval). Also add rate limit entry cleanup for IPs with no recent attempts
+- [x] T023 [P] Update CLAUDE.md: add invitation-related files to the File Relationships section, document the new auth endpoints in the Monitor section, note the vendored qrcode library
+- [x] T024 Run `npm run test:unit` to verify all existing and new tests pass
+- [x] T025 Run quickstart.md validation: follow the manual test flow described in `specs/008-add-passkey-registration/quickstart.md` to verify the end-to-end invitation flow
 
 ---
 

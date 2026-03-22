@@ -23,7 +23,7 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `shelly/lint/` → Shelly platform conformance linter (CLI, standalone package)
 - `playground/` → interactive browser-based simulators (thermal, hydraulic)
 - `monitor/` → temperature monitor web app (server, UI, auth, push notifications)
-- `monitor/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers)
+- `monitor/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers, invitation-based registration)
 - `monitor/lib/logger.js` → structured JSON logger (used by server and auth modules)
 - `monitor/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
 - `monitor/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload openvpn.conf)
@@ -117,6 +117,7 @@ The `monitor/` directory contains the temperature monitoring web app that reads 
 - `monitor/lib/push-storage.js` — S3/local storage adapter for push subscriptions (`push-subscriptions.json`) and VAPID keys (`push-config.json`)
 - `monitor/lib/valve-poller.js` — Server-side valve state polling and change detection (polls Shelly controller via HTTP RPC)
 - `monitor/vendor/simplewebauthn-browser.mjs` — Vendored @simplewebauthn/browser 13.3.0 (ESM)
+- `monitor/vendor/qrcode-generator.mjs` — Vendored qrcode-generator 2.0.4 (ESM, for invitation QR codes)
 - `monitor/css/style.css` — Standalone styles (not shared with playground)
 - `monitor/shelly/sensor-display.js` — ES5 Shelly script for Pro 4PM
 - `monitor/shelly/deploy-poc.sh` — Deploys the script to Pro 4PM via HTTP RPC
