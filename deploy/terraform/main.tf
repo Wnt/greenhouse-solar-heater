@@ -143,9 +143,9 @@ resource "upcloud_firewall_rules" "monitor" {
       direction              = "in"
       family                 = "IPv4"
       protocol               = "udp"
-      destination_port_start = 51820
-      destination_port_end   = 51820
-      comment                = "WireGuard VPN"
+      destination_port_start = 1194
+      destination_port_end   = 1194
+      comment                = "OpenVPN"
     }
   }
 

@@ -10,7 +10,7 @@ set -e
 CONFIG_SRC="/config"
 APP_DIR="/opt/app"
 COMPOSE_FILE="$APP_DIR/docker-compose.yml"
-VPN_CONFIG="$APP_DIR/wg0.conf"
+VPN_CONFIG="$APP_DIR/openvpn.conf"
 
 log() {
   echo "[deployer] $(date -Iseconds) $1"
@@ -89,7 +89,7 @@ else
   if ! timeout 30 docker run --rm --env-file "$APP_DIR/.env" \
     -v "$APP_DIR:/opt/app" \
     "$APP_IMAGE" \
-    node monitor/lib/vpn-config.js download /opt/app/wg0.conf 2>&1; then
+    node monitor/lib/vpn-config.js download /opt/app/openvpn.conf 2>&1; then
     log "WARNING: VPN config download failed — continuing without VPN config"
   fi
 
@@ -99,7 +99,7 @@ else
     if ! timeout 30 docker run --rm --env-file "$APP_DIR/.env" \
       -v "$APP_DIR:/opt/app" \
       "$APP_IMAGE" \
-      node monitor/lib/vpn-config.js upload /opt/app/wg0.conf 2>&1; then
+      node monitor/lib/vpn-config.js upload /opt/app/openvpn.conf 2>&1; then
       log "WARNING: VPN config upload failed — continuing"
     fi
   fi

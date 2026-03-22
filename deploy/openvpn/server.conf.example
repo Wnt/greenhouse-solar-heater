@@ -1,0 +1,47 @@
+# OpenVPN server configuration for UpCloud server (site-to-site with UniFi gateway)
+# Uses static key (PSK) mode — compatible with UniFi's site-to-site VPN UI.
+#
+# NOTE: Static key mode is deprecated in OpenVPN 2.6+ (logs a warning).
+# UniFi only supports static key for site-to-site OpenVPN, so this is required.
+# If Alpine ships OpenVPN 2.7+, add --allow-deprecated-insecure-static-crypto
+# to the container CMD.
+#
+# Setup:
+# 1. Run: ./setup.sh --server-ip <PUBLIC_IP> --output /opt/app/openvpn.conf
+# 2. Enter the printed values in UniFi UI: Settings → VPN → Create New VPN
+# 3. Set enable_vpn = true in Terraform and apply (adds UDP 1194 firewall rule)
+# 4. Set COMPOSE_PROFILES=vpn in /opt/app/.env
+# 5. On the next deployer run, the config is automatically uploaded to S3
+#
+# After server recreation, the deployer restores openvpn.conf from S3 automatically.
+# No manual key regeneration or UniFi reconfiguration needed.
+
+dev tun
+proto udp
+port 1194
+
+# Tunnel endpoint IPs: server (cloud) = local, client (UniFi) = remote
+ifconfig 10.10.10.1 10.10.10.2
+
+# Route to UniFi's LAN (the home network with Shelly devices)
+route 192.168.1.0 255.255.255.0
+
+# Keepalive: ping every 15s, restart after 45s of silence
+# ping-timer-rem delays ping timer until a remote address is known
+ping 15
+ping-restart 45
+ping-timer-rem
+
+# Persist across restarts
+persist-tun
+persist-key
+
+# Logging
+verb 3
+
+# Pre-shared static key (embedded inline)
+# Replace this block with the output from setup.sh
+<secret>
+# Run ./setup.sh to generate this key
+# or: openvpn --genkey --secret /dev/stdout
+</secret>

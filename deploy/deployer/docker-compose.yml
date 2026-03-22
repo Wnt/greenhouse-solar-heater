@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     read_only: true
     user: "1000:1000"
-    network_mode: "service:wireguard"
+    network_mode: "service:openvpn"
     env_file: .env
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
@@ -15,7 +15,7 @@ services:
       start_period: 10s
       retries: 3
     depends_on:
-      - wireguard
+      - openvpn
 
   caddy:
     image: caddy:2-alpine
@@ -36,21 +36,21 @@ services:
       app:
         condition: service_healthy
 
-  wireguard:
-    image: lscr.io/linuxserver/wireguard
+  openvpn:
+    build: ../openvpn
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
-      - SYS_MODULE
-    environment:
-      - PUID=1000
-      - PGID=1000
     volumes:
-      - ./wg0.conf:/config/wg_confs/wg0.conf:ro
+      - ./openvpn.conf:/etc/openvpn/server.conf:ro
     ports:
-      - "51820:51820/udp"
+      - "1194:1194/udp"
+    devices:
+      - /dev/net/tun:/dev/net/tun
     sysctls:
       - net.ipv4.ip_forward=1
+    profiles:
+      - vpn
 
 volumes:
   caddy_data:

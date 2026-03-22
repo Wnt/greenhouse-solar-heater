@@ -19,9 +19,9 @@
 
 **Purpose**: Create the OpenVPN container image and config generation tooling
 
-- [ ] T001 Create OpenVPN Dockerfile in `deploy/openvpn/Dockerfile` — Alpine 3.21 + openvpn package, CMD runs `openvpn --config /etc/openvpn/server.conf`
-- [ ] T002 [P] Create OpenVPN server config example template in `deploy/openvpn/server.conf.example` — dev tun, proto udp, port 1194, ifconfig 10.10.10.1 10.10.10.2, route 192.168.1.0/24, ping/ping-restart/ping-timer-rem, persist-tun, persist-key, verb 3, inline `<secret>` placeholder. Include setup instructions in comments (replaces `deploy/wireguard/wg0.conf.example`)
-- [ ] T003 [P] Create setup script in `deploy/openvpn/setup.sh` — generates static key via `openvpn --genkey --secret` (using Docker if openvpn not installed locally), accepts parameters (--server-ip, --server-tunnel-ip, --client-tunnel-ip, --remote-network, --port, --output), embeds key inline via `<secret>` tag, outputs UniFi UI configuration values (Pre-Shared Key hex content, Remote IP, tunnel IPs, Remote Networks, port). Must be executable (chmod +x)
+- [x] T001 Create OpenVPN Dockerfile in `deploy/openvpn/Dockerfile` — Alpine 3.21 + openvpn package, CMD runs `openvpn --config /etc/openvpn/server.conf`
+- [x] T002 [P] Create OpenVPN server config example template in `deploy/openvpn/server.conf.example` — dev tun, proto udp, port 1194, ifconfig 10.10.10.1 10.10.10.2, route 192.168.1.0/24, ping/ping-restart/ping-timer-rem, persist-tun, persist-key, verb 3, inline `<secret>` placeholder. Include setup instructions in comments (replaces `deploy/wireguard/wg0.conf.example`)
+- [x] T003 [P] Create setup script in `deploy/openvpn/setup.sh` — generates static key via `openvpn --genkey --secret` (using Docker if openvpn not installed locally), accepts parameters (--server-ip, --server-tunnel-ip, --client-tunnel-ip, --remote-network, --port, --output), embeds key inline via `<secret>` tag, outputs UniFi UI configuration values (Pre-Shared Key hex content, Remote IP, tunnel IPs, Remote Networks, port). Must be executable (chmod +x)
 
 **Checkpoint**: OpenVPN container image and config generation tooling ready
 
@@ -43,10 +43,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T004 [US1] Replace wireguard service with openvpn in `deploy/deployer/docker-compose.yml` — change service name to `openvpn`, use `build: ../openvpn`, cap_add NET_ADMIN only (remove SYS_MODULE), add `devices: [/dev/net/tun:/dev/net/tun]`, change port 51820/udp to 1194/udp, mount `./openvpn.conf:/etc/openvpn/server.conf:ro`, keep sysctls ip_forward=1, remove PUID/PGID env vars. Update app service: `network_mode: "service:openvpn"`, `depends_on: [openvpn]`. Keep profiles: ["vpn"] on the openvpn service
-- [ ] T005 [P] [US1] Update Caddyfile reverse proxy target in `deploy/deployer/Caddyfile` — change `reverse_proxy wireguard:3000` to `reverse_proxy openvpn:3000`
-- [ ] T006 [P] [US1] Update Terraform firewall rule in `deploy/terraform/main.tf` — change dynamic VPN firewall_rule: port 51820 → 1194, protocol stays UDP, comment "WireGuard VPN" → "OpenVPN"
-- [ ] T007 [P] [US1] Update Terraform variable description in `deploy/terraform/variables.tf` — change `enable_vpn` description from "Enable WireGuard VPN container and firewall rule" to "Enable OpenVPN container and firewall rule"
+- [x] T004 [US1] Replace wireguard service with openvpn in `deploy/deployer/docker-compose.yml` — change service name to `openvpn`, use `build: ../openvpn`, cap_add NET_ADMIN only (remove SYS_MODULE), add `devices: [/dev/net/tun:/dev/net/tun]`, change port 51820/udp to 1194/udp, mount `./openvpn.conf:/etc/openvpn/server.conf:ro`, keep sysctls ip_forward=1, remove PUID/PGID env vars. Update app service: `network_mode: "service:openvpn"`, `depends_on: [openvpn]`. Keep profiles: ["vpn"] on the openvpn service
+- [x] T005 [P] [US1] Update Caddyfile reverse proxy target in `deploy/deployer/Caddyfile` — change `reverse_proxy wireguard:3000` to `reverse_proxy openvpn:3000`
+- [x] T006 [P] [US1] Update Terraform firewall rule in `deploy/terraform/main.tf` — change dynamic VPN firewall_rule: port 51820 → 1194, protocol stays UDP, comment "WireGuard VPN" → "OpenVPN"
+- [x] T007 [P] [US1] Update Terraform variable description in `deploy/terraform/variables.tf` — change `enable_vpn` description from "Enable WireGuard VPN container and firewall rule" to "Enable OpenVPN container and firewall rule"
 
 **Checkpoint**: OpenVPN server container replaces WireGuard. UniFi can connect and the app reaches home LAN devices via the tunnel
 
@@ -60,10 +60,10 @@
 
 ### Implementation for User Story 2
 
-- [ ] T008 [US2] Update VPN config persistence helper in `monitor/lib/vpn-config.js` — change default VPN_CONFIG_KEY from `wg0.conf` to `openvpn.conf`, update JSDoc comments and log messages to reference OpenVPN instead of WireGuard, update Usage comment paths
-- [ ] T009 [US2] Update deployer script in `deploy/deployer/deploy.sh` — change VPN_CONFIG variable from `$APP_DIR/wg0.conf` to `$APP_DIR/openvpn.conf`, update download/upload node commands to reference new config path, update log messages
-- [ ] T010 [P] [US2] Update config.env default in `deploy/deployer/config.env` — change `VPN_CONFIG_KEY=wg0.conf` to `VPN_CONFIG_KEY=openvpn.conf`
-- [ ] T011 [US2] Update vpn-config tests in `tests/vpn-config.test.js` — change sampleConfig to OpenVPN format (dev tun, ifconfig, inline secret), change test file references from `wg0.conf` to `openvpn.conf`, update VPN_CONFIG_KEY default assertion
+- [x] T008 [US2] Update VPN config persistence helper in `monitor/lib/vpn-config.js` — change default VPN_CONFIG_KEY from `wg0.conf` to `openvpn.conf`, update JSDoc comments and log messages to reference OpenVPN instead of WireGuard, update Usage comment paths
+- [x] T009 [US2] Update deployer script in `deploy/deployer/deploy.sh` — change VPN_CONFIG variable from `$APP_DIR/wg0.conf` to `$APP_DIR/openvpn.conf`, update download/upload node commands to reference new config path, update log messages
+- [x] T010 [P] [US2] Update config.env default in `deploy/deployer/config.env` — change `VPN_CONFIG_KEY=wg0.conf` to `VPN_CONFIG_KEY=openvpn.conf`
+- [x] T011 [US2] Update vpn-config tests in `tests/vpn-config.test.js` — change sampleConfig to OpenVPN format (dev tun, ifconfig, inline secret), change test file references from `wg0.conf` to `openvpn.conf`, update VPN_CONFIG_KEY default assertion
 
 **Checkpoint**: VPN config persists to S3 as `openvpn.conf` and is restored on server recreation
 
@@ -77,7 +77,7 @@
 
 ### Implementation for User Story 3
 
-- [ ] T012 [US3] Verify health check in `monitor/server.js` requires no changes — the `checkVpn()` function uses a TCP probe to `VPN_CHECK_HOST` which is VPN-technology-agnostic. Confirm no WireGuard-specific references exist in server.js health logic. No code changes expected — document verification result
+- [x] T012 [US3] Verify health check in `monitor/server.js` requires no changes — the `checkVpn()` function uses a TCP probe to `VPN_CHECK_HOST` which is VPN-technology-agnostic. Confirm no WireGuard-specific references exist in server.js health logic. No code changes expected — document verification result
 
 **Checkpoint**: Health endpoint reports VPN status correctly with OpenVPN tunnel
 
@@ -87,10 +87,10 @@
 
 **Purpose**: Remove WireGuard artifacts, update documentation
 
-- [ ] T013 Delete WireGuard config directory `deploy/wireguard/` (contains only `wg0.conf.example`)
-- [ ] T014 [P] Update deployment documentation in `deploy/README.md` — replace all WireGuard references with OpenVPN: port 51820 → 1194, wg0.conf → openvpn.conf, WireGuard container → OpenVPN container, update setup steps to reference `deploy/openvpn/setup.sh`, update architecture description
-- [ ] T015 [P] Update CLAUDE.md — replace WireGuard references: `deploy/wireguard/` → `deploy/openvpn/`, wg0.conf → openvpn.conf, WireGuard → OpenVPN in deployment architecture section, update file relationships for `monitor/lib/vpn-config.js` description, update docker-compose description, update Active Technologies section with 007-switch-to-openvpn entry
-- [ ] T016 Run existing tests with `npm run test:unit` to verify vpn-config.test.js changes pass and no other tests are broken
+- [x] T013 Delete WireGuard config directory `deploy/wireguard/` (contains only `wg0.conf.example`)
+- [x] T014 [P] Update deployment documentation in `deploy/README.md` — replace all WireGuard references with OpenVPN: port 51820 → 1194, wg0.conf → openvpn.conf, WireGuard container → OpenVPN container, update setup steps to reference `deploy/openvpn/setup.sh`, update architecture description
+- [x] T015 [P] Update CLAUDE.md — replace WireGuard references: `deploy/wireguard/` → `deploy/openvpn/`, wg0.conf → openvpn.conf, WireGuard → OpenVPN in deployment architecture section, update file relationships for `monitor/lib/vpn-config.js` description, update docker-compose description, update Active Technologies section with 007-switch-to-openvpn entry
+- [x] T016 Run existing tests with `npm run test:unit` to verify vpn-config.test.js changes pass and no other tests are broken
 
 ---
 

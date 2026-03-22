@@ -27,7 +27,7 @@ variable "server_plan" {
 }
 
 variable "enable_vpn" {
-  description = "Enable WireGuard VPN container and firewall rule (default: false)"
+  description = "Enable OpenVPN container and firewall rule (default: false)"
   type        = bool
   default     = false
 }
