@@ -21,13 +21,13 @@
 
 **⚠️ CRITICAL**: All moves must complete before cross-reference updates begin. Use `git mv` to preserve history.
 
-- [ ] T001 Move `scripts/` contents to `shelly/` — `git mv scripts/control.js scripts/control-logic.js scripts/deploy.sh scripts/devices.conf` to `shelly/`
-- [ ] T002 Move `tools/shelly-lint/` to `shelly/lint/` — `git mv tools/shelly-lint` to `shelly/lint`, then remove empty `tools/` directory
-- [ ] T003 Move `poc/` to `monitor/` — `git mv poc monitor`
-- [ ] T004 [P] Move `docs/` to `design/docs/` — `git mv docs design/docs`
-- [ ] T005 [P] Move `diagrams/` to `design/diagrams/` — `git mv diagrams design/diagrams`
-- [ ] T006 [P] Move `construction/` to `design/construction/` — `git mv construction design/construction`
-- [ ] T007 [P] Move `existing-hardware/` to `design/photos/` — `git mv existing-hardware design/photos`
+- [x] T001 Move `scripts/` contents to `shelly/` — `git mv scripts/control.js scripts/control-logic.js scripts/deploy.sh scripts/devices.conf` to `shelly/`
+- [x] T002 Move `tools/shelly-lint/` to `shelly/lint/` — `git mv tools/shelly-lint` to `shelly/lint`, then remove empty `tools/` directory
+- [x] T003 Move `poc/` to `monitor/` — `git mv poc monitor`
+- [x] T004 [P] Move `docs/` to `design/docs/` — `git mv docs design/docs`
+- [x] T005 [P] Move `diagrams/` to `design/diagrams/` — `git mv diagrams design/diagrams`
+- [x] T006 [P] Move `construction/` to `design/construction/` — `git mv construction design/construction`
+- [x] T007 [P] Move `existing-hardware/` to `design/photos/` — `git mv existing-hardware design/photos`
 
 **Checkpoint**: All directories moved. `ls` shows: `shelly/`, `playground/`, `monitor/`, `deploy/`, `design/`, `tests/` plus root files. Tests will NOT pass yet (broken cross-references).
 
@@ -41,36 +41,36 @@
 
 ### Move 1 cross-refs: scripts/ → shelly/
 
-- [ ] T008 [P] [US2] Update require path in `tests/control-logic.test.js` — change `../scripts/control-logic.js` to `../shelly/control-logic.js`
-- [ ] T009 [P] [US2] Update require path in `tests/simulation/simulator.js` — change `../../scripts/control-logic.js` to `../../shelly/control-logic.js`
-- [ ] T010 [P] [US2] Update require path in `tests/simulation/scenarios.js` — change `../../scripts/control-logic.js` to `../../shelly/control-logic.js`
-- [ ] T011 [P] [US2] Update require paths in `tests/deploy.test.js` — change `../scripts/deploy.sh` to `../shelly/deploy.sh` and `../scripts/devices.conf` to `../shelly/devices.conf`
+- [x] T008 [P] [US2] Update require path in `tests/control-logic.test.js` — change `../scripts/control-logic.js` to `../shelly/control-logic.js`
+- [x] T009 [P] [US2] Update require path in `tests/simulation/simulator.js` — change `../../scripts/control-logic.js` to `../../shelly/control-logic.js`
+- [x] T010 [P] [US2] Update require path in `tests/simulation/scenarios.js` — change `../../scripts/control-logic.js` to `../../shelly/control-logic.js`
+- [x] T011 [P] [US2] Update require paths in `tests/deploy.test.js` — change `../scripts/deploy.sh` to `../shelly/deploy.sh` and `../scripts/devices.conf` to `../shelly/devices.conf`
 
 ### Move 2 cross-refs: tools/shelly-lint/ → shelly/lint/ + scripts/ → shelly/ (CI workflow)
 
-- [ ] T012 [US2] Update `.github/workflows/lint-shelly.yml` — change all path references: `scripts/**` → `shelly/**`, `tools/shelly-lint/**` → `shelly/lint/**`, working-directory `tools/shelly-lint` → `shelly/lint`, linter command `node tools/shelly-lint/bin/shelly-lint.js` → `node shelly/lint/bin/shelly-lint.js`, target files `scripts/control-logic.js` → `shelly/control-logic.js` and `scripts/control.js` → `shelly/control.js`
+- [x] T012 [US2] Update `.github/workflows/lint-shelly.yml` — change all path references: `scripts/**` → `shelly/**`, `tools/shelly-lint/**` → `shelly/lint/**`, working-directory `tools/shelly-lint` → `shelly/lint`, linter command `node tools/shelly-lint/bin/shelly-lint.js` → `node shelly/lint/bin/shelly-lint.js`, target files `scripts/control-logic.js` → `shelly/control-logic.js` and `scripts/control.js` → `shelly/control.js`
 
 ### Move 3 cross-refs: poc/ → monitor/
 
-- [ ] T013 [P] [US2] Update `deploy/docker/Dockerfile` — change `COPY poc/ ./poc/` to `COPY monitor/ ./monitor/` and `CMD ["node", "poc/server.js"]` to `CMD ["node", "monitor/server.js"]`
-- [ ] T014 [P] [US2] Update `deploy/deployer/deploy.sh` — change both occurrences of `node poc/lib/vpn-config.js` to `node monitor/lib/vpn-config.js`
-- [ ] T015 [P] [US2] Update require path in `tests/auth.test.js` — change `../poc/auth/session` to `../monitor/auth/session`
-- [ ] T016 [P] [US2] Update require path in `tests/s3-storage.test.js` — change `../poc/lib/s3-storage` to `../monitor/lib/s3-storage`
-- [ ] T017 [P] [US2] Update require path in `tests/vpn-config.test.js` — change `../poc/lib/vpn-config` to `../monitor/lib/vpn-config`
-- [ ] T018 [P] [US2] Update require path in `tests/push-storage.test.js` — change `../poc/lib/push-storage` to `../monitor/lib/push-storage`
-- [ ] T019 [P] [US2] Update require path in `tests/valve-poller.test.js` — change `../poc/lib/valve-poller` to `../monitor/lib/valve-poller`
-- [ ] T020 [P] [US2] Update URL path in `tests/e2e/poc-login.spec.js` — change `/poc/login.html` to `/monitor/login.html`
-- [ ] T021 [P] [US2] Update URL path in `tests/e2e/logout.spec.js` — change `/poc/` to `/monitor/`
-- [ ] T022 [P] [US2] Update link in `playground/index.html` — change `../poc/index.html` to `../monitor/index.html`
+- [x] T013 [P] [US2] Update `deploy/docker/Dockerfile` — change `COPY poc/ ./poc/` to `COPY monitor/ ./monitor/` and `CMD ["node", "poc/server.js"]` to `CMD ["node", "monitor/server.js"]`
+- [x] T014 [P] [US2] Update `deploy/deployer/deploy.sh` — change both occurrences of `node poc/lib/vpn-config.js` to `node monitor/lib/vpn-config.js`
+- [x] T015 [P] [US2] Update require path in `tests/auth.test.js` — change `../poc/auth/session` to `../monitor/auth/session`
+- [x] T016 [P] [US2] Update require path in `tests/s3-storage.test.js` — change `../poc/lib/s3-storage` to `../monitor/lib/s3-storage`
+- [x] T017 [P] [US2] Update require path in `tests/vpn-config.test.js` — change `../poc/lib/vpn-config` to `../monitor/lib/vpn-config`
+- [x] T018 [P] [US2] Update require path in `tests/push-storage.test.js` — change `../poc/lib/push-storage` to `../monitor/lib/push-storage`
+- [x] T019 [P] [US2] Update require path in `tests/valve-poller.test.js` — change `../poc/lib/valve-poller` to `../monitor/lib/valve-poller`
+- [x] T020 [P] [US2] Update URL path in `tests/e2e/poc-login.spec.js` — change `/poc/login.html` to `/monitor/login.html`
+- [x] T021 [P] [US2] Update URL path in `tests/e2e/logout.spec.js` — change `/poc/` to `/monitor/`
+- [x] T022 [P] [US2] Update link in `playground/index.html` — change `../poc/index.html` to `../monitor/index.html`
 
 ### .dockerignore consolidation
 
-- [ ] T023 [US1] Update `.dockerignore` — replace `scripts/` with `shelly/`, remove `tools/`, replace `docs/` with `design/`, remove `diagrams/`, `construction/`, `existing-hardware/` (now inside `design/`), replace `!poc/**/*.md` with `!monitor/**/*.md`
+- [x] T023 [US1] Update `.dockerignore` — replace `scripts/` with `shelly/`, remove `tools/`, replace `docs/` with `design/`, remove `diagrams/`, `construction/`, `existing-hardware/` (now inside `design/`), replace `!poc/**/*.md` with `!monitor/**/*.md`
 
 ### Verification
 
-- [ ] T024 [US2] Run `npm run test:unit` to verify all unit and simulation tests pass with updated paths
-- [ ] T025 [US2] Run `npm run test:e2e` to verify all e2e tests pass with updated paths
+- [x] T024 [US2] Run `npm run test:unit` to verify all unit and simulation tests pass with updated paths
+- [x] T025 [US2] Run `npm run test:e2e` to verify all e2e tests pass with updated paths
 
 **Checkpoint**: All tests pass. Directory structure is clean. CI workflows, Docker builds, and GH Pages config reference correct paths.
 
@@ -82,17 +82,17 @@
 
 **Independent Test**: Grep CLAUDE.md and README.md for old directory names (`scripts/`, `tools/`, `poc/`, `docs/`, `diagrams/`, `construction/`, `existing-hardware/`) — zero matches.
 
-- [ ] T026 [US3] Rewrite the "File Relationships" section in `CLAUDE.md` — update all directory paths to reflect new structure (`shelly/`, `monitor/`, `design/docs/`, `design/diagrams/`, `design/construction/`, `design/photos/`, `shelly/lint/`)
-- [ ] T027 [US3] Update "Shelly Control Scripts" section in `CLAUDE.md` — change all `scripts/` references to `shelly/`
-- [ ] T028 [US3] Update "Shelly Linter" section in `CLAUDE.md` — change `tools/shelly-lint/` references to `shelly/lint/`
-- [ ] T029 [US3] Update "PoC Temperature Monitor" section in `CLAUDE.md` — rename section to "Temperature Monitor", change all `poc/` references to `monitor/`
-- [ ] T030 [US3] Update "Playground Architecture" section in `CLAUDE.md` — verify paths are still correct (playground/ unchanged, but cross-links to monitor/)
-- [ ] T031 [US3] Update "Running Tests" and "Test Structure" sections in `CLAUDE.md` — update any test file paths that reference old directories
-- [ ] T032 [US3] Update "SVG Diagram Conventions" section in `CLAUDE.md` — change `diagrams/` references to `design/diagrams/`
-- [ ] T033 [US3] Update "Cloud Deployment Architecture" section in `CLAUDE.md` — verify deploy paths still correct, update any `poc/` references to `monitor/`
-- [ ] T034 [US3] Update "Platform Constraints" references in `CLAUDE.md` — change `scripts/devices.conf` to `shelly/devices.conf`, `tools/shelly-lint/` to `shelly/lint/`, `playground/vendor/` stays
-- [ ] T035 [US3] Update `README.md` — update any directory structure descriptions or path references to match new layout
-- [ ] T036 [US3] Update constitution path references in `.specify/memory/constitution.md` — change `tools/shelly-lint/` to `shelly/lint/`, `poc/lib/s3-storage.js` to `monitor/lib/s3-storage.js`, `scripts/devices.conf` to `shelly/devices.conf`
+- [x] T026 [US3] Rewrite the "File Relationships" section in `CLAUDE.md` — update all directory paths to reflect new structure (`shelly/`, `monitor/`, `design/docs/`, `design/diagrams/`, `design/construction/`, `design/photos/`, `shelly/lint/`)
+- [x] T027 [US3] Update "Shelly Control Scripts" section in `CLAUDE.md` — change all `scripts/` references to `shelly/`
+- [x] T028 [US3] Update "Shelly Linter" section in `CLAUDE.md` — change `tools/shelly-lint/` references to `shelly/lint/`
+- [x] T029 [US3] Update "PoC Temperature Monitor" section in `CLAUDE.md` — rename section to "Temperature Monitor", change all `poc/` references to `monitor/`
+- [x] T030 [US3] Update "Playground Architecture" section in `CLAUDE.md` — verify paths are still correct (playground/ unchanged, but cross-links to monitor/)
+- [x] T031 [US3] Update "Running Tests" and "Test Structure" sections in `CLAUDE.md` — update any test file paths that reference old directories
+- [x] T032 [US3] Update "SVG Diagram Conventions" section in `CLAUDE.md` — change `diagrams/` references to `design/diagrams/`
+- [x] T033 [US3] Update "Cloud Deployment Architecture" section in `CLAUDE.md` — verify deploy paths still correct, update any `poc/` references to `monitor/`
+- [x] T034 [US3] Update "Platform Constraints" references in `CLAUDE.md` — change `scripts/devices.conf` to `shelly/devices.conf`, `tools/shelly-lint/` to `shelly/lint/`, `playground/vendor/` stays
+- [x] T035 [US3] Update `README.md` — update any directory structure descriptions or path references to match new layout
+- [x] T036 [US3] Update constitution path references in `.specify/memory/constitution.md` — change `tools/shelly-lint/` to `shelly/lint/`, `poc/lib/s3-storage.js` to `monitor/lib/s3-storage.js`, `scripts/devices.conf` to `shelly/devices.conf`
 
 **Checkpoint**: All documentation accurately reflects the new structure.
 
@@ -102,9 +102,9 @@
 
 **Purpose**: Final verification and cleanup
 
-- [ ] T037 Verify no remaining references to old directory names in any source file — grep for `scripts/control`, `tools/shelly-lint`, `poc/`, `docs/design.md`, `diagrams/`, `construction/`, `existing-hardware/` across the entire repo
-- [ ] T038 Run full test suite `npm test` (unit + simulation + e2e) to confirm zero regressions
-- [ ] T039 Run quickstart.md verification steps to validate the reorganization
+- [x] T037 Verify no remaining references to old directory names in any source file — grep for `scripts/control`, `tools/shelly-lint`, `poc/`, `docs/design.md`, `diagrams/`, `construction/`, `existing-hardware/` across the entire repo
+- [x] T038 Run full test suite `npm test` (unit + simulation + e2e) to confirm zero regressions
+- [x] T039 Run quickstart.md verification steps to validate the reorganization
 
 ---
 
