@@ -176,6 +176,8 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - UpCloud Managed Object Storage (S3-compatible) for VPN config and credentials (005-fix-vpn-immutable-config)
 - JavaScript ES5 (Shelly), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + @simplewebauthn/server, @aws-sdk/client-s3, web-push, Playwright, Acorn (linter) (006-organize-repo-structure)
 - S3-compatible object storage (UpCloud), local filesystem fallback (006-organize-repo-structure)
+- POSIX shell (setup script, deployer), HCL (Terraform >= 1.5), Node.js 20 LTS (vpn-config.js), YAML (docker-compose) + OpenVPN (Alpine package), Docker Compose v2, @aws-sdk/client-s3 (existing) (007-switch-to-openvpn)
+- UpCloud Managed Object Storage (S3-compatible) for VPN config persistence (007-switch-to-openvpn)
 
 ## Cloud Deployment Architecture
 
@@ -207,6 +209,6 @@ Server environment is split into two sources, merged by the deployer:
 VPN is always-on (the app uses `network_mode: "service:wireguard"`). Firewall rule controlled via `enable_vpn=true` in Terraform.
 
 ## Recent Changes
+- 007-switch-to-openvpn: Added POSIX shell (setup script, deployer), HCL (Terraform >= 1.5), Node.js 20 LTS (vpn-config.js), YAML (docker-compose) + OpenVPN (Alpine package), Docker Compose v2, @aws-sdk/client-s3 (existing)
 - 006-organize-repo-structure: Added JavaScript ES5 (Shelly), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + @simplewebauthn/server, @aws-sdk/client-s3, web-push, Playwright, Acorn (linter)
 - 005-fix-vpn-immutable-config: Added HCL (Terraform >= 1.5), POSIX shell (deployer), YAML (cloud-init, docker-compose) + UpCloud Terraform provider ~> 5.0, Docker Compose v2, systemd
-- 004-pwa-push-notifications: PWA manifest + service worker, Web Push notifications on valve state changes, push subscription API, valve polling module, S3 persistence for subscriptions and VAPID keys, `web-push` dependency
