@@ -107,6 +107,9 @@ ping 15
 ping-restart 45
 ping-timer-rem
 
+# Encryption — must match UniFi cipher setting
+cipher AES-256-CBC
+
 # Persist across restarts
 persist-tun
 persist-key
@@ -132,7 +135,7 @@ echo "  Name:                  greenhouse-cloud"
 echo "  Pre-Shared Key:        (paste the key block below)"
 echo "  Local Tunnel IP:       $CLIENT_TUNNEL_IP"
 echo "  Local Port:            $PORT"
-echo "  Cipher:                Default"
+echo "  Cipher:                AES-256-CBC"
 echo "  Remote Networks:       $SERVER_TUNNEL_IP/32"
 echo "  Remote IP Address:     $SERVER_IP"
 echo "  Remote Tunnel IP:      $SERVER_TUNNEL_IP"
@@ -149,6 +152,5 @@ echo ""
 echo "=== Next Steps ==="
 echo "1. Copy $OUTPUT to /opt/app/openvpn.conf on the server"
 echo "2. Set enable_vpn = true in Terraform and run: terraform apply"
-echo "3. Set COMPOSE_PROFILES=vpn in /opt/app/.env"
-echo "4. Enter the values above in UniFi UI"
-echo "5. The deployer will start the OpenVPN container on next run (~5 min)"
+echo "3. Enter the values above in UniFi UI"
+echo "4. The deployer will start the OpenVPN container on next run (~5 min)"
