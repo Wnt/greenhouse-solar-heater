@@ -100,3 +100,25 @@ This replaces the manual WireGuard key generation steps documented in `wg0.conf.
 **Decision**: Change the firewall rule from UDP 51820 (WireGuard) to UDP 1194 (OpenVPN).
 
 **Rationale**: Standard OpenVPN port. Matches the UniFi default. The Terraform variable `enable_vpn` remains the same — just the port and comment change.
+
+## R8: Static Key Deprecation in OpenVPN 2.6+
+
+**Finding**: OpenVPN static key mode is deprecated as of OpenVPN 2.6 (logs a warning). OpenVPN 2.7 requires `--allow-deprecated-insecure-static-crypto` to use it. OpenVPN 2.8 will remove it entirely.
+
+**Decision**: Accept the deprecation warning. Pin the Alpine OpenVPN package to 2.6.x if needed.
+
+**Rationale**: UniFi's site-to-site VPN firmware only supports static key mode for OpenVPN. There is no alternative that works with UniFi's UI. The recommended replacement (`peer-fingerprint` with self-signed certs) is not supported by UniFi. Alpine currently ships OpenVPN 2.6.x where static key works with a deprecation warning in logs — this is cosmetic and does not affect functionality.
+
+**Mitigation**: If a future Alpine version ships OpenVPN 2.7+, the Dockerfile can pin to a specific Alpine version (e.g., `alpine:3.21`) or add `--allow-deprecated-insecure-static-crypto` to the OpenVPN command. If UniFi adds `peer-fingerprint` support in the future, the config can be migrated.
+
+## R9: Keepalive and Reconnection
+
+**Decision**: Use `ping 15` / `ping-restart 45` / `ping-timer-rem` instead of `keepalive 10 60`.
+
+**Rationale**: The `keepalive` directive is a macro that expands to `ping` and `ping-restart` with slightly different semantics. Using the explicit directives provides clearer control. `ping-timer-rem` delays the ping timer until a remote address is known — appropriate since the UniFi client initiates the connection.
+
+## R10: Caddyfile Reverse Proxy Target
+
+**Decision**: Change Caddyfile `reverse_proxy` target from `wireguard:3000` to `openvpn:3000`.
+
+**Rationale**: Since the app uses `network_mode: "service:openvpn"`, its port 3000 is exposed on the openvpn container's network namespace. Caddy resolves the Docker Compose service name to reach it.
