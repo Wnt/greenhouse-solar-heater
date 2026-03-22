@@ -88,6 +88,9 @@ else
   # --network host: Docker bridge containers cannot reach the host's
   # systemd-resolved (127.0.0.53) or UpCloud's DNS servers directly.
   # Host networking gives one-shot S3 operations reliable DNS resolution.
+  # Ensure the target file is writable by app user (UID 1000) — the deployer
+  # runs as root but the app image runs as 1000:1000.
+  touch "$VPN_CONFIG" && chown 1000:1000 "$VPN_CONFIG"
   log "Checking S3 for VPN config"
   if ! timeout 30 docker run --rm --network host --env-file "$APP_DIR/.env" \
     -v "$APP_DIR:/opt/app" \
