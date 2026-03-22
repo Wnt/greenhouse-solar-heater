@@ -1,7 +1,7 @@
 // Scenario definitions for simulation tests
 // Each scenario: { name, duration, initialState, ambient(t), irradiance(t), assertions[] }
 
-const { MODES } = require('../../scripts/control-logic.js');
+const { MODES } = require('../../shelly/control-logic.js');
 
 // --- Environment profile helpers ---
 

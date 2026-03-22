@@ -1,7 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const { evaluate, MODES, DEFAULT_CONFIG, MODE_VALVES,
-        formatDuration, formatTemp, buildDisplayLabels } = require('../scripts/control-logic.js');
+        formatDuration, formatTemp, buildDisplayLabels } = require('../shelly/control-logic.js');
 
 function makeState(overrides) {
   const base = {

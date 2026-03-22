@@ -2,7 +2,7 @@
 // Runs thermal model + control logic together in virtual time
 
 const { tick, createModel } = require('./thermal-model.js');
-const { evaluate, MODES } = require('../../scripts/control-logic.js');
+const { evaluate, MODES } = require('../../shelly/control-logic.js');
 
 const CONTROL_INTERVAL = 30;  // seconds between evaluate() calls
 

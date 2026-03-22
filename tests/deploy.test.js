@@ -5,7 +5,7 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 
-const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
+const SCRIPTS_DIR = path.join(__dirname, '..', 'shelly');
 const DEPLOY_SH = path.join(SCRIPTS_DIR, 'deploy.sh');
 const CONF_PATH = path.join(SCRIPTS_DIR, 'devices.conf');
 

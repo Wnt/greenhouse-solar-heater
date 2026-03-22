@@ -7,7 +7,7 @@ var test = require('node:test');
 var assert = require('node:assert/strict');
 var fs = require('fs');
 var path = require('path');
-var pushStorage = require('../poc/lib/push-storage');
+var pushStorage = require('../monitor/lib/push-storage');
 
 var TEST_DIR = path.join(__dirname, '.tmp-push-storage-test');
 
