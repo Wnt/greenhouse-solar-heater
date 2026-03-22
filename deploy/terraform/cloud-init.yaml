@@ -55,6 +55,16 @@ write_files:
       [Install]
       WantedBy=timers.target
 
+  # Docker daemon config — use public DNS servers so containers on the
+  # default bridge network can resolve external hostnames.  systemd-resolved
+  # listens on 127.0.0.53 which is unreachable from container namespaces.
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "dns": ["1.1.1.1", "8.8.8.8"]
+      }
+
 runcmd:
   # Install Docker from official repo
   - curl -fsSL https://get.docker.com | sh

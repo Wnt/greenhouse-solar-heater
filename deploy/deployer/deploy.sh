@@ -86,7 +86,7 @@ else
   log "Resolved app image: $APP_IMAGE"
   # Step 6: Download VPN config from S3 (if available)
   log "Checking S3 for VPN config"
-  if ! timeout 30 docker run --rm --network host --env-file "$APP_DIR/.env" \
+  if ! timeout 30 docker run --rm --env-file "$APP_DIR/.env" \
     -v "$APP_DIR:/opt/app" \
     "$APP_IMAGE" \
     node monitor/lib/vpn-config.js download /opt/app/openvpn.conf 2>&1; then
@@ -96,7 +96,7 @@ else
   # Step 7: Upload VPN config to S3 if local exists but S3 doesn't (bootstrap)
   if [ -f "$VPN_CONFIG" ]; then
     log "Local VPN config found — ensuring S3 backup exists"
-    if ! timeout 30 docker run --rm --network host --env-file "$APP_DIR/.env" \
+    if ! timeout 30 docker run --rm --env-file "$APP_DIR/.env" \
       -v "$APP_DIR:/opt/app" \
       "$APP_IMAGE" \
       node monitor/lib/vpn-config.js upload /opt/app/openvpn.conf 2>&1; then
