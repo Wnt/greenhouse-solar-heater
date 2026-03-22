@@ -105,9 +105,10 @@ All third-party libraries are vendored locally in `playground/vendor/` to avoid 
 The `monitor/` directory contains the temperature monitoring web app that reads live DS18B20 temperatures from a Shelly 1 sensor add-on and displays them in a browser-based UI. It can run locally (direct LAN access) or deployed to the cloud (via VPN).
 
 - `monitor/server.js` — Node.js HTTP server: serves static files, proxies RPC to Shelly devices, health endpoint, auth middleware (when `AUTH_ENABLED=true`), push notification API, valve state poller
-- `monitor/index.html` — Web UI: SVG gauges + Canvas time-series chart (last 6h), notification subscribe/unsubscribe toggle
-- `monitor/manifest.json` — PWA manifest (standalone display, app name, icons)
-- `monitor/sw.js` — Service worker for push notifications (no offline caching)
+- `monitor/index.html` — Web UI: SVG gauges + Canvas time-series chart (last 6h), notification toggle, Apple PWA meta tags
+- `monitor/manifest.json` — PWA manifest (standalone display, app name, icons, maskable 512px icon, stable `id`)
+- `monitor/sw.js` — Service worker: push notifications + fetch handler (network-first with offline fallback)
+- `monitor/offline.html` — Branded offline fallback page (auto-retry on connectivity)
 - `monitor/icons/` — PWA icons (icon-192.png, icon-512.png)
 - `monitor/login.html` — Passkey authentication page (registration + login)
 - `monitor/js/` — ES modules: `shelly-api.js` (HTTP RPC client), `gauge.js` (SVG gauge), `chart.js` (Canvas chart), `app.js` (orchestration), `login.js` (passkey auth), `push.js` (push subscription management)
@@ -143,8 +144,10 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - `tests/vpn-config.test.js` — unit tests for VPN config S3 persistence helper
 - `tests/push-storage.test.js` — unit tests for push storage adapter (VAPID keys, subscriptions, deduplication)
 - `tests/valve-poller.test.js` — unit tests for valve state change detection (pure functions, poller behavior)
+- `tests/sw.test.js` — unit tests for service worker fetch handler, offline caching, and push handler preservation
 - `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
 - `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
+- `tests/e2e/pwa.spec.js` — Playwright e2e tests for PWA installability (manifest, Apple meta tags, offline page)
 
 ### Test Setup Notes
 
@@ -181,6 +184,8 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - UpCloud Managed Object Storage (S3-compatible) for VPN config persistence (007-switch-to-openvpn)
 - Node.js 20 LTS (CommonJS server-side), ES6+ browser modules + `@simplewebauthn/server` (existing), `@simplewebauthn/browser` (vendored, existing), `qrcode` (new, vendored browser bundle for QR generation) (008-add-passkey-registration)
 - S3-compatible object storage for credentials (existing, unchanged schema); in-memory for invitations and rate limits (008-add-passkey-registration)
+- JavaScript ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + None new — extends existing service worker and manifest (009-add-home-screen-support)
+- N/A — no new persistent data (009-add-home-screen-support)
 
 ## Cloud Deployment Architecture
 
@@ -212,6 +217,6 @@ Server environment is split into two sources, merged by the deployer:
 VPN is always-on (the app uses `network_mode: "service:openvpn"`). Firewall rule controlled via `enable_vpn=true` in Terraform.
 
 ## Recent Changes
+- 009-add-home-screen-support: Added JavaScript ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + None new — extends existing service worker and manifest
 - 008-add-passkey-registration: Added Node.js 20 LTS (CommonJS server-side), ES6+ browser modules + `@simplewebauthn/server` (existing), `@simplewebauthn/browser` (vendored, existing), `qrcode` (new, vendored browser bundle for QR generation)
 - 007-switch-to-openvpn: Added POSIX shell (setup script, deployer), HCL (Terraform >= 1.5), Node.js 20 LTS (vpn-config.js), YAML (docker-compose) + OpenVPN (Alpine package), Docker Compose v2, @aws-sdk/client-s3 (existing)
-- 006-organize-repo-structure: Added JavaScript ES5 (Shelly), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + @simplewebauthn/server, @aws-sdk/client-s3, web-push, Playwright, Acorn (linter)

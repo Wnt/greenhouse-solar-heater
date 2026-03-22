@@ -276,6 +276,12 @@ var server = http.createServer(function (req, res) {
     return;
   }
 
+  // PWA resources — accessible without auth (needed for installability)
+  if (urlPath === '/manifest.json' || urlPath === '/sw.js' || urlPath === '/offline.html' || urlPath.startsWith('/icons/')) {
+    serveStatic(req, res);
+    return;
+  }
+
   // Auth gate — check session for all other routes
   if (AUTH_ENABLED) {
     var session = authMiddleware.validateRequest(req);

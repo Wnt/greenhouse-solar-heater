@@ -1,15 +1,34 @@
 /**
  * Service Worker for Greenhouse Monitor PWA.
- * Handles push notifications and notification clicks.
- * No fetch interception or offline caching.
+ * Handles push notifications, notification clicks, and offline fallback.
  */
 
+var OFFLINE_CACHE = 'greenhouse-offline-v1';
+var OFFLINE_URL = '/offline.html';
+var OFFLINE_ASSETS = ['/offline.html', '/icons/icon-192.png'];
+
 self.addEventListener('install', function (event) {
+  event.waitUntil(
+    caches.open(OFFLINE_CACHE).then(function (cache) {
+      return cache.addAll(OFFLINE_ASSETS);
+    })
+  );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', function (event) {
   event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener('fetch', function (event) {
+  // Only handle navigation requests (HTML page loads)
+  if (event.request.mode !== 'navigate') return;
+
+  event.respondWith(
+    fetch(event.request).catch(function () {
+      return caches.match(OFFLINE_URL);
+    })
+  );
 });
 
 self.addEventListener('push', function (event) {
