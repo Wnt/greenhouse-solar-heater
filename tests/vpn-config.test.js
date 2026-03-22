@@ -12,8 +12,8 @@ var testFile = path.join(testDir, 'wg0.conf');
 var sampleConfig = '[Interface]\nAddress = 10.10.10.1/24\nListenPort = 51820\nPrivateKey = testkey\n';
 
 function loadModule() {
-  delete require.cache[require.resolve('../poc/lib/vpn-config')];
-  return require('../poc/lib/vpn-config');
+  delete require.cache[require.resolve('../monitor/lib/vpn-config')];
+  return require('../monitor/lib/vpn-config');
 }
 
 describe('vpn-config CLI argument parsing', function () {

@@ -10,7 +10,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 # Copy application code
-COPY poc/ ./poc/
+COPY monitor/ ./monitor/
 
 # Make app directory owned by node user
 RUN chown -R node:node /app
@@ -26,4 +26,4 @@ ENV PORT=3000
 # Run as non-root user (node user is built into node:alpine, UID 1000)
 USER node
 
-CMD ["node", "poc/server.js"]
+CMD ["node", "monitor/server.js"]

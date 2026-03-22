@@ -3,12 +3,10 @@ name: Lint Shelly Scripts
 on:
   push:
     paths:
-      - 'scripts/**'
-      - 'tools/shelly-lint/**'
+      - 'shelly/**'
   pull_request:
     paths:
-      - 'scripts/**'
-      - 'tools/shelly-lint/**'
+      - 'shelly/**'
 
 jobs:
   lint:
@@ -19,7 +17,7 @@ jobs:
         with:
           node-version: 22
       - name: Install linter dependencies
-        working-directory: tools/shelly-lint
+        working-directory: shelly/lint
         run: npm install
       - name: Lint Shelly scripts
-        run: node tools/shelly-lint/bin/shelly-lint.js scripts/control-logic.js scripts/control.js --config system.yaml --format github
+        run: node shelly/lint/bin/shelly-lint.js shelly/control-logic.js shelly/control.js --config system.yaml --format github

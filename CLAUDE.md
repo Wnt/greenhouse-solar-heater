@@ -19,27 +19,23 @@ When making changes, **update system.yaml first**, then propagate to affected do
 ## File Relationships
 
 - `system.yaml` → authoritative specs (heights, valve states, modes, components)
-- `docs/design.md` → prose explanation of the YAML, for human review
-- `docs/bom.md` → full control system BOM: electronics, valves, manifolds, fittings (3 vendors + IKH)
-- `docs/ideas/` → idea specs and implementation plans (thermal sim, hydraulic playground, linter)
-- `docs/superpowers/specs/` → detailed design specs (Shelly control software, testing strategy)
-- `diagrams/*.svg` → hand-authored SVG with `data-` attributes mapping to YAML values
-- `diagrams/*.mmd` → Mermaid control logic (state machines, sequences)
-- `construction/` → physical build instructions
-- `existing-hardware/` → reference photos of owned components
-- `scripts/` → Shelly device scripts and deployment tooling
-- `poc/` → hardware PoC app (live temperature monitor with Shelly devices)
-- `poc/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers)
-- `poc/lib/logger.js` → structured JSON logger (used by server and auth modules)
-- `poc/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
-- `poc/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload wg0.conf)
+- `shelly/` → Shelly device scripts and deployment tooling
+- `shelly/lint/` → Shelly platform conformance linter (CLI, standalone package)
+- `playground/` → interactive browser-based simulators (thermal, hydraulic)
+- `monitor/` → temperature monitor web app (server, UI, auth, push notifications)
+- `monitor/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers)
+- `monitor/lib/logger.js` → structured JSON logger (used by server and auth modules)
+- `monitor/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
+- `monitor/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload wg0.conf)
 - `deploy/` → cloud deployment infrastructure
 - `deploy/terraform/` → UpCloud server, firewall rules, Managed Object Storage (Terraform)
 - `deploy/docker/` → App Dockerfile only
 - `deploy/deployer/` → Deployer image: Dockerfile, deploy.sh, docker-compose.yml, Caddyfile, config.env
 - `deploy/wireguard/` → WireGuard VPN server config template
-- `tools/shelly-lint/` → standalone Shelly platform conformance linter (CLI)
-- `playground/` → interactive browser-based simulators (thermal, hydraulic)
+- `design/docs/` → prose docs: design.md, bom.md, ideas/, superpowers/
+- `design/diagrams/` → hand-authored SVG with `data-` attributes + Mermaid control logic
+- `design/construction/` → physical build instructions
+- `design/photos/` → reference photos of owned components
 - `tests/` → unit, simulation, auth, and e2e tests
 - `.github/workflows/` → CI (test suite, GitHub Pages deploy, Shelly lint, CD deploy)
 - `IDEAS.md` → raw ideas / wishlist
@@ -60,23 +56,23 @@ When making changes, **update system.yaml first**, then propagate to affected do
 
 ## Shelly Control Scripts
 
-The `scripts/` directory contains the actual device scripts deployed to Shelly hardware:
+The `shelly/` directory contains the actual device scripts deployed to Shelly hardware:
 
-- `scripts/control-logic.js` — Pure decision logic (ES5-compatible). Exports an `evaluate(state, config)` function with no side effects and no Shelly API calls. This is the testable core.
-- `scripts/control.js` — Shelly shell script that handles timers, RPC, relays, KVS, sensors. Imports `control-logic.js` (concatenated at deploy time).
-- `scripts/deploy.sh` — Deploys scripts to the Shelly Pro 4PM via HTTP RPC. Reads device IPs from `devices.conf`.
-- `scripts/devices.conf` — DHCP-reserved IP addresses for all Shelly devices.
+- `shelly/control-logic.js` — Pure decision logic (ES5-compatible). Exports an `evaluate(state, config)` function with no side effects and no Shelly API calls. This is the testable core.
+- `shelly/control.js` — Shelly shell script that handles timers, RPC, relays, KVS, sensors. Imports `control-logic.js` (concatenated at deploy time).
+- `shelly/deploy.sh` — Deploys scripts to the Shelly Pro 4PM via HTTP RPC. Reads device IPs from `devices.conf`.
+- `shelly/devices.conf` — DHCP-reserved IP addresses for all Shelly devices.
 
 **Shelly scripting constraints**: Scripts must use ES5-compatible JavaScript — no `const`/`let`, no arrow functions, no destructuring, no template literals, no ES6 classes. The linter enforces these rules.
 
 ## Shelly Linter
 
-- **CLI tool**: `tools/shelly-lint/` — standalone Node.js CLI (`node tools/shelly-lint/bin/shelly-lint.js`). Uses Acorn for AST parsing. Has its own `package.json` with acorn and js-yaml dependencies.
-- **CI**: `.github/workflows/lint-shelly.yml` runs the CLI linter on push/PR when `scripts/` or `tools/shelly-lint/` files change.
+- **CLI tool**: `shelly/lint/` — standalone Node.js CLI (`node shelly/lint/bin/shelly-lint.js`). Uses Acorn for AST parsing. Has its own `package.json` with acorn and js-yaml dependencies.
+- **CI**: `.github/workflows/lint-shelly.yml` runs the CLI linter on push/PR when `shelly/` files change.
 
 ## SVG Diagram Conventions
 
-Static SVGs in `diagrams/` use a dark background (#0d1117). Playground inline SVGs use light-theme colors (see Playground Architecture). Color coding for static diagrams:
+Static SVGs in `design/diagrams/` use a dark background (#0d1117). Playground inline SVGs use light-theme colors (see Playground Architecture). Color coding for static diagrams:
 - Blue (#42a5f5, #1565c0) = supply/cool water, tank
 - Red (#ef5350, #e53935) = hot water, dip tube path
 - Yellow (#f9a825) = solar collectors
@@ -104,29 +100,29 @@ All third-party libraries are vendored locally in `playground/vendor/` to avoid 
 
 **Do NOT replace these with CDN URLs.** The importmaps in each HTML file point to `./vendor/...` paths. If upgrading a dependency, download via `npm pack`, extract the dist files, and copy to `playground/vendor/`.
 
-## PoC Temperature Monitor
+## Temperature Monitor
 
-The `poc/` directory contains a hardware proof-of-concept app that reads live DS18B20 temperatures from a Shelly 1 sensor add-on and displays them in a browser-based UI. It can run locally (direct LAN access) or deployed to the cloud (via VPN).
+The `monitor/` directory contains the temperature monitoring web app that reads live DS18B20 temperatures from a Shelly 1 sensor add-on and displays them in a browser-based UI. It can run locally (direct LAN access) or deployed to the cloud (via VPN).
 
-- `poc/server.js` — Node.js HTTP server: serves static files, proxies RPC to Shelly devices, health endpoint, auth middleware (when `AUTH_ENABLED=true`), push notification API, valve state poller
-- `poc/index.html` — Web UI: SVG gauges + Canvas time-series chart (last 6h), notification subscribe/unsubscribe toggle
-- `poc/manifest.json` — PWA manifest (standalone display, app name, icons)
-- `poc/sw.js` — Service worker for push notifications (no offline caching)
-- `poc/icons/` — PWA icons (icon-192.png, icon-512.png)
-- `poc/login.html` — Passkey authentication page (registration + login)
-- `poc/js/` — ES modules: `shelly-api.js` (HTTP RPC client), `gauge.js` (SVG gauge), `chart.js` (Canvas chart), `app.js` (orchestration), `login.js` (passkey auth), `push.js` (push subscription management)
-- `poc/auth/` — Server-side auth: `credentials.js` (credential store via S3 adapter), `session.js` (HMAC cookies), `webauthn.js` (WebAuthn handlers)
-- `poc/lib/logger.js` — Structured JSON logger
-- `poc/lib/s3-storage.js` — S3/local storage adapter (reads/writes credentials to UpCloud Object Storage or local filesystem)
-- `poc/lib/push-storage.js` — S3/local storage adapter for push subscriptions (`push-subscriptions.json`) and VAPID keys (`push-config.json`)
-- `poc/lib/valve-poller.js` — Server-side valve state polling and change detection (polls Shelly controller via HTTP RPC)
-- `poc/vendor/simplewebauthn-browser.mjs` — Vendored @simplewebauthn/browser 13.3.0 (ESM)
-- `poc/css/style.css` — Standalone styles (not shared with playground)
-- `poc/shelly/sensor-display.js` — ES5 Shelly script for Pro 4PM
-- `poc/shelly/deploy-poc.sh` — Deploys the script to Pro 4PM via HTTP RPC
+- `monitor/server.js` — Node.js HTTP server: serves static files, proxies RPC to Shelly devices, health endpoint, auth middleware (when `AUTH_ENABLED=true`), push notification API, valve state poller
+- `monitor/index.html` — Web UI: SVG gauges + Canvas time-series chart (last 6h), notification subscribe/unsubscribe toggle
+- `monitor/manifest.json` — PWA manifest (standalone display, app name, icons)
+- `monitor/sw.js` — Service worker for push notifications (no offline caching)
+- `monitor/icons/` — PWA icons (icon-192.png, icon-512.png)
+- `monitor/login.html` — Passkey authentication page (registration + login)
+- `monitor/js/` — ES modules: `shelly-api.js` (HTTP RPC client), `gauge.js` (SVG gauge), `chart.js` (Canvas chart), `app.js` (orchestration), `login.js` (passkey auth), `push.js` (push subscription management)
+- `monitor/auth/` — Server-side auth: `credentials.js` (credential store via S3 adapter), `session.js` (HMAC cookies), `webauthn.js` (WebAuthn handlers)
+- `monitor/lib/logger.js` — Structured JSON logger
+- `monitor/lib/s3-storage.js` — S3/local storage adapter (reads/writes credentials to UpCloud Object Storage or local filesystem)
+- `monitor/lib/push-storage.js` — S3/local storage adapter for push subscriptions (`push-subscriptions.json`) and VAPID keys (`push-config.json`)
+- `monitor/lib/valve-poller.js` — Server-side valve state polling and change detection (polls Shelly controller via HTTP RPC)
+- `monitor/vendor/simplewebauthn-browser.mjs` — Vendored @simplewebauthn/browser 13.3.0 (ESM)
+- `monitor/css/style.css` — Standalone styles (not shared with playground)
+- `monitor/shelly/sensor-display.js` — ES5 Shelly script for Pro 4PM
+- `monitor/shelly/deploy-poc.sh` — Deploys the script to Pro 4PM via HTTP RPC
 
-**Local mode**: `node poc/server.js` — no auth, direct LAN access to Shelly devices.
-**Cloud mode**: `AUTH_ENABLED=true RPID=domain ORIGIN=https://domain node poc/server.js` — passkey auth required, VPN tunnel to reach devices.
+**Local mode**: `node monitor/server.js` — no auth, direct LAN access to Shelly devices.
+**Cloud mode**: `AUTH_ENABLED=true RPID=domain ORIGIN=https://domain node monitor/server.js` — passkey auth required, VPN tunnel to reach devices.
 
 **Do NOT replace vendored libs with CDN URLs.** The importmap in `login.html` points to `./vendor/...` paths.
 
@@ -140,7 +136,7 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 
 ### Test Structure
 
-- `tests/control-logic.test.js` — unit tests for the pure control logic (`scripts/control-logic.js`)
+- `tests/control-logic.test.js` — unit tests for the pure control logic (`shelly/control-logic.js`)
 - `tests/auth.test.js` — unit tests for auth modules (session signing, credential store)
 - `tests/s3-storage.test.js` — unit tests for S3 storage adapter (local fallback mode, S3 detection)
 - `tests/vpn-config.test.js` — unit tests for VPN config S3 persistence helper
@@ -161,7 +157,7 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - `.github/workflows/ci.yml` — runs the full test suite (unit, simulation, auth, e2e) on every push. Triggers on `push` only (not `pull_request`) so tests run exactly once — opening a PR from an already-pushed branch does not re-trigger.
 - `.github/workflows/deploy.yml` — CD pipeline: test → build app + deployer images → push to GHCR. Systemd timer on the server pulls deployer, which applies config and updates services. Triggers on push to main/master.
 - `.github/workflows/deploy-pages.yml` — deploys playground to GitHub Pages on push to main/master
-- `.github/workflows/lint-shelly.yml` — runs Shelly linter on push/PR when scripts or linter files change
+- `.github/workflows/lint-shelly.yml` — runs Shelly linter on push/PR when `shelly/` files change
 
 ## Active Technologies
 - Node.js 20 LTS (existing `server.js` uses CommonJS `http` module) + @simplewebauthn/server, @simplewebauthn/browser (vendored), Caddy (reverse proxy) (001-deploy-web-ui-cloud)
@@ -178,6 +174,8 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - S3-compatible object storage (UpCloud Managed Object Storage) — two new keys: `push-config.json`, `push-subscriptions.json` (004-pwa-push-notifications)
 - HCL (Terraform >= 1.5), POSIX shell (deployer), YAML (cloud-init, docker-compose) + UpCloud Terraform provider ~> 5.0, Docker Compose v2, systemd (005-fix-vpn-immutable-config)
 - UpCloud Managed Object Storage (S3-compatible) for VPN config and credentials (005-fix-vpn-immutable-config)
+- JavaScript ES5 (Shelly), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + @simplewebauthn/server, @aws-sdk/client-s3, web-push, Playwright, Acorn (linter) (006-organize-repo-structure)
+- S3-compatible object storage (UpCloud), local filesystem fallback (006-organize-repo-structure)
 
 ## Cloud Deployment Architecture
 
@@ -191,7 +189,7 @@ Internet → Caddy (:443, TLS) → Node.js app (:3000) → S3 Object Storage (cr
 - **Containers**: Docker Compose with `app` (Node.js) + `caddy` (reverse proxy, auto TLS) + optional `wireguard` (VPN via profiles)
 - **Container hardening**: App and Caddy containers run with read-only root filesystems and as non-root users. WireGuard runs without read-only (s6-overlay init requires writable rootfs) and as root (needs NET_ADMIN + SYS_MODULE).
 - **Persistence**: UpCloud Managed Object Storage (S3-compatible, €5/month) — no Docker volumes for app data. Stores WebAuthn credentials (`credentials.json`) and VPN config (`wg0.conf`).
-- **VPN config persistence**: The deployer downloads `wg0.conf` from S3 before starting containers (survives server recreation). On first setup, it uploads a locally-placed config to S3 for future rebuilds. Uses the app image as a one-shot S3 helper (`poc/lib/vpn-config.js`).
+- **VPN config persistence**: The deployer downloads `wg0.conf` from S3 before starting containers (survives server recreation). On first setup, it uploads a locally-placed config to S3 for future rebuilds. Uses the app image as a one-shot S3 helper (`monitor/lib/vpn-config.js`).
 - **VPN**: WireGuard container (disabled by default, enabled via Compose profiles + `enable_vpn` Terraform firewall rule)
 - **Auth**: WebAuthn passkeys via @simplewebauthn, HMAC-signed session cookies (30-day expiry)
 - **CD**: GitHub Actions → GHCR (app + deployer images) → systemd timer pulls deployer → deployer runs `docker compose up -d`
@@ -208,7 +206,6 @@ Server environment is split into two sources, merged by the deployer:
 To toggle VPN: set `COMPOSE_PROFILES=vpn` in `deploy/deployer/config.env` + `enable_vpn=true` in Terraform (firewall only, no server recreation).
 
 ## Recent Changes
+- 006-organize-repo-structure: Added JavaScript ES5 (Shelly), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + @simplewebauthn/server, @aws-sdk/client-s3, web-push, Playwright, Acorn (linter)
 - 005-fix-vpn-immutable-config: Added HCL (Terraform >= 1.5), POSIX shell (deployer), YAML (cloud-init, docker-compose) + UpCloud Terraform provider ~> 5.0, Docker Compose v2, systemd
 - 004-pwa-push-notifications: PWA manifest + service worker, Web Push notifications on valve state changes, push subscription API, valve polling module, S3 persistence for subscriptions and VAPID keys, `web-push` dependency
-- 004-vpn-key-persistence: Added Node.js 20 LTS (CommonJS), POSIX shell (deployer) + `@aws-sdk/client-s3` (already in app image)
-- 004-add-logout-feature: Added JavaScript ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + None new — uses existing auth endpoints and vendored libs

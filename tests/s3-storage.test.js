@@ -22,7 +22,7 @@ describe('s3-storage adapter (local mode)', function () {
   beforeEach(function () {
     try { fs.unlinkSync(testPath); } catch (e) { /* ignore */ }
     // Clear module cache for fresh state
-    delete require.cache[require.resolve('../poc/lib/s3-storage')];
+    delete require.cache[require.resolve('../monitor/lib/s3-storage')];
   });
 
   after(function () {
@@ -30,19 +30,19 @@ describe('s3-storage adapter (local mode)', function () {
   });
 
   it('isS3Enabled returns false when env vars not set', function () {
-    var storage = require('../poc/lib/s3-storage');
+    var storage = require('../monitor/lib/s3-storage');
     storage._reset();
     assert.strictEqual(storage.isS3Enabled(), false);
   });
 
   it('readSync returns null when file does not exist', function () {
-    var storage = require('../poc/lib/s3-storage');
+    var storage = require('../monitor/lib/s3-storage');
     var result = storage.readSync();
     assert.strictEqual(result, null);
   });
 
   it('writeSync and readSync round-trip data', function () {
-    var storage = require('../poc/lib/s3-storage');
+    var storage = require('../monitor/lib/s3-storage');
     var data = { user: 'test', credentials: [{ id: 'c1' }] };
     storage.writeSync(data);
     var result = storage.readSync();
@@ -50,7 +50,7 @@ describe('s3-storage adapter (local mode)', function () {
   });
 
   it('read callback returns null when file does not exist', function (t, done) {
-    var storage = require('../poc/lib/s3-storage');
+    var storage = require('../monitor/lib/s3-storage');
     storage.read(function (err, data) {
       assert.ifError(err);
       assert.strictEqual(data, null);
@@ -59,7 +59,7 @@ describe('s3-storage adapter (local mode)', function () {
   });
 
   it('write and read callback round-trip data', function (t, done) {
-    var storage = require('../poc/lib/s3-storage');
+    var storage = require('../monitor/lib/s3-storage');
     var testData = { sessions: [{ token: 'abc' }] };
     storage.write(testData, function (err) {
       assert.ifError(err);
@@ -74,8 +74,8 @@ describe('s3-storage adapter (local mode)', function () {
   it('writeSync creates parent directories if needed', function () {
     var nestedPath = path.join(__dirname, 'nested-' + process.pid, 'deep', 'creds.json');
     process.env.CREDENTIALS_PATH = nestedPath;
-    delete require.cache[require.resolve('../poc/lib/s3-storage')];
-    var storage = require('../poc/lib/s3-storage');
+    delete require.cache[require.resolve('../monitor/lib/s3-storage')];
+    var storage = require('../monitor/lib/s3-storage');
     storage._reset();
     var data = { test: true };
     storage.writeSync(data);
@@ -98,7 +98,7 @@ describe('s3-storage adapter (S3 mode detection)', function () {
   });
 
   beforeEach(function () {
-    delete require.cache[require.resolve('../poc/lib/s3-storage')];
+    delete require.cache[require.resolve('../monitor/lib/s3-storage')];
   });
 
   it('isS3Enabled returns true when all S3 env vars set', function () {
@@ -106,7 +106,7 @@ describe('s3-storage adapter (S3 mode detection)', function () {
     process.env.S3_BUCKET = 'test-bucket';
     process.env.S3_ACCESS_KEY_ID = 'key123';
     process.env.S3_SECRET_ACCESS_KEY = 'secret456';
-    var storage = require('../poc/lib/s3-storage');
+    var storage = require('../monitor/lib/s3-storage');
     storage._reset();
     assert.strictEqual(storage.isS3Enabled(), true);
     // Clean up
@@ -119,7 +119,7 @@ describe('s3-storage adapter (S3 mode detection)', function () {
   it('isS3Enabled returns false when only some S3 env vars set', function () {
     process.env.S3_ENDPOINT = 'https://example.com';
     // Missing bucket, key, secret
-    var storage = require('../poc/lib/s3-storage');
+    var storage = require('../monitor/lib/s3-storage');
     storage._reset();
     assert.strictEqual(storage.isS3Enabled(), false);
     delete process.env.S3_ENDPOINT;

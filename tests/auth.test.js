@@ -15,7 +15,7 @@ describe('session', function () {
     process.env.SESSION_SECRET = 'test-secret-32chars-minimum!!!!';
   });
 
-  const session = require('../poc/auth/session');
+  const session = require('../monitor/auth/session');
 
   it('sign produces token.signature format', function () {
     var signed = session.sign('test-token');
@@ -75,7 +75,7 @@ describe('credential store', function () {
     // Clean up and re-require
     try { fs.unlinkSync(credPath); } catch (e) { /* ignore */ }
     // Clear module cache to get fresh store
-    delete require.cache[require.resolve('../poc/auth/credentials')];
+    delete require.cache[require.resolve('../monitor/auth/credentials')];
   });
 
   after(function () {
@@ -83,14 +83,14 @@ describe('credential store', function () {
   });
 
   it('starts with empty store when no file exists', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     assert.strictEqual(store.getUser(), null);
     assert.deepStrictEqual(store.getCredentials(), []);
   });
 
   it('createUser creates a user with random id', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     var user = store.createUser('admin');
     assert.strictEqual(user.name, 'admin');
@@ -98,7 +98,7 @@ describe('credential store', function () {
   });
 
   it('createUser returns existing user on second call', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     var first = store.createUser('admin');
     var second = store.createUser('other');
@@ -107,7 +107,7 @@ describe('credential store', function () {
   });
 
   it('addCredential and getCredentialById work', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     store.addCredential({
       id: 'cred-123',
@@ -122,7 +122,7 @@ describe('credential store', function () {
   });
 
   it('updateCredentialCounter updates counter', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     store.addCredential({ id: 'cred-1', publicKey: 'pk', counter: 5, transports: [] });
     store.updateCredentialCounter('cred-1', 10);
@@ -130,7 +130,7 @@ describe('credential store', function () {
   });
 
   it('createSession and validateSession work', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     var sess = store.createSession();
     assert.ok(sess.token);
@@ -141,13 +141,13 @@ describe('credential store', function () {
   });
 
   it('validateSession returns null for unknown token', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     assert.strictEqual(store.validateSession('nonexistent'), null);
   });
 
   it('removeSession deletes a session', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     var sess = store.createSession();
     store.removeSession(sess.token);
@@ -155,13 +155,13 @@ describe('credential store', function () {
   });
 
   it('isRegistrationOpen returns true initially', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     assert.strictEqual(store.isRegistrationOpen(), true);
   });
 
   it('isRegistrationOpen returns false after adding credential', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     store.initSetup();
     store.addCredential({ id: 'c1', publicKey: 'pk', counter: 0, transports: [] });
@@ -169,7 +169,7 @@ describe('credential store', function () {
   });
 
   it('closeRegistration closes the window', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     store.initSetup();
     store.closeRegistration();
@@ -180,7 +180,7 @@ describe('credential store', function () {
   });
 
   it('persists data to JSON file', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     store.createUser('test');
     store.addCredential({ id: 'persist-test', publicKey: 'pk', counter: 1, transports: [] });
@@ -193,7 +193,7 @@ describe('credential store', function () {
   });
 
   it('removeSession is idempotent for unknown tokens', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     // Should not throw when removing a token that doesn't exist
     store.removeSession('nonexistent-token');
@@ -201,7 +201,7 @@ describe('credential store', function () {
   });
 
   it('clearSessionCookie sets Max-Age=0', function () {
-    var session = require('../poc/auth/session');
+    var session = require('../monitor/auth/session');
     var headers = {};
     var res = { setHeader: function (k, v) { headers[k] = v; } };
     session.clearSessionCookie(res);
@@ -211,7 +211,7 @@ describe('credential store', function () {
   });
 
   it('logout flow: create session, remove it, validate returns null', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     var sess = store.createSession();
     assert.ok(store.validateSession(sess.token), 'session should be valid before logout');
@@ -220,7 +220,7 @@ describe('credential store', function () {
   });
 
   it('expireSessions removes expired sessions', function () {
-    var store = require('../poc/auth/credentials');
+    var store = require('../monitor/auth/credentials');
     store.load();
     var sess = store.createSession();
 
@@ -230,8 +230,8 @@ describe('credential store', function () {
     fs.writeFileSync(credPath, JSON.stringify(raw));
 
     // Re-load and expire
-    delete require.cache[require.resolve('../poc/auth/credentials')];
-    var store2 = require('../poc/auth/credentials');
+    delete require.cache[require.resolve('../monitor/auth/credentials')];
+    var store2 = require('../monitor/auth/credentials');
     store2.load();
     store2.expireSessions();
     assert.strictEqual(store2.validateSession(sess.token), null);

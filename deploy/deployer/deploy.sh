@@ -89,7 +89,7 @@ else
   if ! timeout 30 docker run --rm --env-file "$APP_DIR/.env" \
     -v "$APP_DIR:/opt/app" \
     "$APP_IMAGE" \
-    node poc/lib/vpn-config.js download /opt/app/wg0.conf 2>&1; then
+    node monitor/lib/vpn-config.js download /opt/app/wg0.conf 2>&1; then
     log "WARNING: VPN config download failed — continuing without VPN config"
   fi
 
@@ -99,7 +99,7 @@ else
     if ! timeout 30 docker run --rm --env-file "$APP_DIR/.env" \
       -v "$APP_DIR:/opt/app" \
       "$APP_IMAGE" \
-      node poc/lib/vpn-config.js upload /opt/app/wg0.conf 2>&1; then
+      node monitor/lib/vpn-config.js upload /opt/app/wg0.conf 2>&1; then
       log "WARNING: VPN config upload failed — continuing"
     fi
   fi

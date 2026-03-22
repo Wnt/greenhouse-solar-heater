@@ -6,7 +6,7 @@
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
-var valvePoller = require('../poc/lib/valve-poller');
+var valvePoller = require('../monitor/lib/valve-poller');
 
 test.afterEach(function () {
   valvePoller._reset();
