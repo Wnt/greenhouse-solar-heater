@@ -37,7 +37,7 @@ services:
         condition: service_healthy
 
   openvpn:
-    build: ../openvpn
+    image: ghcr.io/${GITHUB_REPO:-local/greenhouse-solar-heater}-openvpn:${IMAGE_TAG:-latest}
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
