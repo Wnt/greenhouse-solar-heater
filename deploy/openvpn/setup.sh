@@ -2,10 +2,10 @@
 # Generate OpenVPN server config with static key for UniFi site-to-site VPN.
 #
 # Usage:
-#   ./setup.sh --server-ip <PUBLIC_IP> [options]
+#   ./setup.sh [options]
 #
 # Options:
-#   --server-ip         Cloud server public IP (required)
+#   --server-address    Cloud server IP or hostname (default: greenhouse.madekivi.fi)
 #   --server-tunnel-ip  Server tunnel endpoint (default: 10.10.10.1)
 #   --client-tunnel-ip  Client tunnel endpoint (default: 10.10.10.2)
 #   --remote-network    Client-side LAN subnet (default: 192.168.1.0/24)
@@ -17,7 +17,7 @@
 set -e
 
 # Defaults
-SERVER_IP=""
+SERVER_IP="greenhouse.madekivi.fi"
 SERVER_TUNNEL_IP="10.10.10.1"
 CLIENT_TUNNEL_IP="10.10.10.2"
 REMOTE_NETWORK="192.168.1.0/24"
@@ -27,7 +27,7 @@ OUTPUT="./openvpn.conf"
 # Parse arguments
 while [ $# -gt 0 ]; do
   case "$1" in
-    --server-ip)       SERVER_IP="$2"; shift 2 ;;
+    --server-address)  SERVER_IP="$2"; shift 2 ;;
     --server-tunnel-ip) SERVER_TUNNEL_IP="$2"; shift 2 ;;
     --client-tunnel-ip) CLIENT_TUNNEL_IP="$2"; shift 2 ;;
     --remote-network)  REMOTE_NETWORK="$2"; shift 2 ;;
@@ -43,12 +43,6 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
-
-if [ -z "$SERVER_IP" ]; then
-  echo "ERROR: --server-ip is required" >&2
-  echo "Usage: $0 --server-ip <PUBLIC_IP> [options]" >&2
-  exit 1
-fi
 
 # Split remote network into address and netmask
 NETWORK_ADDR=$(echo "$REMOTE_NETWORK" | cut -d/ -f1)
