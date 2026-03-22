@@ -23,7 +23,7 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `shelly/lint/` → Shelly platform conformance linter (CLI, standalone package)
 - `playground/` → interactive browser-based simulators (thermal, hydraulic)
 - `monitor/` → temperature monitor web app (server, UI, auth, push notifications)
-- `monitor/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers)
+- `monitor/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers, invitation-based registration)
 - `monitor/lib/logger.js` → structured JSON logger (used by server and auth modules)
 - `monitor/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
 - `monitor/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload openvpn.conf)
@@ -117,6 +117,7 @@ The `monitor/` directory contains the temperature monitoring web app that reads 
 - `monitor/lib/push-storage.js` — S3/local storage adapter for push subscriptions (`push-subscriptions.json`) and VAPID keys (`push-config.json`)
 - `monitor/lib/valve-poller.js` — Server-side valve state polling and change detection (polls Shelly controller via HTTP RPC)
 - `monitor/vendor/simplewebauthn-browser.mjs` — Vendored @simplewebauthn/browser 13.3.0 (ESM)
+- `monitor/vendor/qrcode-generator.mjs` — Vendored qrcode-generator 2.0.4 (ESM, for invitation QR codes)
 - `monitor/css/style.css` — Standalone styles (not shared with playground)
 - `monitor/shelly/sensor-display.js` — ES5 Shelly script for Pro 4PM
 - `monitor/shelly/deploy-poc.sh` — Deploys the script to Pro 4PM via HTTP RPC
@@ -178,6 +179,8 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - S3-compatible object storage (UpCloud), local filesystem fallback (006-organize-repo-structure)
 - POSIX shell (setup script, deployer), HCL (Terraform >= 1.5), Node.js 20 LTS (vpn-config.js), YAML (docker-compose) + OpenVPN (Alpine package), Docker Compose v2, @aws-sdk/client-s3 (existing) (007-switch-to-openvpn)
 - UpCloud Managed Object Storage (S3-compatible) for VPN config persistence (007-switch-to-openvpn)
+- Node.js 20 LTS (CommonJS server-side), ES6+ browser modules + `@simplewebauthn/server` (existing), `@simplewebauthn/browser` (vendored, existing), `qrcode` (new, vendored browser bundle for QR generation) (008-add-passkey-registration)
+- S3-compatible object storage for credentials (existing, unchanged schema); in-memory for invitations and rate limits (008-add-passkey-registration)
 
 ## Cloud Deployment Architecture
 
@@ -209,6 +212,6 @@ Server environment is split into two sources, merged by the deployer:
 VPN is always-on (the app uses `network_mode: "service:openvpn"`). Firewall rule controlled via `enable_vpn=true` in Terraform.
 
 ## Recent Changes
+- 008-add-passkey-registration: Added Node.js 20 LTS (CommonJS server-side), ES6+ browser modules + `@simplewebauthn/server` (existing), `@simplewebauthn/browser` (vendored, existing), `qrcode` (new, vendored browser bundle for QR generation)
 - 007-switch-to-openvpn: Added POSIX shell (setup script, deployer), HCL (Terraform >= 1.5), Node.js 20 LTS (vpn-config.js), YAML (docker-compose) + OpenVPN (Alpine package), Docker Compose v2, @aws-sdk/client-s3 (existing)
 - 006-organize-repo-structure: Added JavaScript ES5 (Shelly), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + @simplewebauthn/server, @aws-sdk/client-s3, web-push, Playwright, Acorn (linter)
-- 005-fix-vpn-immutable-config: Added HCL (Terraform >= 1.5), POSIX shell (deployer), YAML (cloud-init, docker-compose) + UpCloud Terraform provider ~> 5.0, Docker Compose v2, systemd

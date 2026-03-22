@@ -6,6 +6,7 @@ import { ShellyAPI } from './shelly-api.js';
 import { renderGauge, renderGaugeNoData } from './gauge.js';
 import { TimeSeriesStore, drawChart } from './chart.js';
 import * as push from './push.js';
+import qrcode from 'qrcode-generator';
 
 // ── Configuration ──
 const SENSOR_IDS = [100, 101];
@@ -81,6 +82,15 @@ faviconCanvas.height = 32;
 // Logout DOM ref
 const elLogoutBtn = document.getElementById('logout-btn');
 
+// Invitation DOM refs
+const elInviteBtn = document.getElementById('invite-btn');
+const elInviteModal = document.getElementById('invite-modal');
+const elInviteCode = document.getElementById('invite-code');
+const elInviteQr = document.getElementById('invite-qr');
+const elInviteTimer = document.getElementById('invite-timer');
+const elInviteCloseBtn = document.getElementById('invite-close-btn');
+let inviteCountdown = null;
+
 // ── Init ──
 export function init() {
   loadConfig();
@@ -106,6 +116,7 @@ async function checkAuthStatus() {
     const data = await res.json();
     if (data.authenticated) {
       elLogoutBtn.hidden = false;
+      elInviteBtn.hidden = false;
     }
   } catch (e) {
     // Network error or auth not available — keep button hidden
@@ -209,6 +220,11 @@ function setupEventListeners() {
 
   // Logout button
   elLogoutBtn.addEventListener('click', () => logout());
+
+  // Invitation buttons
+  elInviteBtn.addEventListener('click', () => generateInvitation());
+  elInviteCloseBtn.addEventListener('click', () => closeInviteModal());
+  document.querySelector('.invite-modal-backdrop').addEventListener('click', () => closeInviteModal());
 
   // Time range buttons
   document.querySelectorAll('.time-range-btns button').forEach(btn => {
@@ -681,6 +697,78 @@ async function sendClearOverride() {
     } else {
       logEvent(`Clear override failed: ${e.message}`, 'error');
     }
+  }
+}
+
+// ── Invitation generation ──
+
+async function generateInvitation() {
+  try {
+    var res = await fetch('/auth/invite/create', { method: 'POST' });
+    if (!res.ok) {
+      var err = await res.json();
+      logEvent('Invitation failed: ' + (err.error || 'Unknown error'), 'error');
+      return;
+    }
+    var data = await res.json();
+    showInviteModal(data.code, data.expiresInSeconds);
+  } catch (e) {
+    logEvent('Invitation failed: ' + e.message, 'error');
+  }
+}
+
+function showInviteModal(code, expiresInSeconds) {
+  elInviteCode.textContent = code;
+
+  // Generate QR code
+  var qr = qrcode(0, 'M');
+  qr.addData(window.location.origin + '/login.html?invite=' + code);
+  qr.make();
+  var canvas = elInviteQr;
+  var cellSize = 4;
+  var margin = 8;
+  var size = qr.getModuleCount() * cellSize + margin * 2;
+  canvas.width = size;
+  canvas.height = size;
+  var ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, size, size);
+  for (var row = 0; row < qr.getModuleCount(); row++) {
+    for (var col = 0; col < qr.getModuleCount(); col++) {
+      if (qr.isDark(row, col)) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(col * cellSize + margin, row * cellSize + margin, cellSize, cellSize);
+      }
+    }
+  }
+
+  // Start countdown
+  var remaining = expiresInSeconds;
+  updateInviteTimer(remaining);
+  if (inviteCountdown) clearInterval(inviteCountdown);
+  inviteCountdown = setInterval(function () {
+    remaining--;
+    updateInviteTimer(remaining);
+    if (remaining <= 0) {
+      closeInviteModal();
+    }
+  }, 1000);
+
+  elInviteModal.hidden = false;
+}
+
+function updateInviteTimer(seconds) {
+  var min = Math.floor(seconds / 60);
+  var sec = seconds % 60;
+  elInviteTimer.textContent = 'Expires in ' + min + ':' + (sec < 10 ? '0' : '') + sec;
+  elInviteTimer.className = seconds <= 30 ? 'invite-timer expiring' : 'invite-timer';
+}
+
+function closeInviteModal() {
+  elInviteModal.hidden = true;
+  if (inviteCountdown) {
+    clearInterval(inviteCountdown);
+    inviteCountdown = null;
   }
 }
 

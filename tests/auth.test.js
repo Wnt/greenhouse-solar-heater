@@ -237,3 +237,127 @@ describe('credential store', function () {
     assert.strictEqual(store2.validateSession(sess.token), null);
   });
 });
+
+// ── Invitation tests ──
+
+describe('invitations', function () {
+  var inv = require('../monitor/auth/invitations');
+
+  beforeEach(function () {
+    inv.reset();
+  });
+
+  it('createInvitation returns a 6-digit code with expiry', function () {
+    var invite = inv.createInvitation('session-1');
+    assert.ok(invite.code, 'should have a code');
+    assert.strictEqual(invite.code.length, 6, 'code should be 6 digits');
+    assert.ok(/^\d{6}$/.test(invite.code), 'code should be all digits');
+    assert.ok(invite.expiresAt, 'should have expiresAt');
+    assert.strictEqual(invite.expiresInSeconds, 300, 'should expire in 300s');
+  });
+
+  it('validateInvitation returns true for valid code', function () {
+    var invite = inv.createInvitation('session-1');
+    assert.strictEqual(inv.validateInvitation(invite.code), true);
+  });
+
+  it('validateInvitation returns false for nonexistent code', function () {
+    assert.strictEqual(inv.validateInvitation('000000'), false);
+  });
+
+  it('validateInvitation returns false for expired code', function () {
+    var invite = inv.createInvitation('session-1');
+    // Manually expire it
+    var active = inv._getActiveInvitations();
+    active[invite.code].expiresAt = Date.now() - 1000;
+    assert.strictEqual(inv.validateInvitation(invite.code), false);
+  });
+
+  it('consumeInvitation deletes the code', function () {
+    var invite = inv.createInvitation('session-1');
+    assert.strictEqual(inv.consumeInvitation(invite.code), true);
+    assert.strictEqual(inv.validateInvitation(invite.code), false);
+  });
+
+  it('consumeInvitation returns false for nonexistent code', function () {
+    assert.strictEqual(inv.consumeInvitation('999999'), false);
+  });
+
+  it('creating new invitation invalidates previous one from same session', function () {
+    var invite1 = inv.createInvitation('session-1');
+    var invite2 = inv.createInvitation('session-1');
+    assert.notStrictEqual(invite1.code, invite2.code);
+    assert.strictEqual(inv.validateInvitation(invite1.code), false);
+    assert.strictEqual(inv.validateInvitation(invite2.code), true);
+  });
+
+  it('invitations from different sessions coexist', function () {
+    var invite1 = inv.createInvitation('session-1');
+    var invite2 = inv.createInvitation('session-2');
+    assert.strictEqual(inv.validateInvitation(invite1.code), true);
+    assert.strictEqual(inv.validateInvitation(invite2.code), true);
+  });
+
+  it('cleanExpired removes expired invitations', function () {
+    var invite = inv.createInvitation('session-1');
+    var active = inv._getActiveInvitations();
+    active[invite.code].expiresAt = Date.now() - 1000;
+    inv.cleanExpired();
+    assert.strictEqual(Object.keys(active).length, 0);
+  });
+});
+
+// ── Rate limiting tests ──
+
+describe('rate limiting', function () {
+  var inv = require('../monitor/auth/invitations');
+
+  beforeEach(function () {
+    inv.reset();
+  });
+
+  it('allows first 5 attempts from same IP', function () {
+    for (var i = 0; i < 5; i++) {
+      assert.strictEqual(inv.checkRateLimit('1.2.3.4'), true, 'attempt ' + (i + 1) + ' should be allowed');
+      inv.recordAttempt('1.2.3.4');
+    }
+  });
+
+  it('blocks 6th attempt from same IP', function () {
+    for (var i = 0; i < 5; i++) {
+      inv.recordAttempt('1.2.3.4');
+    }
+    assert.strictEqual(inv.checkRateLimit('1.2.3.4'), false);
+  });
+
+  it('allows attempts from different IPs independently', function () {
+    for (var i = 0; i < 5; i++) {
+      inv.recordAttempt('1.2.3.4');
+    }
+    assert.strictEqual(inv.checkRateLimit('1.2.3.4'), false);
+    assert.strictEqual(inv.checkRateLimit('5.6.7.8'), true);
+  });
+
+  it('allows attempts after old entries expire', function () {
+    // Manually insert old attempts
+    var limits = inv._getRateLimits();
+    limits['1.2.3.4'] = {
+      attempts: [
+        Date.now() - 70000, // 70s ago (expired)
+        Date.now() - 65000,
+        Date.now() - 62000,
+        Date.now() - 61000,
+        Date.now() - 60500,
+      ],
+    };
+    // All attempts are older than 60s, so should be pruned
+    assert.strictEqual(inv.checkRateLimit('1.2.3.4'), true);
+  });
+
+  it('cleanExpired removes stale rate limit entries', function () {
+    var limits = inv._getRateLimits();
+    limits['1.2.3.4'] = { attempts: [Date.now() - 70000] };
+    inv.cleanExpired();
+    assert.strictEqual(limits['1.2.3.4'], undefined);
+  });
+});

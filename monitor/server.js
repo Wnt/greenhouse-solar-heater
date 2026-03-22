@@ -271,7 +271,7 @@ var server = http.createServer(function (req, res) {
   }
 
   // Login page and its assets — accessible without auth
-  if (urlPath === '/login.html' || urlPath === '/js/login.js' || urlPath === '/vendor/simplewebauthn-browser.mjs' || urlPath === '/css/style.css') {
+  if (urlPath === '/login.html' || urlPath === '/js/login.js' || urlPath === '/vendor/simplewebauthn-browser.mjs' || urlPath === '/vendor/qrcode-generator.mjs' || urlPath === '/css/style.css') {
     serveStatic(req, res);
     return;
   }
