@@ -180,17 +180,18 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 ## Cloud Deployment Architecture
 
 ```
-Internet → Caddy (:443, TLS) → Node.js app (:3000) → S3 Object Storage (credentials)
-                                                    → WireGuard VPN (optional) → Shelly devices
+Internet → Caddy (:443, TLS) → WireGuard (shared network) → Node.js app (:3000) → S3 Object Storage (credentials)
+                                         ↕ VPN tunnel
+                                    Shelly devices (LAN)
 ```
 
 - **Infrastructure**: UpCloud DEV-1xCPU-1GB-10GB server (fi-hel1) + Managed Object Storage (europe-1), provisioned via Terraform
 - **Deployer**: Config lives in a deployer container image (`deploy/deployer/`), not cloud-init. Systemd timer pulls and runs the deployer every 5 minutes.
-- **Containers**: Docker Compose with `app` (Node.js) + `caddy` (reverse proxy, auto TLS) + optional `wireguard` (VPN via profiles)
+- **Containers**: Docker Compose with `app` (Node.js, shares wireguard network via `network_mode: "service:wireguard"`) + `caddy` (reverse proxy, auto TLS) + `wireguard` (VPN). Caddy connects to `wireguard:3000` since the app shares the wireguard network namespace.
 - **Container hardening**: App and Caddy containers run with read-only root filesystems and as non-root users. WireGuard runs without read-only (s6-overlay init requires writable rootfs) and as root (needs NET_ADMIN + SYS_MODULE).
 - **Persistence**: UpCloud Managed Object Storage (S3-compatible, €5/month) — no Docker volumes for app data. Stores WebAuthn credentials (`credentials.json`) and VPN config (`wg0.conf`).
 - **VPN config persistence**: The deployer downloads `wg0.conf` from S3 before starting containers (survives server recreation). On first setup, it uploads a locally-placed config to S3 for future rebuilds. Uses the app image as a one-shot S3 helper (`monitor/lib/vpn-config.js`).
-- **VPN**: WireGuard container (disabled by default, enabled via Compose profiles + `enable_vpn` Terraform firewall rule)
+- **VPN networking**: The app container uses `network_mode: "service:wireguard"` to share the WireGuard container's network namespace. This gives the app direct access to the VPN tunnel, allowing it to proxy RPC requests to Shelly devices on the home LAN. Firewall rule controlled via `enable_vpn` Terraform variable.
 - **Auth**: WebAuthn passkeys via @simplewebauthn, HMAC-signed session cookies (30-day expiry)
 - **CD**: GitHub Actions → GHCR (app + deployer images) → systemd timer pulls deployer → deployer runs `docker compose up -d`
 - **No SSH exposed**: Firewall blocks port 22. Emergency access via UpCloud web console.
@@ -200,10 +201,10 @@ Internet → Caddy (:443, TLS) → Node.js app (:3000) → S3 Object Storage (cr
 Server environment is split into two sources, merged by the deployer:
 
 - **`.env.secrets`** (cloud-init, immutable) — secrets that require server recreation to change: `SESSION_SECRET`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`
-- **`config.env`** (deployer image, mutable) — service config that deploys via CD without server recreation: `PORT`, `AUTH_ENABLED`, `RPID`, `ORIGIN`, `DOMAIN`, `GITHUB_REPO`, `VPN_CHECK_HOST`, `VPN_CONFIG_KEY`, `SETUP_WINDOW_MINUTES`, `NODE_ENV`, `COMPOSE_PROFILES`, `CONTROLLER_IP`, `CONTROLLER_SCRIPT_ID`, `VAPID_SUBJECT`
+- **`config.env`** (deployer image, mutable) — service config that deploys via CD without server recreation: `PORT`, `AUTH_ENABLED`, `RPID`, `ORIGIN`, `DOMAIN`, `GITHUB_REPO`, `VPN_CHECK_HOST`, `VPN_CONFIG_KEY`, `SETUP_WINDOW_MINUTES`, `NODE_ENV`, `CONTROLLER_IP`, `CONTROLLER_SCRIPT_ID`, `VAPID_SUBJECT`
 - **`.env`** (deployer merge output) — merged file consumed by Docker Compose. Secrets win on duplicate keys.
 
-To toggle VPN: set `COMPOSE_PROFILES=vpn` in `deploy/deployer/config.env` + `enable_vpn=true` in Terraform (firewall only, no server recreation).
+VPN is always-on (the app uses `network_mode: "service:wireguard"`). Firewall rule controlled via `enable_vpn=true` in Terraform.
 
 ## Recent Changes
 - 006-organize-repo-structure: Added JavaScript ES5 (Shelly), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + @simplewebauthn/server, @aws-sdk/client-s3, web-push, Playwright, Acorn (linter)

@@ -1,5 +1,5 @@
 {$DOMAIN} {
-	reverse_proxy app:3000
+	reverse_proxy wireguard:3000
 
 	log {
 		output stdout

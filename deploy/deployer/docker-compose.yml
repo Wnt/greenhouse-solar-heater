@@ -4,6 +4,7 @@ services:
     restart: unless-stopped
     read_only: true
     user: "1000:1000"
+    network_mode: "service:wireguard"
     env_file: .env
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
@@ -13,8 +14,8 @@ services:
       timeout: 5s
       start_period: 10s
       retries: 3
-    networks:
-      - internal
+    depends_on:
+      - wireguard
 
   caddy:
     image: caddy:2-alpine
@@ -34,8 +35,6 @@ services:
     depends_on:
       app:
         condition: service_healthy
-    networks:
-      - internal
 
   wireguard:
     image: lscr.io/linuxserver/wireguard
@@ -52,14 +51,7 @@ services:
       - "51820:51820/udp"
     sysctls:
       - net.ipv4.ip_forward=1
-    profiles:
-      - vpn
-    networks:
-      - internal
 
 volumes:
   caddy_data:
   caddy_config:
-
-networks:
-  internal:
