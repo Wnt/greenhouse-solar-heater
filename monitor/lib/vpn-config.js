@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
  * VPN config S3 persistence helper.
- * Downloads or uploads WireGuard config (wg0.conf) to/from S3.
+ * Downloads or uploads OpenVPN config (openvpn.conf) to/from S3.
  *
  * Usage:
- *   node poc/lib/vpn-config.js download /opt/app/wg0.conf
- *   node poc/lib/vpn-config.js upload /opt/app/wg0.conf
+ *   node monitor/lib/vpn-config.js download /opt/app/openvpn.conf
+ *   node monitor/lib/vpn-config.js upload /opt/app/openvpn.conf
  *
  * Environment variables (same as s3-storage.js):
  *   S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_REGION
- *   VPN_CONFIG_KEY - S3 object key (default: wg0.conf)
+ *   VPN_CONFIG_KEY - S3 object key (default: openvpn.conf)
  */
 
 var fs = require('fs');
@@ -28,7 +28,7 @@ function getS3Config() {
     bucket: bucket,
     region: process.env.S3_REGION || 'europe-1',
     credentials: { accessKeyId: accessKeyId, secretAccessKey: secretAccessKey },
-    key: process.env.VPN_CONFIG_KEY || 'wg0.conf',
+    key: process.env.VPN_CONFIG_KEY || 'openvpn.conf',
   };
 }
 

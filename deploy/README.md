@@ -4,7 +4,7 @@
 
 ```
 Internet → Caddy (:443, TLS) → Node.js app (:3000) → S3 Object Storage (credentials)
-                                                    → WireGuard VPN (optional) → Shelly devices
+                                                    → OpenVPN (optional) → Shelly devices
 
 Update flow:
   git push → CI builds app + deployer images → GHCR
@@ -68,14 +68,18 @@ Push to main. The deployer image is rebuilt and the server picks it up within 5 
 | `upcloud_zone` | No | `fi-hel1` | UpCloud zone |
 | `server_plan` | No | `DEV-1xCPU-1GB-10GB` | Server plan (€3/month, limit 2/account) |
 | `objsto_region` | No | `europe-1` | Object Storage region (~€5/month) |
-| `enable_vpn` | No | `false` | Enable WireGuard VPN firewall rule |
+| `enable_vpn` | No | `false` | Enable OpenVPN firewall rule (UDP 1194) |
 
 ## Enabling VPN
 
-1. Edit `deploy/deployer/docker-compose.yml` — the wireguard service is already defined with `profiles: ["vpn"]`
-2. Add `COMPOSE_PROFILES=vpn` to the `.env` on the server (via UpCloud web console)
-3. In Terraform: `enable_vpn = true` then `terraform apply` (adds firewall rule for UDP 51820)
-4. Configure WireGuard peer details via UpCloud web console
+1. Generate OpenVPN config: `cd deploy/openvpn && ./setup.sh --server-ip <PUBLIC_IP>`
+2. Copy the generated `openvpn.conf` to `/opt/app/openvpn.conf` on the server
+3. Enter the printed values in UniFi UI: Settings → VPN → Create New VPN → OpenVPN
+4. Add `COMPOSE_PROFILES=vpn` to the `.env` on the server (via UpCloud web console)
+5. In Terraform: `enable_vpn = true` then `terraform apply` (adds firewall rule for UDP 1194)
+6. On the next deployer run (~5 min), the OpenVPN container starts and the tunnel establishes
+
+The deployer automatically uploads `openvpn.conf` to S3 for recovery after server recreation.
 
 ## Emergency Access
 
@@ -96,6 +100,6 @@ systemctl list-timers deployer.timer  # schedule
 |-----------|-------|---------|-----------|
 | app | `ghcr.io/<repo>:latest` | Monitoring UI | Non-root (UID 1000), RO root |
 | caddy | `caddy:2-alpine` | TLS termination | RO root, writable cert volumes |
-| wireguard | `linuxserver/wireguard` | VPN tunnel (optional, via profiles) | NET_ADMIN cap, RO root |
+| openvpn | Custom Alpine + openvpn | VPN tunnel (optional, via profiles) | NET_ADMIN cap |
 
 The deployer runs as a **one-shot container** via systemd — it is not a long-lived service.

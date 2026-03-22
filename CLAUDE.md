@@ -26,12 +26,12 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `monitor/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers)
 - `monitor/lib/logger.js` → structured JSON logger (used by server and auth modules)
 - `monitor/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
-- `monitor/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload wg0.conf)
+- `monitor/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload openvpn.conf)
 - `deploy/` → cloud deployment infrastructure
 - `deploy/terraform/` → UpCloud server, firewall rules, Managed Object Storage (Terraform)
 - `deploy/docker/` → App Dockerfile only
 - `deploy/deployer/` → Deployer image: Dockerfile, deploy.sh, docker-compose.yml, Caddyfile, config.env
-- `deploy/wireguard/` → WireGuard VPN server config template
+- `deploy/openvpn/` → OpenVPN server: Dockerfile, config template, setup script
 - `design/docs/` → prose docs: design.md, bom.md, ideas/, superpowers/
 - `design/diagrams/` → hand-authored SVG with `data-` attributes + Mermaid control logic
 - `design/construction/` → physical build instructions
@@ -162,7 +162,7 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 ## Active Technologies
 - Node.js 20 LTS (existing `server.js` uses CommonJS `http` module) + @simplewebauthn/server, @simplewebauthn/browser (vendored), Caddy (reverse proxy) (001-deploy-web-ui-cloud)
 - JSON file for passkey credentials and sessions (single-user, no database) (001-deploy-web-ui-cloud)
-- Node.js 20 LTS (CommonJS), Terraform >= 1.5 (HCL), Docker Compose v2 + @aws-sdk/client-s3 (new, for S3 persistence), Caddy 2-alpine, linuxserver/wireguard (optional) (002-containerize-upcloud-deploy)
+- Node.js 20 LTS (CommonJS), Terraform >= 1.5 (HCL), Docker Compose v2 + @aws-sdk/client-s3 (new, for S3 persistence), Caddy 2-alpine, OpenVPN (Alpine, optional) (002-containerize-upcloud-deploy)
 - UpCloud Managed Object Storage (S3-compatible, €5/month, 250GB min) (002-containerize-upcloud-deploy)
 - Shell (deploy script), HCL (Terraform), YAML (cloud-init, compose), Dockerfile + `docker:cli` base image (Alpine + Docker CLI), Docker Compose v2, systemd (003-deployer-container-config)
 - UpCloud Managed Object Storage (existing, for app credentials) (003-deployer-container-config)
@@ -176,22 +176,24 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - UpCloud Managed Object Storage (S3-compatible) for VPN config and credentials (005-fix-vpn-immutable-config)
 - JavaScript ES5 (Shelly), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + @simplewebauthn/server, @aws-sdk/client-s3, web-push, Playwright, Acorn (linter) (006-organize-repo-structure)
 - S3-compatible object storage (UpCloud), local filesystem fallback (006-organize-repo-structure)
+- POSIX shell (setup script, deployer), HCL (Terraform >= 1.5), Node.js 20 LTS (vpn-config.js), YAML (docker-compose) + OpenVPN (Alpine package), Docker Compose v2, @aws-sdk/client-s3 (existing) (007-switch-to-openvpn)
+- UpCloud Managed Object Storage (S3-compatible) for VPN config persistence (007-switch-to-openvpn)
 
 ## Cloud Deployment Architecture
 
 ```
-Internet → Caddy (:443, TLS) → WireGuard (shared network) → Node.js app (:3000) → S3 Object Storage (credentials)
+Internet → Caddy (:443, TLS) → OpenVPN (shared network) → Node.js app (:3000) → S3 Object Storage (credentials)
                                          ↕ VPN tunnel
                                     Shelly devices (LAN)
 ```
 
 - **Infrastructure**: UpCloud DEV-1xCPU-1GB-10GB server (fi-hel1) + Managed Object Storage (europe-1), provisioned via Terraform
 - **Deployer**: Config lives in a deployer container image (`deploy/deployer/`), not cloud-init. Systemd timer pulls and runs the deployer every 5 minutes.
-- **Containers**: Docker Compose with `app` (Node.js, shares wireguard network via `network_mode: "service:wireguard"`) + `caddy` (reverse proxy, auto TLS) + `wireguard` (VPN). Caddy connects to `wireguard:3000` since the app shares the wireguard network namespace.
-- **Container hardening**: App and Caddy containers run with read-only root filesystems and as non-root users. WireGuard runs without read-only (s6-overlay init requires writable rootfs) and as root (needs NET_ADMIN + SYS_MODULE).
-- **Persistence**: UpCloud Managed Object Storage (S3-compatible, €5/month) — no Docker volumes for app data. Stores WebAuthn credentials (`credentials.json`) and VPN config (`wg0.conf`).
-- **VPN config persistence**: The deployer downloads `wg0.conf` from S3 before starting containers (survives server recreation). On first setup, it uploads a locally-placed config to S3 for future rebuilds. Uses the app image as a one-shot S3 helper (`monitor/lib/vpn-config.js`).
-- **VPN networking**: The app container uses `network_mode: "service:wireguard"` to share the WireGuard container's network namespace. This gives the app direct access to the VPN tunnel, allowing it to proxy RPC requests to Shelly devices on the home LAN. Firewall rule controlled via `enable_vpn` Terraform variable.
+- **Containers**: Docker Compose with `app` (Node.js, shares openvpn network via `network_mode: "service:openvpn"`) + `caddy` (reverse proxy, auto TLS) + `openvpn` (VPN). Caddy connects to `openvpn:3000` since the app shares the openvpn network namespace.
+- **Container hardening**: App and Caddy containers run with read-only root filesystems and as non-root users. OpenVPN needs NET_ADMIN capability and /dev/net/tun access.
+- **Persistence**: UpCloud Managed Object Storage (S3-compatible, €5/month) — no Docker volumes for app data. Stores WebAuthn credentials (`credentials.json`) and VPN config (`openvpn.conf`).
+- **VPN config persistence**: The deployer downloads `openvpn.conf` from S3 before starting containers (survives server recreation). On first setup, it uploads a locally-placed config to S3 for future rebuilds. Uses the app image as a one-shot S3 helper (`monitor/lib/vpn-config.js`).
+- **VPN networking**: The app container uses `network_mode: "service:openvpn"` to share the OpenVPN container's network namespace. This gives the app direct access to the VPN tunnel, allowing it to proxy RPC requests to Shelly devices on the home LAN. Firewall rule controlled via `enable_vpn` Terraform variable. OpenVPN uses static key (PSK) mode for compatibility with UniFi site-to-site VPN.
 - **Auth**: WebAuthn passkeys via @simplewebauthn, HMAC-signed session cookies (30-day expiry)
 - **CD**: GitHub Actions → GHCR (app + deployer images) → systemd timer pulls deployer → deployer runs `docker compose up -d`
 - **No SSH exposed**: Firewall blocks port 22. Emergency access via UpCloud web console.
@@ -204,9 +206,9 @@ Server environment is split into two sources, merged by the deployer:
 - **`config.env`** (deployer image, mutable) — service config that deploys via CD without server recreation: `PORT`, `AUTH_ENABLED`, `RPID`, `ORIGIN`, `DOMAIN`, `GITHUB_REPO`, `VPN_CHECK_HOST`, `VPN_CONFIG_KEY`, `SETUP_WINDOW_MINUTES`, `NODE_ENV`, `CONTROLLER_IP`, `CONTROLLER_SCRIPT_ID`, `VAPID_SUBJECT`
 - **`.env`** (deployer merge output) — merged file consumed by Docker Compose. Secrets win on duplicate keys.
 
-VPN is always-on (the app uses `network_mode: "service:wireguard"`). Firewall rule controlled via `enable_vpn=true` in Terraform.
+VPN is always-on (the app uses `network_mode: "service:openvpn"`). Firewall rule controlled via `enable_vpn=true` in Terraform.
 
 ## Recent Changes
+- 007-switch-to-openvpn: Added POSIX shell (setup script, deployer), HCL (Terraform >= 1.5), Node.js 20 LTS (vpn-config.js), YAML (docker-compose) + OpenVPN (Alpine package), Docker Compose v2, @aws-sdk/client-s3 (existing)
 - 006-organize-repo-structure: Added JavaScript ES5 (Shelly), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + @simplewebauthn/server, @aws-sdk/client-s3, web-push, Playwright, Acorn (linter)
 - 005-fix-vpn-immutable-config: Added HCL (Terraform >= 1.5), POSIX shell (deployer), YAML (cloud-init, docker-compose) + UpCloud Terraform provider ~> 5.0, Docker Compose v2, systemd
-- 004-pwa-push-notifications: PWA manifest + service worker, Web Push notifications on valve state changes, push subscription API, valve polling module, S3 persistence for subscriptions and VAPID keys, `web-push` dependency

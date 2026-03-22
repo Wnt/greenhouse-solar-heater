@@ -8,8 +8,8 @@ var fs = require('node:fs');
 var path = require('node:path');
 
 var testDir = path.join(__dirname, 'vpn-config-test-' + process.pid);
-var testFile = path.join(testDir, 'wg0.conf');
-var sampleConfig = '[Interface]\nAddress = 10.10.10.1/24\nListenPort = 51820\nPrivateKey = testkey\n';
+var testFile = path.join(testDir, 'openvpn.conf');
+var sampleConfig = 'dev tun\nproto udp\nport 1194\nifconfig 10.10.10.1 10.10.10.2\n<secret>\ntestkey\n</secret>\n';
 
 function loadModule() {
   delete require.cache[require.resolve('../monitor/lib/vpn-config')];
@@ -34,7 +34,7 @@ describe('vpn-config download', function () {
     process.env.S3_BUCKET = 'test-bucket';
     process.env.S3_ACCESS_KEY_ID = 'testkey';
     process.env.S3_SECRET_ACCESS_KEY = 'testsecret';
-    process.env.VPN_CONFIG_KEY = 'wg0.conf';
+    process.env.VPN_CONFIG_KEY = 'openvpn.conf';
   });
 
   afterEach(function () {
@@ -66,7 +66,7 @@ describe('vpn-config upload', function () {
     process.env.S3_BUCKET = 'test-bucket';
     process.env.S3_ACCESS_KEY_ID = 'testkey';
     process.env.S3_SECRET_ACCESS_KEY = 'testsecret';
-    process.env.VPN_CONFIG_KEY = 'wg0.conf';
+    process.env.VPN_CONFIG_KEY = 'openvpn.conf';
   });
 
   afterEach(function () {
@@ -102,7 +102,7 @@ describe('vpn-config upload', function () {
 });
 
 describe('vpn-config VPN_CONFIG_KEY default', function () {
-  it('uses wg0.conf as default key when VPN_CONFIG_KEY not set', function () {
+  it('uses openvpn.conf as default key when VPN_CONFIG_KEY not set', function () {
     delete process.env.VPN_CONFIG_KEY;
     process.env.S3_ENDPOINT = 'https://s3.example.com';
     process.env.S3_BUCKET = 'test-bucket';
