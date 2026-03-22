@@ -77,13 +77,13 @@ if ! docker compose -f "$COMPOSE_FILE" pull --quiet 2>/dev/null; then
 fi
 
 # Step 5: Resolve app image name for one-shot S3 operations
-# Use the 'app' service image specifically — head -1 is unreliable when
-# profiles (e.g. vpn) add services whose images have init systems that
-# never exit, causing docker-run one-shots to hang indefinitely.
-APP_IMAGE=$(cd "$APP_DIR" && docker compose config --images app 2>/dev/null)
+# docker compose config --images lists ALL service images (no service filter).
+# Filter to the app image by excluding known non-app images (caddy, openvpn).
+APP_IMAGE=$(cd "$APP_DIR" && docker compose config --images 2>/dev/null | grep -v -e openvpn -e caddy | head -1)
 if [ -z "$APP_IMAGE" ]; then
   log "WARNING: Could not determine app image — skipping VPN config sync"
 else
+  log "Resolved app image: $APP_IMAGE"
   # Step 6: Download VPN config from S3 (if available)
   log "Checking S3 for VPN config"
   if ! timeout 30 docker run --rm --env-file "$APP_DIR/.env" \
