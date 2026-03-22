@@ -77,13 +77,16 @@ if ! docker compose -f "$COMPOSE_FILE" pull --quiet 2>/dev/null; then
 fi
 
 # Step 5: Resolve app image name for one-shot S3 operations
-APP_IMAGE=$(docker compose -f "$COMPOSE_FILE" config --images 2>/dev/null | head -1)
+# Use the 'app' service image specifically — head -1 is unreliable when
+# profiles (e.g. vpn) add services whose images have init systems that
+# never exit, causing docker-run one-shots to hang indefinitely.
+APP_IMAGE=$(cd "$APP_DIR" && docker compose config --images app 2>/dev/null)
 if [ -z "$APP_IMAGE" ]; then
   log "WARNING: Could not determine app image — skipping VPN config sync"
 else
   # Step 6: Download VPN config from S3 (if available)
   log "Checking S3 for VPN config"
-  if ! docker run --rm --env-file "$APP_DIR/.env" \
+  if ! timeout 30 docker run --rm --env-file "$APP_DIR/.env" \
     -v "$APP_DIR:/opt/app" \
     "$APP_IMAGE" \
     node poc/lib/vpn-config.js download /opt/app/wg0.conf 2>&1; then
@@ -93,7 +96,7 @@ else
   # Step 7: Upload VPN config to S3 if local exists but S3 doesn't (bootstrap)
   if [ -f "$VPN_CONFIG" ]; then
     log "Local VPN config found — ensuring S3 backup exists"
-    if ! docker run --rm --env-file "$APP_DIR/.env" \
+    if ! timeout 30 docker run --rm --env-file "$APP_DIR/.env" \
       -v "$APP_DIR:/opt/app" \
       "$APP_IMAGE" \
       node poc/lib/vpn-config.js upload /opt/app/wg0.conf 2>&1; then
