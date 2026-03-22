@@ -40,7 +40,6 @@ services:
   wireguard:
     image: lscr.io/linuxserver/wireguard
     restart: unless-stopped
-    read_only: true
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
@@ -49,9 +48,6 @@ services:
       - PGID=1000
     volumes:
       - ./wg0.conf:/config/wg_confs/wg0.conf:ro
-    tmpfs:
-      - /tmp:noexec,nosuid,size=64m
-      - /run:size=16m
     ports:
       - "51820:51820/udp"
     sysctls:
