@@ -189,7 +189,7 @@ Internet → Caddy (:443, TLS) → Node.js app (:3000) → S3 Object Storage (cr
 - **Infrastructure**: UpCloud DEV-1xCPU-1GB-10GB server (fi-hel1) + Managed Object Storage (europe-1), provisioned via Terraform
 - **Deployer**: Config lives in a deployer container image (`deploy/deployer/`), not cloud-init. Systemd timer pulls and runs the deployer every 5 minutes.
 - **Containers**: Docker Compose with `app` (Node.js) + `caddy` (reverse proxy, auto TLS) + optional `wireguard` (VPN via profiles)
-- **Container hardening**: All containers run with read-only root filesystems and as non-root users (except wireguard which needs NET_ADMIN)
+- **Container hardening**: App and Caddy containers run with read-only root filesystems and as non-root users. WireGuard runs without read-only (s6-overlay init requires writable rootfs) and as root (needs NET_ADMIN + SYS_MODULE).
 - **Persistence**: UpCloud Managed Object Storage (S3-compatible, €5/month) — no Docker volumes for app data. Stores WebAuthn credentials (`credentials.json`) and VPN config (`wg0.conf`).
 - **VPN config persistence**: The deployer downloads `wg0.conf` from S3 before starting containers (survives server recreation). On first setup, it uploads a locally-placed config to S3 for future rebuilds. Uses the app image as a one-shot S3 helper (`poc/lib/vpn-config.js`).
 - **VPN**: WireGuard container (disabled by default, enabled via Compose profiles + `enable_vpn` Terraform firewall rule)
