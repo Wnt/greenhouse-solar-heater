@@ -72,12 +72,11 @@ Push to main. The deployer image is rebuilt and the server picks it up within 5 
 
 ## Enabling VPN
 
-1. Generate OpenVPN config: `cd deploy/openvpn && ./setup.sh --server-ip <PUBLIC_IP>`
+1. Generate OpenVPN config: `cd deploy/openvpn && ./setup.sh`
 2. Copy the generated `openvpn.conf` to `/opt/app/openvpn.conf` on the server
-3. Enter the printed values in UniFi UI: Settings → VPN → Create New VPN → OpenVPN
-4. Add `COMPOSE_PROFILES=vpn` to the `.env` on the server (via UpCloud web console)
-5. In Terraform: `enable_vpn = true` then `terraform apply` (adds firewall rule for UDP 1194)
-6. On the next deployer run (~5 min), the OpenVPN container starts and the tunnel establishes
+3. Enter the printed values in UniFi UI: Settings → VPN → Create New VPN → OpenVPN (set cipher to AES-256-CBC)
+4. In Terraform: `enable_vpn = true` then `terraform apply` (adds firewall rule for UDP 1194)
+5. On the next deployer run (~5 min), the OpenVPN container starts and the tunnel establishes
 
 The deployer automatically uploads `openvpn.conf` to S3 for recovery after server recreation.
 
@@ -100,6 +99,6 @@ systemctl list-timers deployer.timer  # schedule
 |-----------|-------|---------|-----------|
 | app | `ghcr.io/<repo>:latest` | Monitoring UI | Non-root (UID 1000), RO root |
 | caddy | `caddy:2-alpine` | TLS termination | RO root, writable cert volumes |
-| openvpn | Custom Alpine + openvpn | VPN tunnel (optional, via profiles) | NET_ADMIN cap |
+| openvpn | `ghcr.io/<repo>-openvpn:latest` | VPN tunnel | NET_ADMIN cap |
 
 The deployer runs as a **one-shot container** via systemd — it is not a long-lived service.
