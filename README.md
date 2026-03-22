@@ -26,20 +26,15 @@ All tools run entirely client-side (no backend), load `system.yaml` as configura
 | File | Purpose |
 |------|---------|
 | `system.yaml` | **Source of truth** — all component specs, heights, valve states, operating modes |
-| `docs/design.md` | Design specification — architecture, modes, safety rules |
+| `shelly/` | Shelly control software — control logic + shell integration + platform linter |
 | `playground/` | Interactive web tools — thermal sim, hydraulic sim |
-| `tools/shelly-lint/` | CLI linter for Shelly scripts (Node.js) |
-| `scripts/` | Shelly control software — control logic + shell integration |
-| `tests/` | Unit tests and thermal simulation scenarios |
-| `diagrams/system-topology.svg` | SVG pipe & valve topology — full manifold schematic |
-| `diagrams/system-height-layout.svg` | SVG physical layout — components at real-world heights |
-| `diagrams/solar-charging-flow.svg` | SVG flow loop — Mode 1: solar charging |
-| `diagrams/greenhouse-heating-flow.svg` | SVG flow loop — Mode 2: greenhouse heating |
-| `diagrams/active-drain-flow.svg` | SVG flow loop — Mode 3: active drain |
-| `diagrams/control-states.mmd` | Mermaid state diagram — operating mode transitions |
-| `diagrams/drain-sequence.mmd` | Mermaid sequence diagram — active drain procedure |
-| `construction/solar_collector_frame.md` | Collector frame build details |
-| `existing-hardware/` | Photos of owned components (pump, panels, tank) |
+| `monitor/` | Temperature monitor web app — server, UI, auth, push notifications |
+| `deploy/` | Cloud deployment — Terraform, Docker, deployer, WireGuard |
+| `design/docs/` | Design documentation — architecture, modes, safety rules, BOM |
+| `design/diagrams/` | SVG schematics + Mermaid state/sequence diagrams |
+| `design/construction/` | Physical build instructions |
+| `design/photos/` | Photos of owned components (pump, panels, tank) |
+| `tests/` | Unit tests, thermal simulation scenarios, and e2e tests |
 
 ## Documentation Format
 

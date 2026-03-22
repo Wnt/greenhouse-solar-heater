@@ -31,7 +31,7 @@ system**: component dimensions, heights, valve states, operating modes,
 sensor mappings, and Shelly relay assignments. All hardware
 documentation, diagrams, and mode definitions derive from this file.
 Changes MUST flow outward: update `system.yaml` first, then propagate
-to `docs/design.md`, `diagrams/`, and any test scenarios that depend
+to `design/docs/design.md`, `design/diagrams/`, and any test scenarios that depend
 on hardware parameters.
 
 This principle applies exclusively to the physical/hardware domain.
@@ -138,7 +138,7 @@ all state externally is mandatory for operational reliability.
 
 New features that produce or consume persistent data MUST use
 an external persistence mechanism (e.g., the S3 storage adapter
-in `poc/lib/s3-storage.js`). Local filesystem fallback is
+in `monitor/lib/s3-storage.js`). Local filesystem fallback is
 acceptable only for development/testing — production deployments
 MUST use external storage.
 
@@ -146,14 +146,14 @@ MUST use external storage.
 
 - **Shelly device scripts**: ES5-only JavaScript. No `const`/`let`,
   arrow functions, destructuring, template literals, classes, or
-  `async`/`await`. The AST-based linter (`tools/shelly-lint/`)
+  `async`/`await`. The AST-based linter (`shelly/lint/`)
   enforces this in CI automatically.
 - **Shelly resource limits**: 16KB max script size, 5 timers,
   5 event subscriptions, 5 concurrent HTTP calls per script.
 - **Browser code**: ES6+ modules with `<script type="importmap">`.
   All dependencies vendored in `playground/vendor/` — no CDN URLs.
 - **Deployment**: Scripts deployed to Shelly devices via HTTP RPC.
-  Device IPs managed in `scripts/devices.conf`.
+  Device IPs managed in `shelly/devices.conf`.
 
 ## Development Workflow
 
