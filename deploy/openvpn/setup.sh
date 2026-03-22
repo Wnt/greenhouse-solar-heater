@@ -77,10 +77,10 @@ echo "Generating OpenVPN static key..."
 TMPKEY=$(mktemp)
 
 if command -v openvpn >/dev/null 2>&1; then
-  openvpn --genkey --secret "$TMPKEY"
+  openvpn --genkey secret "$TMPKEY" 2>/dev/null
 else
   echo "openvpn not found locally, using Docker..."
-  docker run --rm alpine:3.21 sh -c "apk add --no-cache openvpn >/dev/null 2>&1 && openvpn --genkey --secret /dev/stdout" > "$TMPKEY"
+  docker run --rm alpine:3.21 sh -c "apk add --no-cache openvpn >/dev/null 2>&1 && openvpn --genkey secret /dev/stdout 2>/dev/null" > "$TMPKEY"
 fi
 
 # Extract key content (lines between BEGIN/END markers, inclusive)
