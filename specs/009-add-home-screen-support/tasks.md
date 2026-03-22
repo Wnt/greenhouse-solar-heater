@@ -29,8 +29,8 @@
 
 **⚠️ CRITICAL**: Both user stories depend on the auth whitelist and manifest updates.
 
-- [ ] T001 Whitelist PWA resources in auth gate — add `/manifest.json`, `/sw.js`, `/offline.html`, and `/icons/*` paths to the unauthenticated route list in `monitor/server.js` (around line 274)
-- [ ] T002 [P] Add `id` field (`"/"`) and `"purpose": "any maskable"` to the 512px icon entry in `monitor/manifest.json`
+- [x] T001 Whitelist PWA resources in auth gate — add `/manifest.json`, `/sw.js`, `/offline.html`, and `/icons/*` paths to the unauthenticated route list in `monitor/server.js` (around line 274)
+- [x] T002 [P] Add `id` field (`"/"`) and `"purpose": "any maskable"` to the 512px icon entry in `monitor/manifest.json`
 
 **Checkpoint**: PWA resources are accessible without authentication; manifest is complete for installability.
 
@@ -44,9 +44,9 @@
 
 ### Implementation for User Story 1
 
-- [ ] T003 [US1] Add service worker fetch handler to `monitor/sw.js` — use network-first strategy for navigation requests, falling back to cached `/offline.html` when network fails; pass through non-navigation requests unchanged; preserve existing push notification handlers
-- [ ] T004 [P] [US1] Add offline page pre-caching to `monitor/sw.js` install event — cache `/offline.html` and `/icons/icon-192.png` in a named cache (e.g., `greenhouse-offline-v1`); keep existing `skipWaiting()` call
-- [ ] T005 [P] [US1] Create branded offline fallback page at `monitor/offline.html` — display app name "Greenhouse Monitor", "You are offline" message, retry button, auto-retry with `navigator.onLine` check, styled to match `monitor/css/style.css` theme
+- [x] T003 [US1] Add service worker fetch handler to `monitor/sw.js` — use network-first strategy for navigation requests, falling back to cached `/offline.html` when network fails; pass through non-navigation requests unchanged; preserve existing push notification handlers
+- [x] T004 [P] [US1] Add offline page pre-caching to `monitor/sw.js` install event — cache `/offline.html` and `/icons/icon-192.png` in a named cache (e.g., `greenhouse-offline-v1`); keep existing `skipWaiting()` call
+- [x] T005 [P] [US1] Create branded offline fallback page at `monitor/offline.html` — display app name "Greenhouse Monitor", "You are offline" message, retry button, auto-retry with `navigator.onLine` check, styled to match `monitor/css/style.css` theme
 
 **Checkpoint**: App is installable on Android. Offline fallback works. Push notifications still function.
 
@@ -60,8 +60,8 @@
 
 ### Implementation for User Story 2
 
-- [ ] T006 [P] [US2] Add Apple meta tags to `monitor/index.html` `<head>` — add `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style` (value: `default`), and `apple-touch-icon` link pointing to `/icons/icon-192.png`
-- [ ] T007 [P] [US2] Add PWA metadata to `monitor/login.html` `<head>` — add `<link rel="manifest" href="/manifest.json">`, `<meta name="theme-color" content="#0056b2">`, and the same Apple meta tags as index.html
+- [x] T006 [P] [US2] Add Apple meta tags to `monitor/index.html` `<head>` — add `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style` (value: `default`), and `apple-touch-icon` link pointing to `/icons/icon-192.png`
+- [x] T007 [P] [US2] Add PWA metadata to `monitor/login.html` `<head>` — add `<link rel="manifest" href="/manifest.json">`, `<meta name="theme-color" content="#0056b2">`, and the same Apple meta tags as index.html
 
 **Checkpoint**: App is installable on iOS with correct icon, name, and standalone mode. Login page also has full PWA metadata.
 
@@ -85,11 +85,11 @@
 
 **Purpose**: Testing, validation, and documentation updates.
 
-- [ ] T008 [P] Write unit tests for SW fetch handler logic in `tests/sw.test.js` — test that navigation requests fall back to offline page on network error; test that non-navigation requests pass through; test that push handlers are preserved
-- [ ] T009 [P] Write e2e test for PWA installability in `tests/e2e/pwa.spec.js` — verify manifest link present, SW registered, apple meta tags present on index.html and login.html, offline page served when server unreachable
-- [ ] T010 Run full test suite (`npm test`) and fix any regressions
-- [ ] T011 [P] Update `CLAUDE.md` to document offline.html, SW fetch handler, and Apple meta tags in the File Relationships and Temperature Monitor sections
-- [ ] T012 Run quickstart.md validation — verify all manual test scenarios from `specs/009-add-home-screen-support/quickstart.md`
+- [x] T008 [P] Write unit tests for SW fetch handler logic in `tests/sw.test.js` — test that navigation requests fall back to offline page on network error; test that non-navigation requests pass through; test that push handlers are preserved
+- [x] T009 [P] Write e2e test for PWA installability in `tests/e2e/pwa.spec.js` — verify manifest link present, SW registered, apple meta tags present on index.html and login.html, offline page served when server unreachable
+- [x] T010 Run full test suite (`npm test`) and fix any regressions
+- [x] T011 [P] Update `CLAUDE.md` to document offline.html, SW fetch handler, and Apple meta tags in the File Relationships and Temperature Monitor sections
+- [x] T012 Run quickstart.md validation — verify all manual test scenarios from `specs/009-add-home-screen-support/quickstart.md`
 
 ---
 

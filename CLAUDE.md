@@ -105,9 +105,10 @@ All third-party libraries are vendored locally in `playground/vendor/` to avoid 
 The `monitor/` directory contains the temperature monitoring web app that reads live DS18B20 temperatures from a Shelly 1 sensor add-on and displays them in a browser-based UI. It can run locally (direct LAN access) or deployed to the cloud (via VPN).
 
 - `monitor/server.js` — Node.js HTTP server: serves static files, proxies RPC to Shelly devices, health endpoint, auth middleware (when `AUTH_ENABLED=true`), push notification API, valve state poller
-- `monitor/index.html` — Web UI: SVG gauges + Canvas time-series chart (last 6h), notification subscribe/unsubscribe toggle
-- `monitor/manifest.json` — PWA manifest (standalone display, app name, icons)
-- `monitor/sw.js` — Service worker for push notifications (no offline caching)
+- `monitor/index.html` — Web UI: SVG gauges + Canvas time-series chart (last 6h), notification toggle, Apple PWA meta tags
+- `monitor/manifest.json` — PWA manifest (standalone display, app name, icons, maskable 512px icon, stable `id`)
+- `monitor/sw.js` — Service worker: push notifications + fetch handler (network-first with offline fallback)
+- `monitor/offline.html` — Branded offline fallback page (auto-retry on connectivity)
 - `monitor/icons/` — PWA icons (icon-192.png, icon-512.png)
 - `monitor/login.html` — Passkey authentication page (registration + login)
 - `monitor/js/` — ES modules: `shelly-api.js` (HTTP RPC client), `gauge.js` (SVG gauge), `chart.js` (Canvas chart), `app.js` (orchestration), `login.js` (passkey auth), `push.js` (push subscription management)
@@ -143,8 +144,10 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - `tests/vpn-config.test.js` — unit tests for VPN config S3 persistence helper
 - `tests/push-storage.test.js` — unit tests for push storage adapter (VAPID keys, subscriptions, deduplication)
 - `tests/valve-poller.test.js` — unit tests for valve state change detection (pure functions, poller behavior)
+- `tests/sw.test.js` — unit tests for service worker fetch handler, offline caching, and push handler preservation
 - `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
 - `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
+- `tests/e2e/pwa.spec.js` — Playwright e2e tests for PWA installability (manifest, Apple meta tags, offline page)
 
 ### Test Setup Notes
 
