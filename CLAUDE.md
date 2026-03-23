@@ -139,6 +139,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 ### Test Structure
 
 - `tests/control-logic.test.js` — unit tests for the pure control logic (`shelly/control-logic.js`)
+- `tests/playground-control.test.js` — unit tests for the playground control state machine (`playground/js/control.js`)
 - `tests/auth.test.js` — unit tests for auth modules (session signing, credential store)
 - `tests/s3-storage.test.js` — unit tests for S3 storage adapter (local fallback mode, S3 detection)
 - `tests/vpn-config.test.js` — unit tests for VPN config S3 persistence helper
