@@ -159,12 +159,14 @@
               <div class="graph-inspector-divider"></div>
               <div class="graph-inspector-row"><span class="graph-inspector-dot" style="background:#ee7d77;"></span><span>Charging</span><span class="graph-inspector-val" id="inspector-charging"></span></div>
               <div class="graph-inspector-row"><span class="graph-inspector-dot" style="background:#e9c349;"></span><span>Heating</span><span class="graph-inspector-val" id="inspector-heating"></span></div>
+              <div class="graph-inspector-row"><span class="graph-inspector-dot" style="background:#ff7043;"></span><span>Emergency</span><span class="graph-inspector-val" id="inspector-emergency"></span></div>
             </div>
             <div class="graph-crosshair" id="graph-crosshair"></div>
           </div>
           <div class="graph-legend">
             <div class="graph-legend-item"><div class="graph-legend-dot" style="background:#ee7d77;"></div>Charging</div>
             <div class="graph-legend-item"><div class="graph-legend-dot" style="background:#e9c349;"></div>Heating</div>
+            <div class="graph-legend-item"><div class="graph-legend-dot" style="background:#ff7043;"></div>Emergency</div>
             <div class="graph-legend-item"><div class="graph-legend-line" style="background:#e9c349;"></div>Tank</div>
             <div class="graph-legend-item"><div class="graph-legend-line" style="background:#69d0c5;"></div>In</div>
             <div class="graph-legend-item"><div class="graph-legend-line" style="background:#42a5f5;"></div>Out</div>
@@ -375,19 +377,22 @@
         const hr = Math.floor(t / hourSeconds);
         const hrStart = hr * hourSeconds;
         const hrEnd = (hr + 1) * hourSeconds;
-        let chargingSec = 0, heatingSec = 0, totalSec = 0;
+        let chargingSec = 0, heatingSec = 0, emergencySec = 0, totalSec = 0;
         for (let j = 0; j < store.times.length; j++) {
           const st = store.times[j];
           if (st >= hrStart && st < hrEnd) {
             totalSec += 5;
             if (store.modes[j] === 'solar_charging') chargingSec += 5;
             if (store.modes[j] === 'greenhouse_heating') heatingSec += 5;
+            if (store.modes[j] === 'emergency_heating') emergencySec += 5;
           }
         }
         const chPct = totalSec > 0 ? Math.round(100 * chargingSec / totalSec) : 0;
         const htPct = totalSec > 0 ? Math.round(100 * heatingSec / totalSec) : 0;
+        const emPct = totalSec > 0 ? Math.round(100 * emergencySec / totalSec) : 0;
         document.getElementById('inspector-charging').textContent = chPct + '%';
         document.getElementById('inspector-heating').textContent = htPct + '%';
+        document.getElementById('inspector-emergency').textContent = emPct + '%';
       }
 
       // Desktop: hover
@@ -944,34 +949,46 @@
         // Skip if entirely outside visible range
         if (hrEnd <= tMin || hrStart >= tMax) continue;
 
-        let chargingSec = 0, heatingSec = 0, totalSec = 0;
+        let chargingSec = 0, heatingSec = 0, emergencySec = 0, totalSec = 0;
         for (let j = 0; j < store.times.length; j++) {
           const t = store.times[j];
           if (t >= hrStart && t < hrEnd) {
             totalSec += 5;
             if (store.modes[j] === 'solar_charging') chargingSec += 5;
             if (store.modes[j] === 'greenhouse_heating') heatingSec += 5;
+            if (store.modes[j] === 'emergency_heating') emergencySec += 5;
           }
         }
 
         if (totalSec === 0) continue;
         const chargingFrac = chargingSec / hourSeconds;
         const heatingFrac = heatingSec / hourSeconds;
+        const emergencyFrac = emergencySec / hourSeconds;
 
         const barX = pad.left + ((hrStart - tMin) / graphRange) * pw;
         const barW = Math.max(1, (hourSeconds / graphRange) * pw - 2);
+
+        let stackH = 0;
 
         if (chargingFrac > 0) {
           const bh = chargingFrac * barAreaH;
           ctx.fillStyle = 'rgba(238, 125, 119, 0.6)';
           ctx.fillRect(barX, barY0 - bh, barW, bh);
+          stackH += bh;
         }
 
         if (heatingFrac > 0) {
-          const chBh = chargingFrac * barAreaH;
           const htBh = heatingFrac * barAreaH;
           ctx.fillStyle = 'rgba(233, 195, 73, 0.6)';
-          ctx.fillRect(barX, barY0 - chBh - htBh, barW, htBh);
+          ctx.fillRect(barX, barY0 - stackH - htBh, barW, htBh);
+          stackH += htBh;
+        }
+
+        if (emergencyFrac > 0) {
+          const emBh = emergencyFrac * barAreaH;
+          ctx.fillStyle = 'rgba(255, 112, 67, 0.7)';
+          ctx.fillRect(barX, barY0 - stackH - emBh, barW, emBh);
+          stackH += emBh;
         }
       }
 
