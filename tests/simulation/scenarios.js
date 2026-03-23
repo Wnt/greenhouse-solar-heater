@@ -262,7 +262,7 @@ const scenarios = [
     name: 'emergency-fallback',
     duration: 14400,
     initialState: {
-      collector: -5, tank_top: 15, tank_bottom: 10,
+      collector: -5, tank_top: 6, tank_bottom: 4,
       greenhouse: 8, collectorsDrained: true,
       collectorWaterVolume: 0,
     },
@@ -270,7 +270,7 @@ const scenarios = [
     irradiance: constant(0),
     assertions: [
       {
-        description: 'emergency heating activates when greenhouse < 5',
+        description: 'emergency heating activates when greenhouse < 9 and tank lacks delta',
         check: function(trace) {
           const em = findModeTransitions(trace, MODES.EMERGENCY_HEATING);
           if (em.length === 0) throw new Error('emergency never activated');
@@ -288,12 +288,12 @@ const scenarios = [
         }
       },
       {
-        description: 'emergency exits when greenhouse > 8',
+        description: 'emergency exits when greenhouse > 12',
         check: function(trace) {
           const emFrames = findMode(trace, MODES.EMERGENCY_HEATING);
-          const overheated = emFrames.filter(s => s.temps.greenhouse > 9);
+          const overheated = emFrames.filter(s => s.temps.greenhouse > 13);
           if (overheated.length > 600) {
-            throw new Error('emergency ran too long above 8\u00b0C');
+            throw new Error('emergency ran too long above 12\u00b0C');
           }
         }
       },
