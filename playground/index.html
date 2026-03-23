@@ -825,8 +825,9 @@
       if (transitionLog.length > 0) {
         const logHtml = transitionLog.slice(0, 20).map(t => {
           const mi = MODE_INFO[t.mode] || MODE_INFO.idle;
-          const dotClass = t.mode === 'solar_charging' || t.mode === 'active_drain' ? 'log-dot-primary'
-            : t.mode === 'greenhouse_heating' ? 'log-dot-secondary' : 'log-dot-muted';
+          const dotClass = t.mode === 'solar_charging' || t.mode === 'active_drain' ? 'log-dot-charging'
+            : t.mode === 'greenhouse_heating' ? 'log-dot-heating'
+            : t.mode === 'emergency_heating' ? 'log-dot-emergency' : 'log-dot-muted';
           return `<div class="log-item">
             <div class="log-dot ${dotClass}"></div>
             <div class="log-content">
