@@ -98,21 +98,23 @@ describe('playground ControlStateMachine — shared logic integration', () => {
     assert.strictEqual(result.actuators.space_heater, true);
   });
 
-  it('enters emergency_heating from idle when tank below minimum useful temp', () => {
+  it('enters greenhouse_heating with emergency overlay when tank has delta and greenhouse < 9', () => {
     controller.collectorsDrained = true;
-    // Tank 20°C has delta over greenhouse 8°C but is below 25°C minimum
+    // Tank 20°C has 12°C delta over greenhouse 8°C → pump useful + emergency overlay
     const result = controller.evaluate(
       makeSensors({ t_greenhouse: 8, t_tank_top: 20, t_tank_bottom: 18, t_outdoor: -30 }),
       1000
     );
-    assert.strictEqual(result.mode, 'emergency_heating',
-      'should enter emergency: tank 20°C < 25°C minimum, greenhouse 8°C < 9°C');
+    assert.strictEqual(result.mode, 'greenhouse_heating',
+      'should heat: tank 20°C has 12°C delta over greenhouse 8°C');
+    assert.strictEqual(result.actuators.space_heater, true,
+      'space heater overlay: greenhouse 8°C < 9°C');
   });
 
-  it('transitions from greenhouse_heating to emergency_heating when tank depletes', () => {
+  it('transitions from greenhouse_heating to emergency when tank delta drops below 2°C', () => {
     controller.collectorsDrained = true;
 
-    // First, get into greenhouse_heating mode (tank must be >= 25°C)
+    // First, get into greenhouse_heating mode
     const r1 = controller.evaluate(
       makeSensors({ t_greenhouse: 9, t_tank_top: 30, t_tank_bottom: 28, t_outdoor: -5 }),
       0
@@ -120,18 +122,20 @@ describe('playground ControlStateMachine — shared logic integration', () => {
     assert.strictEqual(r1.mode, 'greenhouse_heating',
       'should enter greenhouse_heating initially');
 
-    // Tank depletes below minimum, greenhouse drops
+    // Tank depletes to only 1°C above greenhouse → pump would cool
     const r2 = controller.evaluate(
-      makeSensors({ t_greenhouse: 5, t_tank_top: 20, t_tank_bottom: 18, t_outdoor: -5 }),
+      makeSensors({ t_greenhouse: 5, t_tank_top: 6, t_tank_bottom: 5, t_outdoor: -5 }),
       500
     );
     assert.strictEqual(r2.mode, 'emergency_heating',
-      'should transition to emergency_heating when tank depletes');
+      'should transition to emergency: tank 6°C only 1°C above greenhouse 5°C');
     assert.strictEqual(r2.actuators.space_heater, true,
-      'space heater should be ON in emergency mode');
+      'space heater should be ON');
+    assert.strictEqual(r2.actuators.pump, false,
+      'pump should be OFF: tank too close to greenhouse');
   });
 
-  it('keeps greenhouse_heating when tank still has useful heat even if greenhouse < 9', () => {
+  it('keeps greenhouse_heating with space_heater overlay when greenhouse < 9 and tank has delta', () => {
     controller.collectorsDrained = true;
 
     // Enter greenhouse_heating with warm tank
@@ -140,16 +144,20 @@ describe('playground ControlStateMachine — shared logic integration', () => {
       0
     );
 
-    // Greenhouse drops below 9 but tank still above minimum (25°C) and has delta
+    // Greenhouse drops below 9 but tank still has useful delta (>= 2°C exit)
     const r2 = controller.evaluate(
       makeSensors({ t_greenhouse: 5, t_tank_top: 25, t_tank_bottom: 22, t_outdoor: -5 }),
       500
     );
     assert.strictEqual(r2.mode, 'greenhouse_heating',
-      'should stay in greenhouse_heating when tank still has useful heat');
+      'should stay in greenhouse_heating: tank 25°C has 20°C delta');
+    assert.strictEqual(r2.actuators.space_heater, true,
+      'space heater overlay: greenhouse 5°C < 9°C');
+    assert.strictEqual(r2.actuators.pump, true,
+      'pump still running: tank has useful heat');
   });
 
-  it('never lets greenhouse drop below 9°C without emergency intervention', () => {
+  it('always activates space_heater when greenhouse drops below 9°C', () => {
     controller.collectorsDrained = true;
 
     // Start with warm tank — greenhouse heating
@@ -159,13 +167,17 @@ describe('playground ControlStateMachine — shared logic integration', () => {
     );
     assert.strictEqual(r1.mode, 'greenhouse_heating');
 
-    // Tank cools below minimum, greenhouse drops
+    // Greenhouse drops below 9 — tank still useful, so pump + space heater
     const r2 = controller.evaluate(
       makeSensors({ t_greenhouse: 7, t_tank_top: 20, t_tank_bottom: 18, t_outdoor: -6 }),
       500
     );
-    assert.strictEqual(r2.mode, 'emergency_heating',
-      'must switch to emergency when greenhouse < 9 and tank below minimum');
+    assert.strictEqual(r2.mode, 'greenhouse_heating',
+      'pump still useful: tank 20°C is 13°C above greenhouse 7°C');
+    assert.strictEqual(r2.actuators.space_heater, true,
+      'space heater must be ON when greenhouse < 9°C');
+    assert.strictEqual(r2.actuators.pump, true,
+      'pump also runs: tank has useful delta');
   });
 
   it('produces transition log entries on mode changes', () => {
@@ -180,11 +192,13 @@ describe('playground ControlStateMachine — shared logic integration', () => {
 
   it('reset clears all state', () => {
     controller.collectorsDrained = true;
+    controller.emergencyHeatingActive = true;
     controller.currentMode = 'emergency_heating';
     controller.transitionLog.push({ time: 0, transition: 'test' });
     controller.reset();
     assert.strictEqual(controller.currentMode, 'idle');
     assert.strictEqual(controller.collectorsDrained, false);
+    assert.strictEqual(controller.emergencyHeatingActive, false);
     assert.strictEqual(controller.transitionLog.length, 0);
   });
 
