@@ -125,12 +125,12 @@
           <div class="tank-gauge-message" id="tank-temp-message"></div>
           <div class="tank-gauge-stats">
             <div class="tank-gauge-stat">
-              <span class="tank-gauge-stat-label">Tank Top</span>
-              <div><span class="tank-gauge-stat-value" id="tank-stat-top">--</span> <span class="tank-gauge-stat-unit">°C</span></div>
-            </div>
-            <div class="tank-gauge-stat">
               <span class="tank-gauge-stat-label">Tank Bottom</span>
               <div><span class="tank-gauge-stat-value" id="tank-stat-bottom">--</span> <span class="tank-gauge-stat-unit">°C</span></div>
+            </div>
+            <div class="tank-gauge-stat">
+              <span class="tank-gauge-stat-label">Yesterday's High</span>
+              <div><span class="tank-gauge-stat-value" id="tank-stat-yesterday">--</span> <span class="tank-gauge-stat-unit">°C</span></div>
             </div>
           </div>
         </div>
@@ -281,6 +281,9 @@
     let simTimeAccum = 0;
     const DT = 1;
     let graphRange = 86400; // default 24h
+    let yesterdayHigh = 0;
+    let confirmedYesterdayHigh = 0;
+    let lastDay = 0;
 
     // ── Time Series Store (extended with mode tracking) ──
     const store = {
@@ -485,6 +488,9 @@
       controller.reset();
       store.reset();
       transitionLog.length = 0;
+      yesterdayHigh = 0;
+      confirmedYesterdayHigh = 0;
+      lastDay = 0;
       running = false;
       lastFrame = 0;
       simTimeAccum = 0;
@@ -602,13 +608,23 @@
         </div>`;
       }).join('');
 
-      // Tank temperature gauge
-      document.getElementById('tank-temp-val').textContent = state.t_tank_top.toFixed(0);
-      document.getElementById('tank-stat-top').textContent = state.t_tank_top.toFixed(1);
-      document.getElementById('tank-stat-bottom').textContent = state.t_tank_bottom.toFixed(1);
+      // Tank temperature gauge (shows tank bottom)
+      document.getElementById('tank-temp-val').textContent = state.t_tank_bottom.toFixed(0);
+      document.getElementById('tank-stat-bottom').textContent = state.t_tank_bottom.toFixed(0);
+
+      // Track yesterday's high (peak from previous 24h simulated day)
+      if (state.t_tank_bottom > yesterdayHigh) yesterdayHigh = state.t_tank_bottom;
+      const simDay = Math.floor(state.simTime / 86400);
+      if (simDay > lastDay) {
+        confirmedYesterdayHigh = yesterdayHigh;
+        yesterdayHigh = state.t_tank_bottom;
+        lastDay = simDay;
+      }
+      document.getElementById('tank-stat-yesterday').textContent =
+        confirmedYesterdayHigh > 0 ? confirmedYesterdayHigh.toFixed(0) : '--';
 
       // Gauge arc: 0°C = empty, 100°C = full circle (628 circumference)
-      const tempFrac = Math.max(0, Math.min(1, state.t_tank_top / 100));
+      const tempFrac = Math.max(0, Math.min(1, state.t_tank_bottom / 100));
       const dashOffset = 628 - (tempFrac * 628);
       const arc = document.getElementById('tank-gauge-arc');
       if (arc) arc.setAttribute('stroke-dashoffset', dashOffset.toFixed(0));
@@ -622,9 +638,9 @@
 
       // Message
       const msgEl = document.getElementById('tank-temp-message');
-      if (state.t_tank_top > 80) msgEl.textContent = 'Approaching maximum temperature.';
-      else if (state.t_tank_top > 50) msgEl.textContent = 'Tank is well charged.';
-      else if (state.t_tank_top > 25) msgEl.textContent = 'Moderate thermal storage.';
+      if (state.t_tank_bottom > 80) msgEl.textContent = 'Approaching maximum temperature.';
+      else if (state.t_tank_bottom > 50) msgEl.textContent = 'Tank is well charged.';
+      else if (state.t_tank_bottom > 25) msgEl.textContent = 'Moderate thermal storage.';
       else msgEl.textContent = 'Tank is cold — waiting for solar gain.';
 
       // Graph peak label
