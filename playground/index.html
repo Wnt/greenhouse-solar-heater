@@ -103,9 +103,9 @@
           <div id="inactive-modes"></div>
         </div>
 
-        <!-- Tank Temperature (gauge card) -->
+        <!-- System Status (gauge card) -->
         <div class="card tank-gauge-card">
-          <div class="tank-gauge-title">Tank Temperature</div>
+          <div class="tank-gauge-title">System Status</div>
           <div class="tank-gauge-ring">
             <svg class="tank-gauge-svg" viewBox="0 0 224 224">
               <!-- Track ring -->
@@ -129,8 +129,8 @@
               <div><span class="tank-gauge-stat-value" id="tank-stat-energy">--</span> <span class="tank-gauge-stat-unit">kWh</span></div>
             </div>
             <div class="tank-gauge-stat">
-              <span class="tank-gauge-stat-label">Yesterday's High</span>
-              <div><span class="tank-gauge-stat-value" id="tank-stat-yesterday">--</span> <span class="tank-gauge-stat-unit">°C</span></div>
+              <span class="tank-gauge-stat-label">Greenhouse</span>
+              <div><span class="tank-gauge-stat-value" id="tank-stat-greenhouse">--</span> <span class="tank-gauge-stat-unit">°C</span></div>
             </div>
           </div>
         </div>
@@ -140,7 +140,7 @@
           <div class="graph-header">
             <div style="display:flex;align-items:center;gap:16px;">
               <h3 style="margin-bottom:0;">24h History</h3>
-              <span class="graph-peak" id="graph-peak-label"></span>
+              <span class="graph-peak" id="graph-peak-label">Yesterday's High: --</span>
             </div>
             <div class="time-range-pills" id="time-range-pills">
               <button data-range="3600">1h</button>
@@ -858,6 +858,9 @@
       const netKwh = Math.max(0, grossKwh - lossKwh);
       document.getElementById('tank-stat-energy').textContent = netKwh.toFixed(1);
 
+      // Greenhouse current temperature
+      document.getElementById('tank-stat-greenhouse').textContent = state.t_greenhouse.toFixed(0);
+
       // Track yesterday's high (peak from previous 24h simulated day)
       if (state.t_tank_bottom > yesterdayHigh) yesterdayHigh = state.t_tank_bottom;
       const simDay = Math.floor(state.simTime / 86400);
@@ -866,8 +869,6 @@
         yesterdayHigh = state.t_tank_bottom;
         lastDay = simDay;
       }
-      document.getElementById('tank-stat-yesterday').textContent =
-        confirmedYesterdayHigh > 0 ? confirmedYesterdayHigh.toFixed(0) : '--';
 
       // Gauge arc: 0°C = empty, 100°C = full circle (628 circumference)
       const tempFrac = Math.max(0, Math.min(1, state.t_tank_bottom / 100));
@@ -875,12 +876,30 @@
       const arc = document.getElementById('tank-gauge-arc');
       if (arc) arc.setAttribute('stroke-dashoffset', dashOffset.toFixed(0));
 
-      // Status label
+      // Status label: Rising/Falling/Stable based on rate of change
+      // Check last 5 minutes (300s) of store data; threshold: 1°C/hr = 300/3600 ≈ 0.083°C per 5 min
       const statusLabel = document.getElementById('tank-temp-status');
-      const delta = Math.abs(state.t_tank_top - state.t_tank_bottom);
-      if (delta < 5) { statusLabel.textContent = 'STABLE'; statusLabel.style.color = '#43aea4'; }
-      else if (delta < 15) { statusLabel.textContent = 'STRATIFIED'; statusLabel.style.color = '#e9c349'; }
-      else { statusLabel.textContent = 'UNSTABLE'; statusLabel.style.color = '#ee7d77'; }
+      const ROC_WINDOW = 300; // 5 minutes in seconds
+      const ROC_THRESHOLD = 1 / 12; // 1°C/hr expressed as °C per 5 min
+      let rateStatus = 'STABLE';
+      let rateColor = '#43aea4';
+      if (store.times.length >= 2) {
+        const now = store.times[store.times.length - 1];
+        const windowStart = now - ROC_WINDOW;
+        // Find the earliest point within the window
+        let startIdx = store.times.length - 1;
+        for (let i = store.times.length - 2; i >= 0; i--) {
+          if (store.times[i] < windowStart) break;
+          startIdx = i;
+        }
+        if (startIdx < store.times.length - 1) {
+          const tempChange = store.values[store.values.length - 1].t_tank_bottom - store.values[startIdx].t_tank_bottom;
+          if (tempChange >= ROC_THRESHOLD) { rateStatus = 'RISING'; rateColor = '#e9c349'; }
+          else if (tempChange <= -ROC_THRESHOLD) { rateStatus = 'FALLING'; rateColor = '#ee7d77'; }
+        }
+      }
+      statusLabel.textContent = rateStatus;
+      statusLabel.style.color = rateColor;
 
       // Message
       const msgEl = document.getElementById('tank-temp-message');
@@ -889,10 +908,9 @@
       else if (state.t_tank_bottom > 25) msgEl.textContent = 'Moderate thermal storage.';
       else msgEl.textContent = 'Tank is cold — waiting for solar gain.';
 
-      // Graph peak label
-      let peak = 0;
-      for (const v of store.values) { if (v.t_tank_top > peak) peak = v.t_tank_top; }
-      document.getElementById('graph-peak-label').textContent = peak > 0 ? `${peak.toFixed(0)}° Peak` : '';
+      // Graph yesterday's high label
+      document.getElementById('graph-peak-label').textContent =
+        confirmedYesterdayHigh > 0 ? `Yesterday's High: ${confirmedYesterdayHigh.toFixed(0)}°C` : 'Yesterday\'s High: --';
 
       // Critical components
       updateComponent('comp-pump', result.actuators.pump, 'ACTIVE', 'OFF');
