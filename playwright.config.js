@@ -19,7 +19,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npx serve -l 3210 --no-clipboard',
+    command: 'cp system.yaml playground/ && mkdir -p playground/shelly && cp shelly/control-logic.js playground/shelly/ && npx serve -l 3210 --no-clipboard',
     port: 3210,
     reuseExistingServer: true,
     timeout: 10000,
