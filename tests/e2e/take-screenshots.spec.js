@@ -75,8 +75,7 @@ async function runSimulation24h(page) {
     return tracker.seenMidnight && h >= 9;
   }, { timeout: 120000, polling: 500 });
 
-  // Pause simulation
-  await page.locator('#fab-play').click();
+  // Don't pause here — caller pauses after switching to desired view
 }
 
 test.describe('Generate Screenshots (24h simulation)', () => {
@@ -86,15 +85,24 @@ test.describe('Generate Screenshots (24h simulation)', () => {
     await page.goto('/playground/');
     await expect(page.locator('#view-status')).toBeVisible();
 
+    // Wait for fonts (especially Material Symbols icons) to load
+    await page.waitForFunction(() => document.fonts.ready.then(() => true), { timeout: 15000 });
+    await page.waitForTimeout(500);
+
     // ── Run 24h simulation at desktop size ──
     await page.setViewportSize(DESKTOP);
     await goToView(page, 'controls');
     await runSimulation24h(page);
 
     // ── Status view — desktop ──
+    // Switch to status while sim is still running so chart renders
     await goToView(page, 'status');
     await page.locator('#time-range-pills button[data-range="86400"]').click();
-    await page.waitForTimeout(500);
+    // Let the chart render a few frames with 24h data visible
+    await page.waitForTimeout(1000);
+    // Now pause
+    await page.locator('#fab-play').click();
+    await page.waitForTimeout(300);
     await page.screenshot(shot('status-initial-desktop'));
     await page.screenshot(shot('status-solar-charging-desktop'));
     await page.screenshot(shot('status-greenhouse-heating-desktop'));
@@ -129,8 +137,8 @@ test.describe('Generate Screenshots (24h simulation)', () => {
     await page.screenshot(shot('controls-desktop'));
     await page.screenshot(shot('controls-daynight-desktop'));
 
-    // ── README hero screenshot (desktop, status view, 24h chart) ──
-    await page.setViewportSize({ width: 1280, height: 800 });
+    // ── README hero screenshot (desktop, status view, 24h chart visible) ──
+    await page.setViewportSize({ width: 1280, height: 1100 });
     await goToView(page, 'status');
     await page.locator('#time-range-pills button[data-range="86400"]').click();
     await page.waitForTimeout(300);
