@@ -18,9 +18,10 @@ function shot(name) {
 }
 
 async function setSlider(page, id, value) {
-  const slider = page.locator('#' + id);
-  await slider.fill(String(value));
-  await slider.dispatchEvent('input');
+  await page.evaluate(([sliderId, val]) => {
+    const track = document.getElementById(sliderId);
+    if (track && track._sliderUpdate) track._sliderUpdate(val);
+  }, [id, value]);
 }
 
 /** Navigate to a view using whichever nav is visible at current viewport size */
