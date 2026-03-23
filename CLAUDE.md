@@ -133,6 +133,7 @@ The `monitor/` directory contains the temperature monitoring web app that reads 
 npm test              # all tests: unit + simulation + e2e
 npm run test:unit     # unit + simulation tests only (fast, no browser)
 npm run test:e2e      # Playwright e2e tests only (requires Chromium)
+npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 min)
 ```
 
 ### Test Structure
@@ -147,6 +148,7 @@ npm run test:e2e      # Playwright e2e tests only (requires Chromium)
 - `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
 - `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
 - `tests/e2e/pwa.spec.js` — Playwright e2e tests for PWA installability (manifest, Apple meta tags, offline page)
+- `tests/e2e/take-screenshots.spec.js` — Screenshot generator: runs 24h simulation, captures all views (excluded from normal test runs via `testIgnore` in `playwright.config.js`, uses separate `playwright.screenshots.config.js`)
 
 ### Test Setup Notes
 

@@ -166,7 +166,7 @@
           <div class="graph-legend">
             <div class="graph-legend-item"><div class="graph-legend-dot" style="background:#ee7d77;"></div>Charging</div>
             <div class="graph-legend-item"><div class="graph-legend-dot" style="background:#e9c349;"></div>Heating</div>
-            <div class="graph-legend-item"><div class="graph-legend-dot" style="background:#ff7043;"></div>Emergency</div>
+            <div class="graph-legend-item" id="legend-emergency" style="display:none;"><div class="graph-legend-dot" style="background:#ff7043;"></div>Emergency</div>
             <div class="graph-legend-item"><div class="graph-legend-line" style="background:#e9c349;"></div>Tank</div>
             <div class="graph-legend-item"><div class="graph-legend-line" style="background:#69d0c5;"></div>In</div>
             <div class="graph-legend-item"><div class="graph-legend-line" style="background:#42a5f5;"></div>Out</div>
@@ -661,6 +661,13 @@
     // ── Day/Night ──
     const SIM_START_HOUR = 8;
 
+    function formatTimeOfDay(simSeconds) {
+      const totalHours = SIM_START_HOUR + simSeconds / 3600;
+      const h = Math.floor(totalHours % 24);
+      const m = Math.floor((totalHours * 60) % 60);
+      return h.toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0');
+    }
+
     function getDayNightEnv(simTime, baseOutdoor, peakIrradiance) {
       const hour = (SIM_START_HOUR + simTime / 3600) % 24;
       let irradiance = 0;
@@ -823,7 +830,7 @@
               <div class="log-title">${mi.label}</div>
               <div class="log-desc">${t.text}</div>
             </div>
-            <div class="log-time">${formatTime(t.time)}</div>
+            <div class="log-time">${formatTimeOfDay(t.time)}</div>
           </div>`;
         }).join('');
         document.getElementById('logs-list').innerHTML = logHtml;
@@ -918,12 +925,14 @@
       ctx.font = '10px Manrope, sans-serif';
       ctx.textAlign = 'center';
 
-      // Show time-of-day labels at full hours, spaced to avoid crowding
+      // Fixed time-of-day labels — anchor to absolute hour boundaries to avoid twitching
       const hourSeconds = 3600;
       const hoursInRange = graphRange / hourSeconds;
       const hourStep = hoursInRange <= 2 ? 1 : hoursInRange <= 8 ? 2 : hoursInRange <= 16 ? 3 : 4;
-      const firstHour = Math.ceil(tMin / hourSeconds) * hourSeconds;
-      for (let t = firstHour; t <= tMax; t += hourStep * hourSeconds) {
+      // Snap to multiples of hourStep so labels stay fixed as time advances
+      const stepSeconds = hourStep * hourSeconds;
+      const firstTick = Math.ceil(tMin / stepSeconds) * stepSeconds;
+      for (let t = firstTick; t <= tMax; t += stepSeconds) {
         const frac = (t - tMin) / graphRange;
         if (frac < -0.01 || frac > 1.01) continue;
         const x = pad.left + frac * pw;
@@ -942,6 +951,7 @@
       const firstVisibleHour = Math.floor(tMin / hourSeconds);
       const lastVisibleHour = Math.ceil(tMax / hourSeconds);
 
+      let hasEmergency = false;
       for (let hr = firstVisibleHour; hr < lastVisibleHour; hr++) {
         const hrStart = hr * hourSeconds;
         const hrEnd = (hr + 1) * hourSeconds;
@@ -985,12 +995,14 @@
         }
 
         if (emergencyFrac > 0) {
+          hasEmergency = true;
           const emBh = emergencyFrac * barAreaH;
           ctx.fillStyle = 'rgba(255, 112, 67, 0.7)';
           ctx.fillRect(barX, barY0 - stackH - emBh, barW, emBh);
           stackH += emBh;
         }
       }
+      document.getElementById('legend-emergency').style.display = hasEmergency ? 'flex' : 'none';
 
       // ── Temperature line (gold, matching Stitch design) ──
       const pts = [];

@@ -1,5 +1,7 @@
 # Greenhouse Solar Heating System
 
+![Thermal simulation playground showing 24h of simulated data](tests/e2e/screenshots/readme-hero.png)
+
 Solar thermal heating system for a greenhouse in Southwest Finland.
 
 ## What This Is
@@ -11,6 +13,8 @@ An open (unpressurized) solar thermal system that:
 - Controlled by Shelly devices with DS18B20 temperature sensors
 
 ## Interactive Playground
+
+**[Try it live →](https://wnt.github.io/greenhouse-solar-heater/playground/)**
 
 Web-based tools for simulating and validating the system, deployed via GitHub Pages.
 
