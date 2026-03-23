@@ -837,46 +837,47 @@ a:hover { color: var(--primary-dim); }
 
 .control-row { display: flex; align-items: center; gap: 10px; }
 
-input[type="range"] {
+/* Custom touch-friendly slider */
+.custom-slider-track {
   flex: 1;
   height: 4px;
-  -webkit-appearance: none;
-  appearance: none;
   background: var(--surface-container-lowest);
   border-radius: 2px;
-  outline: none;
+  position: relative;
+  cursor: pointer;
+  touch-action: none;
+  padding: 16px 0;
+  margin: -16px 0;
+  background-clip: content-box;
 }
 
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
+.custom-slider-fill {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  height: 4px;
+  background: var(--primary);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.custom-slider-thumb {
+  position: absolute;
+  top: 16px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: var(--primary);
+  transform: translate(-50%, -50%) translateY(2px);
   cursor: pointer;
   box-shadow: 0 0 8px rgba(233, 195, 73, 0.3);
+  transition: transform 0.1s ease;
+  pointer-events: none;
 }
 
-input[type="range"]::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--primary);
-  border: none;
-  cursor: pointer;
-}
-
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  background: var(--surface-container-lowest);
-  border-radius: 2px;
-}
-
-input[type="range"]::-moz-range-track {
-  height: 4px;
-  background: var(--surface-container-lowest);
-  border-radius: 2px;
-  border: none;
+.custom-slider-thumb.active {
+  transform: translate(-50%, -50%) translateY(2px) scale(1.2);
+  box-shadow: 0 0 16px rgba(233, 195, 73, 0.5);
 }
 
 select {
