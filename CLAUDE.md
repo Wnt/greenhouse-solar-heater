@@ -87,9 +87,13 @@ Height scales in SVGs are approximate — `system-height-layout.svg` is the most
 The `playground/` directory contains a single-page thermal simulation app. Dark editorial theme based on the Stitch "Digital Sanctuary" design system (`design/Stitch/`): dark backgrounds (#0c0e12), gold primary (#e9c349), teal secondary (#43aea4), Newsreader serif headings, Manrope sans-serif body, tonal layering (no border lines for structure). Responsive: desktop sidebar nav (256px), mobile (<768px) glassmorphic bottom nav. Single HTML file with 4 JS-switched views, `<script type="importmap">` for ES modules.
 
 - `playground/index.html` — single-page app: Status (default, bento grid dashboard), Components (sensors/valves/actuators), Schematic (SVG system visualization), Controls (sliders, reset). Floating play/pause FAB.
-- `playground/js/` — ES modules: physics, control, UI, yaml-loader
+- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), UI, yaml-loader
 - `playground/css/style.css` — shared styles
 - `design/Stitch/` — Stitch UI design mockups (desktop + mobile) with DESIGN.md spec and code.html references
+
+### Shared Control Logic
+
+The playground simulator uses the **real Shelly control logic** (`shelly/control-logic.js`) at runtime. The file `playground/js/control-logic-loader.js` fetches the ES5 Shelly script via HTTP, evaluates it with a CommonJS `module` shim, and exposes the exports as an ES module. The `ControlStateMachine` class in `playground/js/control.js` is a thin stateful wrapper that translates playground sensor names to the Shelly state format and maintains transition logs — all mode decisions are delegated to the shared `evaluate()` function. This ensures the simulator always runs the exact same logic as the deployed hardware. **When changing control logic, only edit `shelly/control-logic.js`** — the playground picks it up automatically.
 
 ### Vendored Dependencies
 
