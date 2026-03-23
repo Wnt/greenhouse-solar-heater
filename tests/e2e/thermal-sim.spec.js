@@ -15,7 +15,7 @@ async function setSlider(page, id, value) {
 
 test.describe('Thermal Simulation UI', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/playground/thermal.html');
+    await page.goto('/playground/');
     // Wait for controls to render (7 control groups: 6 sliders + day/night toggle)
     await goToView(page, 'controls');
     await expect(page.locator('#controls .control-group')).toHaveCount(7);

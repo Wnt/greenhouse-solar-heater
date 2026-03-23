@@ -21,7 +21,7 @@ async function setSlider(page, id, value) {
 
 test.describe('Status View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/playground/thermal.html');
+    await page.goto('/playground/');
     await expect(page.locator('#view-status')).toBeVisible();
   });
 
@@ -110,7 +110,7 @@ test.describe('Status View Screenshots', () => {
 
 test.describe('Components View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/playground/thermal.html');
+    await page.goto('/playground/');
     await page.locator('[data-view="components"]').first().click();
     await expect(page.locator('#view-components')).toBeVisible();
   });
@@ -130,7 +130,7 @@ test.describe('Components View Screenshots', () => {
 
 test.describe('Schematic View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/playground/thermal.html');
+    await page.goto('/playground/');
     await page.locator('[data-view="schematic"]').first().click();
     await expect(page.locator('#view-schematic')).toBeVisible();
   });
@@ -150,7 +150,7 @@ test.describe('Schematic View Screenshots', () => {
 
 test.describe('Controls View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/playground/thermal.html');
+    await page.goto('/playground/');
     await page.locator('[data-view="controls"]').first().click();
     await expect(page.locator('#view-controls')).toBeVisible();
   });
