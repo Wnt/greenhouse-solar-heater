@@ -155,7 +155,9 @@
           <div class="graph-legend">
             <div class="graph-legend-item"><div class="graph-legend-dot" style="background:#ee7d77;"></div>Charging</div>
             <div class="graph-legend-item"><div class="graph-legend-dot" style="background:#e9c349;"></div>Heating</div>
-            <div class="graph-legend-item"><div class="graph-legend-line" style="background:#e9c349;"></div>Temp</div>
+            <div class="graph-legend-item"><div class="graph-legend-line" style="background:#e9c349;"></div>Tank</div>
+            <div class="graph-legend-item"><div class="graph-legend-line" style="background:#69d0c5;"></div>Greenhouse</div>
+            <div class="graph-legend-item"><div class="graph-legend-line" style="background:#42a5f5;"></div>Outside</div>
           </div>
         </div>
 
@@ -866,6 +868,33 @@
         ctx.fillStyle = '#e9c349';
         ctx.fill();
       }
+
+      // ── Greenhouse line (green) ──
+      drawTempLine(ctx, store, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_greenhouse', '#69d0c5', 1);
+
+      // ── Outside line (blue) ──
+      drawTempLine(ctx, store, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_outdoor', '#42a5f5', 1);
+    }
+
+    function drawTempLine(ctx, store, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, key, color, lineWidth) {
+      const pts = [];
+      for (let i = 0; i < store.times.length; i++) {
+        const t = store.times[i];
+        if (t < tMin) continue;
+        if (t > tMax) break;
+        const x = pad.left + ((t - tMin) / graphRange) * pw;
+        const y = pad.top + ph - ((store.values[i][key] - yMin) / (yMax - yMin)) * ph;
+        pts.push({ x, y });
+      }
+      if (pts.length < 2) return;
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lineWidth;
+      ctx.globalAlpha = 0.7;
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
 
     // ── SVG Schematic ──
