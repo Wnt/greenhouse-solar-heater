@@ -619,6 +619,15 @@
             if (model && running && liveStateKeys[s.key]) {
               model.state[liveStateKeys[s.key]] = v;
             }
+            // Tank top must be >= tank bottom
+            if (s.key === 't_tank_bottom' && v > params.t_tank_top) {
+              params.t_tank_top = v;
+              sliderRefs.t_tank_top.update(v);
+            }
+            if (s.key === 't_tank_top' && v < params.t_tank_bottom) {
+              params.t_tank_bottom = v;
+              sliderRefs.t_tank_bottom.update(v);
+            }
           },
         });
         sliderRefs[s.key] = ref;
