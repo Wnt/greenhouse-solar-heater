@@ -125,8 +125,8 @@
           <div class="tank-gauge-message" id="tank-temp-message"></div>
           <div class="tank-gauge-stats">
             <div class="tank-gauge-stat">
-              <span class="tank-gauge-stat-label">Tank Bottom</span>
-              <div><span class="tank-gauge-stat-value" id="tank-stat-bottom">--</span> <span class="tank-gauge-stat-unit">°C</span></div>
+              <span class="tank-gauge-stat-label">Energy Stored</span>
+              <div><span class="tank-gauge-stat-value" id="tank-stat-energy">--</span> <span class="tank-gauge-stat-unit">kWh</span></div>
             </div>
             <div class="tank-gauge-stat">
               <span class="tank-gauge-stat-label">Yesterday's High</span>
@@ -764,7 +764,9 @@
 
       // Inactive modes
       const inactiveEl = document.getElementById('inactive-modes');
-      const otherModes = ['solar_charging', 'greenhouse_heating', 'idle'].filter(m => m !== mode);
+      const otherModes = ['solar_charging', 'greenhouse_heating', 'idle']
+        .filter(m => m !== mode)
+        .filter(m => !(m === 'idle' && mode === 'emergency_heating'));
       inactiveEl.innerHTML = otherModes.map(m => {
         const mi = MODE_INFO[m];
         return `<div class="card mode-card mode-card-inactive" style="margin-bottom:8px;">
@@ -775,7 +777,34 @@
 
       // Tank temperature gauge (shows tank bottom)
       document.getElementById('tank-temp-val').textContent = state.t_tank_bottom.toFixed(0);
-      document.getElementById('tank-stat-bottom').textContent = state.t_tank_bottom.toFixed(0);
+
+      // Energy stored: Q = m * c * (T_avg - T_base), 300L water, base 12°C
+      // Heat loss: estimated from 24h temperature history in store
+      const TANK_MASS = 300; // kg
+      const SPECIFIC_HEAT = 4.186; // kJ/(kg·K)
+      const BASE_TEMP = 12; // °C
+      const avgTankTemp = (state.t_tank_top + state.t_tank_bottom) / 2;
+      const grossKwh = TANK_MASS * SPECIFIC_HEAT * Math.max(0, avgTankTemp - BASE_TEMP) / 3600;
+      // Estimate 24h heat loss from stored data
+      let lossKwh = 0;
+      if (store.times.length > 1) {
+        const now = store.times[store.times.length - 1];
+        const dayAgo = now - 86400;
+        // Sum temperature drops during idle periods (no active heating/charging)
+        for (let i = 1; i < store.times.length; i++) {
+          if (store.times[i] < dayAgo) continue;
+          const dt = store.times[i] - store.times[i - 1];
+          const mode = store.modes[i];
+          if (mode === 'idle' || mode === 'greenhouse_heating') {
+            const prevAvg = (store.values[i - 1].t_tank_top + store.values[i - 1].t_tank_bottom) / 2;
+            const currAvg = (store.values[i].t_tank_top + store.values[i].t_tank_bottom) / 2;
+            const drop = prevAvg - currAvg;
+            if (drop > 0) lossKwh += TANK_MASS * SPECIFIC_HEAT * drop / 3600;
+          }
+        }
+      }
+      const netKwh = Math.max(0, grossKwh - lossKwh);
+      document.getElementById('tank-stat-energy').textContent = netKwh.toFixed(1);
 
       // Track yesterday's high (peak from previous 24h simulated day)
       if (state.t_tank_bottom > yesterdayHigh) yesterdayHigh = state.t_tank_bottom;
@@ -823,8 +852,9 @@
       if (transitionLog.length > 0) {
         const logHtml = transitionLog.slice(0, 20).map(t => {
           const mi = MODE_INFO[t.mode] || MODE_INFO.idle;
-          const dotClass = t.mode === 'solar_charging' || t.mode === 'active_drain' ? 'log-dot-primary'
-            : t.mode === 'greenhouse_heating' ? 'log-dot-secondary' : 'log-dot-muted';
+          const dotClass = t.mode === 'solar_charging' || t.mode === 'active_drain' ? 'log-dot-charging'
+            : t.mode === 'greenhouse_heating' ? 'log-dot-heating'
+            : t.mode === 'emergency_heating' ? 'log-dot-emergency' : 'log-dot-muted';
           return `<div class="log-item">
             <div class="log-dot ${dotClass}"></div>
             <div class="log-content">
