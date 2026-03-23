@@ -8,13 +8,16 @@ async function goToView(page, viewName) {
 
 // Helper: set a slider value (must be on Controls view)
 async function setSlider(page, id, value) {
-  const slider = page.locator('#' + id);
-  await slider.fill(String(value));
-  await slider.dispatchEvent('input');
+  await page.evaluate(({ id, value }) => {
+    const el = document.getElementById(id);
+    if (el && el._sliderUpdate) el._sliderUpdate(value);
+  }, { id, value });
 }
 
 test.describe('Thermal Simulation UI', () => {
   test.beforeEach(async ({ page }) => {
+    // Block external font requests so load event fires in offline/restricted environments
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.abort());
     await page.goto('/playground/');
     // Wait for controls to render (7 control groups: 6 sliders + day/night toggle)
     await goToView(page, 'controls');
@@ -127,9 +130,7 @@ test.describe('Thermal Simulation UI', () => {
 
   test('sliders update parameter values', async ({ page }) => {
     await goToView(page, 'controls');
-    const slider = page.locator('#outdoor');
-    await slider.fill('20');
-    await slider.dispatchEvent('input');
+    await setSlider(page, 'outdoor', 20);
     await expect(page.locator('#outdoor-val')).toContainText('20');
   });
 

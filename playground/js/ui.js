@@ -78,6 +78,9 @@ export function createSlider(container, { id, label, min, max, step, value, unit
   // Initialize position
   setPosition(valToFrac(value));
 
+  // Expose update on the DOM element for programmatic access (e.g. tests)
+  track._sliderUpdate = update;
+
   // Pointer handling — works for both mouse and touch
   let dragging = false;
 
