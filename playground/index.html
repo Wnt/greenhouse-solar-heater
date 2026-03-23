@@ -767,7 +767,7 @@
       const inactiveEl = document.getElementById('inactive-modes');
       const otherModes = ['solar_charging', 'greenhouse_heating', 'idle']
         .filter(m => m !== mode)
-        .filter(m => !(m === 'idle' && (mode === 'emergency_heating' || mode === 'overheat_drain')));
+        .filter(m => !(m === 'idle' && !['solar_charging', 'greenhouse_heating', 'idle'].includes(mode)));
       inactiveEl.innerHTML = otherModes.map(m => {
         const mi = MODE_INFO[m];
         return `<div class="card mode-card mode-card-inactive" style="margin-bottom:8px;">
