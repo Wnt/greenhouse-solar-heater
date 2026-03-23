@@ -361,11 +361,12 @@ const scenarios = [
         }
       },
       {
-        description: 'system reaches safe state (IDLE or EMERGENCY) within 5 minutes',
+        description: 'system reaches safe state within 5 minutes',
         check: function(trace) {
           const fiveMin = trace.filter(s => s.t > 300);
           const safe = fiveMin.filter(s =>
-            s.mode === MODES.IDLE || s.mode === MODES.EMERGENCY_HEATING);
+            s.mode === MODES.IDLE || s.mode === MODES.EMERGENCY_HEATING ||
+            s.mode === MODES.GREENHOUSE_HEATING);
           if (safe.length < fiveMin.length * 0.9) {
             throw new Error('system not in safe state after 5 minutes');
           }

@@ -43,9 +43,10 @@ describe('mode evaluation', () => {
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
   });
 
-  it('enters EMERGENCY_HEATING when greenhouse < 5 and tank_top < 25', () => {
+  it('enters EMERGENCY_HEATING when greenhouse < 5 and tank lacks delta', () => {
+    // tank_top 8°C is only 4°C above greenhouse 4°C (< 5°C delta)
     const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 4, outdoor: -5 },
+      temps: { collector: 5, tank_top: 8, tank_bottom: 6, greenhouse: 4, outdoor: -5 },
       collectorsDrained: true
     }), null);
     assert.strictEqual(result.nextMode, MODES.EMERGENCY_HEATING);
@@ -101,9 +102,10 @@ describe('hysteresis', () => {
     assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
   });
 
-  it('does not enter greenhouse heating when tank_top < 25', () => {
+  it('does not enter greenhouse heating when tank lacks sufficient delta over greenhouse', () => {
+    // tank_top 13°C is only 4°C above greenhouse 9°C (< 5°C delta)
     const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 9, outdoor: 10 },
+      temps: { collector: 5, tank_top: 13, tank_bottom: 10, greenhouse: 9, outdoor: 10 },
       collectorsDrained: true
     }), null);
     assert.strictEqual(result.nextMode, MODES.IDLE);
@@ -134,9 +136,10 @@ describe('hysteresis', () => {
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
-  it('enters emergency at greenhouse < 5 and tank_top < 25', () => {
+  it('enters emergency at greenhouse < 5 and tank lacks delta', () => {
+    // tank_top 8°C is only 4°C above greenhouse 4°C (< 5°C delta)
     const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 4, outdoor: -5 },
+      temps: { collector: 5, tank_top: 8, tank_bottom: 6, greenhouse: 4, outdoor: -5 },
       collectorsDrained: true
     }), null);
     assert.strictEqual(result.nextMode, MODES.EMERGENCY_HEATING);
@@ -144,7 +147,7 @@ describe('hysteresis', () => {
 
   it('stays in emergency at exact exit threshold (greenhouse = 8)', () => {
     const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 8, outdoor: -5 },
+      temps: { collector: 5, tank_top: 8, tank_bottom: 6, greenhouse: 8, outdoor: -5 },
       currentMode: MODES.EMERGENCY_HEATING,
       modeEnteredAt: 0, now: 2000,
       collectorsDrained: true
@@ -154,17 +157,21 @@ describe('hysteresis', () => {
 
   it('exits emergency when greenhouse > 8', () => {
     const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 9, outdoor: -5 },
+      temps: { collector: 5, tank_top: 10, tank_bottom: 8, greenhouse: 9, outdoor: -5 },
       currentMode: MODES.EMERGENCY_HEATING,
       modeEnteredAt: 0, now: 2000,
       collectorsDrained: true
     }), null);
+    // greenhouse > 8 exits emergency; tank 10°C is only 1°C above greenhouse 9°C
+    // so it falls through to IDLE (not enough delta for greenhouse heating)
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
   it('does not enter emergency at exact threshold (greenhouse = 5)', () => {
+    // tank_top 8°C is only 3°C above greenhouse 5°C (< 5°C delta)
+    // but greenhouse = 5 is not < 5 (exact threshold), so no emergency
     const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 5, outdoor: -5 },
+      temps: { collector: 5, tank_top: 8, tank_bottom: 6, greenhouse: 5, outdoor: -5 },
       collectorsDrained: true
     }), null);
     assert.strictEqual(result.nextMode, MODES.IDLE);
@@ -261,8 +268,9 @@ describe('valve and actuator mapping', () => {
   });
 
   it('EMERGENCY_HEATING: all valves closed, space_heater + immersion on', () => {
+    // tank_top 8°C is only 4°C above greenhouse 4°C (< 5°C delta) → emergency
     const r = evaluate(makeState({
-      temps: { collector: 20, tank_top: 20, tank_bottom: 15, greenhouse: 4, outdoor: -5 },
+      temps: { collector: 5, tank_top: 8, tank_bottom: 6, greenhouse: 4, outdoor: -5 },
       collectorsDrained: true
     }), null);
     assert.deepStrictEqual(r.valves, {
@@ -301,8 +309,9 @@ describe('priority and preemption', () => {
   });
 
   it('EMERGENCY preempts GREENHOUSE_HEATING when tank depletes', () => {
+    // tank_top 8°C is only 4°C above greenhouse 4°C (< 5°C delta) → emergency
     const result = evaluate(makeState({
-      temps: { collector: 10, tank_top: 20, tank_bottom: 15, greenhouse: 4, outdoor: -5 },
+      temps: { collector: 5, tank_top: 8, tank_bottom: 6, greenhouse: 4, outdoor: -5 },
       currentMode: MODES.GREENHOUSE_HEATING,
       modeEnteredAt: 0, now: 1000,
       collectorsDrained: true
@@ -404,6 +413,68 @@ describe('sensor failure', () => {
   });
 });
 
+describe('heating gap bug — greenhouse should heat when tank has useful heat', () => {
+  it('enters GREENHOUSE_HEATING when tank is below 25°C but well above greenhouse', () => {
+    // Bug: tank at 24°C, greenhouse at 9°C — 15°C differential is very useful
+    // but the old fixed threshold (greenhouseMinTankTop=25) prevents heating
+    const result = evaluate(makeState({
+      temps: { collector: 5, tank_top: 24, tank_bottom: 22, greenhouse: 9, outdoor: 5 },
+      collectorsDrained: true
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
+      'Should heat: tank 24°C is 15°C above greenhouse 9°C');
+  });
+
+  it('enters GREENHOUSE_HEATING when tank is 20°C and greenhouse is 8°C', () => {
+    // Tank at 20°C still has 12°C differential over greenhouse
+    const result = evaluate(makeState({
+      temps: { collector: 5, tank_top: 20, tank_bottom: 18, greenhouse: 8, outdoor: 5 },
+      collectorsDrained: true
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
+      'Should heat: tank 20°C is 12°C above greenhouse 8°C');
+  });
+
+  it('does NOT enter GREENHOUSE_HEATING when tank is barely above greenhouse', () => {
+    // Tank at 12°C, greenhouse at 9°C — only 3°C differential, not useful
+    const result = evaluate(makeState({
+      temps: { collector: 5, tank_top: 12, tank_bottom: 10, greenhouse: 9, outdoor: 5 },
+      collectorsDrained: true
+    }), null);
+    assert.notStrictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
+      'Should NOT heat: tank 12°C is only 3°C above greenhouse 9°C');
+  });
+
+  it('simulates overnight scenario: heating continues as tank cools', () => {
+    // Simulate the scenario from the bug: tank gradually cooling overnight
+    // System should keep heating until tank-greenhouse differential is too small
+    var state = makeState({
+      temps: { collector: 5, tank_top: 25.5, tank_bottom: 25, greenhouse: 9, outdoor: 5 },
+      currentMode: MODES.IDLE,
+      collectorsDrained: true
+    });
+
+    // First cycle: tank at 25.5°C, should start heating
+    var result = evaluate(state, null);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING, 'Cycle 1: should heat');
+
+    // Later: tank dropped to 23°C after several cycles, greenhouse drops to 9 again
+    state.temps.tank_top = 23;
+    state.temps.greenhouse = 9;
+    state.currentMode = MODES.IDLE;
+    result = evaluate(state, null);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
+      'Should still heat: tank 23°C has 14°C differential');
+
+    // Even later: tank dropped to 18°C
+    state.temps.tank_top = 18;
+    state.temps.greenhouse = 9;
+    result = evaluate(state, null);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
+      'Should still heat: tank 18°C has 9°C differential');
+  });
+});
+
 describe('edge cases', () => {
   it('overheat during active charging triggers drain', () => {
     const result = evaluate(makeState({
@@ -423,14 +494,23 @@ describe('edge cases', () => {
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
   });
 
-  it('boot during freeze: stays IDLE if already drained', () => {
+  it('boot during freeze: heats greenhouse if tank has useful delta', () => {
     const result = evaluate(makeState({
       temps: { collector: -3, tank_top: 5, tank_bottom: 5, greenhouse: -3, outdoor: -3 },
       currentMode: MODES.IDLE,
       collectorsDrained: true
     }), null);
-    // Emergency needs tank_top < 25 AND greenhouse < 5
-    // greenhouse is -3 < 5 and tank_top is 5 < 25, so emergency triggers
+    // tank_top 5°C is 8°C above greenhouse -3°C → useful heat, use radiator
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+  });
+
+  it('boot during freeze: emergency when tank has no useful delta', () => {
+    const result = evaluate(makeState({
+      temps: { collector: -3, tank_top: 1, tank_bottom: 1, greenhouse: -3, outdoor: -3 },
+      currentMode: MODES.IDLE,
+      collectorsDrained: true
+    }), null);
+    // tank_top 1°C is only 4°C above greenhouse -3°C (< 5°C delta) → emergency
     assert.strictEqual(result.nextMode, MODES.EMERGENCY_HEATING);
   });
 
