@@ -152,8 +152,7 @@ a:hover { color: var(--primary-dim); }
   border-radius: 1.5rem 1.5rem 0 0;
   justify-content: space-around;
   align-items: center;
-  padding: 0 8px calc(8px + env(safe-area-inset-bottom, 0px));
-  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  padding: 12px 8px calc(8px + env(safe-area-inset-bottom, 0px));
 }
 
 .bottom-nav a {
