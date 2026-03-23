@@ -265,6 +265,7 @@
 
       <div class="card">
         <h3>Environment &amp; Initial Conditions</h3>
+        <div id="preset-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
         <div class="controls-grid" id="controls"></div>
       </div>
 
@@ -464,6 +465,13 @@
     // ── Transition log ──
     const transitionLog = [];
 
+    // ── Scenario presets ──
+    const PRESETS = {
+      spring_fall:   { label: 'Spring / Fall',      t_outdoor: 10,   irradiance: 500, t_tank_top: 12, t_tank_bottom: 9,  t_greenhouse: 11 },
+      summer_peak:   { label: 'Summer Peak Heat',   t_outdoor: 26,   irradiance: 500, t_tank_top: 88, t_tank_bottom: 85, t_greenhouse: 11 },
+      early_late:    { label: 'Late / Early Season', t_outdoor: -5.5, irradiance: 240, t_tank_top: 13, t_tank_bottom: 13, t_greenhouse: 5 },
+    };
+
     // ── Input parameters ──
     const params = {
       t_outdoor: 10,
@@ -588,6 +596,8 @@
     // ── Controls ──
     const liveStateKeys = { t_tank_top: 't_tank_top', t_tank_bottom: 't_tank_bottom', t_greenhouse: 't_greenhouse' };
 
+    const sliderRefs = {};
+
     function setupControls() {
       const el = document.getElementById('controls');
       const sliders = [
@@ -601,7 +611,7 @@
       ];
 
       for (const s of sliders) {
-        createSlider(el, {
+        const ref = createSlider(el, {
           ...s,
           onChange: (v) => {
             params[s.key] = v;
@@ -611,7 +621,20 @@
             }
           },
         });
+        sliderRefs[s.key] = ref;
       }
+
+      // Scenario presets
+      const bar = document.getElementById('preset-bar');
+      for (const [key, preset] of Object.entries(PRESETS)) {
+        const btn = document.createElement('button');
+        btn.className = 'preset-btn';
+        btn.textContent = preset.label;
+        btn.dataset.preset = key;
+        btn.addEventListener('click', () => applyPreset(key));
+        bar.appendChild(btn);
+      }
+      updatePresetHighlight('spring_fall');
 
       // Day/night toggle
       const dnGroup = document.createElement('div');
@@ -658,6 +681,24 @@
       document.getElementById('sidebar-subtitle').textContent = 'Ready';
       document.getElementById('logs-list').innerHTML = '<div style="color:var(--on-surface-variant);font-size:13px;">No transitions yet. Start the simulation.</div>';
       updateDisplay(model.getState(), { mode: 'idle', valves: config.modes.idle.valve_states, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
+    }
+
+    function applyPreset(key) {
+      const preset = PRESETS[key];
+      if (!preset) return;
+      const keys = ['t_outdoor', 'irradiance', 't_tank_top', 't_tank_bottom', 't_greenhouse'];
+      for (const k of keys) {
+        params[k] = preset[k];
+        if (sliderRefs[k]) sliderRefs[k].update(preset[k]);
+      }
+      updatePresetHighlight(key);
+      resetSim();
+    }
+
+    function updatePresetHighlight(activeKey) {
+      for (const btn of document.querySelectorAll('.preset-btn')) {
+        btn.classList.toggle('preset-active', btn.dataset.preset === activeKey);
+      }
     }
 
     // ── Day/Night ──

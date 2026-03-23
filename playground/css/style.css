@@ -916,6 +916,28 @@ button.primary {
 
 button.primary:hover { opacity: 0.9; }
 
+/* ── Scenario Preset Buttons ── */
+.preset-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--outline-variant);
+  background: transparent;
+  color: var(--on-surface-variant);
+  font-family: var(--ff-body);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.preset-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.preset-btn.preset-active {
+  background: var(--primary);
+  color: var(--surface-container-lowest);
+  border-color: var(--primary);
+}
+
 /* ── FAB (Floating Action Button) ── */
 .fab {
   position: fixed;
