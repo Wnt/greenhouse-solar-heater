@@ -63,6 +63,7 @@ var DEFAULT_CONFIG = {
   greenhouseEnterTemp: 10,
   greenhouseExitTemp: 12,
   greenhouseMinTankTop: 25,
+  greenhouseMinTankDelta: 5,
   emergencyEnterTemp: 5,
   emergencyExitTemp: 8,
   freezeDrainTemp: 2,
@@ -169,7 +170,7 @@ function evaluate(state, config) {
     return makeResult(state.currentMode, flags);
   }
 
-  // Emergency heating — T_greenhouse < 5°C AND T_tank_top < 25°C
+  // Emergency heating — T_greenhouse < 5°C AND tank can't meaningfully heat greenhouse
   if (t.greenhouse !== null && t.tank_top !== null) {
     if (state.currentMode === MODES.EMERGENCY_HEATING) {
       if (t.greenhouse <= cfg.emergencyExitTemp) {
@@ -177,7 +178,7 @@ function evaluate(state, config) {
       }
       // Above exit temp, fall through to normal evaluation
     } else if (t.greenhouse < cfg.emergencyEnterTemp &&
-               t.tank_top < cfg.greenhouseMinTankTop) {
+               t.tank_top <= t.greenhouse + cfg.greenhouseMinTankDelta) {
       return makeResult(MODES.EMERGENCY_HEATING, flags);
     }
   }
@@ -190,7 +191,7 @@ function evaluate(state, config) {
       }
       // Above exit temp, fall through
     } else if (t.greenhouse < cfg.greenhouseEnterTemp &&
-               t.tank_top > cfg.greenhouseMinTankTop) {
+               t.tank_top > t.greenhouse + cfg.greenhouseMinTankDelta) {
       return makeResult(MODES.GREENHOUSE_HEATING, flags);
     }
   }

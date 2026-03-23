@@ -79,11 +79,11 @@ export class ControlStateMachine {
 
     // ── Priority-ordered mode entry (from idle, or preempt solar_charging for safety) ──
     if (this.currentMode === 'idle' || this.currentMode === 'solar_charging') {
-      // Emergency heating — highest priority
-      if (sensors.t_greenhouse < 5 && sensors.t_tank_top < 25) {
+      // Emergency heating — highest priority (tank can't meaningfully heat greenhouse)
+      if (sensors.t_greenhouse < 5 && sensors.t_tank_top <= sensors.t_greenhouse + 5) {
         if (this.currentMode !== 'emergency_heating') {
           this.currentMode = 'emergency_heating';
-          transition = `${prevMode} → emergency_heating | T_gh=${sensors.t_greenhouse.toFixed(1)}°C < 5°C, T_top=${sensors.t_tank_top.toFixed(1)}°C < 25°C | ${sensorStr}`;
+          transition = `${prevMode} → emergency_heating | T_gh=${sensors.t_greenhouse.toFixed(1)}°C < 5°C, T_top=${sensors.t_tank_top.toFixed(1)}°C ≤ T_gh+5°C | ${sensorStr}`;
         }
       }
       // Active drain — freeze protection
@@ -98,10 +98,10 @@ export class ControlStateMachine {
         this.currentMode = 'overheat_drain';
         transition = `solar_charging → overheat_drain | T_top=${sensors.t_tank_top.toFixed(1)}°C > 85°C | ${sensorStr}`;
       }
-      // Greenhouse heating
-      else if (this.currentMode === 'idle' && sensors.t_greenhouse < 10 && sensors.t_tank_top > 25) {
+      // Greenhouse heating (tank must be meaningfully warmer than greenhouse)
+      else if (this.currentMode === 'idle' && sensors.t_greenhouse < 10 && sensors.t_tank_top > sensors.t_greenhouse + 5) {
         this.currentMode = 'greenhouse_heating';
-        transition = `idle → greenhouse_heating | T_gh=${sensors.t_greenhouse.toFixed(1)}°C < 10°C, T_top=${sensors.t_tank_top.toFixed(1)}°C > 25°C | ${sensorStr}`;
+        transition = `idle → greenhouse_heating | T_gh=${sensors.t_greenhouse.toFixed(1)}°C < 10°C, T_top=${sensors.t_tank_top.toFixed(1)}°C > T_gh+5°C | ${sensorStr}`;
       }
       // Solar charging
       else if (this.currentMode === 'idle' && delta > 7) {
