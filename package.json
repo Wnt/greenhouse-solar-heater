@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node tests/control-logic.test.js && node tests/simulation/simulation.test.js && node tests/deploy.test.js && node tests/auth.test.js && node tests/s3-storage.test.js && node tests/vpn-config.test.js && node tests/push-storage.test.js && node tests/valve-poller.test.js && node tests/sw.test.js && npx playwright test",
     "test:unit": "node tests/control-logic.test.js && node tests/simulation/simulation.test.js && node tests/deploy.test.js && node tests/auth.test.js && node tests/s3-storage.test.js && node tests/vpn-config.test.js && node tests/push-storage.test.js && node tests/valve-poller.test.js && node tests/sw.test.js",
-    "test:e2e": "npx playwright test"
+    "test:e2e": "npx playwright test",
+    "screenshots": "npx playwright test --config=playwright.screenshots.config.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",
