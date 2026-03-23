@@ -12,15 +12,17 @@ function shot(name) {
 
 // Helper: navigate to Controls view to set sliders, then back to a target view
 async function setSlider(page, id, value) {
-  const slider = page.locator('#' + id);
-  await slider.fill(String(value));
-  await slider.dispatchEvent('input');
+  await page.evaluate(({ id, value }) => {
+    const el = document.getElementById(id);
+    if (el && el._sliderUpdate) el._sliderUpdate(value);
+  }, { id, value });
 }
 
 // ─── Status View (default) ──────────────────────────────────────────────
 
 test.describe('Status View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.abort());
     await page.goto('/playground/');
     await expect(page.locator('#view-status')).toBeVisible();
   });
@@ -110,6 +112,7 @@ test.describe('Status View Screenshots', () => {
 
 test.describe('Components View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.abort());
     await page.goto('/playground/');
     await page.locator('[data-view="components"]').first().click();
     await expect(page.locator('#view-components')).toBeVisible();
@@ -130,6 +133,7 @@ test.describe('Components View Screenshots', () => {
 
 test.describe('Schematic View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.abort());
     await page.goto('/playground/');
     await page.locator('[data-view="schematic"]').first().click();
     await expect(page.locator('#view-schematic')).toBeVisible();
@@ -150,6 +154,7 @@ test.describe('Schematic View Screenshots', () => {
 
 test.describe('Controls View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.abort());
     await page.goto('/playground/');
     await page.locator('[data-view="controls"]').first().click();
     await expect(page.locator('#view-controls')).toBeVisible();

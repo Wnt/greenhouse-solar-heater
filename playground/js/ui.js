@@ -3,8 +3,13 @@
  * Shared slider creation, SVG manipulation, and chart helpers.
  */
 
-/** Create a labeled slider control */
-export function createSlider(container, { id, label, min, max, step, value, unit, onChange }) {
+/** Create a labeled slider control.
+ *  Uses a custom touch-friendly slider that doesn't reset when
+ *  the finger drifts vertically outside the track area.
+ *  Supports logarithmic mode via opts.log (value mapped on log scale).
+ *  Supports discrete steps via opts.steps (array of allowed values).
+ */
+export function createSlider(container, { id, label, min, max, step, value, unit, onChange, log, steps }) {
   const group = document.createElement('div');
   group.className = 'control-group';
 
@@ -15,31 +20,123 @@ export function createSlider(container, { id, label, min, max, step, value, unit
   lbl.htmlFor = id;
   lbl.textContent = label;
 
-  const slider = document.createElement('input');
-  slider.type = 'range';
-  slider.id = id;
-  slider.min = min;
-  slider.max = max;
-  slider.step = step || 1;
-  slider.value = value;
+  // Custom slider track + thumb
+  const track = document.createElement('div');
+  track.className = 'custom-slider-track';
+  track.id = id;
+
+  const fill = document.createElement('div');
+  fill.className = 'custom-slider-fill';
+
+  const thumb = document.createElement('div');
+  thumb.className = 'custom-slider-thumb';
+
+  track.appendChild(fill);
+  track.appendChild(thumb);
 
   const val = document.createElement('span');
   val.className = 'value';
   val.id = id + '-val';
-  val.textContent = value + (unit || '');
+  val.textContent = formatSliderValue(value, unit, steps);
 
-  slider.addEventListener('input', () => {
-    val.textContent = slider.value + (unit || '');
-    if (onChange) onChange(parseFloat(slider.value));
-  });
+  // Value <-> fraction conversion
+  function valToFrac(v) {
+    if (steps) return steps.indexOf(v) / (steps.length - 1);
+    if (log) return Math.log(v / min) / Math.log(max / min);
+    return (v - min) / (max - min);
+  }
+
+  function fracToVal(f) {
+    f = Math.max(0, Math.min(1, f));
+    if (steps) {
+      const idx = Math.round(f * (steps.length - 1));
+      return steps[idx];
+    }
+    if (log) {
+      return Math.round(min * Math.pow(max / min, f));
+    }
+    const raw = min + f * (max - min);
+    return Math.round(raw / (step || 1)) * (step || 1);
+  }
+
+  let currentValue = value;
+
+  function setPosition(frac) {
+    frac = Math.max(0, Math.min(1, frac));
+    const pct = frac * 100;
+    fill.style.width = pct + '%';
+    thumb.style.left = pct + '%';
+  }
+
+  function update(newVal) {
+    currentValue = newVal;
+    setPosition(valToFrac(newVal));
+    val.textContent = formatSliderValue(newVal, unit, steps);
+    if (onChange) onChange(newVal);
+  }
+
+  // Initialize position
+  setPosition(valToFrac(value));
+
+  // Expose update on the DOM element for programmatic access (e.g. tests)
+  track._sliderUpdate = update;
+
+  // Pointer handling — works for both mouse and touch
+  let dragging = false;
+
+  function getFrac(clientX) {
+    const rect = track.getBoundingClientRect();
+    return (clientX - rect.left) / rect.width;
+  }
+
+  function onStart(clientX) {
+    dragging = true;
+    thumb.classList.add('active');
+    update(fracToVal(getFrac(clientX)));
+  }
+
+  function onMove(clientX) {
+    if (!dragging) return;
+    update(fracToVal(getFrac(clientX)));
+  }
+
+  function onEnd() {
+    dragging = false;
+    thumb.classList.remove('active');
+  }
+
+  // Mouse events
+  track.addEventListener('mousedown', (e) => { e.preventDefault(); onStart(e.clientX); });
+  window.addEventListener('mousemove', (e) => { if (dragging) onMove(e.clientX); });
+  window.addEventListener('mouseup', onEnd);
+
+  // Touch events — passive: false prevents scroll cancellation
+  track.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    onStart(e.touches[0].clientX);
+  }, { passive: false });
+  window.addEventListener('touchmove', (e) => {
+    if (dragging) {
+      e.preventDefault();
+      onMove(e.touches[0].clientX);
+    }
+  }, { passive: false });
+  window.addEventListener('touchend', onEnd);
+  window.addEventListener('touchcancel', onEnd);
 
   group.appendChild(lbl);
-  row.appendChild(slider);
+  row.appendChild(track);
   row.appendChild(val);
   group.appendChild(row);
   container.appendChild(group);
 
-  return { slider, val, group };
+  return { track, val, group, update };
+}
+
+function formatSliderValue(v, unit, steps) {
+  if (steps) return v.toLocaleString() + (unit || '');
+  const display = Number.isInteger(v) ? v : parseFloat(v.toFixed(1));
+  return display + (unit || '');
 }
 
 /** Format seconds as HH:MM:SS */
