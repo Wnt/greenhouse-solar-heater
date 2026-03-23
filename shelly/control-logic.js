@@ -170,7 +170,8 @@ function evaluate(state, config) {
     return makeResult(state.currentMode, flags);
   }
 
-  // Emergency heating — T_greenhouse < 5°C AND tank can't meaningfully heat greenhouse
+  // Emergency heating — greenhouse cold AND tank can't meaningfully heat
+  // (tank too close to greenhouse temp, or tank below minimum useful temp)
   if (t.greenhouse !== null && t.tank_top !== null) {
     if (state.currentMode === MODES.EMERGENCY_HEATING) {
       if (t.greenhouse <= cfg.emergencyExitTemp) {
@@ -178,20 +179,24 @@ function evaluate(state, config) {
       }
       // Above exit temp, fall through to normal evaluation
     } else if (t.greenhouse < cfg.emergencyEnterTemp &&
-               t.tank_top <= t.greenhouse + cfg.greenhouseMinTankDelta) {
+               (t.tank_top <= t.greenhouse + cfg.greenhouseMinTankDelta ||
+                t.tank_top < cfg.greenhouseMinTankTop)) {
       return makeResult(MODES.EMERGENCY_HEATING, flags);
     }
   }
 
   // Greenhouse heating — higher priority than solar
+  // Requires tank above minimum useful temp and enough delta above greenhouse
   if (t.greenhouse !== null && t.tank_top !== null) {
     if (state.currentMode === MODES.GREENHOUSE_HEATING) {
-      if (t.greenhouse <= cfg.greenhouseExitTemp) {
+      if (t.greenhouse <= cfg.greenhouseExitTemp &&
+          t.tank_top >= cfg.greenhouseMinTankTop) {
         return makeResult(MODES.GREENHOUSE_HEATING, flags);
       }
-      // Above exit temp, fall through
+      // Above exit temp or tank too cold, fall through
     } else if (t.greenhouse < cfg.greenhouseEnterTemp &&
-               t.tank_top > t.greenhouse + cfg.greenhouseMinTankDelta) {
+               t.tank_top > t.greenhouse + cfg.greenhouseMinTankDelta &&
+               t.tank_top >= cfg.greenhouseMinTankTop) {
       return makeResult(MODES.GREENHOUSE_HEATING, flags);
     }
   }

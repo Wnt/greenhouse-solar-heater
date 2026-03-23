@@ -111,6 +111,16 @@ describe('hysteresis', () => {
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
+  it('does not enter greenhouse heating when tank is below minimum useful temp', () => {
+    // tank_top 20°C has enough delta over greenhouse 9°C, but is below greenhouseMinTankTop (25)
+    const result = evaluate(makeState({
+      temps: { collector: 5, tank_top: 20, tank_bottom: 18, greenhouse: 9, outdoor: -20 },
+      collectorsDrained: true
+    }), null);
+    assert.notStrictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
+      'Should NOT heat: tank 20°C is below minimum useful temp 25°C');
+  });
+
   it('stays in greenhouse heating at exact exit threshold (greenhouse = 12)', () => {
     const result = evaluate(makeState({
       temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 12, outdoor: 10 },
@@ -413,65 +423,79 @@ describe('sensor failure', () => {
   });
 });
 
-describe('heating gap bug — greenhouse should heat when tank has useful heat', () => {
-  it('enters GREENHOUSE_HEATING when tank is below 25°C but well above greenhouse', () => {
-    // Bug: tank at 24°C, greenhouse at 9°C — 15°C differential is very useful
-    // but the old fixed threshold (greenhouseMinTankTop=25) prevents heating
+describe('cold tank triggers emergency — tank below minimum useful temp', () => {
+  it('enters EMERGENCY when greenhouse cold and tank below minimum useful temp', () => {
+    // Scenario: -30°C outdoor, tank depleted to 20°C, greenhouse drops to 8°C
+    // Tank has delta (20 > 8+5) but is below greenhouseMinTankTop (25)
+    // Emergency should kick in — tank can't meaningfully fight -30°C heat loss
+    const result = evaluate(makeState({
+      temps: { collector: -25, tank_top: 20, tank_bottom: 18, greenhouse: 8, outdoor: -30 },
+      collectorsDrained: true
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.EMERGENCY_HEATING,
+      'Should emergency: tank 20°C below minimum 25°C, greenhouse 8°C < 9°C');
+  });
+
+  it('enters GREENHOUSE_HEATING when tank is above minimum useful temp', () => {
+    // Tank at 26°C, greenhouse at 9°C — tank warm enough to be useful
+    const result = evaluate(makeState({
+      temps: { collector: 5, tank_top: 26, tank_bottom: 24, greenhouse: 9, outdoor: -10 },
+      collectorsDrained: true
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
+      'Should heat: tank 26°C is above minimum 25°C and has delta');
+  });
+
+  it('exits GREENHOUSE_HEATING when tank drops below minimum useful temp', () => {
+    // Currently heating, but tank has cooled below minimum
+    const result = evaluate(makeState({
+      temps: { collector: -20, tank_top: 22, tank_bottom: 20, greenhouse: 8, outdoor: -30 },
+      currentMode: MODES.GREENHOUSE_HEATING,
+      modeEnteredAt: 0, now: 2000,
+      collectorsDrained: true
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.EMERGENCY_HEATING,
+      'Should switch to emergency: tank dropped below minimum during heating');
+  });
+
+  it('does NOT enter GREENHOUSE_HEATING when tank is below 25°C even with delta', () => {
+    // Tank at 24°C, greenhouse at 9°C — has 15°C delta but tank below minimum
     const result = evaluate(makeState({
       temps: { collector: 5, tank_top: 24, tank_bottom: 22, greenhouse: 9, outdoor: 5 },
       collectorsDrained: true
     }), null);
-    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
-      'Should heat: tank 24°C is 15°C above greenhouse 9°C');
-  });
-
-  it('enters GREENHOUSE_HEATING when tank is 20°C and greenhouse is 8°C', () => {
-    // Tank at 20°C still has 12°C differential over greenhouse
-    const result = evaluate(makeState({
-      temps: { collector: 5, tank_top: 20, tank_bottom: 18, greenhouse: 8, outdoor: 5 },
-      collectorsDrained: true
-    }), null);
-    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
-      'Should heat: tank 20°C is 12°C above greenhouse 8°C');
-  });
-
-  it('does NOT enter GREENHOUSE_HEATING when tank is barely above greenhouse', () => {
-    // Tank at 12°C, greenhouse at 9°C — only 3°C differential, not useful
-    const result = evaluate(makeState({
-      temps: { collector: 5, tank_top: 12, tank_bottom: 10, greenhouse: 9, outdoor: 5 },
-      collectorsDrained: true
-    }), null);
     assert.notStrictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
-      'Should NOT heat: tank 12°C is only 3°C above greenhouse 9°C');
+      'Should NOT heat: tank 24°C below minimum 25°C');
   });
 
-  it('simulates overnight scenario: heating continues as tank cools', () => {
-    // Simulate the scenario from the bug: tank gradually cooling overnight
-    // System should keep heating until tank-greenhouse differential is too small
+  it('simulates late-season overnight: tank depletes then emergency kicks in', () => {
+    // Start with warm tank — greenhouse heating works
     var state = makeState({
-      temps: { collector: 5, tank_top: 25.5, tank_bottom: 25, greenhouse: 9, outdoor: 5 },
+      temps: { collector: -20, tank_top: 30, tank_bottom: 28, greenhouse: 9, outdoor: -30 },
       currentMode: MODES.IDLE,
       collectorsDrained: true
     });
 
-    // First cycle: tank at 25.5°C, should start heating
     var result = evaluate(state, null);
-    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING, 'Cycle 1: should heat');
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
+      'Phase 1: tank 30°C is warm enough to heat');
 
-    // Later: tank dropped to 23°C after several cycles, greenhouse drops to 9 again
-    state.temps.tank_top = 23;
-    state.temps.greenhouse = 9;
+    // Tank depletes below minimum but greenhouse still above emergency threshold
+    state.temps.tank_top = 22;
+    state.temps.greenhouse = 9.5;
+    state.currentMode = MODES.GREENHOUSE_HEATING;
+    result = evaluate(state, null);
+    // Falls through greenhouse_heating (tank < 25), greenhouse 9.5 >= 9 so no emergency
+    assert.strictEqual(result.nextMode, MODES.IDLE,
+      'Phase 2: tank too cold to heat, greenhouse not yet critical → idle');
+
+    // Greenhouse drops below emergency threshold
+    state.temps.tank_top = 20;
+    state.temps.greenhouse = 8;
     state.currentMode = MODES.IDLE;
     result = evaluate(state, null);
-    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
-      'Should still heat: tank 23°C has 14°C differential');
-
-    // Even later: tank dropped to 18°C
-    state.temps.tank_top = 18;
-    state.temps.greenhouse = 9;
-    result = evaluate(state, null);
-    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
-      'Should still heat: tank 18°C has 9°C differential');
+    assert.strictEqual(result.nextMode, MODES.EMERGENCY_HEATING,
+      'Phase 3: greenhouse critical, tank too cold → emergency');
   });
 });
 
@@ -494,14 +518,24 @@ describe('edge cases', () => {
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
   });
 
-  it('boot during freeze: heats greenhouse if tank has useful delta', () => {
+  it('boot during freeze: heats greenhouse if tank warm enough', () => {
+    const result = evaluate(makeState({
+      temps: { collector: -3, tank_top: 30, tank_bottom: 28, greenhouse: -3, outdoor: -3 },
+      currentMode: MODES.IDLE,
+      collectorsDrained: true
+    }), null);
+    // tank_top 30°C >= 25°C minimum and 33°C above greenhouse → useful heat
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+  });
+
+  it('boot during freeze: emergency when tank too cold (below minimum)', () => {
     const result = evaluate(makeState({
       temps: { collector: -3, tank_top: 5, tank_bottom: 5, greenhouse: -3, outdoor: -3 },
       currentMode: MODES.IDLE,
       collectorsDrained: true
     }), null);
-    // tank_top 5°C is 8°C above greenhouse -3°C → useful heat, use radiator
-    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+    // tank_top 5°C < 25°C minimum → emergency (even though delta is 8°C)
+    assert.strictEqual(result.nextMode, MODES.EMERGENCY_HEATING);
   });
 
   it('boot during freeze: emergency when tank has no useful delta', () => {

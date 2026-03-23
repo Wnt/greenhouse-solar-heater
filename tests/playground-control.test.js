@@ -99,18 +99,18 @@ describe('playground ControlStateMachine — emergency heating', () => {
     // Collectors already drained so freeze protection doesn't interfere
     controller.collectorsDrained = true;
 
-    // First, get into greenhouse_heating mode
+    // First, get into greenhouse_heating mode (tank must be >= 25°C)
     const r1 = controller.evaluate(
-      makeSensors({ t_greenhouse: 9, t_tank_top: 20, t_tank_bottom: 18, t_outdoor: -5 }),
+      makeSensors({ t_greenhouse: 9, t_tank_top: 30, t_tank_bottom: 28, t_outdoor: -5 }),
       0
     );
     assert.strictEqual(r1.mode, 'greenhouse_heating',
       'should enter greenhouse_heating initially');
 
-    // Simulate time passing (past min run time) — tank has cooled, greenhouse dropped
-    // Tank at 10°C, greenhouse at 5°C → delta is only 5°C (not > 5), emergency conditions met
+    // Simulate time passing — tank has cooled below minimum, greenhouse dropped
+    // Tank at 20°C (< 25 minimum), greenhouse at 5°C → emergency
     const r2 = controller.evaluate(
-      makeSensors({ t_greenhouse: 5, t_tank_top: 10, t_tank_bottom: 9, t_outdoor: -5 }),
+      makeSensors({ t_greenhouse: 5, t_tank_top: 20, t_tank_bottom: 18, t_outdoor: -5 }),
       500  // well past MIN_RUN of 120s
     );
     assert.strictEqual(r2.mode, 'emergency_heating',
@@ -143,20 +143,31 @@ describe('playground ControlStateMachine — emergency heating', () => {
     // Simulate the real scenario: system oscillates between greenhouse_heating and idle
     // while greenhouse temp slowly drops. When tank depletes, emergency should kick in.
 
-    // Start: greenhouse 9°C, tank 16°C — enters greenhouse_heating
+    // Start: greenhouse 9°C, tank 30°C — enters greenhouse_heating
     const r1 = controller.evaluate(
-      makeSensors({ t_greenhouse: 9, t_tank_top: 16, t_tank_bottom: 15, t_outdoor: -6 }),
+      makeSensors({ t_greenhouse: 9, t_tank_top: 30, t_tank_bottom: 28, t_outdoor: -6 }),
       0
     );
     assert.strictEqual(r1.mode, 'greenhouse_heating');
 
-    // Tank cools to where it can't meaningfully heat (delta <= 5)
-    // greenhouse has dropped to 7°C, tank at 11°C (delta = 4°C)
+    // Tank cools below minimum useful temp (< 25°C), greenhouse drops to 7°C
     const r2 = controller.evaluate(
-      makeSensors({ t_greenhouse: 7, t_tank_top: 11, t_tank_bottom: 10, t_outdoor: -6 }),
+      makeSensors({ t_greenhouse: 7, t_tank_top: 20, t_tank_bottom: 18, t_outdoor: -6 }),
       500
     );
     assert.strictEqual(r2.mode, 'emergency_heating',
-      'must switch to emergency when greenhouse < 9 and tank cannot help');
+      'must switch to emergency when greenhouse < 9 and tank below minimum');
+  });
+
+  it('enters emergency from idle when tank is cold and greenhouse critical', () => {
+    controller.collectorsDrained = true;
+
+    // Tank at 20°C has delta over greenhouse but is below minimum useful temp (25°C)
+    const r = controller.evaluate(
+      makeSensors({ t_greenhouse: 8, t_tank_top: 20, t_tank_bottom: 18, t_outdoor: -30 }),
+      0
+    );
+    assert.strictEqual(r.mode, 'emergency_heating',
+      'should enter emergency: tank 20°C < 25°C minimum, greenhouse 8°C < 9°C');
   });
 });

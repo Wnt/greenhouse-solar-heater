@@ -59,10 +59,13 @@ export class ControlStateMachine {
       transition = `overheat_drain → idle | drain complete after ${Math.round(runDuration)}s | ${sensorStr}`;
     }
 
-    // Greenhouse heating exit
-    if (this.currentMode === 'greenhouse_heating' && pastMinRun && sensors.t_greenhouse > 12) {
+    // Greenhouse heating exit (greenhouse warm enough, or tank too cold to be useful)
+    if (this.currentMode === 'greenhouse_heating' && pastMinRun &&
+        (sensors.t_greenhouse > 12 || sensors.t_tank_top < 25)) {
       this.currentMode = 'idle';
-      transition = `greenhouse_heating → idle | T_gh=${sensors.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;
+      transition = sensors.t_tank_top < 25
+        ? `greenhouse_heating → idle | T_top=${sensors.t_tank_top.toFixed(1)}°C < 25°C min tank | ${sensorStr}`
+        : `greenhouse_heating → idle | T_gh=${sensors.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;
     }
 
     // Solar charging exit: collector delta dropped below +3°C
@@ -80,10 +83,11 @@ export class ControlStateMachine {
     // ── Priority-ordered mode entry (from idle, solar_charging, or greenhouse_heating for safety) ──
     if (this.currentMode === 'idle' || this.currentMode === 'solar_charging' || this.currentMode === 'greenhouse_heating') {
       // Emergency heating — highest priority (tank can't meaningfully heat greenhouse)
-      if (sensors.t_greenhouse < 9 && sensors.t_tank_top <= sensors.t_greenhouse + 5) {
+      if (sensors.t_greenhouse < 9 &&
+          (sensors.t_tank_top <= sensors.t_greenhouse + 5 || sensors.t_tank_top < 25)) {
         if (this.currentMode !== 'emergency_heating') {
           this.currentMode = 'emergency_heating';
-          transition = `${prevMode} → emergency_heating | T_gh=${sensors.t_greenhouse.toFixed(1)}°C < 9°C, T_top=${sensors.t_tank_top.toFixed(1)}°C ≤ T_gh+5°C | ${sensorStr}`;
+          transition = `${prevMode} → emergency_heating | T_gh=${sensors.t_greenhouse.toFixed(1)}°C < 9°C, T_top=${sensors.t_tank_top.toFixed(1)}°C ${sensors.t_tank_top < 25 ? '< 25°C min tank' : '≤ T_gh+5°C'} | ${sensorStr}`;
         }
       }
       // Active drain — freeze protection
@@ -98,8 +102,9 @@ export class ControlStateMachine {
         this.currentMode = 'overheat_drain';
         transition = `solar_charging → overheat_drain | T_top=${sensors.t_tank_top.toFixed(1)}°C > 85°C | ${sensorStr}`;
       }
-      // Greenhouse heating (tank must be meaningfully warmer than greenhouse)
-      else if (this.currentMode === 'idle' && sensors.t_greenhouse < 10 && sensors.t_tank_top > sensors.t_greenhouse + 5) {
+      // Greenhouse heating (tank must be meaningfully warmer than greenhouse and above minimum)
+      else if (this.currentMode === 'idle' && sensors.t_greenhouse < 10 &&
+               sensors.t_tank_top > sensors.t_greenhouse + 5 && sensors.t_tank_top >= 25) {
         this.currentMode = 'greenhouse_heating';
         transition = `idle → greenhouse_heating | T_gh=${sensors.t_greenhouse.toFixed(1)}°C < 10°C, T_top=${sensors.t_tank_top.toFixed(1)}°C > T_gh+5°C | ${sensorStr}`;
       }
