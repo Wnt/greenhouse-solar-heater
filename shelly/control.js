@@ -43,6 +43,7 @@ var state = {
   },
   collectors_drained: false,
   last_refill_attempt: 0,
+  emergency_heating_active: false,
   last_error: null,
   valve_states: {},
   pump_on: false,
@@ -188,6 +189,7 @@ function buildEvalState() {
     now: now / 1000,
     collectorsDrained: state.collectors_drained,
     lastRefillAttempt: state.last_refill_attempt / 1000,
+    emergencyHeatingActive: state.emergency_heating_active,
     sensorAge: sensorAge,
   };
 }
@@ -195,6 +197,7 @@ function buildEvalState() {
 function applyFlags(flags) {
   state.collectors_drained = flags.collectorsDrained;
   state.last_refill_attempt = flags.lastRefillAttempt * 1000;
+  state.emergency_heating_active = flags.emergencyHeatingActive;
 }
 
 function transitionTo(result) {
@@ -336,6 +339,8 @@ function controlLoop() {
       transitionTo(result);
     } else {
       applyFlags(result.flags);
+      // Sync emergency overlay — space heater may toggle without mode change
+      setSpaceHeater(!!result.actuators.space_heater);
     }
   });
 }

@@ -62,8 +62,8 @@ var DEFAULT_CONFIG = {
   solarExitDelta: 3,
   greenhouseEnterTemp: 10,
   greenhouseExitTemp: 12,
-  greenhouseMinTankTop: 25,
   greenhouseMinTankDelta: 5,
+  greenhouseExitTankDelta: 2,
   emergencyEnterTemp: 9,
   emergencyExitTemp: 12,
   freezeDrainTemp: 2,
@@ -135,11 +135,13 @@ function evaluate(state, config) {
   var elapsed = state.now - state.modeEnteredAt;
   var flags = {
     collectorsDrained: state.collectorsDrained,
-    lastRefillAttempt: state.lastRefillAttempt
+    lastRefillAttempt: state.lastRefillAttempt,
+    emergencyHeatingActive: state.emergencyHeatingActive || false
   };
 
-  // Sensor staleness — any sensor stale triggers IDLE
+  // Sensor staleness — any sensor stale triggers IDLE, emergency off
   if (anySensorStale(state.sensorAge, cfg.sensorStaleThreshold)) {
+    flags.emergencyHeatingActive = false;
     return makeResult(MODES.IDLE, flags);
   }
 
@@ -164,54 +166,60 @@ function evaluate(state, config) {
     return makeResult(MODES.ACTIVE_DRAIN, flags);
   }
 
-  // Minimum mode duration (not for IDLE, not for drain preemption above)
+  // Minimum mode duration (not for IDLE or EMERGENCY_HEATING, not for drain above)
   if (state.currentMode !== MODES.IDLE &&
+      state.currentMode !== MODES.EMERGENCY_HEATING &&
       elapsed < getMinDuration(state, cfg)) {
-    return makeResult(state.currentMode, flags);
+    var result = makeResult(state.currentMode, flags);
+    // Emergency overlay still applies during min-duration hold
+    if (t.greenhouse !== null && flags.emergencyHeatingActive) {
+      result.actuators.space_heater = true;
+    }
+    return result;
   }
 
-  // Emergency heating — greenhouse cold AND tank can't meaningfully heat
-  // (tank too close to greenhouse temp, or tank below minimum useful temp)
-  if (t.greenhouse !== null && t.tank_top !== null) {
-    if (state.currentMode === MODES.EMERGENCY_HEATING) {
-      if (t.greenhouse <= cfg.emergencyExitTemp) {
-        return makeResult(MODES.EMERGENCY_HEATING, flags);
+  // ── Emergency heating overlay (independent of pump mode) ──
+  // Space heater activates whenever greenhouse is critically cold.
+  // Tracked separately so it works alongside greenhouse heating.
+  if (t.greenhouse !== null) {
+    if (flags.emergencyHeatingActive) {
+      if (t.greenhouse > cfg.emergencyExitTemp) {
+        flags.emergencyHeatingActive = false;
       }
-      // Above exit temp, fall through to normal evaluation
-    } else if (t.greenhouse < cfg.emergencyEnterTemp &&
-               (t.tank_top <= t.greenhouse + cfg.greenhouseMinTankDelta ||
-                t.tank_top < cfg.greenhouseMinTankTop)) {
-      return makeResult(MODES.EMERGENCY_HEATING, flags);
+    } else if (t.greenhouse < cfg.emergencyEnterTemp) {
+      flags.emergencyHeatingActive = true;
     }
   }
 
-  // Greenhouse heating — higher priority than solar
-  // Requires tank above minimum useful temp and enough delta above greenhouse
+  // ── Pump mode selection (greenhouse heating > solar > idle) ──
+  var pumpMode = MODES.IDLE;
+
+  // Greenhouse heating — use tank when it has useful delta over greenhouse
+  // Exit when tank < greenhouse + 2°C to avoid cooling via radiator
   if (t.greenhouse !== null && t.tank_top !== null) {
     if (state.currentMode === MODES.GREENHOUSE_HEATING) {
       if (t.greenhouse <= cfg.greenhouseExitTemp &&
-          t.tank_top >= cfg.greenhouseMinTankTop) {
-        return makeResult(MODES.GREENHOUSE_HEATING, flags);
+          t.tank_top >= t.greenhouse + cfg.greenhouseExitTankDelta) {
+        pumpMode = MODES.GREENHOUSE_HEATING;
       }
-      // Above exit temp or tank too cold, fall through
+      // Above exit temp or tank too close to greenhouse, fall through
     } else if (t.greenhouse < cfg.greenhouseEnterTemp &&
-               t.tank_top > t.greenhouse + cfg.greenhouseMinTankDelta &&
-               t.tank_top >= cfg.greenhouseMinTankTop) {
-      return makeResult(MODES.GREENHOUSE_HEATING, flags);
+               t.tank_top > t.greenhouse + cfg.greenhouseMinTankDelta) {
+      pumpMode = MODES.GREENHOUSE_HEATING;
     }
   }
 
-  // Solar charging
-  if (t.collector !== null && t.tank_bottom !== null) {
+  // Solar charging (only if not greenhouse heating)
+  if (pumpMode === MODES.IDLE && t.collector !== null && t.tank_bottom !== null) {
     if (state.currentMode === MODES.SOLAR_CHARGING) {
       if (t.collector >= t.tank_bottom + cfg.solarExitDelta) {
-        return makeResult(MODES.SOLAR_CHARGING, flags);
+        pumpMode = MODES.SOLAR_CHARGING;
       }
       // Below exit delta, fall through to IDLE
     } else if (!state.collectorsDrained) {
       // Normal solar entry
       if (t.collector > t.tank_bottom + cfg.solarEnterDelta) {
-        return makeResult(MODES.SOLAR_CHARGING, flags);
+        pumpMode = MODES.SOLAR_CHARGING;
       }
     } else {
       // Speculative refill — collectors drained, conditions suggest daylight
@@ -220,13 +228,24 @@ function evaluate(state, config) {
         if (state.now - state.lastRefillAttempt > cfg.refillRetryCooldown) {
           flags.collectorsDrained = false;
           flags.lastRefillAttempt = state.now;
-          return makeResult(MODES.SOLAR_CHARGING, flags);
+          pumpMode = MODES.SOLAR_CHARGING;
         }
       }
     }
   }
 
-  return makeResult(MODES.IDLE, flags);
+  // ── Combine pump mode + emergency overlay ──
+  if (flags.emergencyHeatingActive && pumpMode === MODES.IDLE) {
+    // No useful pump mode — pure emergency (space heater + immersion)
+    return makeResult(MODES.EMERGENCY_HEATING, flags);
+  }
+
+  var result = makeResult(pumpMode, flags);
+  if (flags.emergencyHeatingActive) {
+    // Pump mode active + emergency — overlay space heater onto pump mode
+    result.actuators.space_heater = true;
+  }
+  return result;
 }
 
 // ── Display label helpers (pure, no Shelly calls) ──

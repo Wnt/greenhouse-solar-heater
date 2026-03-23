@@ -33,6 +33,7 @@ export class ControlStateMachine {
     this.modeStartTime = 0;
     this.collectorsDrained = false;
     this.lastRefillAttempt = 0;
+    this.emergencyHeatingActive = false;
     this.transitionLog = [];
   }
 
@@ -56,6 +57,7 @@ export class ControlStateMachine {
       now:              simTime,
       collectorsDrained: this.collectorsDrained,
       lastRefillAttempt: this.lastRefillAttempt,
+      emergencyHeatingActive: this.emergencyHeatingActive,
       sensorAge: { collector: 0, tank_top: 0, tank_bottom: 0, greenhouse: 0, outdoor: 0 },
     };
   }
@@ -78,6 +80,7 @@ export class ControlStateMachine {
     // Update internal state
     this.collectorsDrained = result.flags.collectorsDrained;
     this.lastRefillAttempt = result.flags.lastRefillAttempt;
+    this.emergencyHeatingActive = result.flags.emergencyHeatingActive;
 
     // Build transition log entry
     let transition = null;
@@ -88,19 +91,15 @@ export class ControlStateMachine {
       this.transitionLog.push({ time: simTime, transition });
     }
 
-    // Build actuator/valve output from shared tables
-    const modeKey = result.nextMode;
-    const valves = _MODE_VALVES[modeKey] || {};
-    const ma = _MODE_ACTUATORS[modeKey] || {};
-
+    // Use actuators/valves from evaluate result (includes emergency overlay)
     return {
       mode: nextMode,
       actuators: {
-        pump:         !!ma.pump,
-        fan:          !!ma.fan,
-        space_heater: !!ma.space_heater,
+        pump:         !!result.actuators.pump,
+        fan:          !!result.actuators.fan,
+        space_heater: !!result.actuators.space_heater,
       },
-      valves,
+      valves: result.valves,
       transition,
     };
   }
@@ -117,10 +116,7 @@ export class ControlStateMachine {
       return `${from} → greenhouse_heating | T_gh=${s.t_greenhouse.toFixed(1)}°C < 10°C, T_top=${s.t_tank_top.toFixed(1)}°C > T_gh+5°C | ${sensorStr}`;
     }
     if (to === 'emergency_heating') {
-      const reason = s.t_tank_top < 25
-        ? `T_top=${s.t_tank_top.toFixed(1)}°C < 25°C min tank`
-        : `T_top=${s.t_tank_top.toFixed(1)}°C ≤ T_gh+5°C`;
-      return `${from} → emergency_heating | T_gh=${s.t_greenhouse.toFixed(1)}°C < 9°C, ${reason} | ${sensorStr}`;
+      return `${from} → emergency_heating | T_gh=${s.t_greenhouse.toFixed(1)}°C < 9°C, T_top=${s.t_tank_top.toFixed(1)}°C < T_gh+5°C (no useful tank) | ${sensorStr}`;
     }
     if (to === 'active_drain') {
       return `${from} → active_drain | T_out=${s.t_outdoor.toFixed(1)}°C < 2°C | ${sensorStr}`;
@@ -129,8 +125,8 @@ export class ControlStateMachine {
       return `active_drain → idle | drain complete | ${sensorStr}`;
     }
     if (from === 'greenhouse_heating' && to === 'idle') {
-      if (s.t_tank_top < 25) {
-        return `greenhouse_heating → idle | T_top=${s.t_tank_top.toFixed(1)}°C < 25°C min tank | ${sensorStr}`;
+      if (s.t_tank_top < s.t_greenhouse + 2) {
+        return `greenhouse_heating → idle | T_top=${s.t_tank_top.toFixed(1)}°C < T_gh+2°C (would cool) | ${sensorStr}`;
       }
       return `greenhouse_heating → idle | T_gh=${s.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;
     }
@@ -148,6 +144,7 @@ export class ControlStateMachine {
     this.modeStartTime = 0;
     this.collectorsDrained = false;
     this.lastRefillAttempt = 0;
+    this.emergencyHeatingActive = false;
     this.transitionLog = [];
   }
 }
