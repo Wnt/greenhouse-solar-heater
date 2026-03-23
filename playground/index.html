@@ -952,11 +952,22 @@
       ).join('');
 
       // Valve grid
+      const VALVE_LABELS = {
+        vi_btm: 'In: Tank Btm',
+        vi_top: 'In: Reservoir',
+        vi_coll: 'In: Collector',
+        vo_coll: 'Out: Collector',
+        vo_rad: 'Out: Radiator',
+        vo_tank: 'Out: Tank',
+        v_ret: 'Return',
+        v_air: 'Air Intake',
+      };
       const valveNames = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_ret', 'v_air'];
       document.getElementById('valve-grid').innerHTML = valveNames.map(v => {
-        const st = result.valves[v] || 'CLOSED';
-        const cls = st === 'OPEN' ? 'valve-chip-open' : 'valve-chip-closed';
-        return `<div class="valve-chip"><span class="valve-chip-name">${v}</span><span class="valve-chip-state ${cls}">${st}</span></div>`;
+        const raw = result.valves[v];
+        const isOpen = raw === true || raw === 'OPEN';
+        const cls = isOpen ? 'valve-chip-open' : 'valve-chip-closed';
+        return `<div class="valve-chip"><span class="valve-chip-name">${VALVE_LABELS[v]}</span><span class="valve-chip-state ${cls}">${isOpen ? 'OPEN' : 'CLOSED'}</span></div>`;
       }).join('');
 
       // Actuator grid
