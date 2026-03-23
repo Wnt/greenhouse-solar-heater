@@ -126,7 +126,7 @@ export function drawChart(canvas, store, config = {}) {
 
   ctx.strokeStyle = gridColor;
   ctx.lineWidth = 0.5;
-  ctx.font = '10px -apple-system, sans-serif';
+  ctx.font = '10px Manrope, sans-serif';
   ctx.fillStyle = labelColor;
 
   const yTicks = 5;
@@ -153,11 +153,11 @@ export function drawChart(canvas, store, config = {}) {
 
   // Lines
   const colors = config.colors || {
-    t_tank_top: '#ef5350',
-    t_tank_bottom: '#1565c0',
-    t_collector: '#f9a825',
-    t_greenhouse: '#76ff03',
-    t_outdoor: '#64748b',
+    t_tank_top: '#ee7d77',
+    t_tank_bottom: '#43aea4',
+    t_collector: '#e9c349',
+    t_greenhouse: '#69d0c5',
+    t_outdoor: '#a5abb9',
   };
 
   for (const key of seriesKeys) {
@@ -178,7 +178,7 @@ export function drawChart(canvas, store, config = {}) {
   }
 
   // Legend
-  ctx.font = '11px -apple-system, sans-serif';
+  ctx.font = '11px Manrope, sans-serif';
   let lx = padding.left + 8;
   for (const key of seriesKeys) {
     const color = colors[key] || '#42a5f5';

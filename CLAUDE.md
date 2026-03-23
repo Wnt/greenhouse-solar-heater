@@ -21,7 +21,7 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `system.yaml` → authoritative specs (heights, valve states, modes, components)
 - `shelly/` → Shelly device scripts and deployment tooling
 - `shelly/lint/` → Shelly platform conformance linter (CLI, standalone package)
-- `playground/` → interactive browser-based simulators (thermal, hydraulic)
+- `playground/` → thermal simulation SPA (single-page app with 4 views)
 - `monitor/` → temperature monitor web app (server, UI, auth, push notifications)
 - `monitor/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers, invitation-based registration)
 - `monitor/lib/logger.js` → structured JSON logger (used by server and auth modules)
@@ -72,7 +72,7 @@ The `shelly/` directory contains the actual device scripts deployed to Shelly ha
 
 ## SVG Diagram Conventions
 
-Static SVGs in `design/diagrams/` use a dark background (#0d1117). Playground inline SVGs use light-theme colors (see Playground Architecture). Color coding for static diagrams:
+Static SVGs in `design/diagrams/` use a dark background (#0d1117). Playground inline SVGs use the Stitch dark theme (see Playground Architecture). Color coding for static diagrams:
 - Blue (#42a5f5, #1565c0) = supply/cool water, tank
 - Red (#ef5350, #e53935) = hot water, dip tube path
 - Yellow (#f9a825) = solar collectors
@@ -84,13 +84,12 @@ Height scales in SVGs are approximate — `system-height-layout.svg` is the most
 
 ## Playground Architecture
 
-The `playground/` directory contains interactive browser-based simulators (thermal, hydraulic). Light theme (Stitch-inspired). These are static HTML files using ES modules with `<script type="importmap">`.
+The `playground/` directory contains a single-page thermal simulation app. Dark editorial theme based on the Stitch "Digital Sanctuary" design system (`design/Stitch/`): dark backgrounds (#0c0e12), gold primary (#e9c349), teal secondary (#43aea4), Newsreader serif headings, Manrope sans-serif body, tonal layering (no border lines for structure). Responsive: desktop sidebar nav (256px), mobile (<768px) glassmorphic bottom nav. Single HTML file with 4 JS-switched views, `<script type="importmap">` for ES modules.
 
-- `playground/index.html` — landing page linking to all playground tools
-- `playground/thermal.html` — thermal simulation (2D SVG schematic)
-- `playground/hydraulic.html` — hydraulic simulation (water level, air venting)
+- `playground/thermal.html` — single-page app: Status (default, bento grid dashboard), Components (sensors/valves/actuators), Schematic (SVG system visualization), Controls (sliders, reset). Floating play/pause FAB.
 - `playground/js/` — ES modules: physics, control, hydraulics, UI, yaml-loader
 - `playground/css/style.css` — shared styles
+- `design/Stitch/` — Stitch UI design mockups (desktop + mobile) with DESIGN.md spec and code.html references
 
 ### Vendored Dependencies
 
