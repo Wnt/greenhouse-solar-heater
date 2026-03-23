@@ -77,8 +77,8 @@ export class ControlStateMachine {
       transition = `emergency_heating → idle | T_gh=${sensors.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;
     }
 
-    // ── Priority-ordered mode entry (from idle, or preempt solar_charging for safety) ──
-    if (this.currentMode === 'idle' || this.currentMode === 'solar_charging') {
+    // ── Priority-ordered mode entry (from idle, solar_charging, or greenhouse_heating for safety) ──
+    if (this.currentMode === 'idle' || this.currentMode === 'solar_charging' || this.currentMode === 'greenhouse_heating') {
       // Emergency heating — highest priority (tank can't meaningfully heat greenhouse)
       if (sensors.t_greenhouse < 9 && sensors.t_tank_top <= sensors.t_greenhouse + 5) {
         if (this.currentMode !== 'emergency_heating') {
