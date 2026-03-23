@@ -1,26 +1,63 @@
 /**
  * Control State Machine for the simulator.
- * Evaluates mode triggers/exits from system.yaml and manages transitions.
+ *
+ * Wraps the real Shelly control-logic.js (loaded at runtime via
+ * control-logic-loader.js) so the simulator runs the exact same
+ * decision logic as the deployed hardware.  This class adds:
+ *   - state tracking (mode, timers, collectorsDrained)
+ *   - human-readable transition log with sensor summaries
+ *   - valve/actuator output from MODE_VALVES / MODE_ACTUATORS
  */
 
-import { parseTrigger, evaluateTrigger } from './yaml-loader.js';
+import { load } from './control-logic-loader.js';
+
+// Will be populated by init()
+let _evaluate, _MODES, _MODE_VALVES, _MODE_ACTUATORS;
+
+/**
+ * Load the shared control logic.  Must be called (and awaited) once
+ * before constructing a ControlStateMachine.
+ */
+export async function initControlLogic() {
+  const cl = await load();
+  _evaluate = cl.evaluate;
+  _MODES = cl.MODES;
+  _MODE_VALVES = cl.MODE_VALVES;
+  _MODE_ACTUATORS = cl.MODE_ACTUATORS;
+}
 
 export class ControlStateMachine {
   constructor(modesConfig) {
-    this.modes = modesConfig;
+    this.modes = modesConfig;      // system.yaml modes (for valve display names)
     this.currentMode = 'idle';
     this.modeStartTime = 0;
     this.collectorsDrained = false;
+    this.lastRefillAttempt = 0;
     this.transitionLog = [];
+  }
 
-    // Parse triggers
-    this.parsedTriggers = {};
-    for (const [name, mode] of Object.entries(modesConfig)) {
-      this.parsedTriggers[name] = {
-        trigger: parseTrigger(mode.trigger),
-        exit: parseTrigger(mode.exit),
-      };
-    }
+  /** Format all sensor values as a compact string */
+  _sensorSummary(sensors) {
+    return `T_coll=${sensors.t_collector.toFixed(1)} T_top=${sensors.t_tank_top.toFixed(1)} T_bot=${sensors.t_tank_bottom.toFixed(1)} T_gh=${sensors.t_greenhouse.toFixed(1)} T_out=${sensors.t_outdoor.toFixed(1)}`;
+  }
+
+  /** Map playground sensor names to Shelly state format */
+  _buildShellyState(sensors, simTime) {
+    return {
+      temps: {
+        collector:   sensors.t_collector,
+        tank_top:    sensors.t_tank_top,
+        tank_bottom: sensors.t_tank_bottom,
+        greenhouse:  sensors.t_greenhouse,
+        outdoor:     sensors.t_outdoor,
+      },
+      currentMode:      this.currentMode.toUpperCase(),
+      modeEnteredAt:    this.modeStartTime,
+      now:              simTime,
+      collectorsDrained: this.collectorsDrained,
+      lastRefillAttempt: this.lastRefillAttempt,
+      sensorAge: { collector: 0, tank_top: 0, tank_bottom: 0, greenhouse: 0, outdoor: 0 },
+    };
   }
 
   /**
@@ -29,123 +66,88 @@ export class ControlStateMachine {
    * @param {number} simTime - current simulation time in seconds
    * @returns {{ mode: string, actuators: object, valves: object, transition: string|null }}
    */
-  /** Format all sensor values as a compact string */
-  _sensorSummary(sensors) {
-    return `T_coll=${sensors.t_collector.toFixed(1)} T_top=${sensors.t_tank_top.toFixed(1)} T_bot=${sensors.t_tank_bottom.toFixed(1)} T_gh=${sensors.t_greenhouse.toFixed(1)} T_out=${sensors.t_outdoor.toFixed(1)}`;
-  }
-
   evaluate(sensors, simTime) {
-    let transition = null;
     const prevMode = this.currentMode;
-    const MIN_RUN = 120; // 2 minutes minimum run time
-    const runDuration = simTime - this.modeStartTime;
-    const pastMinRun = runDuration > MIN_RUN;
     const sensorStr = this._sensorSummary(sensors);
-    const delta = sensors.t_collector - sensors.t_tank_bottom;
+    const shellyState = this._buildShellyState(sensors, simTime);
 
-    // ── Exit checks (mode-specific, all respect minimum run time) ──
+    // Delegate decision to the real Shelly control logic
+    const result = _evaluate(shellyState, null);
+    const nextMode = result.nextMode.toLowerCase();
 
-    // Active drain completion (3 min drain cycle)
-    if (this.currentMode === 'active_drain' && runDuration > 180) {
-      this.collectorsDrained = true;
-      this.currentMode = 'idle';
-      transition = `active_drain → idle | drain complete after ${Math.round(runDuration)}s | ${sensorStr}`;
-    }
+    // Update internal state
+    this.collectorsDrained = result.flags.collectorsDrained;
+    this.lastRefillAttempt = result.flags.lastRefillAttempt;
 
-    // Overheat drain completion
-    if (this.currentMode === 'overheat_drain' && runDuration > 180) {
-      this.collectorsDrained = true;
-      this.currentMode = 'idle';
-      transition = `overheat_drain → idle | drain complete after ${Math.round(runDuration)}s | ${sensorStr}`;
-    }
-
-    // Greenhouse heating exit
-    if (this.currentMode === 'greenhouse_heating' && pastMinRun && sensors.t_greenhouse > 12) {
-      this.currentMode = 'idle';
-      transition = `greenhouse_heating → idle | T_gh=${sensors.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;
-    }
-
-    // Solar charging exit: collector delta dropped below +3°C
-    if (this.currentMode === 'solar_charging' && pastMinRun && delta < 3) {
-      this.currentMode = 'idle';
-      transition = `solar_charging → idle | delta=${delta.toFixed(1)}°C < 3°C threshold | ${sensorStr}`;
-    }
-
-    // Emergency exit
-    if (this.currentMode === 'emergency_heating' && pastMinRun && sensors.t_greenhouse > 12) {
-      this.currentMode = 'idle';
-      transition = `emergency_heating → idle | T_gh=${sensors.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;
-    }
-
-    // ── Priority-ordered mode entry (from idle, solar_charging, or greenhouse_heating for safety) ──
-    if (this.currentMode === 'idle' || this.currentMode === 'solar_charging' || this.currentMode === 'greenhouse_heating') {
-      // Emergency heating — highest priority (tank can't meaningfully heat greenhouse)
-      if (sensors.t_greenhouse < 9 && sensors.t_tank_top <= sensors.t_greenhouse + 5) {
-        if (this.currentMode !== 'emergency_heating') {
-          this.currentMode = 'emergency_heating';
-          transition = `${prevMode} → emergency_heating | T_gh=${sensors.t_greenhouse.toFixed(1)}°C < 9°C, T_top=${sensors.t_tank_top.toFixed(1)}°C ≤ T_gh+5°C | ${sensorStr}`;
-        }
-      }
-      // Active drain — freeze protection
-      else if (sensors.t_outdoor < 2 && !this.collectorsDrained) {
-        if (this.currentMode !== 'active_drain') {
-          this.currentMode = 'active_drain';
-          transition = `${prevMode} → active_drain | T_out=${sensors.t_outdoor.toFixed(1)}°C < 2°C | ${sensorStr}`;
-        }
-      }
-      // Overheat drain
-      else if (sensors.t_tank_top > 85 && this.currentMode === 'solar_charging') {
-        this.currentMode = 'overheat_drain';
-        transition = `solar_charging → overheat_drain | T_top=${sensors.t_tank_top.toFixed(1)}°C > 85°C | ${sensorStr}`;
-      }
-      // Greenhouse heating (tank must be meaningfully warmer than greenhouse)
-      else if (this.currentMode === 'idle' && sensors.t_greenhouse < 10 && sensors.t_tank_top > sensors.t_greenhouse + 5) {
-        this.currentMode = 'greenhouse_heating';
-        transition = `idle → greenhouse_heating | T_gh=${sensors.t_greenhouse.toFixed(1)}°C < 10°C, T_top=${sensors.t_tank_top.toFixed(1)}°C > T_gh+5°C | ${sensorStr}`;
-      }
-      // Solar charging
-      else if (this.currentMode === 'idle' && delta > 7) {
-        this.currentMode = 'solar_charging';
-        transition = `idle → solar_charging | delta=${delta.toFixed(1)}°C > 7°C threshold | ${sensorStr}`;
-      }
-    }
-
-    // Refill check: if drained and outdoor warms up
-    if (this.collectorsDrained && sensors.t_outdoor > 5 && this.currentMode === 'idle') {
-      this.collectorsDrained = false;
-    }
-
-    if (transition) {
+    // Build transition log entry
+    let transition = null;
+    if (nextMode !== prevMode) {
+      transition = this._describeTransition(prevMode, nextMode, sensors, sensorStr);
+      this.currentMode = nextMode;
       this.modeStartTime = simTime;
       this.transitionLog.push({ time: simTime, transition });
     }
 
-    // Get valve states and actuators for current mode
-    const modeData = this.modes[this.currentMode] || this.modes.idle;
-    const valves = modeData.valve_states || {};
-    const actuators = {
-      pump: (modeData.actuators?.pump || 'OFF') === 'ON',
-      fan: (modeData.actuators?.fan || 'OFF') === 'ON',
-      space_heater: false,
-    };
-
-    // Special: emergency heating uses space heater
-    if (this.currentMode === 'emergency_heating') {
-      actuators.space_heater = true;
-    }
+    // Build actuator/valve output from shared tables
+    const modeKey = result.nextMode;
+    const valves = _MODE_VALVES[modeKey] || {};
+    const ma = _MODE_ACTUATORS[modeKey] || {};
 
     return {
-      mode: this.currentMode,
-      actuators,
+      mode: nextMode,
+      actuators: {
+        pump:         !!ma.pump,
+        fan:          !!ma.fan,
+        space_heater: !!ma.space_heater,
+      },
       valves,
       transition,
     };
+  }
+
+  /** Human-readable transition description for the log panel */
+  _describeTransition(from, to, sensors, sensorStr) {
+    const s = sensors;
+    const delta = (s.t_collector - s.t_tank_bottom).toFixed(1);
+
+    if (to === 'solar_charging') {
+      return `${from} → solar_charging | delta=${delta}°C > 7°C threshold | ${sensorStr}`;
+    }
+    if (to === 'greenhouse_heating') {
+      return `${from} → greenhouse_heating | T_gh=${s.t_greenhouse.toFixed(1)}°C < 10°C, T_top=${s.t_tank_top.toFixed(1)}°C > T_gh+5°C | ${sensorStr}`;
+    }
+    if (to === 'emergency_heating') {
+      const reason = s.t_tank_top < 25
+        ? `T_top=${s.t_tank_top.toFixed(1)}°C < 25°C min tank`
+        : `T_top=${s.t_tank_top.toFixed(1)}°C ≤ T_gh+5°C`;
+      return `${from} → emergency_heating | T_gh=${s.t_greenhouse.toFixed(1)}°C < 9°C, ${reason} | ${sensorStr}`;
+    }
+    if (to === 'active_drain') {
+      return `${from} → active_drain | T_out=${s.t_outdoor.toFixed(1)}°C < 2°C | ${sensorStr}`;
+    }
+    if (from === 'active_drain' && to === 'idle') {
+      return `active_drain → idle | drain complete | ${sensorStr}`;
+    }
+    if (from === 'greenhouse_heating' && to === 'idle') {
+      if (s.t_tank_top < 25) {
+        return `greenhouse_heating → idle | T_top=${s.t_tank_top.toFixed(1)}°C < 25°C min tank | ${sensorStr}`;
+      }
+      return `greenhouse_heating → idle | T_gh=${s.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;
+    }
+    if (from === 'solar_charging' && to === 'idle') {
+      return `solar_charging → idle | delta=${delta}°C < 3°C threshold | ${sensorStr}`;
+    }
+    if (from === 'emergency_heating' && to === 'idle') {
+      return `emergency_heating → idle | T_gh=${s.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;
+    }
+    return `${from} → ${to} | ${sensorStr}`;
   }
 
   reset() {
     this.currentMode = 'idle';
     this.modeStartTime = 0;
     this.collectorsDrained = false;
+    this.lastRefillAttempt = 0;
     this.transitionLog = [];
   }
 }
