@@ -1,45 +1,48 @@
 /**
  * Tests for the playground ControlStateMachine (playground/js/control.js).
  *
- * Since control.js is an ES module that imports from yaml-loader.js,
- * we use --experimental-vm-modules and a custom loader to stub the dependency.
- * Alternatively, we inline the class here for unit testing.
- *
- * This test focuses on emergency heating transitions that the Shelly
- * control-logic.js handles correctly but the playground version missed.
+ * The playground control.js now delegates all decisions to the real
+ * shelly/control-logic.js, so these tests verify that the wrapper
+ * correctly translates between playground sensor format and Shelly
+ * state format, and produces the right transitions.
  */
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-
-// We can't easily import the ES module with its yaml-loader dependency,
-// so we import it dynamically after registering a loader hook.
-// Instead, we'll extract the class by reading and evaluating it with
-// the yaml-loader functions stubbed.
-
-// Stub the yaml-loader imports
-const parseTrigger = () => ({});
-const evaluateTrigger = () => false;
-
-// Dynamically load control.js with stubbed imports
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Load the real Shelly control logic (CommonJS)
+const shellyLogicSrc = readFileSync(join(__dirname, '..', 'shelly', 'control-logic.js'), 'utf8');
+const shellyModule = { exports: {} };
+new Function('module', shellyLogicSrc)(shellyModule);
+const { evaluate: _evaluate, MODES: _MODES, MODE_VALVES: _MODE_VALVES, MODE_ACTUATORS: _MODE_ACTUATORS } = shellyModule.exports;
+
+// Load playground control.js with stubbed imports
 const controlSrc = readFileSync(join(__dirname, '..', 'playground', 'js', 'control.js'), 'utf8');
 
-// Rewrite the import to use our stubs and evaluate
+// Remove ESM imports/exports, and pre-assign the module-level vars
+// that control.js expects to be populated by initControlLogic()
 const modifiedSrc = controlSrc
-  .replace(/import\s*\{[^}]*\}\s*from\s*['"][^'"]*['"];?/, '')
-  .replace('export class', 'class');
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"][^'"]*['"];?/g, '')
+  .replace('export async function initControlLogic', 'async function initControlLogic')
+  .replace('export class', 'class')
+  // Pre-assign the shared logic vars so we don't need to call initControlLogic()
+  .replace('let _evaluate, _MODES, _MODE_VALVES, _MODE_ACTUATORS;',
+    'var _evaluate = __evaluate, _MODES = __MODES, _MODE_VALVES = __MODE_VALVES, _MODE_ACTUATORS = __MODE_ACTUATORS;');
 
-// Create a function that returns the class
-const factory = new Function('parseTrigger', 'evaluateTrigger',
-  modifiedSrc + '\nreturn ControlStateMachine;');
+const factory = new Function(
+  '__evaluate', '__MODES', '__MODE_VALVES', '__MODE_ACTUATORS',
+  modifiedSrc + '\nreturn ControlStateMachine;'
+);
 
-const ControlStateMachine = factory(parseTrigger, evaluateTrigger);
+const ControlStateMachine = factory(
+  _evaluate, _MODES, _MODE_VALVES, _MODE_ACTUATORS
+);
 
-// Minimal modes config (only needs valve_states and actuators for result building)
+// Minimal modes config (only needed for constructor, not decisions)
 const MODES_CONFIG = {
   idle: {
     trigger: '', exit: '',
@@ -78,7 +81,7 @@ function makeSensors(overrides) {
   }, overrides);
 }
 
-describe('playground ControlStateMachine — emergency heating', () => {
+describe('playground ControlStateMachine — shared logic integration', () => {
   let controller;
 
   beforeEach(() => {
@@ -95,8 +98,18 @@ describe('playground ControlStateMachine — emergency heating', () => {
     assert.strictEqual(result.actuators.space_heater, true);
   });
 
+  it('enters emergency_heating from idle when tank below minimum useful temp', () => {
+    controller.collectorsDrained = true;
+    // Tank 20°C has delta over greenhouse 8°C but is below 25°C minimum
+    const result = controller.evaluate(
+      makeSensors({ t_greenhouse: 8, t_tank_top: 20, t_tank_bottom: 18, t_outdoor: -30 }),
+      1000
+    );
+    assert.strictEqual(result.mode, 'emergency_heating',
+      'should enter emergency: tank 20°C < 25°C minimum, greenhouse 8°C < 9°C');
+  });
+
   it('transitions from greenhouse_heating to emergency_heating when tank depletes', () => {
-    // Collectors already drained so freeze protection doesn't interfere
     controller.collectorsDrained = true;
 
     // First, get into greenhouse_heating mode (tank must be >= 25°C)
@@ -107,14 +120,13 @@ describe('playground ControlStateMachine — emergency heating', () => {
     assert.strictEqual(r1.mode, 'greenhouse_heating',
       'should enter greenhouse_heating initially');
 
-    // Simulate time passing — tank has cooled below minimum, greenhouse dropped
-    // Tank at 20°C (< 25 minimum), greenhouse at 5°C → emergency
+    // Tank depletes below minimum, greenhouse drops
     const r2 = controller.evaluate(
       makeSensors({ t_greenhouse: 5, t_tank_top: 20, t_tank_bottom: 18, t_outdoor: -5 }),
-      500  // well past MIN_RUN of 120s
+      500
     );
     assert.strictEqual(r2.mode, 'emergency_heating',
-      'should transition to emergency_heating when tank depletes during greenhouse_heating');
+      'should transition to emergency_heating when tank depletes');
     assert.strictEqual(r2.actuators.space_heater, true,
       'space heater should be ON in emergency mode');
   });
@@ -122,13 +134,13 @@ describe('playground ControlStateMachine — emergency heating', () => {
   it('keeps greenhouse_heating when tank still has useful heat even if greenhouse < 9', () => {
     controller.collectorsDrained = true;
 
-    // Enter greenhouse_heating
+    // Enter greenhouse_heating with warm tank
     controller.evaluate(
-      makeSensors({ t_greenhouse: 9, t_tank_top: 25, t_tank_bottom: 22, t_outdoor: -5 }),
+      makeSensors({ t_greenhouse: 9, t_tank_top: 30, t_tank_bottom: 28, t_outdoor: -5 }),
       0
     );
 
-    // Greenhouse drops below 9 but tank still has good delta (25 > 5 + 5 = 10)
+    // Greenhouse drops below 9 but tank still above minimum (25°C) and has delta
     const r2 = controller.evaluate(
       makeSensors({ t_greenhouse: 5, t_tank_top: 25, t_tank_bottom: 22, t_outdoor: -5 }),
       500
@@ -140,17 +152,14 @@ describe('playground ControlStateMachine — emergency heating', () => {
   it('never lets greenhouse drop below 9°C without emergency intervention', () => {
     controller.collectorsDrained = true;
 
-    // Simulate the real scenario: system oscillates between greenhouse_heating and idle
-    // while greenhouse temp slowly drops. When tank depletes, emergency should kick in.
-
-    // Start: greenhouse 9°C, tank 30°C — enters greenhouse_heating
+    // Start with warm tank — greenhouse heating
     const r1 = controller.evaluate(
       makeSensors({ t_greenhouse: 9, t_tank_top: 30, t_tank_bottom: 28, t_outdoor: -6 }),
       0
     );
     assert.strictEqual(r1.mode, 'greenhouse_heating');
 
-    // Tank cools below minimum useful temp (< 25°C), greenhouse drops to 7°C
+    // Tank cools below minimum, greenhouse drops
     const r2 = controller.evaluate(
       makeSensors({ t_greenhouse: 7, t_tank_top: 20, t_tank_bottom: 18, t_outdoor: -6 }),
       500
@@ -159,15 +168,37 @@ describe('playground ControlStateMachine — emergency heating', () => {
       'must switch to emergency when greenhouse < 9 and tank below minimum');
   });
 
-  it('enters emergency from idle when tank is cold and greenhouse critical', () => {
+  it('produces transition log entries on mode changes', () => {
     controller.collectorsDrained = true;
-
-    // Tank at 20°C has delta over greenhouse but is below minimum useful temp (25°C)
-    const r = controller.evaluate(
-      makeSensors({ t_greenhouse: 8, t_tank_top: 20, t_tank_bottom: 18, t_outdoor: -30 }),
+    controller.evaluate(
+      makeSensors({ t_greenhouse: 9, t_tank_top: 30, t_tank_bottom: 28, t_outdoor: -5 }),
       0
     );
-    assert.strictEqual(r.mode, 'emergency_heating',
-      'should enter emergency: tank 20°C < 25°C minimum, greenhouse 8°C < 9°C');
+    assert.strictEqual(controller.transitionLog.length, 1);
+    assert.ok(controller.transitionLog[0].transition.includes('greenhouse_heating'));
+  });
+
+  it('reset clears all state', () => {
+    controller.collectorsDrained = true;
+    controller.currentMode = 'emergency_heating';
+    controller.transitionLog.push({ time: 0, transition: 'test' });
+    controller.reset();
+    assert.strictEqual(controller.currentMode, 'idle');
+    assert.strictEqual(controller.collectorsDrained, false);
+    assert.strictEqual(controller.transitionLog.length, 0);
+  });
+
+  it('uses real Shelly MODE_VALVES for output', () => {
+    // Enter solar charging
+    const r = controller.evaluate(
+      makeSensors({ t_collector: 40, t_tank_top: 40, t_tank_bottom: 30, t_greenhouse: 15, t_outdoor: 10 }),
+      0
+    );
+    assert.strictEqual(r.mode, 'solar_charging');
+    assert.strictEqual(r.valves.vi_btm, true);
+    assert.strictEqual(r.valves.vo_coll, true);
+    assert.strictEqual(r.valves.v_ret, true);
+    assert.strictEqual(r.actuators.pump, true);
+    assert.strictEqual(r.actuators.fan, false);
   });
 });

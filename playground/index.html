@@ -283,7 +283,7 @@
   <script type="module">
     import { loadSystemYaml } from './js/yaml-loader.js';
     import { ThermalModel } from './js/physics.js';
-    import { ControlStateMachine } from './js/control.js';
+    import { ControlStateMachine, initControlLogic } from './js/control.js';
     import { createSlider, formatTime } from './js/ui.js';
 
     // ── State ──
@@ -501,6 +501,7 @@
         config = buildFallbackConfig();
       }
 
+      await initControlLogic();
       model = new ThermalModel();
       controller = new ControlStateMachine(config.modes);
 
