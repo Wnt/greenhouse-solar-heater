@@ -14,6 +14,10 @@ deploy/terraform/*.tfstate*
 deploy/terraform/terraform.tfvars
 deploy/terraform/.terraform.lock.hcl
 
+# Copied runtime deps for playground (from repo root into playground/ for GH Pages compatibility)
+playground/system.yaml
+playground/shelly/
+
 # Environment files
 .env
 .env.*

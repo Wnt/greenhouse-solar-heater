@@ -11,7 +11,7 @@ let _module;
 
 async function load() {
   if (_module) return _module;
-  const resp = await fetch('../shelly/control-logic.js');
+  const resp = await fetch('shelly/control-logic.js');
   const src = await resp.text();
 
   // Provide a `module` shim so the CommonJS export block works

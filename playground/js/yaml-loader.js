@@ -5,7 +5,7 @@
 
 let _cachedConfig = null;
 
-export async function loadSystemYaml(path = '../system.yaml') {
+export async function loadSystemYaml(path = 'system.yaml') {
   if (_cachedConfig) return _cachedConfig;
 
   const resp = await fetch(path);
