@@ -5,6 +5,9 @@ services:
     read_only: true
     user: "1000:1000"
     network_mode: "service:openvpn"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     env_file: .env
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
@@ -21,6 +24,7 @@ services:
     image: eclipse-mosquitto:2-openssl
     restart: unless-stopped
     read_only: true
+    network_mode: "service:openvpn"
     command: mosquitto -c /dev/null -p 1883 -v
     tmpfs:
       - /mosquitto/data:noexec,nosuid,size=64m
@@ -52,7 +56,8 @@ services:
     cap_add:
       - NET_ADMIN
     dns:
-      - 127.0.0.11
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
       - ./openvpn.conf:/etc/openvpn/server.conf:ro
     ports:
