@@ -101,7 +101,7 @@ resource "upcloud_server" "monitor" {
 # ── Managed PostgreSQL with TimescaleDB ──
 
 resource "upcloud_managed_database_postgresql" "timeseries" {
-  name  = "${replace(var.domain, ".", "-")}-timeseries"
+  name  = "${replace(var.domain, ".", "-")}-tsdb"
   plan  = var.db_plan
   title = "Greenhouse TimescaleDB"
   zone  = var.upcloud_zone
