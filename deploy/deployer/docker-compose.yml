@@ -5,8 +5,6 @@ services:
     read_only: true
     user: "1000:1000"
     network_mode: "service:openvpn"
-    dns:
-      - 172.17.0.1
     env_file: .env
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
