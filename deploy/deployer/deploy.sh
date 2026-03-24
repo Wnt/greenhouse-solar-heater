@@ -21,6 +21,7 @@ log "Copying config files to $APP_DIR"
 cp "$CONFIG_SRC/docker-compose.yml" "$APP_DIR/docker-compose.yml"
 cp "$CONFIG_SRC/Caddyfile" "$APP_DIR/Caddyfile"
 cp "$CONFIG_SRC/config.env" "$APP_DIR/config.env"
+cp "$CONFIG_SRC/mosquitto.conf" "$APP_DIR/mosquitto.conf"
 
 # Step 2: Merge .env.secrets + config.env → .env
 # Secrets (cloud-init) win on duplicate keys. Legacy fallback: if .env.secrets
