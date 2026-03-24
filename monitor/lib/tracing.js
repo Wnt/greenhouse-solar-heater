@@ -20,9 +20,15 @@ var { OTLPMetricExporter } = require('@opentelemetry/exporter-metrics-otlp-http'
 var { OTLPLogExporter } = require('@opentelemetry/exporter-logs-otlp-http');
 var { PeriodicExportingMetricReader } = require('@opentelemetry/sdk-metrics');
 var { BatchLogRecordProcessor } = require('@opentelemetry/sdk-logs');
+var { diag, DiagConsoleLogger, DiagLogLevel } = require('@opentelemetry/api');
 
 var endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'https://otlp.nr-data.net';
 var serviceName = process.env.OTEL_SERVICE_NAME || 'greenhouse-monitor';
+
+// Enable OTel diagnostic logging (OTEL_LOG_LEVEL: debug, info, warn, error)
+var diagLevel = (process.env.OTEL_LOG_LEVEL || 'warn').toLowerCase();
+var levelMap = { debug: DiagLogLevel.DEBUG, info: DiagLogLevel.INFO, warn: DiagLogLevel.WARN, error: DiagLogLevel.ERROR };
+diag.setLogger(new DiagConsoleLogger(), levelMap[diagLevel] || DiagLogLevel.WARN);
 
 var headers = {
   'api-key': licenseKey,
@@ -60,6 +66,17 @@ var sdk = new opentelemetry.NodeSDK({
 });
 
 sdk.start();
+
+// Log tracing config at startup (visible in container logs)
+var msg = JSON.stringify({
+  ts: new Date().toISOString(),
+  level: 'info',
+  component: 'tracing',
+  msg: 'OTel SDK started',
+  service: serviceName,
+  endpoint: endpoint,
+});
+process.stdout.write(msg + '\n');
 
 // Graceful shutdown
 process.on('SIGTERM', function () {
