@@ -5,6 +5,12 @@
 **Status**: Draft
 **Input**: User description: "Modify the playground app so that we can connect the status, components and schematic views into a real running system. The Shelly side might also need some changes for it to publish all needed data for visualization. Introduce MQTT communication from Shellys towards the app. Keep the option to run simulations in the Playground app: it should be the only mode available in GH pages deployment, but when the app is running from the greenhouse.madekivi.com (current monitoring app) it should default to real system monitoring and have the option to switch to simulation mode."
 
+## Clarifications
+
+### Session 2026-03-24
+
+- Q: How long should the system retain historical time series data? → A: Indefinite — keep all data permanently, no automatic expiry.
+
 ## User Scenarios & Testing
 
 ### User Story 1 - View Live System State in Playground (Priority: P1)
@@ -76,9 +82,9 @@ When the live system transitions between modes, the user sees a step-by-step vis
 
 ### User Story 5 - View Historical Data in Live Mode (Priority: P5)
 
-When in live monitoring mode, the Status view's 24-hour history graph shows actual historical temperature data (not simulated). The user can browse time ranges (1h, 6h, 12h, 24h) to see how the system performed over the past day.
+When in live monitoring mode, the Status view's history graph shows actual historical temperature data (not simulated) stored in a time series database. The user can browse time ranges — from short windows (1h, 6h, 24h) to long-term views (1 week, 1 month, 1 year, all time) — to see how the system has performed. All data is retained indefinitely.
 
-**Why this priority**: Historical data adds long-term monitoring value but requires server-side data persistence, making it more complex. The live snapshot (P1) delivers immediate value without history.
+**Why this priority**: Historical data adds long-term monitoring value but requires a database and server-side persistence, making it more complex. The live snapshot (P1) delivers immediate value without history.
 
 **Independent Test**: Can be tested by letting the system run for several hours, then verifying that the history graph shows real temperature trends and mode transitions over the selected time range.
 
@@ -87,6 +93,7 @@ When in live monitoring mode, the Status view's 24-hour history graph shows actu
 1. **Given** the system has been running for at least 6 hours, **When** the user selects the "6h" time range on the Status view, **Then** the graph shows real temperature trends for all sensors over the past 6 hours.
 2. **Given** a mode transition occurred 2 hours ago, **When** the user views the 6h history, **Then** the transition is visible as a marker or annotation on the graph.
 3. **Given** the app has been open for some time, **When** new data arrives, **Then** the history graph updates in real time (new data points appear on the right edge).
+4. **Given** the system has been running for months, **When** the user selects a long-term time range (e.g., 1 month), **Then** the graph shows temperature trends over that period with appropriate data resolution.
 
 ---
 
@@ -115,7 +122,8 @@ When in live monitoring mode, the Status view's 24-hour history graph shows actu
 - **FR-011**: During mode transitions, the app MUST visualize intermediate steps (pump stop, valve changes, pump start) as they occur on the hardware.
 - **FR-012**: The app MUST indicate connection status — showing when the live data feed is connected, reconnecting, or disconnected.
 - **FR-013**: The server MUST relay MQTT data to browser clients (browsers cannot connect to MQTT directly in this architecture).
-- **FR-014**: The system MUST persist recent state snapshots to provide historical data for the Status view's time-series graph.
+- **FR-014**: The system MUST persist all state snapshots indefinitely in a time series database to provide historical data for the Status view's time-series graph. No automatic data expiry or pruning.
+- **FR-015**: The Status view MUST support browsing historical data beyond 24 hours, with appropriate time range options for the full retained history.
 
 ### Key Entities
 
@@ -134,7 +142,7 @@ When in live monitoring mode, the Status view's 24-hour history graph shows actu
 - **SC-005**: Users on greenhouse.madekivi.com can switch between live and simulation modes within 2 seconds, without page reload.
 - **SC-006**: MQTT communication failures do not affect the Shelly controller's ability to manage valves and pump (control logic remains independent).
 - **SC-007**: The app clearly indicates when live data is unavailable (connection lost, devices unreachable) rather than showing stale data silently.
-- **SC-008**: Historical temperature data for the past 24 hours is available in the Status view's time-series graph during live monitoring.
+- **SC-008**: Historical temperature data is available in the Status view's time-series graph during live monitoring, with the full retained history browsable (not limited to 24 hours).
 
 ## Assumptions
 
@@ -143,5 +151,5 @@ When in live monitoring mode, the Status view's 24-hour history graph shows actu
 - The existing monitor server (Node.js) will be extended to act as the MQTT-to-browser bridge, rather than introducing a separate service.
 - The playground app and monitor app will be merged or co-served from the same origin on greenhouse.madekivi.com.
 - The server subscribes to MQTT and forwards state to browser clients via a real-time channel.
-- State snapshots will be stored in memory or a lightweight file for the 24-hour history window — no external database is needed.
+- A time series database will be deployed as part of the infrastructure to store all state snapshots indefinitely.
 - The existing authentication (WebAuthn passkeys) will apply to the live monitoring mode on greenhouse.madekivi.com.
