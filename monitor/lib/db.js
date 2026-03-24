@@ -20,22 +20,20 @@ function getConnectionUrl() {
 }
 
 function resolveUrl(callback) {
-  // 1. Environment variable takes precedence
-  if (process.env.DATABASE_URL) {
+  var hasEnvUrl = !!process.env.DATABASE_URL;
+  if (hasEnvUrl) {
     resolvedUrl = process.env.DATABASE_URL;
-    callback(null, resolvedUrl);
-    return;
   }
 
-  // 2. Try S3
+  // Always check S3 for CA cert (and URL if not in env)
   var dbConfig = require('./db-config');
   dbConfig.load(function (err, url, ca) {
     if (err) {
-      log.warn('failed to load DATABASE_URL from S3', { error: err.message });
-      callback(null, null);
+      log.warn('failed to load config from S3', { error: err.message });
+      callback(null, resolvedUrl);
       return;
     }
-    if (url) {
+    if (!hasEnvUrl && url) {
       resolvedUrl = url;
       log.info('DATABASE_URL loaded from S3');
     }
