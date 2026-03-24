@@ -52,14 +52,18 @@ function getPool() {
   var url = getConnectionUrl();
   if (!url) return null;
   var Pool = require('pg').Pool;
+  // pg merges config as: Object.assign({}, config, parse(connectionString))
+  // so parsed sslmode overrides explicit ssl options. To use our CA cert,
+  // strip sslmode from the URL and configure SSL entirely via the ssl option.
+  var cleanUrl = url.replace(/[?&]sslmode=[^&]*/g, '');
   var opts = {
-    connectionString: url,
+    connectionString: cleanUrl,
     max: 5,
     idleTimeoutMillis: 30000,
+    ssl: resolvedCa
+      ? { ca: resolvedCa, rejectUnauthorized: true }
+      : url.indexOf('sslmode=') !== -1,
   };
-  if (resolvedCa) {
-    opts.ssl = { ca: resolvedCa };
-  }
   pool = new Pool(opts);
   pool.on('error', function (err) {
     log.error('unexpected pool error', { error: err.message });
