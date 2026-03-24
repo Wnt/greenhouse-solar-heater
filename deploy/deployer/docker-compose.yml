@@ -48,6 +48,12 @@ services:
       - caddy_config:/config
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     depends_on:
       app:
         condition: service_healthy
@@ -67,6 +73,12 @@ services:
       - /dev/net/tun:/dev/net/tun
     sysctls:
       - net.ipv4.ip_forward=1
+    healthcheck:
+      test: ["CMD", "pgrep", "openvpn"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
   nri-postgresql:
     image: newrelic/infrastructure-bundle:latest
@@ -79,6 +91,12 @@ services:
       - NRIA_DISPLAY_NAME=${DOMAIN:-greenhouse}-postgresql
     volumes:
       - ./nri-postgresql-config.yml:/etc/newrelic-infra/integrations.d/postgresql-config.yml:ro
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "newrelic-infra-service"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
 
   newrelic-infra:
     image: newrelic/infrastructure:latest
