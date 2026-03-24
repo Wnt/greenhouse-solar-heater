@@ -542,6 +542,7 @@ function initServices(callback) {
           db = null;
         } else {
           log.info('database initialized');
+          db.startMaintenance();
         }
         callback();
       });
