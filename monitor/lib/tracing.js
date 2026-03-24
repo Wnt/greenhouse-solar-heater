@@ -20,15 +20,11 @@ var { OTLPMetricExporter } = require('@opentelemetry/exporter-metrics-otlp-http'
 var { OTLPLogExporter } = require('@opentelemetry/exporter-logs-otlp-http');
 var { PeriodicExportingMetricReader } = require('@opentelemetry/sdk-metrics');
 var { BatchLogRecordProcessor } = require('@opentelemetry/sdk-logs');
-var { diag, DiagConsoleLogger, DiagLogLevel } = require('@opentelemetry/api');
 
-var endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'https://otlp.nr-data.net';
+// Auto-detect EU vs US endpoint from license key prefix (eu01xx = EU)
+var defaultEndpoint = licenseKey.startsWith('eu01xx') ? 'https://otlp.eu01.nr-data.net' : 'https://otlp.nr-data.net';
+var endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || defaultEndpoint;
 var serviceName = process.env.OTEL_SERVICE_NAME || 'greenhouse-monitor';
-
-// Enable OTel diagnostic logging (OTEL_LOG_LEVEL: debug, info, warn, error)
-var diagLevel = (process.env.OTEL_LOG_LEVEL || 'warn').toLowerCase();
-var levelMap = { debug: DiagLogLevel.DEBUG, info: DiagLogLevel.INFO, warn: DiagLogLevel.WARN, error: DiagLogLevel.ERROR };
-diag.setLogger(new DiagConsoleLogger(), levelMap[diagLevel] || DiagLogLevel.WARN);
 
 var headers = {
   'api-key': licenseKey,

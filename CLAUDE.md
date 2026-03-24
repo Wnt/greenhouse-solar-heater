@@ -273,7 +273,7 @@ The deployer picks up the key from S3 within 5 minutes and restarts containers w
 | `NEW_RELIC_LICENSE_KEY` | S3 (via deployer) | Ingest license key. Empty = telemetry disabled. |
 | `NRIA_LICENSE_KEY` | S3 (via deployer) | Same key, for infra agent container. |
 | `OTEL_SERVICE_NAME` | config.env | Service name in New Relic (default: `greenhouse-monitor`). |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | config.env | OTLP endpoint (default: `https://otlp.nr-data.net`). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | config.env | OTLP endpoint (auto-detected from license key region: EU `https://otlp.eu01.nr-data.net`, US `https://otlp.nr-data.net`). |
 
 ### What Gets Traced
 
