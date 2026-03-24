@@ -10,6 +10,13 @@
  */
 
 var otelApi = require('@opentelemetry/api');
+var otelLogs = require('@opentelemetry/api-logs');
+
+var SEVERITY_MAP = {
+  info: otelLogs.SeverityNumber.INFO,
+  warn: otelLogs.SeverityNumber.WARN,
+  error: otelLogs.SeverityNumber.ERROR,
+};
 
 function createLogger(component) {
   function write(level, msg, data) {
@@ -36,6 +43,22 @@ function createLogger(component) {
     }
     var out = level === 'error' ? process.stderr : process.stdout;
     out.write(JSON.stringify(entry) + '\n');
+
+    // Emit OTel log record (no-op when SDK not initialized)
+    var otelLogger = otelLogs.logs.getLogger(component);
+    var attributes = { component: component };
+    if (data) {
+      var dataKeys = Object.keys(data);
+      for (var j = 0; j < dataKeys.length; j++) {
+        attributes[dataKeys[j]] = data[dataKeys[j]];
+      }
+    }
+    otelLogger.emit({
+      severityNumber: SEVERITY_MAP[level] || otelLogs.SeverityNumber.INFO,
+      severityText: level.toUpperCase(),
+      body: msg,
+      attributes: attributes,
+    });
   }
 
   return {

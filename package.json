@@ -4,8 +4,8 @@
   "private": true,
   "description": "Solar thermal greenhouse heating system — specs, simulation, and tools",
   "scripts": {
-    "test": "node --test tests/control-logic.test.js tests/playground-control.test.js tests/simulation/simulation.test.js tests/deploy.test.js tests/auth.test.js tests/s3-storage.test.js tests/vpn-config.test.js tests/push-storage.test.js tests/valve-poller.test.js tests/sw.test.js tests/db.test.js tests/mqtt-bridge.test.js tests/device-config.test.js tests/data-source.test.js tests/db-config.test.js tests/device-config-integration.test.js && npx playwright test",
-    "test:unit": "node --test tests/control-logic.test.js tests/playground-control.test.js tests/simulation/simulation.test.js tests/deploy.test.js tests/auth.test.js tests/s3-storage.test.js tests/vpn-config.test.js tests/push-storage.test.js tests/valve-poller.test.js tests/sw.test.js tests/db.test.js tests/mqtt-bridge.test.js tests/device-config.test.js tests/data-source.test.js tests/db-config.test.js tests/device-config-integration.test.js",
+    "test": "node --test tests/control-logic.test.js tests/playground-control.test.js tests/simulation/simulation.test.js tests/deploy.test.js tests/auth.test.js tests/s3-storage.test.js tests/vpn-config.test.js tests/push-storage.test.js tests/valve-poller.test.js tests/sw.test.js tests/db.test.js tests/mqtt-bridge.test.js tests/device-config.test.js tests/data-source.test.js tests/db-config.test.js tests/device-config-integration.test.js tests/tracing.test.js && npx playwright test",
+    "test:unit": "node --test tests/control-logic.test.js tests/playground-control.test.js tests/simulation/simulation.test.js tests/deploy.test.js tests/auth.test.js tests/s3-storage.test.js tests/vpn-config.test.js tests/push-storage.test.js tests/valve-poller.test.js tests/sw.test.js tests/db.test.js tests/mqtt-bridge.test.js tests/device-config.test.js tests/data-source.test.js tests/db-config.test.js tests/device-config-integration.test.js tests/tracing.test.js",
     "test:e2e": "npx playwright test",
     "screenshots": "npx playwright test --config=playwright.screenshots.config.js"
   },
@@ -16,6 +16,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.700.0",
     "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/api-logs": "^0.213.0",
     "@opentelemetry/auto-instrumentations-node": "^0.71.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.213.0",
     "@opentelemetry/exporter-metrics-otlp-http": "^0.213.0",
