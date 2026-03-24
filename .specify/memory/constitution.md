@@ -1,12 +1,10 @@
 <!--
 Sync Impact Report
 ==================
-- Version change: 1.1.0 → 1.2.0 (new principle added)
+- Version change: 1.2.1 → 1.3.0 (new principle added)
 - Added principles:
-  - VI. Durable Data Persistence
-- Modified principles:
-  - VI. Durable Data Persistence: broadened from PoC-specific to
-    project-wide scope (v1.2.0 → v1.2.1)
+  - VII. No Secrets in Cloud-Init
+- Modified principles: none
 - Removed principles: none
 - Added sections: none
 - Removed sections: none
@@ -142,6 +140,46 @@ in `monitor/lib/s3-storage.js`). Local filesystem fallback is
 acceptable only for development/testing — production deployments
 MUST use external storage.
 
+### VII. No Secrets in Cloud-Init
+
+Cloud-init runs once at server creation. Any change to `user_data`
+in Terraform forces server recreation — a new IP, manual DNS
+update, and downtime. After initial provisioning, `cloud-init.yaml`
+MUST NOT change.
+
+The only secrets that belong in cloud-init are the **bootstrap
+credentials** placed there at initial server creation: S3
+credentials (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`,
+`S3_SECRET_ACCESS_KEY`, `S3_REGION`) and `SESSION_SECRET`. These
+enable the server to reach the one store (S3) through which all
+other credentials are accessed.
+
+For any new service or credential provisioned after the initial
+server setup, the **S3 bootstrap pattern** MUST be used:
+
+1. Terraform provisions the resource (database, message broker,
+   external API, etc.)
+2. Terraform stores the credentials/URL in S3 object storage
+   (via `null_resource` + a helper script, e.g., `db-config.js`)
+3. The deployer fetches from S3 and injects into `.env` on each
+   deploy cycle
+4. The app reads from environment variables, with S3 as fallback
+
+**Decision tree for new configuration:**
+
+- **Non-secret, changes with deploys**: `config.env` (deployer
+  image). Examples: `MQTT_HOST`, `PORT`, feature flags.
+- **Secret, provisioned by Terraform**: S3 via `null_resource`.
+  Examples: database URL, API keys for managed services.
+- **Secret, one-time bootstrap**: `cloud-init.yaml`, only if no
+  server exists yet. Examples: S3 credentials themselves,
+  session secret.
+
+The invariant: after initial server provisioning, cloud-init MUST
+never need to change again. All subsequent infrastructure
+(databases, brokers, external services) stores their credentials
+in S3 — the one store the server already knows how to reach.
+
 ## Platform Constraints
 
 - **Shelly device scripts**: ES5-only JavaScript. No `const`/`let`,
@@ -183,4 +221,4 @@ code reviews MUST verify compliance with these principles.
 - **Runtime guidance**: `CLAUDE.md` provides operational development
   guidance and MUST remain consistent with this constitution.
 
-**Version**: 1.2.1 | **Ratified**: 2025-07-20 | **Last Amended**: 2026-03-21
+**Version**: 1.3.0 | **Ratified**: 2025-07-20 | **Last Amended**: 2026-03-24
