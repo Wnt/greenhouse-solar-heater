@@ -117,9 +117,9 @@ resource "upcloud_managed_database_postgresql" "timeseries" {
 }
 
 # ── Store DATABASE_URL and CA certificate in S3 ──
-# Fetches the managed database CA cert via UpCloud API, then stores both
-# the connection URL and CA cert in S3 using the db-config.js helper.
-# Runs on the Terraform operator's machine (needs node + npm install + curl).
+# Extracts the CA cert from the database TLS connection via openssl, then stores
+# both the connection URL and CA cert in S3 using the db-config.js helper.
+# Runs on the Terraform operator's machine (needs node + npm install + openssl).
 
 resource "null_resource" "store_db_url" {
   triggers = {
@@ -129,10 +129,11 @@ resource "null_resource" "store_db_url" {
   provisioner "local-exec" {
     working_dir = "${path.module}/../.."
     command     = <<-EOT
-      curl -sf -H "Authorization: Bearer $UPCLOUD_TOKEN" \
-        "https://api.upcloud.com/1.3/database/${upcloud_managed_database_postgresql.timeseries.id}/ca-certificate" \
-        | node -e "var d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{var j=JSON.parse(d);process.stdout.write(j.certificate||j.ca_certificate||'')})" \
+      openssl s_client -connect ${upcloud_managed_database_postgresql.timeseries.service_host}:${upcloud_managed_database_postgresql.timeseries.service_port} \
+        -showcerts </dev/null 2>/dev/null \
+        | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' \
         > /tmp/db-ca-cert.pem \
+      && [ -s /tmp/db-ca-cert.pem ] \
       && node monitor/lib/db-config.js store "${upcloud_managed_database_postgresql.timeseries.service_uri}" --ca /tmp/db-ca-cert.pem \
       && rm -f /tmp/db-ca-cert.pem
     EOT
