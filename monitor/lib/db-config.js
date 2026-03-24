@@ -56,20 +56,24 @@ function load(callback) {
   }).then(function (body) {
     try {
       var data = JSON.parse(body);
-      callback(null, data.url || null);
+      callback(null, data.url || null, data.ca || null);
     } catch (e) {
       callback(new Error('Failed to parse database config JSON'));
     }
   }).catch(function (err) {
     if (err.name === 'NoSuchKey' || (err.$metadata && err.$metadata.httpStatusCode === 404)) {
-      callback(null, null);
+      callback(null, null, null);
     } else {
       callback(err);
     }
   });
 }
 
-function store(url, callback) {
+function store(url, ca, callback) {
+  if (typeof ca === 'function') {
+    callback = ca;
+    ca = null;
+  }
   var config = getS3Config();
   if (!config) {
     callback(new Error('S3 not configured'));
@@ -77,7 +81,9 @@ function store(url, callback) {
   }
   var PutObjectCommand = require('@aws-sdk/client-s3').PutObjectCommand;
   var client = getS3Client(config);
-  var body = JSON.stringify({ url: url }, null, 2);
+  var data = { url: url };
+  if (ca) data.ca = ca;
+  var body = JSON.stringify(data, null, 2);
   var cmd = new PutObjectCommand({
     Bucket: config.bucket,
     Key: S3_KEY,
@@ -113,15 +119,21 @@ function main() {
   } else if (command === 'store') {
     var url = args[1];
     if (!url) {
-      console.error('Usage: node db-config.js store <database-url>');
+      console.error('Usage: node db-config.js store <database-url> [--ca <cert-file>]');
       process.exit(1);
     }
-    store(url, function (err) {
+    var ca = null;
+    var caIdx = args.indexOf('--ca');
+    if (caIdx !== -1 && args[caIdx + 1]) {
+      var fs = require('fs');
+      ca = fs.readFileSync(args[caIdx + 1], 'utf8');
+    }
+    store(url, ca, function (err) {
       if (err) {
         console.error('[db-config] Store error: ' + err.message);
         process.exit(1);
       }
-      console.log('[db-config] Database URL stored in S3');
+      console.log('[db-config] Database URL' + (ca ? ' and CA cert' : '') + ' stored in S3');
     });
   } else {
     console.error('Usage: node db-config.js <store|load> [url]');
