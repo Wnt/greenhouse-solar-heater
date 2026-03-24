@@ -158,9 +158,12 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/db.test.js` — unit tests for PostgreSQL/TimescaleDB module (schema init, inserts, queries)
 - `tests/mqtt-bridge.test.js` — unit tests for MQTT bridge (state change detection, connection status)
 - `tests/device-config.test.js` — unit tests for device config store (default config, CRUD, persistence)
+- `tests/device-config-integration.test.js` — integration tests: UI config format → Shelly control-logic interpretation (staged deployment scenarios)
 - `tests/data-source.test.js` — unit tests for data source abstraction (state mapping, connection transitions)
 - `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
+- `tests/e2e/fixtures.js` — shared Playwright fixture: blocks Google Fonts for offline environments. **All e2e tests must import from this file, not from `@playwright/test`.**
 - `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
+- `tests/e2e/device-config.spec.js` — Playwright e2e tests for the Device config UI (toggle switches, dropdowns, checkboxes → compact JSON format)
 - `tests/e2e/pwa.spec.js` — Playwright e2e tests for PWA installability (manifest, Apple meta tags, offline page)
 - `tests/e2e/live-mode.spec.js` — Playwright e2e tests for live mode toggle, WebSocket connection, simulation fallback
 - `tests/e2e/take-screenshots.spec.js` — Screenshot generator: runs 24h simulation, captures all views (excluded from normal test runs via `testIgnore` in `playwright.config.js`, uses separate `playwright.screenshots.config.js`)
@@ -170,6 +173,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - **Playwright version**: Must match the cached Chromium browser revision. Currently `@playwright/test@1.56.0` matches `chromium-1194`. If you see "browser not found" errors, check `~/.cache/ms-playwright/` for available revisions and install the matching Playwright version.
 - **Static server**: Tests use `npx serve` on port 3210 to serve the playground. The Playwright config auto-starts this server.
 - **No `-s` flag on serve**: Do NOT use `serve -s` (SPA mode) — it breaks direct HTML file access by redirecting all routes.
+- **Shared fixtures**: All e2e tests import `{ test, expect }` from `./fixtures.js` (NOT from `@playwright/test`). The fixture blocks Google Fonts requests to prevent page load hanging in offline/restricted environments. Always use `import { test, expect } from './fixtures.js'` when adding new e2e test files.
 - Individual test timeouts are 30s. E2e tests verify the 2D SVG schematic and simulation behavior.
 
 ## CI / GitHub Actions
