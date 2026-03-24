@@ -21,7 +21,9 @@ services:
     image: eclipse-mosquitto:2-openssl
     restart: unless-stopped
     network_mode: "service:openvpn"
-    command: mosquitto -p 1883 -v
+    command: mosquitto -c /mosquitto/config/mosquitto.conf -v
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     tmpfs:
       - /mosquitto/data:noexec,nosuid,size=64m
     healthcheck:

@@ -97,10 +97,10 @@ var SCHEMA_SQL = [
   "CREATE INDEX IF NOT EXISTS state_events_type_ts ON state_events (entity_type, ts DESC)",
 ];
 
-// Continuous aggregate and policies — run separately since they may already exist
+// Regular materialized view (no TSL license required, unlike continuous aggregates).
+// Refreshed periodically by the app via startMaintenance().
 var AGGREGATE_SQL = [
-  "CREATE MATERIALIZED VIEW IF NOT EXISTS sensor_readings_30s\n" +
-  "WITH (timescaledb.continuous) AS\n" +
+  "CREATE MATERIALIZED VIEW IF NOT EXISTS sensor_readings_30s AS\n" +
   "SELECT time_bucket('30 seconds', ts) AS bucket,\n" +
   "       sensor_id,\n" +
   "       AVG(value) AS avg_value,\n" +
@@ -108,17 +108,14 @@ var AGGREGATE_SQL = [
   "       MAX(value) AS max_value\n" +
   "FROM sensor_readings\n" +
   "GROUP BY bucket, sensor_id",
+
+  // Unique index required for REFRESH MATERIALIZED VIEW CONCURRENTLY
+  "CREATE UNIQUE INDEX IF NOT EXISTS sensor_readings_30s_uniq ON sensor_readings_30s (bucket, sensor_id)",
 ];
 
-var POLICY_SQL = [
-  "SELECT add_retention_policy('sensor_readings', INTERVAL '48 hours', if_not_exists => true)",
-
-  "SELECT add_continuous_aggregate_policy('sensor_readings_30s',\n" +
-  "  start_offset  => INTERVAL '1 hour',\n" +
-  "  end_offset    => INTERVAL '5 minutes',\n" +
-  "  schedule_interval => INTERVAL '30 minutes',\n" +
-  "  if_not_exists => true)",
-];
+var maintenanceTimer = null;
+var MAINTENANCE_INTERVAL = 30 * 60 * 1000; // 30 minutes
+var RETENTION_INTERVAL = '48 hours';
 
 function initSchema(callback) {
   var p = getPool();
@@ -135,17 +132,51 @@ function initSchema(callback) {
         if (aggErr) {
           log.warn('aggregate creation skipped (may already exist)', { error: aggErr.message });
         }
-
-        runStatements(client, POLICY_SQL, 0, function (polErr) {
-          if (polErr) {
-            log.warn('policy creation skipped (may already exist)', { error: polErr.message });
-          }
-          release();
-          callback(null);
-        });
+        release();
+        callback(null);
       });
     });
   });
+}
+
+// Periodic maintenance: refresh materialized view + delete old raw data.
+// Called automatically via startMaintenance() after server boot.
+function runMaintenance(callback) {
+  var p = getPool();
+  if (!p) { if (callback) callback(); return; }
+
+  p.query('REFRESH MATERIALIZED VIEW CONCURRENTLY sensor_readings_30s', function (err) {
+    if (err) {
+      log.warn('materialized view refresh failed', { error: err.message });
+    } else {
+      log.info('materialized view refreshed');
+    }
+
+    p.query("DELETE FROM sensor_readings WHERE ts < NOW() - INTERVAL '" + RETENTION_INTERVAL + "'", function (err2) {
+      if (err2) {
+        log.warn('retention cleanup failed', { error: err2.message });
+      } else {
+        log.info('retention cleanup done');
+      }
+      if (callback) callback();
+    });
+  });
+}
+
+function startMaintenance() {
+  if (maintenanceTimer) return;
+  // Run once shortly after boot (give time for initial data), then every 30 min
+  maintenanceTimer = setInterval(runMaintenance, MAINTENANCE_INTERVAL);
+  // Initial refresh after 60s
+  setTimeout(runMaintenance, 60 * 1000);
+  log.info('maintenance scheduler started', { intervalMin: MAINTENANCE_INTERVAL / 60000 });
+}
+
+function stopMaintenance() {
+  if (maintenanceTimer) {
+    clearInterval(maintenanceTimer);
+    maintenanceTimer = null;
+  }
 }
 
 function runStatements(client, stmts, idx, callback) {
@@ -324,10 +355,12 @@ module.exports = {
   resolveUrl: resolveUrl,
   getPool: getPool,
   initSchema: initSchema,
+  startMaintenance: startMaintenance,
+  stopMaintenance: stopMaintenance,
   insertSensorReadings: insertSensorReadings,
   insertStateEvent: insertStateEvent,
   getHistory: getHistory,
   getEvents: getEvents,
   close: close,
-  _reset: function () { pool = null; resolvedCa = null; },
+  _reset: function () { pool = null; resolvedCa = null; stopMaintenance(); },
 };
