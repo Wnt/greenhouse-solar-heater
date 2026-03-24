@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Aura Nocturne - System Status</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&amp;family=Manrope:wght@200..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "on-tertiary-fixed-variant": "#475f6a",
+                "on-primary": "#4f3e00",
+                "tertiary-fixed-dim": "#bfd8e5",
+                "on-background": "#e0e5f5",
+                "on-primary-fixed-variant": "#705900",
+                "on-primary-container": "#f4cc52",
+                "primary-fixed": "#ffe088",
+                "surface-tint": "#e9c349",
+                "secondary-container": "#00433f",
+                "secondary-fixed": "#8ef4e9",
+                "outline": "#6f7683",
+                "primary-container": "#574500",
+                "on-tertiary-container": "#3e5560",
+                "on-secondary": "#002522",
+                "surface-container-low": "#111319",
+                "error-container": "#7f2927",
+                "error-dim": "#bb5551",
+                "on-surface-variant": "#a5abb9",
+                "primary-fixed-dim": "#f8d056",
+                "secondary-fixed-dim": "#7fe6db",
+                "primary-dim": "#dab53d",
+                "primary": "#e9c349",
+                "error": "#ee7d77",
+                "surface-variant": "#202631",
+                "secondary": "#43aea4",
+                "on-error": "#490106",
+                "surface-container-highest": "#202631",
+                "on-secondary-fixed-variant": "#006760",
+                "outline-variant": "#424854",
+                "on-primary-fixed": "#4e3d00",
+                "tertiary-fixed": "#cde6f4",
+                "on-error-container": "#ff9993",
+                "surface-dim": "#0c0e12",
+                "on-secondary-fixed": "#004843",
+                "on-tertiary": "#465d68",
+                "background": "#0c0e12",
+                "inverse-primary": "#745c00",
+                "tertiary": "#e0f4ff",
+                "surface-container-high": "#1b2029",
+                "on-tertiary-fixed": "#2b424d",
+                "surface-container": "#161a21",
+                "surface-container-lowest": "#000000",
+                "surface": "#0c0e12",
+                "on-surface": "#e0e5f5",
+                "surface-bright": "#252c39",
+                "inverse-on-surface": "#53555a",
+                "tertiary-container": "#cde6f4",
+                "inverse-surface": "#f9f9ff",
+                "tertiary-dim": "#bfd8e5",
+                "secondary-dim": "#43aea4",
+                "on-secondary-container": "#69d0c5"
+              },
+              fontFamily: {
+                "headline": ["Newsreader"],
+                "body": ["Manrope"],
+                "label": ["Manrope"]
+              },
+              borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+            },
+          },
+        }
+      </script>
+<style>
+        body {
+            background-color: #0c0e12;
+            color: #e0e5f5;
+            font-family: 'Manrope', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .glass-panel {
+            background: rgba(37, 44, 57, 0.4);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+        .status-glow {
+            box-shadow: 0 0 40px -10px rgba(233, 195, 73, 0.3);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+        }
+        .graph-line {
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: dash 3s ease-in-out forwards;
+        }
+        @keyframes dash {
+            to { stroke-dashoffset: 0; }
+        }
+      </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style></head>
+<body class="min-h-screen pb-32" data-mode="connect">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-[#0c0e12]/60 backdrop-blur-xl shadow-[0_40px_40px_-15px_rgba(22,26,33,0.06)] flex items-center justify-between px-6 h-16">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#e9c349]" data-icon="solar_power">solar_power</span>
+<h1 class="font-serif italic text-2xl tracking-tight text-[#e9c349]">STATUS</h1>
+</div>
+<button class="hover:opacity-80 transition-opacity scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-[#e0e5f5]/60" data-icon="settings">settings</span>
+</button>
+</header>
+<main class="pt-24 px-6 max-w-2xl mx-auto space-y-10">
+<!-- Mode Selector Section -->
+<section class="space-y-6">
+<h2 class="font-headline text-3xl italic text-on-surface">Current State</h2>
+<div class="grid grid-cols-1 gap-4">
+<!-- Active Mode: Collecting Solar Energy -->
+<div class="relative group cursor-pointer">
+<div class="absolute inset-0 bg-primary/10 rounded-xl blur-2xl opacity-50 group-hover:opacity-100 transition-opacity"></div>
+<div class="relative bg-surface-container-high p-6 rounded-xl border border-primary/20 status-glow flex items-center justify-between overflow-hidden">
+<div class="flex flex-col gap-1">
+<span class="font-label text-[10px] uppercase tracking-[0.2em] text-primary">Active Mode</span>
+<h3 class="font-headline text-2xl text-on-surface">Collecting Solar Energy</h3>
+<p class="font-body text-sm text-on-surface-variant">Optimal photon absorption in progress.</p>
+</div>
+<div class="bg-primary/20 p-4 rounded-full">
+<span class="material-symbols-outlined text-primary text-4xl" data-icon="light_mode" style="font-variation-settings: 'FILL' 1;">light_mode</span>
+</div>
+</div>
+</div>
+<!-- Mode: Heating Greenhouse -->
+<div class="bg-surface-container p-6 rounded-xl flex items-center justify-between hover:bg-surface-container-high transition-colors cursor-pointer group">
+<div class="flex flex-col gap-1">
+<h3 class="font-headline text-2xl text-on-surface/80 group-hover:text-on-surface transition-colors">Heating Greenhouse</h3>
+<p class="font-body text-sm text-on-surface-variant">Thermal redirection active.</p>
+</div>
+<div class="bg-surface-variant p-4 rounded-full">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="nest_eco_leaf">nest_eco_leaf</span>
+</div>
+</div>
+<!-- Mode: Idling -->
+<div class="bg-surface-container p-6 rounded-xl flex items-center justify-between hover:bg-surface-container-high transition-colors cursor-pointer group">
+<div class="flex flex-col gap-1">
+<h3 class="font-headline text-2xl text-on-surface/80 group-hover:text-on-surface transition-colors">Idling</h3>
+<p class="font-body text-sm text-on-surface-variant">System waiting for triggers.</p>
+</div>
+<div class="bg-surface-variant p-4 rounded-full">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="mode_night">mode_night</span>
+</div>
+</div>
+</div>
+</section>
+<!-- System Health Section -->
+<section class="bg-surface-container-lowest rounded-[2rem] p-8 space-y-8 relative overflow-hidden">
+<div class="absolute top-0 right-0 w-64 h-64 bg-secondary/5 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/2"></div>
+<div class="flex flex-col items-center text-center space-y-4">
+<h2 class="font-headline text-3xl italic text-on-surface">Tank temperature</h2>
+<!-- Gauge Logic -->
+<div class="relative w-56 h-56 flex items-center justify-center">
+<svg class="w-full h-full -rotate-90">
+<circle class="text-surface-variant" cx="112" cy="112" fill="transparent" r="100" stroke="currentColor" stroke-width="2"></circle>
+<circle class="text-secondary" cx="112" cy="112" fill="transparent" r="100" stroke="currentColor" stroke-dasharray="628" stroke-dashoffset="62.8" stroke-linecap="round" stroke-width="4" style="filter: drop-shadow(0 0 8px #43aea4);"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="font-headline text-6xl text-on-surface">94</span>
+<span class="font-label text-xs uppercase tracking-widest text-secondary">Optimal</span>
+</div>
+</div>
+<p class="font-body text-on-surface-variant max-w-xs">Your system is operating at peak efficiency. All nodes are reporting stable connectivity.</p>
+</div>
+<!-- NEW: 24-hour History Graph -->
+<div class="mt-8 space-y-4">
+<div class="flex items-center justify-between">
+<span class="font-label text-xs uppercase tracking-widest text-on-surface-variant">24h History</span>
+<span class="font-label text-xs text-secondary">94° Peak</span>
+</div>
+<div class="bg-surface-container/30 rounded-xl p-4 relative h-48 overflow-hidden border border-white/5">
+<!-- Grid lines -->
+<div class="absolute inset-0 flex flex-col justify-between py-4 px-2 opacity-5">
+<div class="border-t border-on-surface w-full"></div>
+<div class="border-t border-on-surface w-full"></div>
+<div class="border-t border-on-surface w-full"></div>
+</div>
+<!-- Graph and Bars Container -->
+<div class="relative h-full w-full">
+<!-- Duty Cycle Bars (Bottom) -->
+<div class="absolute bottom-0 left-0 right-0 h-16 flex items-end justify-between px-1 gap-1 opacity-60">
+<!-- Data bars generated for a 24h feel -->
+<div class="w-full bg-[#FF4D4D] rounded-t-sm" style="height: 40%"></div>
+<div class="w-full bg-[#FF4D4D] rounded-t-sm" style="height: 30%"></div>
+<div class="w-full bg-surface-variant/30" style="height: 5%"></div>
+<div class="w-full bg-[#E9C349] rounded-t-sm" style="height: 60%"></div>
+<div class="w-full bg-[#E9C349] rounded-t-sm" style="height: 80%"></div>
+<div class="w-full bg-[#E9C349] rounded-t-sm" style="height: 90%"></div>
+<div class="w-full bg-[#E9C349] rounded-t-sm" style="height: 70%"></div>
+<div class="w-full bg-surface-variant/30" style="height: 5%"></div>
+<div class="w-full bg-[#FF4D4D] rounded-t-sm" style="height: 50%"></div>
+<div class="w-full bg-[#FF4D4D] rounded-t-sm" style="height: 45%"></div>
+<div class="w-full bg-[#FF4D4D] rounded-t-sm" style="height: 40%"></div>
+<div class="w-full bg-surface-variant/30" style="height: 5%"></div>
+<div class="w-full bg-[#E9C349] rounded-t-sm" style="height: 20%"></div>
+<div class="w-full bg-[#E9C349] rounded-t-sm" style="height: 35%"></div>
+<div class="w-full bg-[#E9C349] rounded-t-sm" style="height: 65%"></div>
+<div class="w-full bg-[#E9C349] rounded-t-sm" style="height: 85%"></div>
+<div class="w-full bg-[#E9C349] rounded-t-sm" style="height: 75%"></div>
+<div class="w-full bg-surface-variant/30" style="height: 5%"></div>
+<div class="w-full bg-[#FF4D4D] rounded-t-sm" style="height: 15%"></div>
+<div class="w-full bg-[#FF4D4D] rounded-t-sm" style="height: 25%"></div>
+<div class="w-full bg-[#FF4D4D] rounded-t-sm" style="height: 20%"></div>
+<div class="w-full bg-[#FF4D4D] rounded-t-sm" style="height: 10%"></div>
+<div class="w-full bg-surface-variant/30" style="height: 5%"></div>
+<div class="w-full bg-[#E9C349] rounded-t-sm" style="height: 15%"></div>
+</div>
+<!-- Temperature Line Graph (SVG) -->
+<svg class="absolute inset-0 w-full h-full overflow-visible" preserveaspectratio="none" viewbox="0 0 100 100">
+<path class="graph-line" d="M 0 60 Q 10 55 20 65 T 40 40 T 60 45 T 80 30 T 100 35" fill="none" stroke="#e0e5f5" stroke-width="1.5"></path>
+<!-- Small dots for data points matching image style -->
+<circle cx="20" cy="65" fill="#43aea4" r="1.5"></circle>
+<circle cx="45" cy="42" fill="#e9c349" r="1.5"></circle>
+<circle cx="80" cy="30" fill="#ee7d77" r="1.5"></circle>
+</svg>
+</div>
+<!-- Time labels -->
+<div class="flex justify-between mt-2 text-[10px] font-label text-on-surface-variant tracking-widest uppercase">
+<span>00h</span>
+<span>06h</span>
+<span>12h</span>
+<span>18h</span>
+<span>Now</span>
+</div>
+</div>
+<!-- Legend -->
+<div class="flex gap-4 justify-center">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-[#FF4D4D]"></span>
+<span class="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">Charging</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-[#E9C349]"></span>
+<span class="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">Heating</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-2 h-0.5 bg-on-surface"></span>
+<span class="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">Temp</span>
+</div>
+</div>
+</div>
+<!-- Metrics Grid -->
+<div class="grid grid-cols-2 gap-4 pt-4">
+<div class="bg-surface-container-low p-4 rounded-xl">
+<span class="font-label text-[10px] uppercase tracking-wider text-on-surface-variant">Efficiency</span>
+<div class="flex items-baseline gap-1">
+<span class="text-xl font-body text-on-surface">98.2</span>
+<span class="text-xs text-secondary">%</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-4 rounded-xl">
+<span class="font-label text-[10px] uppercase tracking-wider text-on-surface-variant">Stability</span>
+<div class="flex items-baseline gap-1">
+<span class="text-xl font-body text-on-surface">High</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Recent Alerts -->
+<section class="space-y-6">
+<div class="flex items-baseline justify-between">
+<h2 class="font-headline text-2xl italic text-on-surface">Recent Logs</h2>
+<span class="font-label text-xs text-primary cursor-pointer hover:underline">View All</span>
+</div>
+<div class="space-y-4">
+<div class="flex gap-4 p-4 items-start border-l-2 border-secondary/30 bg-surface-container/30 rounded-r-xl">
+<span class="material-symbols-outlined text-secondary text-xl" data-icon="check_circle">check_circle</span>
+<div class="flex flex-col gap-1">
+<span class="font-body text-sm text-on-surface font-medium">System recalibrated successfully</span>
+<span class="font-label text-[10px] text-on-surface-variant uppercase">14:22 • Automated Task</span>
+</div>
+</div>
+<div class="flex gap-4 p-4 items-start border-l-2 border-primary/30 bg-surface-container/30 rounded-r-xl">
+<span class="material-symbols-outlined text-primary text-xl" data-icon="bolt">bolt</span>
+<div class="flex flex-col gap-1">
+<span class="font-body text-sm text-on-surface font-medium">Mode changed: Solar Collection</span>
+<span class="font-label text-[10px] text-on-surface-variant uppercase">09:05 • Environmental Trigger</span>
+</div>
+</div>
+<div class="flex gap-4 p-4 items-start border-l-2 border-on-surface-variant/20 bg-surface-container/30 rounded-r-xl opacity-60">
+<span class="material-symbols-outlined text-on-surface-variant text-xl" data-icon="history">history</span>
+<div class="flex flex-col gap-1">
+<span class="font-body text-sm text-on-surface font-medium">Night cycle completed</span>
+<span class="font-label text-[10px] text-on-surface-variant uppercase">Yesterday 20:11</span>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full h-20 flex justify-around items-center px-4 pb-4 bg-[#252c39]/40 backdrop-blur-2xl rounded-t-[2rem] z-50 shadow-2xl">
+<!-- Overview -->
+<a class="flex flex-col items-center justify-center text-[#e0e5f5]/40 hover:text-[#43aea4] transition-all duration-300" href="#">
+<span class="material-symbols-outlined text-2xl" data-icon="dashboard">dashboard</span>
+<span class="font-sans uppercase tracking-[0.1em] text-[10px] font-bold mt-1">Overview</span>
+</a>
+<!-- Components -->
+<a class="flex flex-col items-center justify-center text-[#e0e5f5]/40 hover:text-[#43aea4] transition-all duration-300" href="#">
+<span class="material-symbols-outlined text-2xl" data-icon="memory">memory</span>
+<span class="font-sans uppercase tracking-[0.1em] text-[10px] font-bold mt-1">Components</span>
+</a>
+<!-- History -->
+<a class="flex flex-col items-center justify-center text-[#e0e5f5]/40 hover:text-[#43aea4] transition-all duration-300" href="#">
+<span class="material-symbols-outlined text-2xl" data-icon="history">history</span>
+<span class="font-sans uppercase tracking-[0.1em] text-[10px] font-bold mt-1">History</span>
+</a>
+<!-- Status (Active) -->
+<a class="flex flex-col items-center justify-center text-[#e9c349] transition-all duration-300" href="#">
+<span class="material-symbols-outlined text-2xl" data-icon="Assignment_turned_in" style="font-variation-settings: 'FILL' 1;">assignment_turned_in</span>
+<span class="font-sans uppercase tracking-[0.1em] text-[10px] font-bold mt-1">Status</span>
+</a>
+</nav>
+</body></html>

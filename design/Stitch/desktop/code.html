@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Helios Canopy | System Status</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&amp;family=Manrope:wght@200..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-dim": "#0c0e12",
+              "secondary-dim": "#43aea4",
+              "primary-fixed-dim": "#f8d056",
+              "on-surface-variant": "#a5abb9",
+              "on-secondary-container": "#69d0c5",
+              "on-primary": "#4f3e00",
+              "background": "#0c0e12",
+              "primary": "#e9c349",
+              "surface-container-highest": "#202631",
+              "error": "#ee7d77",
+              "on-primary-fixed-variant": "#705900",
+              "on-primary-container": "#f4cc52",
+              "primary-fixed": "#ffe088",
+              "error-container": "#7f2927",
+              "primary-container": "#574500",
+              "tertiary-fixed": "#cde6f4",
+              "on-secondary-fixed": "#004843",
+              "surface-bright": "#252c39",
+              "on-tertiary-fixed-variant": "#475f6a",
+              "surface-container": "#161a21",
+              "tertiary-container": "#cde6f4",
+              "surface-tint": "#e9c349",
+              "surface-variant": "#202631",
+              "on-surface": "#e0e5f5",
+              "on-primary-fixed": "#4e3d00",
+              "outline-variant": "#424854",
+              "secondary-fixed": "#8ef4e9",
+              "surface": "#0c0e12",
+              "on-error-container": "#ff9993",
+              "surface-container-low": "#111319",
+              "primary-dim": "#dab53d",
+              "tertiary": "#e0f4ff",
+              "on-secondary": "#002522",
+              "tertiary-fixed-dim": "#bfd8e5",
+              "on-tertiary": "#465d68",
+              "surface-container-high": "#1b2029",
+              "error-dim": "#bb5551",
+              "inverse-primary": "#745c00",
+              "secondary-container": "#00433f",
+              "on-background": "#e0e5f5",
+              "tertiary-dim": "#bfd8e5",
+              "on-tertiary-container": "#3e5560",
+              "on-secondary-fixed-variant": "#006760",
+              "surface-container-lowest": "#000000",
+              "inverse-surface": "#f9f9ff",
+              "on-tertiary-fixed": "#2b424d",
+              "secondary-fixed-dim": "#7fe6db",
+              "on-error": "#490106",
+              "outline": "#6f7683",
+              "inverse-on-surface": "#53555a",
+              "secondary": "#43aea4"
+            },
+            fontFamily: {
+              "headline": ["Newsreader"],
+              "body": ["Manrope"],
+              "label": ["Manrope"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Manrope', sans-serif; }
+        h1, h2, h3, .serif { font-family: 'Newsreader', serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-panel {
+            background: rgba(17, 19, 25, 0.6);
+            backdrop-filter: blur(20px);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface min-h-screen">
+<!-- TopAppBar Shell -->
+<header class="fixed top-0 w-full z-50 bg-transparent backdrop-blur-xl flex justify-between items-center w-full px-8 py-4">
+<div class="flex items-center gap-6">
+<span class="font-newsreader italic text-2xl text-amber-400">Helios Canopy</span>
+<nav class="hidden md:flex items-center gap-8 ml-8">
+<a class="text-slate-400 font-medium hover:text-amber-200 transition-colors duration-300" href="#">Dashboard</a>
+<a class="text-amber-400 font-bold border-b-2 border-amber-400" href="#">System Status</a>
+<a class="text-slate-400 font-medium hover:text-amber-200 transition-colors duration-300" href="#">Analytics</a>
+</nav>
+</div>
+<div class="flex items-center gap-5">
+<div class="hidden lg:flex items-center bg-surface-container-low px-4 py-2 rounded-full border border-outline-variant/15">
+<span class="material-symbols-outlined text-on-surface-variant text-sm mr-2">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-sm w-48 text-on-surface" placeholder="Search parameters..." type="text"/>
+</div>
+<div class="flex items-center gap-4 text-on-surface-variant">
+<span class="material-symbols-outlined hover:text-amber-400 cursor-pointer transition-colors">notifications</span>
+<span class="material-symbols-outlined hover:text-amber-400 cursor-pointer transition-colors">settings</span>
+<span class="material-symbols-outlined hover:text-amber-400 cursor-pointer transition-colors">account_circle</span>
+</div>
+</div>
+</header>
+<!-- SideNavBar Shell -->
+<aside class="fixed left-0 top-0 h-full w-64 border-r border-white/5 bg-[#0c0e12] dark:bg-[#0c0e12] flex flex-col h-full py-8 z-40 mt-16">
+<div class="px-6 mb-8 flex items-center gap-3">
+<div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">solar_power</span>
+</div>
+<div>
+<h3 class="font-newsreader text-xl text-amber-400">System Alpha</h3>
+<p class="text-[10px] uppercase tracking-widest text-secondary font-bold">Optimal Performance</p>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 text-slate-500 py-3 px-6 hover:text-slate-200 transition-all duration-300 hover:bg-white/5" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-manrope uppercase tracking-widest text-xs">Overview</span>
+</a>
+<a class="flex items-center gap-3 text-slate-500 py-3 px-6 hover:text-slate-200 transition-all duration-300 hover:bg-white/5" href="#">
+<span class="material-symbols-outlined">component_exchange</span>
+<span class="font-manrope uppercase tracking-widest text-xs">Components</span>
+</a>
+<a class="flex items-center gap-3 text-slate-500 py-3 px-6 hover:text-slate-200 transition-all duration-300 hover:bg-white/5" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-manrope uppercase tracking-widest text-xs">History</span>
+</a>
+<a class="flex items-center gap-3 text-amber-400 bg-amber-400/10 rounded-r-full py-3 px-6 border-r-4 border-amber-400 translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined">query_stats</span>
+<span class="font-manrope uppercase tracking-widest text-xs">Status</span>
+</a>
+</nav>
+<div class="px-6 mt-auto">
+<button class="w-full bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold py-3 rounded-xl text-sm transition-transform active:scale-95">
+                Export Report
+            </button>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-64 pt-24 p-8 min-h-screen">
+<!-- Header Intent -->
+<section class="mb-10">
+<h1 class="text-5xl font-newsreader italic mb-2">How your sanctuary is breathing.</h1>
+<p class="text-on-surface-variant max-w-2xl font-body tracking-wide">The thermal storage is currently reaching peak efficiency. Solar intake is maximized for the midday cycle.</p>
+</section>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Central Status Section -->
+<div class="col-span-12 lg:col-span-8 space-y-6">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Mode Card: Active -->
+<div class="col-span-1 md:col-span-2 bg-surface-container-high rounded-xl p-8 relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-700">
+<span class="material-symbols-outlined text-[120px]" style="font-variation-settings: 'FILL' 1;">wb_sunny</span>
+</div>
+<div class="relative z-10">
+<span class="px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold uppercase tracking-widest mb-4 inline-block">Current Mode</span>
+<h2 class="text-4xl font-newsreader italic text-on-surface mb-2">Collecting Solar Energy</h2>
+<p class="text-secondary font-bold flex items-center gap-2">
+<span class="relative flex h-3 w-3">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-3 w-3 bg-secondary"></span>
+</span>
+                                System Active
+                            </p>
+</div>
+</div>
+<!-- Health Summary Card -->
+<div class="bg-surface-container-highest rounded-xl p-8 flex flex-col justify-between border border-white/5">
+<h3 class="text-on-surface-variant font-label text-xs uppercase tracking-widest">System Health</h3>
+<div class="space-y-4">
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-on-surface-variant">Efficiency</span>
+<span class="text-primary font-bold">98.2%</span>
+</div>
+<div class="h-1 bg-surface-container-low rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[98.2%]"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-on-surface-variant">Stability</span>
+<span class="text-secondary font-bold">High</span>
+</div>
+<div class="h-1 bg-surface-container-low rounded-full overflow-hidden">
+<div class="h-full bg-secondary w-full"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Temperature Visualization & Graph -->
+<div class="bg-surface-container-low rounded-xl p-8 border border-white/5">
+<div class="flex justify-between items-end mb-12">
+<div>
+<h3 class="text-on-surface-variant font-label text-xs uppercase tracking-widest mb-1">Tank Temperature</h3>
+<div class="flex items-baseline gap-2">
+<span class="text-6xl font-newsreader italic text-primary">94</span>
+<span class="text-2xl text-on-surface-variant font-newsreader">°F</span>
+<span class="ml-4 text-secondary text-sm font-bold bg-secondary/10 px-3 py-1 rounded-full">Optimal Range</span>
+</div>
+</div>
+<div class="text-right">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-tighter">Last updated 2m ago</span>
+</div>
+</div>
+<!-- Line Graph (Visual Mockup) -->
+<div class="relative h-64 mb-8">
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 1000 200">
+<!-- Grid Lines -->
+<line stroke="#ffffff" stroke-opacity="0.05" stroke-width="1" x1="0" x2="1000" y1="50" y2="50"></line>
+<line stroke="#ffffff" stroke-opacity="0.05" stroke-width="1" x1="0" x2="1000" y1="100" y2="100"></line>
+<line stroke="#ffffff" stroke-opacity="0.05" stroke-width="1" x1="0" x2="1000" y1="150" y2="150"></line>
+<!-- Temperature Line Gradient -->
+<defs>
+<lineargradient id="line-gradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#e9c349" stop-opacity="0.5"></stop>
+<stop offset="100%" stop-color="#e9c349" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+<!-- Area under line -->
+<path d="M0,150 Q 100,140 200,110 T 400,100 T 600,60 T 800,80 T 1000,40 V 200 H 0 Z" fill="url(#line-gradient)"></path>
+<!-- Main Line -->
+<path d="M0,150 Q 100,140 200,110 T 400,100 T 600,60 T 800,80 T 1000,40" fill="none" stroke="#e9c349" stroke-linecap="round" stroke-width="2" style="filter: drop-shadow(0 0 4px #e9c349);"></path>
+<!-- Active Point -->
+<circle cx="1000" cy="40" fill="#e9c349" r="4"></circle>
+</svg>
+<!-- Duty Cycle Under-Bars -->
+<div class="absolute bottom-[-20px] left-0 w-full h-4 flex items-end gap-1 px-1">
+<!-- 24 simulated bars for duty cycle -->
+<div class="flex-1 bg-error-container/40 rounded-t h-1/2"></div>
+<div class="flex-1 bg-error-container/40 rounded-t h-2/3"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-full"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-3/4"></div>
+<div class="flex-1 bg-error-container/40 rounded-t h-1/3"></div>
+<div class="flex-1 bg-error-container/40 rounded-t h-1/2"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-full"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-2/3"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-full"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-5/6"></div>
+<div class="flex-1 bg-error-container/40 rounded-t h-1/2"></div>
+<div class="flex-1 bg-error-container/40 rounded-t h-1/4"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-full"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-full"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-full"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-full"></div>
+<div class="flex-1 bg-error-container/40 rounded-t h-1/2"></div>
+<div class="flex-1 bg-error-container/40 rounded-t h-2/3"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-full"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-3/4"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-full"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-full"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-full"></div>
+<div class="flex-1 bg-primary-container/40 rounded-t h-full border-t border-primary shadow-[0_-4px_8px_rgba(233,195,73,0.3)]"></div>
+</div>
+</div>
+<div class="flex justify-between items-center text-[10px] text-on-surface-variant font-bold uppercase tracking-widest mt-4">
+<div class="flex gap-6">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-error-container"></div>
+<span>Heating Duty</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary-container"></div>
+<span>Charging Duty</span>
+</div>
+</div>
+<span>24H Trend Visualization</span>
+</div>
+</div>
+</div>
+<!-- Side Sidebar: Recent Logs -->
+<div class="col-span-12 lg:col-span-4 space-y-6">
+<div class="bg-surface-container rounded-xl p-8 h-full border border-white/5 flex flex-col">
+<div class="flex justify-between items-center mb-8">
+<h3 class="font-newsreader text-2xl italic">System Logs</h3>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-on-surface">tune</span>
+</div>
+<div class="space-y-6 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+<!-- Log Item 1 -->
+<div class="group cursor-pointer">
+<div class="flex items-start gap-4">
+<div class="mt-1 w-2 h-2 rounded-full bg-secondary shadow-[0_0_8px_rgba(67,174,164,0.5)]"></div>
+<div class="flex-1 border-b border-white/5 pb-4">
+<div class="flex justify-between mb-1">
+<h4 class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">Charging Cycle Initiated</h4>
+<span class="text-[10px] text-on-surface-variant">12:45 PM</span>
+</div>
+<p class="text-xs text-on-surface-variant leading-relaxed">System transitioned to active solar collection. Flow rate stabilized at 4.2 L/min.</p>
+</div>
+</div>
+</div>
+<!-- Log Item 2 -->
+<div class="group cursor-pointer">
+<div class="flex items-start gap-4">
+<div class="mt-1 w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(233,195,73,0.5)]"></div>
+<div class="flex-1 border-b border-white/5 pb-4">
+<div class="flex justify-between mb-1">
+<h4 class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">Optimal Temp Reached</h4>
+<span class="text-[10px] text-on-surface-variant">11:20 AM</span>
+</div>
+<p class="text-xs text-on-surface-variant leading-relaxed">Storage tank hit target 94°F. Circulation pumps throttled for maintenance efficiency.</p>
+</div>
+</div>
+</div>
+<!-- Log Item 3 -->
+<div class="group cursor-pointer">
+<div class="flex items-start gap-4">
+<div class="mt-1 w-2 h-2 rounded-full bg-surface-variant"></div>
+<div class="flex-1 border-b border-white/5 pb-4">
+<div class="flex justify-between mb-1">
+<h4 class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">Sensor Calibration</h4>
+<span class="text-[10px] text-on-surface-variant">09:15 AM</span>
+</div>
+<p class="text-xs text-on-surface-variant leading-relaxed">Automated routine check of thermal sensors completed with 0.02% variance.</p>
+</div>
+</div>
+</div>
+<!-- Log Item 4 -->
+<div class="group cursor-pointer">
+<div class="flex items-start gap-4">
+<div class="mt-1 w-2 h-2 rounded-full bg-secondary"></div>
+<div class="flex-1 border-b border-white/5 pb-4">
+<div class="flex justify-between mb-1">
+<h4 class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">Greenhouse Heating End</h4>
+<span class="text-[10px] text-on-surface-variant">06:00 AM</span>
+</div>
+<p class="text-xs text-on-surface-variant leading-relaxed">Nocturnal heating cycle concluded. Ambient interior temperature 72°F.</p>
+</div>
+</div>
+</div>
+</div>
+<button class="mt-8 text-xs font-bold uppercase tracking-widest text-on-surface-variant hover:text-primary flex items-center gap-2 transition-colors">
+                        View Full History
+                        <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+<!-- System Components Mini Grid -->
+<section class="mt-12">
+<h2 class="text-2xl font-newsreader italic mb-6">Critical Components</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+<div class="bg-surface-container-low p-6 rounded-xl border border-white/5 flex items-center justify-between">
+<div>
+<p class="text-[10px] text-on-surface-variant uppercase font-bold tracking-widest mb-1">Collector Pump</p>
+<p class="text-lg font-bold text-secondary">ACTIVE</p>
+</div>
+<span class="material-symbols-outlined text-secondary/30 text-3xl">cyclone</span>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border border-white/5 flex items-center justify-between">
+<div>
+<p class="text-[10px] text-on-surface-variant uppercase font-bold tracking-widest mb-1">Heat Exchanger</p>
+<p class="text-lg font-bold text-on-surface-variant">IDLE</p>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant/20 text-3xl">heat_pump</span>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border border-white/5 flex items-center justify-between">
+<div>
+<p class="text-[10px] text-on-surface-variant uppercase font-bold tracking-widest mb-1">Main Controller</p>
+<p class="text-lg font-bold text-primary">OPTIMAL</p>
+</div>
+<span class="material-symbols-outlined text-primary/30 text-3xl" style="font-variation-settings: 'FILL' 1;">memory</span>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border border-white/5 flex items-center justify-between">
+<div>
+<p class="text-[10px] text-on-surface-variant uppercase font-bold tracking-widest mb-1">Exhaust Fans</p>
+<p class="text-lg font-bold text-on-surface-variant">OFF</p>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant/20 text-3xl">mode_fan</span>
+</div>
+</div>
+</section>
+</main>
+<!-- FAB Suppression (Contextual) - Not rendered on this detailed dashboard as per rules -->
+</body></html>
