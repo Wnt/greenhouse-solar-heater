@@ -5,6 +5,12 @@
 **Status**: Draft
 **Input**: User description: "add New Relic tracing to the app and upcloud docker host with log ingestion, APM traces, metrics"
 
+## Clarifications
+
+### Session 2026-03-24
+
+- Q: Should MQTT instrumentation be included in scope? → A: Yes. Minimal manual span creation (~5 lines) wrapping mqtt library calls (connect, subscribe, publish, message receive) so MQTT operations appear as spans in traces. No detailed child spans for internal processing pipeline — DB and WebSocket operations are covered by auto-instrumentation or are low value.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - View Application Traces and Performance (Priority: P1)
@@ -13,7 +19,7 @@ As a system operator, I want to see distributed traces of every request flowing 
 
 **Why this priority**: Traces are the core value proposition — they reveal what the app is doing, where time is spent, and where errors occur. Without traces, the other telemetry types lack context.
 
-**Independent Test**: Can be verified by making requests to the monitor app and confirming that traces appear in New Relic with correct span hierarchy (HTTP → PostgreSQL query, HTTP → Shelly proxy call, etc.)
+**Independent Test**: Can be verified by making requests to the monitor app and confirming that traces appear in New Relic with correct span hierarchy (HTTP → PostgreSQL query, HTTP → Shelly proxy call, MQTT message receive, etc.)
 
 **Acceptance Scenarios**:
 
@@ -97,7 +103,7 @@ As a system operator, I want to see PostgreSQL connection counts, query throughp
 
 ### Functional Requirements
 
-- **FR-001**: System MUST export distributed traces for all incoming HTTP requests, outgoing HTTP calls (Shelly proxy, S3), and PostgreSQL queries via auto-instrumentation.
+- **FR-001**: System MUST export distributed traces for all incoming HTTP requests, outgoing HTTP calls (Shelly proxy, S3), PostgreSQL queries via auto-instrumentation, and MQTT operations (connect, subscribe, publish, message receive) via minimal manual span creation.
 - **FR-002**: System MUST forward application logs to New Relic with trace context (trace ID, span ID) embedded for correlation.
 - **FR-003**: System MUST report Node.js runtime metrics (heap usage, event loop lag, GC statistics) to New Relic.
 - **FR-004**: System MUST collect and report host-level infrastructure metrics (CPU, memory, disk, network) from the UpCloud server.
@@ -136,12 +142,13 @@ As a system operator, I want to see PostgreSQL connection counts, query throughp
 - OpenTelemetry is used as the instrumentation layer, sending data to New Relic's OTLP-compatible endpoints. This avoids vendor lock-in — the same instrumentation works with any OTLP-compatible backend.
 - The infrastructure agent runs as an additional container in the deployment stack, with access to the host's system information and container runtime for metric collection.
 - The PostgreSQL integration connects remotely to the UpCloud Managed PostgreSQL instance using a dedicated read-only monitoring user with appropriate permissions.
-- MQTT instrumentation is out of scope for auto-instrumentation (no official auto-instrumentation exists for the `mqtt` library). MQTT spans can be added manually in a future iteration if needed.
+- MQTT operations are traced via minimal manual span creation (~5 lines wrapping mqtt library calls), since no official auto-instrumentation exists for the `mqtt` library. Only the library-level calls (connect, subscribe, publish, message receive) are wrapped — internal processing relies on auto-instrumentation for downstream operations.
 
 ## Scope Boundaries
 
 ### In Scope
 - Auto-instrumentation for the Node.js monitor app (traces, metrics, logs)
+- Manual MQTT span creation for mqtt library calls (connect, subscribe, publish, message receive)
 - Log forwarding with trace correlation
 - Node.js runtime metrics export
 - Infrastructure agent on the Docker host
@@ -150,7 +157,6 @@ As a system operator, I want to see PostgreSQL connection counts, query throughp
 - Deployment configuration updates
 
 ### Out of Scope
-- Custom MQTT span instrumentation (future enhancement)
 - New Relic Synthetics / ping monitoring (can be configured in New Relic UI without code changes)
 - Alerting policies and notification channels (configured in New Relic UI, not in code)
 - Shelly device monitoring (devices run ES5 scripts with no telemetry capability)
