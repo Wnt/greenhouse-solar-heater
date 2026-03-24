@@ -24,6 +24,12 @@ services:
     command: mosquitto -p 1883 -v
     tmpfs:
       - /mosquitto/data:noexec,nosuid,size=64m
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-t", "healthcheck", "-n", "-q", "0"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
     depends_on:
       - openvpn
 
