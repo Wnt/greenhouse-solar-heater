@@ -1,8 +1,17 @@
 const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert');
+const Module = require('node:module');
 
 // Test the db module's pure logic without requiring a real PostgreSQL connection.
 // We mock the pg Pool to capture SQL statements.
+
+// Intercept require('pg') even if pg isn't installed
+const originalResolveFilename = Module._resolveFilename;
+let mockPgExports = {};
+Module._resolveFilename = function (request, parent, isMain, options) {
+  if (request === 'pg') return 'pg';
+  return originalResolveFilename.call(this, request, parent, isMain, options);
+};
 
 describe('db module', () => {
   let db;
@@ -33,9 +42,9 @@ describe('db module', () => {
       end: function (cb) { if (cb) cb(); },
     };
 
-    // Inject mock
-    require.cache[require.resolve('pg')] = {
-      id: require.resolve('pg'),
+    // Inject mock into require cache (key 'pg' matches our _resolveFilename override)
+    require.cache['pg'] = {
+      id: 'pg',
       exports: { Pool: function () { return mockPool; } },
     };
 
