@@ -250,6 +250,16 @@ function evaluate(state, config, deviceConfig) {
     }
   }
 
+  // ── Forced mode override (for staged deployment / manual testing) ──
+  if (dc && dc.forced_mode) {
+    var fm = dc.forced_mode.toUpperCase();
+    if (MODES[fm]) {
+      pumpMode = MODES[fm];
+      flags.emergencyHeatingActive = false;
+      return makeResult(pumpMode, flags, dc);
+    }
+  }
+
   // ── Combine pump mode + emergency overlay ──
   if (flags.emergencyHeatingActive && pumpMode === MODES.IDLE) {
     // No useful pump mode — pure emergency (space heater + immersion)
@@ -261,6 +271,21 @@ function evaluate(state, config, deviceConfig) {
     // Pump mode active + emergency — overlay space heater onto pump mode
     result.actuators.space_heater = true;
   }
+
+  // ── Allowed modes filter (for staged deployment) ──
+  if (dc && dc.allowed_modes && dc.allowed_modes.length > 0) {
+    var allowed = false;
+    for (var ami = 0; ami < dc.allowed_modes.length; ami++) {
+      if (dc.allowed_modes[ami].toUpperCase() === result.nextMode) {
+        allowed = true;
+        break;
+      }
+    }
+    if (!allowed) {
+      return makeResult(MODES.IDLE, flags, dc);
+    }
+  }
+
   return result;
 }
 

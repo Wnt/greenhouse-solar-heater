@@ -22,6 +22,8 @@ var DEFAULT_CONFIG = {
     space_heater: false,
     immersion_heater: false,
   },
+  forced_mode: null,
+  allowed_modes: null,
   version: 1,
 };
 
@@ -152,6 +154,18 @@ function updateConfig(newConfig, callback) {
       if (ea[keys[i]] !== undefined) {
         config.enabled_actuators[keys[i]] = !!ea[keys[i]];
       }
+    }
+  }
+  if (newConfig.forced_mode !== undefined) {
+    config.forced_mode = newConfig.forced_mode || null;
+  }
+  if (newConfig.allowed_modes !== undefined) {
+    var am = newConfig.allowed_modes;
+    // null or all 5 modes = unrestricted; normalize to null to save KVS space
+    if (!Array.isArray(am) || am.length === 0 || am.length >= 5) {
+      config.allowed_modes = null;
+    } else {
+      config.allowed_modes = am;
     }
   }
   config.version = (config.version || 0) + 1;

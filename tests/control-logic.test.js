@@ -841,4 +841,89 @@ describe('config-gated actuator behavior', () => {
     assert.strictEqual(result.suppressed, false);
     assert.strictEqual(result.actuators.pump, true);
   });
+
+  it('forced_mode overrides automatic mode selection', () => {
+    const config = {
+      controls_enabled: true,
+      enabled_actuators: { valves: true, pump: true, fan: true, space_heater: true, immersion_heater: true },
+      forced_mode: 'SOLAR_CHARGING',
+      version: 1,
+    };
+    // Conditions would normally select IDLE
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, config);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+
+  it('forced_mode is case-insensitive', () => {
+    const config = {
+      controls_enabled: true,
+      enabled_actuators: { valves: true, pump: true, fan: true, space_heater: true, immersion_heater: true },
+      forced_mode: 'greenhouse_heating',
+      version: 1,
+    };
+    const result = evaluate(makeState({}), null, config);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+  });
+
+  it('allowed_modes filters out disallowed modes', () => {
+    const config = {
+      controls_enabled: true,
+      enabled_actuators: { valves: true, pump: true, fan: true, space_heater: true, immersion_heater: true },
+      allowed_modes: ['IDLE', 'SOLAR_CHARGING'],
+      version: 1,
+    };
+    // Conditions would select GREENHOUSE_HEATING
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 },
+    }), null, config);
+    // Greenhouse heating not in allowed list → falls back to IDLE
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('allowed_modes permits allowed modes', () => {
+    const config = {
+      controls_enabled: true,
+      enabled_actuators: { valves: true, pump: true, fan: true, space_heater: true, immersion_heater: true },
+      allowed_modes: ['IDLE', 'SOLAR_CHARGING'],
+      version: 1,
+    };
+    // Conditions select SOLAR_CHARGING (in allowed list)
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, config);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+
+  it('device config JSON fits within Shelly KVS 256-byte limit', () => {
+    // Shelly KVS stores config as JSON string. Max value size is 256 bytes.
+    // Test worst-case: all fields populated with longest realistic values.
+    // Note: allowed_modes with all 5 modes is normalized to null (= unrestricted),
+    // so worst case is 4 modes listed (the max before normalization kicks in).
+    const worstCase = {
+      controls_enabled: true,
+      enabled_actuators: { valves: true, pump: true, fan: true, space_heater: true, immersion_heater: true },
+      forced_mode: 'GREENHOUSE_HEATING', // longest mode name
+      allowed_modes: ['IDLE', 'SOLAR_CHARGING', 'GREENHOUSE_HEATING', 'ACTIVE_DRAIN'],
+      version: 9999,
+    };
+    const json = JSON.stringify(worstCase);
+    assert.ok(json.length <= 256,
+      'device config JSON is ' + json.length + ' bytes, must be <= 256. Content: ' + json);
+  });
+
+  it('forced_mode still respects safety drain preemption', () => {
+    const config = {
+      controls_enabled: true,
+      enabled_actuators: { valves: true, pump: true, fan: true, space_heater: true, immersion_heater: true },
+      forced_mode: 'SOLAR_CHARGING',
+      version: 1,
+    };
+    // Freeze condition — drain preempts before forced_mode is checked
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
+    }), null, config);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
 });
