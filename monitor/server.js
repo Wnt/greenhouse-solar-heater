@@ -43,44 +43,43 @@ const MIME = {
 };
 
 // ── Static file serving ──
-// Playground is the primary app; monitor files are also served for login, PWA, etc.
+// Monitor is the primary app at /; playground is served under /playground/.
+
+var SHELLY_DIR = path.join(__dirname, '..', 'shelly');
+var REPO_ROOT = path.join(__dirname, '..');
 
 function serveStatic(req, res) {
   var urlPath = new URL(req.url, 'http://localhost').pathname;
-  if (urlPath === '/') urlPath = '/index.html';
 
-  // Try playground first, then monitor directory
-  var playgroundPath = path.join(PLAYGROUND_DIR, urlPath);
-  var monitorPath = path.join(MONITOR_DIR, urlPath);
-
-  // Security: prevent directory traversal
-  if (!playgroundPath.startsWith(PLAYGROUND_DIR) && !monitorPath.startsWith(MONITOR_DIR)) {
-    res.writeHead(403);
-    res.end('Forbidden');
-    return;
+  // Playground routes: /playground, /playground/, /playground/**
+  if (urlPath === '/playground' || urlPath === '/playground/') {
+    return serveFile(path.join(PLAYGROUND_DIR, 'index.html'), '/index.html', res);
   }
+  if (urlPath.startsWith('/playground/')) {
+    var subPath = urlPath.slice('/playground'.length); // e.g. /js/app.js
 
-  // Serve system.yaml from repo root for playground
-  if (urlPath === '/system.yaml') {
-    var yamlPath = path.join(__dirname, '..', 'system.yaml');
-    return serveFile(yamlPath, urlPath, res);
-  }
-
-  // Serve shelly/ files for playground control-logic-loader
-  if (urlPath.startsWith('/shelly/')) {
-    var shellyPath = path.join(__dirname, '..', urlPath);
-    return serveFile(shellyPath, urlPath, res);
-  }
-
-  // Try playground directory first
-  fs.access(playgroundPath, fs.constants.R_OK, function (err) {
-    if (!err) {
-      serveFile(playgroundPath, urlPath, res);
-    } else {
-      // Fall back to monitor directory
-      serveFile(monitorPath, urlPath, res);
+    // /playground/shelly/* → serve from shelly/ dir (control-logic-loader fetches relative 'shelly/control-logic.js')
+    if (subPath.startsWith('/shelly/')) {
+      var shellyFile = path.join(SHELLY_DIR, subPath.slice('/shelly'.length));
+      if (!shellyFile.startsWith(SHELLY_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
+      return serveFile(shellyFile, subPath, res);
     }
-  });
+
+    var filePath = path.join(PLAYGROUND_DIR, subPath);
+    if (!filePath.startsWith(PLAYGROUND_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
+    return serveFile(filePath, subPath, res);
+  }
+
+  // Serve system.yaml from repo root (playground fetches ../system.yaml → /system.yaml)
+  if (urlPath === '/system.yaml') {
+    return serveFile(path.join(REPO_ROOT, 'system.yaml'), urlPath, res);
+  }
+
+  // Monitor routes: everything else from MONITOR_DIR
+  if (urlPath === '/') urlPath = '/index.html';
+  var monitorPath = path.join(MONITOR_DIR, urlPath);
+  if (!monitorPath.startsWith(MONITOR_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
+  serveFile(monitorPath, urlPath, res);
 }
 
 function serveFile(filePath, urlPath, res) {

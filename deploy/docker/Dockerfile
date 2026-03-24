@@ -12,6 +12,11 @@ RUN npm ci --omit=dev
 # Copy application code
 COPY monitor/ ./monitor/
 
+# Copy playground and its runtime dependencies (system.yaml, control logic)
+COPY playground/ ./playground/
+COPY system.yaml ./
+COPY shelly/control-logic.js ./shelly/
+
 # Make app directory owned by node user
 RUN chown -R node:node /app
 
