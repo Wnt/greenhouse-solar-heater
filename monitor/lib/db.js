@@ -13,6 +13,7 @@ var log = createLogger('db');
 
 var pool = null;
 var resolvedUrl = null;
+var resolvedCa = null;
 
 function getConnectionUrl() {
   return resolvedUrl || process.env.DATABASE_URL || null;
@@ -28,7 +29,7 @@ function resolveUrl(callback) {
 
   // 2. Try S3
   var dbConfig = require('./db-config');
-  dbConfig.load(function (err, url) {
+  dbConfig.load(function (err, url, ca) {
     if (err) {
       log.warn('failed to load DATABASE_URL from S3', { error: err.message });
       callback(null, null);
@@ -37,6 +38,10 @@ function resolveUrl(callback) {
     if (url) {
       resolvedUrl = url;
       log.info('DATABASE_URL loaded from S3');
+    }
+    if (ca) {
+      resolvedCa = ca;
+      log.info('DB CA certificate loaded from S3');
     }
     callback(null, resolvedUrl);
   });
@@ -47,11 +52,15 @@ function getPool() {
   var url = getConnectionUrl();
   if (!url) return null;
   var Pool = require('pg').Pool;
-  pool = new Pool({
+  var opts = {
     connectionString: url,
     max: 5,
     idleTimeoutMillis: 30000,
-  });
+  };
+  if (resolvedCa) {
+    opts.ssl = { ca: resolvedCa };
+  }
+  pool = new Pool(opts);
   pool.on('error', function (err) {
     log.error('unexpected pool error', { error: err.message });
   });
@@ -318,5 +327,5 @@ module.exports = {
   getHistory: getHistory,
   getEvents: getEvents,
   close: close,
-  _reset: function () { pool = null; },
+  _reset: function () { pool = null; resolvedCa = null; },
 };
