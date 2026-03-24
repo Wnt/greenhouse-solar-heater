@@ -31,5 +31,5 @@
 
 ## Notes
 
-- All items pass validation. Spec is ready for `/speckit.clarify` or `/speckit.plan`.
-- The Assumptions section documents reasonable defaults for MQTT broker deployment, server architecture, and data persistence approach — these can be refined during planning.
+- All items pass validation after clarification session (2026-03-24).
+- 5 clarifications resolved: data retention (indefinite), recording intervals (tiered 48h full-res / 30s long-term), MQTT broker placement (cloud server), app merge strategy (playground replaces monitor), MQTT publishing method (script-based custom).
