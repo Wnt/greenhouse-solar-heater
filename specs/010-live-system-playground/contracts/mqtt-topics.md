@@ -47,7 +47,8 @@ Published by the Shelly Pro 4PM control script. Retained so new subscribers rece
   "flags": {
     "collectors_drained": false,
     "emergency_heating_active": false
-  }
+  },
+  "controls_enabled": true
 }
 ```
 

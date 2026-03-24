@@ -113,3 +113,37 @@ Historical data is served via HTTP (not WebSocket) for simplicity and cacheabili
 ## Client → Server Messages
 
 None currently. The WebSocket is unidirectional (server → client). Future extensions (manual overrides) may add client → server messages.
+
+## Device Configuration API
+
+Runtime configuration for the Shelly controller. Not exposed through Caddy — only reachable from VPN (Shelly devices) and localhost (web UI via server proxy).
+
+### `GET /api/device-config`
+
+**Auth**: None (Shelly devices cannot perform WebAuthn; access restricted by network — VPN only, not exposed via Caddy).
+
+**Response** (JSON):
+
+```json
+{
+  "controls_enabled": false,
+  "enabled_actuators": {
+    "valves": false,
+    "pump": false,
+    "fan": false,
+    "space_heater": false,
+    "immersion_heater": false
+  },
+  "version": 1
+}
+```
+
+### `PUT /api/device-config`
+
+**Auth**: Session cookie required (operator only).
+
+**Request body**: Same shape as GET response. `version` is auto-incremented by the server.
+
+**Response**: Updated config (with new `version`).
+
+**Side effects**: Config persisted to S3/local storage. Next Shelly config fetch picks up changes.

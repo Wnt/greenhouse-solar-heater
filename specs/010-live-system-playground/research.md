@@ -147,3 +147,56 @@ The time-series store (`store.addPoint()`) accepts the same structure from eithe
 - Valve state poller (polls controller via HTTP RPC, sends push on changes)
 
 **Migration path**: The server continues to serve static files but points to `playground/` instead of (or in addition to) `monitor/`. The valve poller can be replaced by MQTT subscription. Push notifications trigger from MQTT state changes instead of HTTP RPC polling. All existing auth and API endpoints remain.
+
+## R7: Remote Shelly Deployment via VPN
+
+**Decision**: Extend `shelly/deploy.sh` to work with VPN-routable IPs. Integrate into the deployer as an optional CD step.
+
+**Rationale**: The existing `deploy.sh` uses HTTP RPC to upload scripts — the same protocol works over the VPN tunnel since Shelly devices are reachable at their LAN IPs from the cloud server's VPN namespace. No protocol changes needed; only the target IP must be VPN-routable.
+
+**Implementation**:
+- `shelly/devices.conf` gains VPN IP entries (e.g., `PRO4PM_VPN=10.x.x.x` or reuses LAN IPs if the VPN routes the full LAN subnet)
+- `deploy.sh` accepts a `--vpn` flag or `DEPLOY_VIA_VPN=true` env var to select VPN IPs
+- The deployer's `deploy.sh` calls `shelly/deploy.sh` after `docker compose up -d`, running inside the openvpn network namespace (via `docker exec` into the openvpn container, or using the app container which shares the VPN namespace)
+- Script deployment is idempotent — re-deploying the same script is a no-op from the device's perspective
+
+**Constraints**: Shelly HTTP RPC has no authentication — anyone on the network can deploy scripts. This is acceptable because the VPN tunnel is the access control boundary (same as existing RPC proxy in the monitor).
+
+## R8: Device Runtime Configuration (Feature Flags)
+
+**Decision**: Cloud-fetched, KVS-persisted device configuration. All actuator control disabled by default.
+
+**Rationale**: The system must be safe to deploy without accidentally commanding hardware. A fresh device should monitor only (read sensors, publish MQTT) until an operator explicitly enables actuator control. Configuration must survive reboots (KVS) and internet outages (offline start with last known config).
+
+**Configuration shape** (stored in KVS as JSON string under key `config`):
+```json
+{
+  "controls_enabled": false,
+  "enabled_actuators": {
+    "valves": false,
+    "pump": false,
+    "fan": false,
+    "space_heater": false,
+    "immersion_heater": false
+  },
+  "version": 1
+}
+```
+
+**Shelly-side flow**:
+1. On boot: read `config` from KVS. If not found, use default (all disabled).
+2. Attempt HTTP GET to cloud config endpoint (e.g., `http://<cloud-vpn-ip>:3000/api/device-config`).
+3. If cloud responds and `version` differs: update KVS, apply new config.
+4. On each poll cycle (~30s): if config has `controls_enabled: false`, skip all actuator commands but still read sensors and publish MQTT.
+5. Periodic re-fetch (every 5 minutes or on MQTT reconnect) to pick up config changes without restart.
+
+**Server-side**:
+- `monitor/lib/device-config.js`: stores config in S3/local (same adapter as credentials). Provides `GET /api/device-config` (no auth — Shelly can't do WebAuthn) and `PUT /api/device-config` (auth required — operator only).
+- The GET endpoint is unauthenticated because Shelly devices can't perform WebAuthn. Access control relies on the VPN tunnel — only devices on the VPN can reach the server's internal port. The Caddy reverse proxy does NOT expose `/api/device-config` publicly.
+- Config changes could also trigger a push notification to inform the operator.
+
+**Pure logic integration**: The `evaluate()` function in `control-logic.js` receives config as a parameter: `evaluate(state, config)`. When `controls_enabled` is false or specific actuators are disabled, `evaluate()` returns the decision as usual but the I/O layer in `control.js` skips the actual hardware commands. This keeps the pure logic testable and the safety guard in the I/O boundary.
+
+**Alternative considered**: Storing config in MQTT retained message on a `greenhouse/config` topic. Rejected because KVS is simpler (no MQTT dependency for config), and config changes are rare (not a real-time data stream).
+
+**Alternative considered**: Config in `control-logic.js` constants (deploy new code to change config). Rejected — violates the requirement that enabling controls should not require a new deployment.

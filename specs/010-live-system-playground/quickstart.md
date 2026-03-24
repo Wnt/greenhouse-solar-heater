@@ -110,16 +110,49 @@ The Mosquitto broker and server changes deploy via the existing CD pipeline:
 
 1. Mosquitto container added to `deploy/deployer/docker-compose.yml`
 2. Database connection via `DATABASE_URL` from `.env.secrets` (set during `terraform apply` → cloud-init)
-3. Shelly Pro 4PM MQTT enabled and control script updated via `shelly/deploy.sh`
+3. Shelly Pro 4PM control script deployed remotely via VPN: deployer runs `shelly/deploy.sh --vpn` inside the VPN network namespace
+
+### Remote Shelly Deployment
+
+Shelly scripts are deployed via the VPN tunnel — no LAN/physical access required:
+
+```bash
+# From the cloud server (or deployer container in the VPN namespace):
+DEPLOY_VIA_VPN=true bash shelly/deploy.sh
+
+# Or manually with a VPN-routable IP:
+bash shelly/deploy.sh 10.x.x.174
+```
+
+### Device Configuration
+
+All actuator control is disabled by default. To enable controls after deployment:
+
+```bash
+# Enable all controls via the API:
+curl -X PUT http://localhost:3000/api/device-config \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=<your-session>" \
+  -d '{"controls_enabled": true, "enabled_actuators": {"valves": true, "pump": true, "fan": true, "space_heater": true, "immersion_heater": true}}'
+
+# Check current config:
+curl http://localhost:3000/api/device-config
+```
+
+The Shelly device fetches config on startup and every ~5 minutes. Config is persisted in KVS so the device can start without internet.
 
 ## Key Files (new/modified)
 
 | File | Change |
 |------|--------|
-| `shelly/control.js` | Add MQTT.publish() calls after each poll cycle and on transitions |
-| `monitor/server.js` | Add MQTT subscriber, WebSocket server, history API, serve playground |
+| `shelly/control.js` | Add MQTT.publish() calls, config fetch + KVS persistence, actuator enable guards |
+| `shelly/control-logic.js` | evaluate() respects config.enabled flags |
+| `shelly/deploy.sh` | Support VPN IPs, configure MQTT on device |
+| `shelly/devices.conf` | Add VPN-reachable IPs |
+| `monitor/server.js` | Add MQTT subscriber, WebSocket server, history API, device config API, serve playground |
 | `monitor/lib/db.js` | NEW: PostgreSQL/TimescaleDB module (schema, insert, query) |
 | `monitor/lib/mqtt-bridge.js` | NEW: MQTT subscription + WebSocket broadcast |
+| `monitor/lib/device-config.js` | NEW: Device configuration store (S3/local persistence) |
 | `playground/js/data-source.js` | NEW: DataSource abstraction (SimulationSource, LiveSource) |
 | `playground/index.html` | Data source toggle, deployment detection, WebSocket client |
 | `deploy/terraform/main.tf` | Add managed PostgreSQL resource |
@@ -127,3 +160,4 @@ The Mosquitto broker and server changes deploy via the existing CD pipeline:
 | `deploy/terraform/outputs.tf` | Add database connection outputs |
 | `deploy/terraform/cloud-init.yaml` | Add DATABASE_URL to .env.secrets |
 | `deploy/deployer/docker-compose.yml` | Add Mosquitto service |
+| `deploy/deployer/deploy.sh` | Add Shelly script deployment step (via VPN) |

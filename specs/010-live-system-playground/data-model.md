@@ -95,6 +95,7 @@ The consolidated JSON payload published by the Shelly control script via MQTT an
 | valves | object | `{ vi_btm, vi_top, vi_coll, vo_coll, vo_rad, vo_tank, v_ret, v_air }` — all booleans (true=open) |
 | actuators | object | `{ pump, fan, space_heater, immersion_heater }` — all booleans (true=on) |
 | flags | object | `{ collectors_drained, emergency_heating_active }` |
+| controls_enabled | boolean | Whether actuator control is active (from device config) |
 
 **Published on**: MQTT topic `greenhouse/state` with QoS 1 and retain flag.
 
@@ -116,6 +117,24 @@ Represents the active data provider for the playground UI.
 **State transitions**:
 - `simulation` ↔ `live` (user toggle on greenhouse.madekivi.com)
 - On GitHub Pages: always `simulation`, no transitions possible
+
+### Entity: Device Configuration (S3/local persisted)
+
+Runtime settings for the Shelly controller. Persisted on the server via the S3/local storage adapter (same pattern as credentials and push subscriptions). Also cached in Shelly KVS for offline resilience.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| controls_enabled | boolean | Master switch — if false, no actuators are commanded |
+| enabled_actuators | object | `{ valves, pump, fan, space_heater, immersion_heater }` — all booleans |
+| version | integer | Auto-incremented on each update, used by Shelly to detect changes |
+
+**Default** (safe): `controls_enabled: false`, all actuators disabled.
+
+**Persistence**:
+- Server: `device-config.json` in S3/local storage
+- Shelly: `config` key in KVS (JSON string)
+
+**Update flow**: Operator updates via `PUT /api/device-config` → server persists to S3 → Shelly fetches on next config poll (≤5 min) → Shelly updates KVS → new config takes effect on next poll cycle.
 
 ## Relationships
 

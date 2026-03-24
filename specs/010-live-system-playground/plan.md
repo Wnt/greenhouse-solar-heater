@@ -7,6 +7,8 @@
 
 Connect the playground's Status, Components, and Schematic views to the real greenhouse system via MQTT. The Shelly Pro 4PM control script publishes consolidated state snapshots to a Mosquitto broker on the cloud server. The Node.js server subscribes to MQTT, persists data in UpCloud Managed PostgreSQL with TimescaleDB (tiered retention: 48h full resolution via retention policy, automatic 30s continuous aggregates for long-term, state events forever), and forwards live state to browser clients via WebSocket. The playground becomes the unified app (replacing the monitor), with deployment-aware mode detection: simulation-only on GitHub Pages, live-with-toggle on greenhouse.madekivi.com. The database is provisioned via Terraform alongside existing infrastructure.
 
+All actuator control is disabled by default — a freshly deployed device monitors only (reads sensors, publishes MQTT). The Shelly queries a cloud config endpoint on startup for runtime settings (which actuators are enabled), persists config in KVS for offline resilience, and re-checks periodically. Shelly scripts are deployed remotely via the VPN tunnel as part of the CD pipeline.
+
 ## Technical Context
 
 **Language/Version**: JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS)
@@ -29,7 +31,7 @@ Connect the playground's Status, Components, and Schematic views to the real gre
 |-----------|--------|-------|
 | I. Hardware Spec as Source of Truth | PASS | No hardware spec changes. MQTT topics and data shapes derive from existing `system.yaml` sensor/valve/actuator definitions. |
 | II. Pure Logic / IO Separation | PASS | MQTT publishing is added to the I/O layer (`control.js`), not the pure logic (`control-logic.js`). The `evaluate()` function remains untouched. |
-| III. Safe by Default (NON-NEGOTIABLE) | PASS | MQTT is fire-and-forget — `MQTT.publish()` returns false if disconnected but control logic continues unaffected (FR-006). No new actuation paths. |
+| III. Safe by Default (NON-NEGOTIABLE) | PASS | MQTT is fire-and-forget — `MQTT.publish()` returns false if disconnected but control logic continues unaffected (FR-006). All actuator control disabled by default (FR-019) — device must receive explicit config to enable hardware commands. No new actuation paths. |
 | IV. Proportional Test Coverage | PASS | New code requires: unit tests for DB module + MQTT bridge + data source abstraction, e2e tests for live/simulation toggle. Existing simulation tests must not regress. |
 | V. Token-Based Cloud Auth | PASS | UpCloud Managed Database uses Terraform-provisioned credentials. UpCloud API access continues via `UPCLOUD_TOKEN`. |
 | VI. Durable Data Persistence | PASS | UpCloud Managed PostgreSQL with automated backups and PITR. Data survives container recreation by design — external managed service. |
@@ -40,7 +42,7 @@ Connect the playground's Status, Components, and Schematic views to the real gre
 |-----------|--------|-------|
 | I. Hardware Spec as Source of Truth | PASS | MQTT message schema derives from `system.yaml` entities. Topic name (`greenhouse/state`) is new but doesn't conflict. |
 | II. Pure Logic / IO Separation | PASS | `control-logic.js` unchanged. MQTT publishing added in `control.js` I/O layer only. Server-side data source abstraction separates data fetching from UI rendering. |
-| III. Safe by Default (NON-NEGOTIABLE) | PASS | No new actuation. MQTT failure = silent skip. WebSocket is read-only (server→client). DB failure = log error, continue serving live data without history. |
+| III. Safe by Default (NON-NEGOTIABLE) | PASS | All actuator control disabled by default — device monitors only until config explicitly enables controls (FR-019, FR-022). MQTT failure = silent skip. WebSocket is read-only (server→client). DB failure = log error, continue serving live data without history. |
 | IV. Proportional Test Coverage | PASS | Test plan: unit tests for `db.js`, `mqtt-bridge.js`, `data-source.js`; e2e tests for mode toggle, live data display, history graph. |
 | V. Token-Based Cloud Auth | PASS | UpCloud Managed Database provisioned via Terraform using `UPCLOUD_TOKEN`. Database credentials passed to app via cloud-init `.env.secrets`. |
 | VI. Durable Data Persistence | PASS | UpCloud Managed PostgreSQL — external managed service with automated backups, PITR, and 25 GB storage. No container-local data. |
@@ -68,16 +70,17 @@ specs/010-live-system-playground/
 
 ```text
 shelly/
-├── control.js              # MODIFIED: add MQTT.publish() calls
-├── control-logic.js        # UNCHANGED: pure decision logic
-├── deploy.sh               # MODIFIED: configure MQTT on device
-└── devices.conf            # UNCHANGED
+├── control.js              # MODIFIED: add MQTT.publish() calls, config fetch + KVS persistence, actuator enable guards
+├── control-logic.js        # MODIFIED: evaluate() respects config.enabled flags — disabled actuators never commanded
+├── deploy.sh               # MODIFIED: support VPN IPs, configure MQTT on device, triggerable from deployer
+└── devices.conf            # MODIFIED: add VPN-reachable IPs alongside LAN IPs
 
 monitor/
-├── server.js               # MODIFIED: add MQTT subscriber, WebSocket server, history API, serve playground
+├── server.js               # MODIFIED: add MQTT subscriber, WebSocket server, history API, device config API, serve playground
 ├── lib/
 │   ├── db.js               # NEW: PostgreSQL/TimescaleDB module (schema, CRUD, queries)
 │   ├── mqtt-bridge.js      # NEW: MQTT subscription + WebSocket broadcast
+│   ├── device-config.js    # NEW: device configuration store (S3/local persistence, GET/PUT API handler)
 │   ├── s3-storage.js       # EXISTING: unchanged
 │   ├── push-storage.js     # EXISTING: unchanged
 │   ├── valve-poller.js     # DEPRECATED: replaced by MQTT subscription
@@ -105,20 +108,22 @@ deploy/
 │   └── cloud-init.yaml     # MODIFIED: add DATABASE_URL to .env.secrets
 └── deployer/
     ├── docker-compose.yml  # MODIFIED: add mosquitto service
-    └── config.env          # MODIFIED: add MQTT_HOST env var
+    ├── deploy.sh           # MODIFIED: add Shelly script deployment step (via VPN)
+    └── config.env          # MODIFIED: add MQTT_HOST, CONTROLLER_VPN_IP env vars
 
 tests/
 ├── db.test.js              # NEW: PostgreSQL/TimescaleDB module unit tests
 ├── mqtt-bridge.test.js     # NEW: MQTT bridge unit tests
 ├── data-source.test.js     # NEW: data source abstraction tests
-├── control-logic.test.js   # EXISTING: unchanged
+├── device-config.test.js   # NEW: device config store unit tests
+├── control-logic.test.js   # MODIFIED: add tests for config-gated actuator control
 ├── playground-control.test.js  # EXISTING: unchanged
 └── e2e/
     ├── thermal-sim.spec.js # EXISTING: unchanged (simulation regression)
     └── live-mode.spec.js   # NEW: live mode toggle, WebSocket, history
 ```
 
-**Structure Decision**: Follows the existing project layout. No new top-level directories. New server-side modules go in `monitor/lib/`, new browser modules in `playground/js/`, new tests in `tests/`. The Mosquitto broker is added as a Docker Compose service. The PostgreSQL+TimescaleDB database is provisioned via Terraform as an UpCloud Managed Database (external to the server).
+**Structure Decision**: Follows the existing project layout. No new top-level directories. New server-side modules go in `monitor/lib/`, new browser modules in `playground/js/`, new tests in `tests/`. The Mosquitto broker is added as a Docker Compose service. The PostgreSQL+TimescaleDB database is provisioned via Terraform as an UpCloud Managed Database (external to the server). Device configuration is persisted via the existing S3/local storage adapter pattern (same as credentials and push subscriptions). Remote Shelly deployment is integrated into the deployer, reusing the existing `deploy.sh` with VPN-routable IPs. The `control-logic.js` pure logic layer gains a `config` parameter to respect enabled/disabled flags while keeping the function pure (config is data, not I/O).
 
 ## Complexity Tracking
 
