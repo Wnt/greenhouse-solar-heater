@@ -78,6 +78,10 @@ resource "upcloud_server" "monitor" {
     type = "public"
   }
 
+  network_interface {
+    type = "utility"
+  }
+
   login {
     keys = [var.ssh_public_key]
   }
