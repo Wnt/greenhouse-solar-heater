@@ -58,7 +58,7 @@ function start(options) {
   });
 
   mqttClient.on('error', function (err) {
-    log.error('MQTT error', { error: err.message });
+    log.error('MQTT error', { error: err.message || String(err), code: err.code || undefined });
   });
 
   mqttClient.on('message', function (topic, message) {
