@@ -770,3 +770,75 @@ describe('buildDisplayLabels', () => {
     assert.strictEqual(labels.length, 4);
   });
 });
+
+// ── Device config gated actuator tests ──
+
+describe('config-gated actuator behavior', () => {
+  const disabledConfig = {
+    controls_enabled: false,
+    enabled_actuators: { valves: false, pump: false, fan: false, space_heater: false, immersion_heater: false },
+    version: 1,
+  };
+
+  const partialConfig = {
+    controls_enabled: true,
+    enabled_actuators: { valves: true, pump: true, fan: false, space_heater: false, immersion_heater: false },
+    version: 2,
+  };
+
+  it('returns suppressed flag when controls are disabled', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, disabledConfig);
+    assert.strictEqual(result.suppressed, true);
+  });
+
+  it('still computes correct mode when controls disabled', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, disabledConfig);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+
+  it('respects per-actuator flags — disables fan when not enabled', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 },
+    }), null, partialConfig);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+    assert.strictEqual(result.actuators.pump, true);  // pump enabled
+    assert.strictEqual(result.actuators.fan, false);   // fan disabled in config
+  });
+
+  it('keeps pump on when enabled in partial config', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, partialConfig);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.actuators.pump, true);
+    assert.strictEqual(result.suppressed, false);
+  });
+
+  it('disables valves when valve flag is off', () => {
+    const noValvesConfig = {
+      controls_enabled: true,
+      enabled_actuators: { valves: false, pump: true, fan: true, space_heater: true, immersion_heater: true },
+      version: 3,
+    };
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, noValvesConfig);
+    // All valves should be false
+    for (const key in result.valves) {
+      assert.strictEqual(result.valves[key], false, key + ' should be closed');
+    }
+  });
+
+  it('works without deviceConfig (backward compatible)', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.suppressed, false);
+    assert.strictEqual(result.actuators.pump, true);
+  });
+});

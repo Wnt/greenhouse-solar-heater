@@ -23,6 +23,7 @@ write_files:
       S3_ACCESS_KEY_ID=${s3_access_key_id}
       S3_SECRET_ACCESS_KEY=${s3_secret_key}
       S3_REGION=${s3_region}
+      DATABASE_URL=${database_url}
 
   # Deployer systemd service — one-shot: pull deployer image, run it
   - path: /etc/systemd/system/deployer.service

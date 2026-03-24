@@ -115,4 +115,18 @@ fi
 log "Applying service stack"
 docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
 
+# Step 9: Deploy Shelly scripts via VPN (optional)
+# Runs inside the app container which shares the OpenVPN network namespace.
+CONTROLLER_VPN_IP=$(grep '^CONTROLLER_VPN_IP=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+if [ -n "$CONTROLLER_VPN_IP" ] && [ -n "$APP_IMAGE" ]; then
+  log "Deploying Shelly scripts to $CONTROLLER_VPN_IP via VPN"
+  if ! timeout 60 docker compose -f "$COMPOSE_FILE" exec -T app \
+    env DEPLOY_VIA_VPN=true CONTROLLER_VPN_IP="$CONTROLLER_VPN_IP" \
+    bash shelly/deploy.sh 2>&1; then
+    log "WARNING: Shelly script deployment failed — continuing"
+  fi
+else
+  log "Skipping Shelly deployment (CONTROLLER_VPN_IP not set)"
+fi
+
 log "Deploy complete"

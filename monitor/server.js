@@ -1,11 +1,8 @@
 /**
- * PoC dev server — serves static files and proxies /api/rpc/* to a Shelly device.
+ * Greenhouse monitoring server — serves playground, proxies Shelly RPC,
+ * bridges MQTT→WebSocket, provides history and device config APIs.
  *
  * Usage: node server.js [port]
- *   port defaults to 3000
- *
- * The Shelly device IP is sent by the browser as a query param:
- *   /api/rpc/Temperature.GetStatus?id=0&_host=192.168.1.20
  */
 
 const http = require('http');
@@ -17,13 +14,18 @@ const createLogger = require('./lib/logger');
 const webpush = require('web-push');
 const pushStorage = require('./lib/push-storage');
 const valvePoller = require('./lib/valve-poller');
+const mqttBridge = require('./lib/mqtt-bridge');
+const deviceConfig = require('./lib/device-config');
 
 const log = createLogger('server');
 const pushLog = createLogger('push');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
-const STATIC_DIR = __dirname;
+const MONITOR_DIR = __dirname;
+const PLAYGROUND_DIR = path.join(__dirname, '..', 'playground');
 const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
-const VPN_CHECK_HOST = process.env.VPN_CHECK_HOST || ''; // Shelly IP to check VPN connectivity
+const VPN_CHECK_HOST = process.env.VPN_CHECK_HOST || '';
+const MQTT_HOST = process.env.MQTT_HOST || '';
+const DATABASE_URL = process.env.DATABASE_URL || '';
 
 const MIME = {
   '.html': 'text/html',
@@ -35,20 +37,54 @@ const MIME = {
   '.mjs': 'application/javascript',
   '.ico': 'image/x-icon',
   '.webmanifest': 'application/manifest+json',
+  '.yaml': 'text/yaml',
+  '.yml': 'text/yaml',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
 };
+
+// ── Static file serving ──
+// Playground is the primary app; monitor files are also served for login, PWA, etc.
 
 function serveStatic(req, res) {
   var urlPath = new URL(req.url, 'http://localhost').pathname;
   if (urlPath === '/') urlPath = '/index.html';
-  var filePath = path.join(STATIC_DIR, urlPath);
 
-  // Prevent directory traversal
-  if (!filePath.startsWith(STATIC_DIR)) {
+  // Try playground first, then monitor directory
+  var playgroundPath = path.join(PLAYGROUND_DIR, urlPath);
+  var monitorPath = path.join(MONITOR_DIR, urlPath);
+
+  // Security: prevent directory traversal
+  if (!playgroundPath.startsWith(PLAYGROUND_DIR) && !monitorPath.startsWith(MONITOR_DIR)) {
     res.writeHead(403);
     res.end('Forbidden');
     return;
   }
 
+  // Serve system.yaml from repo root for playground
+  if (urlPath === '/system.yaml') {
+    var yamlPath = path.join(__dirname, '..', 'system.yaml');
+    return serveFile(yamlPath, urlPath, res);
+  }
+
+  // Serve shelly/ files for playground control-logic-loader
+  if (urlPath.startsWith('/shelly/')) {
+    var shellyPath = path.join(__dirname, '..', urlPath);
+    return serveFile(shellyPath, urlPath, res);
+  }
+
+  // Try playground directory first
+  fs.access(playgroundPath, fs.constants.R_OK, function (err) {
+    if (!err) {
+      serveFile(playgroundPath, urlPath, res);
+    } else {
+      // Fall back to monitor directory
+      serveFile(monitorPath, urlPath, res);
+    }
+  });
+}
+
+function serveFile(filePath, urlPath, res) {
   fs.readFile(filePath, function (err, data) {
     if (err) {
       res.writeHead(404);
@@ -57,7 +93,6 @@ function serveStatic(req, res) {
     }
     var ext = path.extname(filePath);
     var contentType = MIME[ext] || 'application/octet-stream';
-    // Serve manifest.json with proper PWA content type
     if (urlPath === '/manifest.json') contentType = 'application/manifest+json';
     res.writeHead(200, { 'Content-Type': contentType });
     res.end(data);
@@ -73,7 +108,6 @@ function proxyRpc(req, res) {
     return;
   }
 
-  // Strip /api prefix and _host param, forward to Shelly device
   var rpcPath = parsed.pathname.replace(/^\/api/, '');
   parsed.searchParams.delete('_host');
   var query = parsed.searchParams.toString();
@@ -104,7 +138,7 @@ function proxyRpc(req, res) {
   });
 }
 
-// ── Health endpoint (no auth required) ──
+// ── Health endpoint ──
 
 function checkVpn(callback) {
   if (!VPN_CHECK_HOST) { callback('unknown'); return; }
@@ -124,12 +158,13 @@ function handleHealth(req, res) {
     res.end(JSON.stringify({
       status: status,
       vpn: vpnStatus,
+      mqtt: mqttBridge.getConnectionStatus(),
       timestamp: new Date().toISOString(),
     }));
   });
 }
 
-// ── Auth middleware (loaded lazily when AUTH_ENABLED) ──
+// ── Auth middleware ──
 
 var authMiddleware = null;
 if (AUTH_ENABLED) {
@@ -148,7 +183,7 @@ function jsonResponse(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
-// ── Push notification setup ──
+// ── Push notifications ──
 
 var vapidReady = false;
 var vapidPublicKey = null;
@@ -166,7 +201,6 @@ function initVapid() {
       pushLog.info('VAPID keys loaded');
       return;
     }
-    // Generate new keys
     var generated = webpush.generateVAPIDKeys();
     var config = {
       publicKey: generated.publicKey,
@@ -200,9 +234,7 @@ function handlePushApi(req, res, urlPath, body) {
 
   if (urlPath === '/api/push/subscribe' && req.method === 'POST') {
     var sub;
-    try {
-      sub = JSON.parse(body);
-    } catch (e) {
+    try { sub = JSON.parse(body); } catch (e) {
       jsonResponse(res, 400, { error: 'Invalid JSON' });
       return;
     }
@@ -224,9 +256,7 @@ function handlePushApi(req, res, urlPath, body) {
 
   if (urlPath === '/api/push/unsubscribe' && req.method === 'POST') {
     var data;
-    try {
-      data = JSON.parse(body);
-    } catch (e) {
+    try { data = JSON.parse(body); } catch (e) {
       jsonResponse(res, 400, { error: 'Invalid JSON' });
       return;
     }
@@ -253,6 +283,65 @@ function handlePushApi(req, res, urlPath, body) {
   jsonResponse(res, 404, { error: 'Not found' });
 }
 
+// ── History API ──
+
+var db = null;
+
+function handleHistoryApi(req, res) {
+  if (!db) {
+    jsonResponse(res, 503, { error: 'Database not available' });
+    return;
+  }
+
+  var parsed = new URL(req.url, 'http://localhost');
+  var range = parsed.searchParams.get('range') || '6h';
+  var sensor = parsed.searchParams.get('sensor') || null;
+
+  db.getHistory(range, sensor, function (err, points) {
+    if (err) {
+      log.error('history query failed', { error: err.message });
+      jsonResponse(res, 500, { error: 'Query failed' });
+      return;
+    }
+    db.getEvents(range, 'mode', function (evErr, events) {
+      if (evErr) {
+        log.error('events query failed', { error: evErr.message });
+        events = [];
+      }
+      jsonResponse(res, 200, { range: range, points: points, events: events });
+    });
+  });
+}
+
+// ── Device Config API ──
+
+function handleDeviceConfigApi(req, res, urlPath, body) {
+  if (req.method === 'GET') {
+    deviceConfig.handleGet(req, res);
+    return;
+  }
+
+  if (req.method === 'PUT') {
+    // PUT requires auth
+    if (AUTH_ENABLED) {
+      var session = authMiddleware.validateRequest(req);
+      if (!session) {
+        jsonResponse(res, 401, { error: 'Not authenticated' });
+        return;
+      }
+    }
+    deviceConfig.handlePut(req, res, body, function (config) {
+      // Publish to MQTT for instant push to device
+      mqttBridge.publishConfig(config);
+    });
+    return;
+  }
+
+  jsonResponse(res, 405, { error: 'Method not allowed' });
+}
+
+// ── HTTP Server ──
+
 var server = http.createServer(function (req, res) {
   var urlPath = new URL(req.url, 'http://localhost').pathname;
 
@@ -262,7 +351,7 @@ var server = http.createServer(function (req, res) {
     return;
   }
 
-  // Auth endpoints — always accessible (they handle their own auth)
+  // Auth endpoints — always accessible
   if (AUTH_ENABLED && urlPath.startsWith('/auth/')) {
     readBody(req, function (body) {
       authMiddleware.handleRequest(req, res, urlPath, body);
@@ -276,17 +365,22 @@ var server = http.createServer(function (req, res) {
     return;
   }
 
-  // PWA resources — accessible without auth (needed for installability)
+  // PWA resources — accessible without auth
   if (urlPath === '/manifest.json' || urlPath === '/sw.js' || urlPath === '/offline.html' || urlPath.startsWith('/icons/')) {
     serveStatic(req, res);
     return;
   }
 
-  // Auth gate — check session for all other routes
+  // Device config GET — unauthenticated (Shelly can't do WebAuthn, VPN-only access)
+  if (urlPath === '/api/device-config' && req.method === 'GET') {
+    deviceConfig.handleGet(req, res);
+    return;
+  }
+
+  // Auth gate for all other routes
   if (AUTH_ENABLED) {
     var session = authMiddleware.validateRequest(req);
     if (!session) {
-      // API requests get JSON 401, page requests redirect to login
       if (urlPath.startsWith('/api/')) {
         jsonResponse(res, 401, { error: 'Not authenticated' });
       } else {
@@ -306,12 +400,58 @@ var server = http.createServer(function (req, res) {
         handlePushApi(req, res, urlPath, body);
       });
     }
+  } else if (urlPath === '/api/device-config') {
+    readBody(req, function (body) {
+      handleDeviceConfigApi(req, res, urlPath, body);
+    });
+  } else if (urlPath === '/api/history') {
+    handleHistoryApi(req, res);
   } else if (req.url.startsWith('/api/rpc/')) {
     proxyRpc(req, res);
   } else {
     serveStatic(req, res);
   }
 });
+
+// ── WebSocket server ──
+
+var wsServer = null;
+
+function initWebSocket() {
+  var WebSocketServer = require('ws').WebSocketServer;
+  wsServer = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', function (req, socket, head) {
+    var urlPath = new URL(req.url, 'http://localhost').pathname;
+    if (urlPath !== '/ws') {
+      socket.destroy();
+      return;
+    }
+
+    // Auth check for WebSocket upgrade
+    if (AUTH_ENABLED) {
+      var session = authMiddleware.validateRequest(req);
+      if (!session) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+    }
+
+    wsServer.handleUpgrade(req, socket, head, function (ws) {
+      wsServer.emit('connection', ws, req);
+      // Send current MQTT connection status on connect
+      ws.send(JSON.stringify({
+        type: 'connection',
+        status: mqttBridge.getConnectionStatus(),
+      }));
+    });
+  });
+
+  return wsServer;
+}
+
+// ── Startup ──
 
 function getNetworkAddress() {
   var interfaces = os.networkInterfaces();
@@ -330,15 +470,8 @@ function printBanner(port, networkIp) {
   var local = 'http://localhost:' + port;
   var network = networkIp ? 'http://' + networkIp + ':' + port : null;
 
-  var lines = [
-    '',
-    '   Serving!',
-    '',
-    '   - Local:    ' + local,
-  ];
-  if (network) {
-    lines.push('   - Network:  ' + network);
-  }
+  var lines = ['', '   Serving!', '', '   - Local:    ' + local];
+  if (network) lines.push('   - Network:  ' + network);
   lines.push('');
 
   var maxLen = 0;
@@ -346,7 +479,6 @@ function printBanner(port, networkIp) {
     if (lines[i].length > maxLen) maxLen = lines[i].length;
   }
   var width = maxLen + 4;
-
   console.log('');
   console.log('   \u250c' + '\u2500'.repeat(width) + '\u2510');
   for (var j = 0; j < lines.length; j++) {
@@ -361,26 +493,15 @@ function printBanner(port, networkIp) {
 
 function sendValveNotification(change) {
   if (!vapidReady) return;
-
   var valveLabel = change.valve.toUpperCase();
   var title = 'Valve ' + valveLabel + ' ' + change.state;
   var body = valveLabel + ' changed to ' + change.state + ' (' + change.mode + ' mode)';
-  var payload = JSON.stringify({
-    title: title,
-    body: body,
-    tag: 'valve-change',
-    data: change,
-  });
+  var payload = JSON.stringify({ title: title, body: body, tag: 'valve-change', data: change });
 
   pushStorage.loadSubscriptions(function (err, subs) {
-    if (err) {
-      pushLog.error('failed to load subscriptions', { error: err.message });
-      return;
-    }
+    if (err) { pushLog.error('failed to load subscriptions', { error: err.message }); return; }
     if (subs.length === 0) return;
-
     pushLog.info('sending notifications', { valve: change.valve, state: change.state, subscribers: subs.length });
-
     subs.forEach(function (sub) {
       webpush.sendNotification(sub, payload).catch(function (sendErr) {
         if (sendErr.statusCode === 404 || sendErr.statusCode === 410) {
@@ -411,19 +532,61 @@ function startValvePoller() {
   }
 }
 
+function initServices(callback) {
+  // Initialize database if configured
+  if (DATABASE_URL) {
+    db = require('./lib/db');
+    db.initSchema(function (err) {
+      if (err) {
+        log.error('db schema init failed', { error: err.message });
+        db = null;
+      } else {
+        log.info('database initialized');
+      }
+      callback();
+    });
+  } else {
+    log.info('DATABASE_URL not set — history features disabled');
+    callback();
+  }
+}
+
+function startMqttBridge() {
+  if (!MQTT_HOST) {
+    log.info('MQTT_HOST not set — live features disabled');
+    return;
+  }
+
+  var ws = initWebSocket();
+
+  mqttBridge.start({
+    mqttHost: MQTT_HOST,
+    wsServer: ws,
+    db: db,
+  });
+
+  log.info('MQTT bridge started', { host: MQTT_HOST });
+}
+
 function startServer() {
-  server.listen(PORT, '0.0.0.0', function () {
-    printBanner(PORT, getNetworkAddress());
-    log.info('server started', { port: PORT, auth: AUTH_ENABLED });
-    startValvePoller();
+  // Load device config
+  deviceConfig.load(function (err) {
+    if (err) log.error('device config load failed', { error: err.message });
+
+    initServices(function () {
+      server.listen(PORT, '0.0.0.0', function () {
+        printBanner(PORT, getNetworkAddress());
+        log.info('server started', { port: PORT, auth: AUTH_ENABLED, mqtt: !!MQTT_HOST, db: !!db });
+        startMqttBridge();
+        startValvePoller();
+      });
+    });
   });
 }
 
 if (AUTH_ENABLED) {
   authMiddleware.init(function (err) {
-    if (err) {
-      log.error('auth init failed, starting with empty credentials', { error: err.message });
-    }
+    if (err) log.error('auth init failed, starting with empty credentials', { error: err.message });
     startServer();
   });
 } else {

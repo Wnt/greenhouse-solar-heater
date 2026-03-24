@@ -1,6 +1,6 @@
 // Shelly Pro 4PM — Solar Thermal Greenhouse Control (Shell)
 // All decision logic is in control-logic.js (concatenated at deploy time)
-// This file handles: timers, RPC, relays, KVS, sensors, status endpoint
+// This file handles: timers, RPC, relays, KVS, sensors, config, events
 
 var SHELL_CFG = {
   POLL_INTERVAL: 30000,
@@ -23,11 +23,17 @@ var VALVES = {
 
 var SENSOR_IP = "192.168.1.20";
 var SENSOR_IDS = {
-  collector: 0,
-  tank_top: 1,
-  tank_bottom: 2,
-  greenhouse: 3,
-  outdoor: 4,
+  collector: 0, tank_top: 1, tank_bottom: 2, greenhouse: 3, outdoor: 4,
+};
+
+// Device config — loaded from KVS on boot, updated via events from telemetry script
+var deviceConfig = {
+  controls_enabled: false,
+  enabled_actuators: {
+    valves: false, pump: false, fan: false,
+    space_heater: false, immersion_heater: false,
+  },
+  version: 0,
 };
 
 var state = {
@@ -51,24 +57,36 @@ var state = {
   drain_timer: null,
 };
 
+// ── Actuator commands with config guards ──
+
 function setPump(on) {
+  if (on && !deviceConfig.controls_enabled) { state.pump_on = false; return; }
+  if (on && !deviceConfig.enabled_actuators.pump) { state.pump_on = false; return; }
   Shelly.call("Switch.Set", {id: 0, on: on});
   state.pump_on = on;
 }
 
 function setFan(on) {
+  if (on && !deviceConfig.controls_enabled) return;
+  if (on && !deviceConfig.enabled_actuators.fan) return;
   Shelly.call("Switch.Set", {id: 1, on: on});
 }
 
 function setImmersion(on) {
+  if (on && !deviceConfig.controls_enabled) return;
+  if (on && !deviceConfig.enabled_actuators.immersion_heater) return;
   Shelly.call("Switch.Set", {id: 2, on: on});
 }
 
 function setSpaceHeater(on) {
+  if (on && !deviceConfig.controls_enabled) return;
+  if (on && !deviceConfig.enabled_actuators.space_heater) return;
   Shelly.call("Switch.Set", {id: 3, on: on});
 }
 
 function setValve(name, open, cb) {
+  if (open && !deviceConfig.controls_enabled) { if (cb) cb(true); return; }
+  if (open && !deviceConfig.enabled_actuators.valves) { if (cb) cb(true); return; }
   var v = VALVES[name];
   var cmd = (name === "v_air") ? !open : open;
   var url = "http://" + v.ip + "/rpc/Switch.Set?id=" + v.id +
@@ -92,10 +110,7 @@ function setValve(name, open, cb) {
 }
 
 function setValves(pairs, idx, cb) {
-  if (idx >= pairs.length) {
-    if (cb) cb(true);
-    return;
-  }
+  if (idx >= pairs.length) { if (cb) cb(true); return; }
   setValve(pairs[idx][0], pairs[idx][1], function(ok) {
     if (!ok) {
       setPump(false);
@@ -110,22 +125,16 @@ function setValves(pairs, idx, cb) {
 }
 
 function closeAllValves(cb) {
-  var names = [
-    "vi_btm", "vi_top", "vi_coll", "vo_coll",
-    "vo_rad", "vo_tank", "v_ret", "v_air",
-  ];
+  var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_ret","v_air"];
   var pairs = [];
-  for (var i = 0; i < names.length; i++) {
-    pairs.push([names[i], false]);
-  }
+  for (var i = 0; i < names.length; i++) pairs.push([names[i], false]);
   setValves(pairs, 0, cb);
 }
 
 function pollSensor(name, id, cb) {
   var url = "http://" + SENSOR_IP + "/rpc/Temperature.GetStatus?id=" + id;
   Shelly.call("HTTP.GET", {url: url}, function(res, err) {
-    if (err || !res || res.code !== 200 ||
-        !res.body || res.body.indexOf("tC") < 0) {
+    if (err || !res || res.code !== 200 || !res.body || res.body.indexOf("tC") < 0) {
       if (cb) cb(name, null);
       return;
     }
@@ -135,13 +144,9 @@ function pollSensor(name, id, cb) {
 }
 
 function pollAllSensors(cb) {
-  var names = ["collector", "tank_top", "tank_bottom", "greenhouse", "outdoor"];
-
+  var names = ["collector","tank_top","tank_bottom","greenhouse","outdoor"];
   function next(i) {
-    if (i >= names.length) {
-      if (cb) cb();
-      return;
-    }
+    if (i >= names.length) { if (cb) cb(); return; }
     pollSensor(names[i], SENSOR_IDS[names[i]], function(name, val) {
       if (val !== null) {
         state.temps[name] = val;
@@ -150,12 +155,10 @@ function pollAllSensors(cb) {
       next(i + 1);
     });
   }
-
   next(0);
 }
 
-// ── Display: update Pro 4PM channel names to show status ──
-// formatDuration, formatTemp, buildDisplayLabels are in control-logic.js
+// ── Display ──
 
 function updateDisplay() {
   var labels = buildDisplayLabels({
@@ -166,21 +169,19 @@ function updateDisplay() {
     collectorsDrained: state.collectors_drained,
   });
   for (var i = 0; i < 4; i++) {
-    Shelly.call("Switch.SetConfig", {
-      id: i,
-      config: { name: labels[i] }
-    }, function() {});
+    Shelly.call("Switch.SetConfig", {id: i, config: {name: labels[i]}}, function() {});
   }
 }
+
+// ── State snapshot for evaluate() and events ──
 
 function buildEvalState() {
   var now = Date.now();
   var sensorAge = {};
-  var names = ["collector", "tank_top", "tank_bottom", "greenhouse", "outdoor"];
+  var names = ["collector","tank_top","tank_bottom","greenhouse","outdoor"];
   for (var i = 0; i < names.length; i++) {
-    var name = names[i];
-    sensorAge[name] = state.sensor_last_valid[name] > 0 ?
-      (now - state.sensor_last_valid[name]) / 1000 : 999;
+    var n = names[i];
+    sensorAge[n] = state.sensor_last_valid[n] > 0 ? (now - state.sensor_last_valid[n]) / 1000 : 999;
   }
   return {
     temps: state.temps,
@@ -194,69 +195,108 @@ function buildEvalState() {
   };
 }
 
+function buildStateSnapshot() {
+  return {
+    ts: Date.now(),
+    mode: state.mode.toLowerCase(),
+    transitioning: state.transitioning,
+    transition_step: state.transition_step || null,
+    temps: {
+      collector: state.temps.collector,
+      tank_top: state.temps.tank_top,
+      tank_bottom: state.temps.tank_bottom,
+      greenhouse: state.temps.greenhouse,
+      outdoor: state.temps.outdoor,
+    },
+    valves: {
+      vi_btm: !!state.valve_states.vi_btm,
+      vi_top: !!state.valve_states.vi_top,
+      vi_coll: !!state.valve_states.vi_coll,
+      vo_coll: !!state.valve_states.vo_coll,
+      vo_rad: !!state.valve_states.vo_rad,
+      vo_tank: !!state.valve_states.vo_tank,
+      v_ret: !!state.valve_states.v_ret,
+      v_air: !!state.valve_states.v_air,
+    },
+    actuators: {
+      pump: state.pump_on,
+      fan: false,
+      space_heater: false,
+      immersion_heater: false,
+    },
+    flags: {
+      collectors_drained: state.collectors_drained,
+      emergency_heating_active: state.emergency_heating_active,
+    },
+    controls_enabled: deviceConfig.controls_enabled,
+  };
+}
+
+function emitStateUpdate() {
+  Shelly.emitEvent("state_updated", buildStateSnapshot());
+}
+
 function applyFlags(flags) {
   state.collectors_drained = flags.collectorsDrained;
   state.last_refill_attempt = flags.lastRefillAttempt * 1000;
   state.emergency_heating_active = flags.emergencyHeatingActive;
 }
 
+// ── Transitions ──
+
 function transitionTo(result) {
   if (state.transitioning) return;
   state.transitioning = true;
+  state.transition_step = "pump_stop";
 
-  // Clear drain monitor if leaving ACTIVE_DRAIN
   if (state.drain_timer !== null) {
     Timer.clear(state.drain_timer);
     state.drain_timer = null;
   }
 
-  // Step 1: Stop pump and all actuators
   setPump(false);
   setFan(false);
   setSpaceHeater(false);
   setImmersion(false);
+  emitStateUpdate();
 
-  // Step 2: Wait for settle, then close all valves
   Timer.set(SHELL_CFG.VALVE_SETTLE_MS, false, function() {
+    state.transition_step = "valves_closing";
+    emitStateUpdate();
     closeAllValves(function(ok) {
       if (!ok) return;
 
-      // Step 3: Open valves for new mode
+      state.transition_step = "valves_opening";
+      emitStateUpdate();
       var pairs = [];
-      var names = [
-        "vi_btm", "vi_top", "vi_coll", "vo_coll",
-        "vo_rad", "vo_tank", "v_ret", "v_air",
-      ];
+      var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_ret","v_air"];
       for (var i = 0; i < names.length; i++) {
-        if (result.valves[names[i]]) {
-          pairs.push([names[i], true]);
-        }
+        if (result.valves[names[i]]) pairs.push([names[i], true]);
       }
 
       setValves(pairs, 0, function(ok2) {
         if (!ok2) return;
 
-        // Step 4: Wait for valve travel + gravity prime
+        state.transition_step = "pump_start";
+        emitStateUpdate();
         Timer.set(SHELL_CFG.PUMP_PRIME_MS, false, function() {
           state.mode = result.nextMode;
           state.mode_start = Date.now();
           state.transitioning = false;
-
-          // Apply flags from evaluate()
+          state.transition_step = null;
           applyFlags(result.flags);
 
-          // Activate actuators
           if (result.actuators.pump) setPump(true);
           if (result.actuators.fan) setFan(true);
           if (result.actuators.space_heater) setSpaceHeater(true);
           if (result.actuators.immersion_heater) setImmersion(true);
 
-          // Mode-specific: KVS update, drain monitor
           if (result.nextMode === MODES.SOLAR_CHARGING) {
             Shelly.call("KVS.Set", {key: "drained", value: "0"});
           } else if (result.nextMode === MODES.ACTIVE_DRAIN) {
             startDrainMonitor();
           }
+          emitStateUpdate();
         });
       });
     });
@@ -266,7 +306,6 @@ function transitionTo(result) {
 function startDrainMonitor() {
   var drain_start = Date.now();
   var low_count = 0;
-
   state.drain_timer = Timer.set(SHELL_CFG.DRAIN_MONITOR_INTERVAL, true, function() {
     if (Date.now() - drain_start > DEFAULT_CONFIG.drainTimeout * 1000) {
       stopDrain("timeout");
@@ -275,9 +314,7 @@ function startDrainMonitor() {
     var sw = Shelly.getComponentStatus("switch", 0);
     if (sw && sw.apower < SHELL_CFG.DRAIN_POWER_THRESHOLD) {
       low_count++;
-      if (low_count >= 3) {
-        stopDrain("dry_run");
-      }
+      if (low_count >= 3) stopDrain("dry_run");
     } else {
       low_count = 0;
     }
@@ -294,56 +331,55 @@ function stopDrain(reason) {
   state.collectors_drained = true;
   Shelly.call("KVS.Set", {key: "drained", value: "1"});
   state.last_error = (reason === "timeout") ? "drain_timeout" : null;
-
   closeAllValves(function() {
     state.mode = MODES.IDLE;
     state.mode_start = Date.now();
     state.transitioning = false;
+    state.transition_step = null;
+    emitStateUpdate();
   });
 }
 
-HTTPServer.registerEndpoint("status", function(req, res) {
-  var now = Date.now();
-  var sw = Shelly.getComponentStatus("switch", 0);
-  var sys = Shelly.getComponentStatus("sys");
-  var body = JSON.stringify({
-    mode: state.mode,
-    mode_duration_s: Math.floor((now - state.mode_start) / 1000),
-    temperatures: state.temps,
-    sensor_age: buildEvalState().sensorAge,
-    valves: state.valve_states,
-    pump: {
-      on: state.pump_on,
-      power_w: sw ? sw.apower : null,
-    },
-    collectors_drained: state.collectors_drained,
-    last_error: state.last_error,
-    uptime_s: sys ? Math.floor(sys.uptime) : 0,
-  });
-  res.code = 200;
-  res.body = body;
-  res.send();
-});
+// ── Control loop ──
 
 function controlLoop() {
   if (state.transitioning) return;
-
   pollAllSensors(function() {
     updateDisplay();
     if (state.transitioning) return;
 
     var evalState = buildEvalState();
-    var result = evaluate(evalState, null);
+    var result = evaluate(evalState, null, deviceConfig);
 
     if (result.nextMode !== state.mode) {
-      transitionTo(result);
+      if (result.suppressed) {
+        applyFlags(result.flags);
+        emitStateUpdate();
+      } else {
+        transitionTo(result);
+      }
     } else {
       applyFlags(result.flags);
-      // Sync emergency overlay — space heater may toggle without mode change
       setSpaceHeater(!!result.actuators.space_heater);
+      emitStateUpdate();
     }
   });
 }
+
+// ── Config event handler ──
+
+Shelly.addEventHandler(function(ev) {
+  if (!ev || !ev.info || ev.info.event !== "config_changed") return;
+  var data = ev.info.data;
+  if (data && data.config) {
+    deviceConfig = data.config;
+    if (data.safety_critical) {
+      controlLoop();
+    }
+  }
+});
+
+// ── Boot ──
 
 function boot() {
   setPump(false);
@@ -357,15 +393,20 @@ function boot() {
       return;
     }
     Timer.set(5000, false, function() {
-      Shelly.call("KVS.Get", {key: "drained"}, function(res, err) {
-        if (res && res.value === "1") {
-          state.collectors_drained = true;
+      // Load persisted config from KVS
+      Shelly.call("KVS.Get", {key: "config"}, function(cfgRes) {
+        if (cfgRes && cfgRes.value) {
+          try { deviceConfig = JSON.parse(cfgRes.value); } catch(e) {}
         }
 
-        pollAllSensors(function() {
-          state.mode_start = Date.now();
-          Timer.set(SHELL_CFG.POLL_INTERVAL, true, controlLoop);
-          controlLoop();
+        Shelly.call("KVS.Get", {key: "drained"}, function(res) {
+          if (res && res.value === "1") state.collectors_drained = true;
+
+          pollAllSensors(function() {
+            state.mode_start = Date.now();
+            Timer.set(SHELL_CFG.POLL_INTERVAL, true, controlLoop);
+            controlLoop();
+          });
         });
       });
     });

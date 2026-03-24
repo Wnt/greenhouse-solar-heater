@@ -48,6 +48,18 @@
         Controls
       </a>
     </nav>
+    <div class="mode-toggle" id="mode-toggle">
+      <span class="mode-toggle-label" id="mode-toggle-label">Simulation</span>
+      <div class="mode-toggle-switch" id="mode-toggle-switch"></div>
+    </div>
+    <div class="connection-status" id="connection-status">
+      <span class="connection-dot" id="connection-dot"></span>
+      <span id="connection-label">Offline</span>
+    </div>
+    <div class="controls-indicator" id="controls-indicator">
+      <span class="material-symbols-outlined" style="font-size:14px;">shield</span>
+      <span>Controls disabled</span>
+    </div>
   </aside>
 
   <!-- ── Mobile Bottom Nav ── -->
@@ -80,6 +92,7 @@
 
     <!-- ═══ STATUS VIEW ═══ -->
     <section id="view-status" class="view active">
+      <div class="staleness-banner" id="staleness-banner">No data received for over 60 seconds. The device may be offline.</div>
       <div class="view-header">
         <h2>How your sanctuary is breathing.</h2>
         <p>Thermal simulation of the solar heating system. Adjust parameters in Controls and observe behavior here.</p>
@@ -147,6 +160,9 @@
               <button data-range="21600">6h</button>
               <button data-range="43200">12h</button>
               <button data-range="86400" class="active">24h</button>
+              <button data-range="604800" class="live-only" style="display:none;">7d</button>
+              <button data-range="2592000" class="live-only" style="display:none;">30d</button>
+              <button data-range="31536000" class="live-only" style="display:none;">1y</button>
             </div>
           </div>
           <div class="graph-container">
@@ -242,6 +258,11 @@
           <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;font-size:20px;color:var(--on-surface);margin-bottom:12px;text-transform:none;letter-spacing:-0.02em;">Actuators</h3>
           <div class="components-grid" id="actuator-grid"></div>
         </div>
+
+        <div id="transition-status" class="card bento-span-3" style="display:none;margin-top:8px;">
+          <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;font-size:20px;color:var(--primary);margin-bottom:8px;text-transform:none;letter-spacing:-0.02em;">Transition in Progress</h3>
+          <div id="transition-step" style="font-family:'Manrope',sans-serif;font-size:14px;color:var(--on-surface-variant);"></div>
+        </div>
       </div>
     </section>
 
@@ -285,6 +306,110 @@
     import { ThermalModel } from './js/physics.js';
     import { ControlStateMachine, initControlLogic } from './js/control.js';
     import { createSlider, formatTime } from './js/ui.js';
+    import { LiveSource, SimulationSource } from './js/data-source.js';
+
+    // ── Data Source ──
+    // Detect deployment context: GitHub Pages = simulation only, deployed app = live capable
+    const isGitHubPages = location.hostname.endsWith('.github.io');
+    const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const isLiveCapable = !isGitHubPages;
+
+    let activeSource = 'simulation'; // 'simulation' or 'live'
+    let liveSource = null;
+    let simSource = new SimulationSource();
+
+    // Connection status tracking
+    let connectionStatus = 'disconnected';
+    let lastDataTime = 0;
+    let stalenessTimer = null;
+
+    function updateConnectionUI(status) {
+      connectionStatus = status;
+      const dot = document.getElementById('connection-dot');
+      const label = document.getElementById('connection-label');
+      if (!dot || !label) return;
+      dot.className = 'connection-dot ' + status;
+      const labels = { connected: 'Live', disconnected: 'Offline', reconnecting: 'Reconnecting...' };
+      label.textContent = labels[status] || status;
+    }
+
+    function checkStaleness() {
+      if (activeSource !== 'live') return;
+      const banner = document.getElementById('staleness-banner');
+      if (!banner) return;
+      const elapsed = Date.now() - lastDataTime;
+      banner.classList.toggle('visible', elapsed > 60000 && lastDataTime > 0);
+    }
+
+    function initModeToggle() {
+      const toggle = document.getElementById('mode-toggle');
+      const sw = document.getElementById('mode-toggle-switch');
+      const label = document.getElementById('mode-toggle-label');
+      if (!toggle || !isLiveCapable) return;
+
+      toggle.classList.add('visible');
+      // Default to live mode on deployed app
+      switchToLive();
+
+      sw.addEventListener('click', function () {
+        if (activeSource === 'live') {
+          switchToSimulation();
+        } else {
+          switchToLive();
+        }
+      });
+    }
+
+    function switchToLive() {
+      activeSource = 'live';
+      const sw = document.getElementById('mode-toggle-switch');
+      const label = document.getElementById('mode-toggle-label');
+      if (sw) sw.classList.add('active');
+      if (label) { label.textContent = 'Live'; label.classList.add('active'); }
+      // Hide controls view in live mode
+      document.querySelectorAll('[data-view="controls"]').forEach(el => el.style.display = 'none');
+
+      if (!liveSource) {
+        liveSource = new LiveSource();
+        liveSource.onUpdate(function (state, result) {
+          lastDataTime = Date.now();
+          if (activeSource === 'live') updateDisplay(state, result);
+        });
+        liveSource.onConnectionChange(function (status) {
+          if (activeSource === 'live') updateConnectionUI(status);
+        });
+      }
+      liveSource.start();
+      // Pause simulation
+      running = false;
+
+      // Show live-only time range pills
+      document.querySelectorAll('.live-only').forEach(el => el.style.display = '');
+      fetchLiveHistory(graphRange);
+
+      if (!stalenessTimer) {
+        stalenessTimer = setInterval(checkStaleness, 5000);
+      }
+    }
+
+    function switchToSimulation() {
+      activeSource = 'simulation';
+      const sw = document.getElementById('mode-toggle-switch');
+      const label = document.getElementById('mode-toggle-label');
+      if (sw) sw.classList.remove('active');
+      if (label) { label.textContent = 'Simulation'; label.classList.remove('active'); }
+      // Show controls view
+      document.querySelectorAll('[data-view="controls"]').forEach(el => el.style.display = '');
+
+      if (liveSource) liveSource.stop();
+      updateConnectionUI('disconnected');
+      liveHistoryData = null;
+      // Hide live-only time range pills
+      document.querySelectorAll('.live-only').forEach(el => el.style.display = 'none');
+      if (stalenessTimer) { clearInterval(stalenessTimer); stalenessTimer = null; }
+      const banner = document.getElementById('staleness-banner');
+      if (banner) banner.classList.remove('visible');
+    }
 
     // ── State ──
     let config = null;
@@ -513,6 +638,9 @@
       buildSchematic();
       setupInspector();
       updateDisplay(model.getState(), { mode: 'idle', valves: config.modes.idle.valve_states, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
+
+      // Initialize live/simulation mode toggle
+      initModeToggle();
     }
 
     function buildFallbackConfig() {
@@ -583,6 +711,22 @@
     }
 
     // ── Time range pills ──
+    // ── Live history fetch ──
+    const RANGE_MAP = { 3600: '1h', 21600: '6h', 43200: '12h', 86400: '24h', 604800: '7d', 2592000: '30d', 31536000: '1y' };
+    let liveHistoryData = null;
+
+    function fetchLiveHistory(rangeSeconds) {
+      if (activeSource !== 'live') return;
+      const rangeKey = RANGE_MAP[rangeSeconds] || '6h';
+      fetch('/api/history?range=' + rangeKey)
+        .then(r => r.json())
+        .then(data => {
+          liveHistoryData = data;
+          drawHistoryGraph();
+        })
+        .catch(() => { liveHistoryData = null; });
+    }
+
     function setupTimeRangePills() {
       document.getElementById('time-range-pills').addEventListener('click', (e) => {
         const btn = e.target.closest('button');
@@ -590,7 +734,11 @@
         graphRange = parseInt(btn.dataset.range);
         document.querySelectorAll('#time-range-pills button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        drawHistoryGraph();
+        if (activeSource === 'live') {
+          fetchLiveHistory(graphRange);
+        } else {
+          drawHistoryGraph();
+        }
       });
     }
 
@@ -983,6 +1131,30 @@
           <span class="material-symbols-outlined component-icon">${icon}</span>
         </div>`;
       }).join('');
+
+      // ── Transition status (live mode) ──
+      const transEl = document.getElementById('transition-status');
+      const stepEl = document.getElementById('transition-step');
+      if (transEl && stepEl) {
+        if (result.transitioning && result.transition_step) {
+          transEl.style.display = '';
+          const stepLabels = {
+            pump_stop: 'Stopping pump...',
+            valves_closing: 'Closing all valves...',
+            valves_opening: 'Opening new valves...',
+            pump_start: 'Starting pump...',
+          };
+          stepEl.textContent = stepLabels[result.transition_step] || result.transition_step;
+        } else {
+          transEl.style.display = 'none';
+        }
+      }
+
+      // ── Controls indicator ──
+      const ctrlInd = document.getElementById('controls-indicator');
+      if (ctrlInd && result.controls_enabled !== undefined) {
+        ctrlInd.classList.toggle('visible', !result.controls_enabled);
+      }
 
       // ── Schematic ──
       updateSchematic(result);

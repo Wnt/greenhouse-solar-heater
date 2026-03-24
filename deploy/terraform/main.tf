@@ -93,7 +93,32 @@ resource "upcloud_server" "monitor" {
     s3_secret_key    = upcloud_managed_object_storage_user_access_key.app.secret_access_key
     s3_region        = var.objsto_region
     github_repo      = lower(var.github_repo)
+    database_url     = "postgres://${upcloud_managed_database_user.app.username}:${var.db_password}@${upcloud_managed_database_postgresql.timeseries.service_host}:${upcloud_managed_database_postgresql.timeseries.service_port}/defaultdb?sslmode=require"
   })
+}
+
+# ── Firewall ──
+
+# ── Managed PostgreSQL with TimescaleDB ──
+
+resource "upcloud_managed_database_postgresql" "timeseries" {
+  name  = "${replace(var.domain, ".", "-")}-timeseries"
+  plan  = var.db_plan
+  title = "Greenhouse TimescaleDB"
+  zone  = var.upcloud_zone
+
+  properties {
+    public_access = false
+    timescaledb {
+      max_background_workers = 4
+    }
+  }
+}
+
+resource "upcloud_managed_database_user" "app" {
+  service = upcloud_managed_database_postgresql.timeseries.id
+  username = "app"
+  password = var.db_password
 }
 
 # ── Firewall ──

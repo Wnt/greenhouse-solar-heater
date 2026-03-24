@@ -100,7 +100,7 @@ function anySensorStale(sensorAge, threshold) {
   return false;
 }
 
-function makeResult(mode, flags) {
+function makeResult(mode, flags, deviceConfig) {
   var valves = {};
   var actuators = {};
   var key;
@@ -112,12 +112,27 @@ function makeResult(mode, flags) {
   for (key in ma) {
     actuators[key] = ma[key];
   }
-  return {
+  var result = {
     nextMode: mode,
     valves: valves,
     actuators: actuators,
-    flags: flags
+    flags: flags,
+    suppressed: false
   };
+  // If device config disables controls, mark actuator commands as suppressed
+  if (deviceConfig && !deviceConfig.controls_enabled) {
+    result.suppressed = true;
+  } else if (deviceConfig && deviceConfig.enabled_actuators) {
+    var ea = deviceConfig.enabled_actuators;
+    if (!ea.pump) actuators.pump = false;
+    if (!ea.fan) actuators.fan = false;
+    if (!ea.space_heater) actuators.space_heater = false;
+    if (!ea.immersion_heater) actuators.immersion_heater = false;
+    if (!ea.valves) {
+      for (key in valves) { valves[key] = false; }
+    }
+  }
+  return result;
 }
 
 function getMinDuration(state, cfg) {
@@ -129,8 +144,9 @@ function getMinDuration(state, cfg) {
   return cfg.minModeDuration;
 }
 
-function evaluate(state, config) {
+function evaluate(state, config, deviceConfig) {
   var cfg = applyDefaults(config);
+  var dc = deviceConfig || null;
   var t = state.temps;
   var elapsed = state.now - state.modeEnteredAt;
   var flags = {
@@ -142,35 +158,35 @@ function evaluate(state, config) {
   // Sensor staleness — any sensor stale triggers IDLE, emergency off
   if (anySensorStale(state.sensorAge, cfg.sensorStaleThreshold)) {
     flags.emergencyHeatingActive = false;
-    return makeResult(MODES.IDLE, flags);
+    return makeResult(MODES.IDLE, flags, dc);
   }
 
   // Already draining — stay until shell completes or timeout
   if (state.currentMode === MODES.ACTIVE_DRAIN) {
     if (elapsed > cfg.drainTimeout) {
       flags.collectorsDrained = true;
-      return makeResult(MODES.IDLE, flags);
+      return makeResult(MODES.IDLE, flags, dc);
     }
-    return makeResult(MODES.ACTIVE_DRAIN, flags);
+    return makeResult(MODES.ACTIVE_DRAIN, flags, dc);
   }
 
   // Freeze protection — preempts immediately, ignores min duration
   if (t.outdoor !== null && t.outdoor < cfg.freezeDrainTemp &&
       !state.collectorsDrained) {
-    return makeResult(MODES.ACTIVE_DRAIN, flags);
+    return makeResult(MODES.ACTIVE_DRAIN, flags, dc);
   }
 
   // Overheat protection — preempts immediately
   if (t.tank_top !== null && t.tank_top > cfg.overheatDrainTemp &&
       !state.collectorsDrained) {
-    return makeResult(MODES.ACTIVE_DRAIN, flags);
+    return makeResult(MODES.ACTIVE_DRAIN, flags, dc);
   }
 
   // Minimum mode duration (not for IDLE or EMERGENCY_HEATING, not for drain above)
   if (state.currentMode !== MODES.IDLE &&
       state.currentMode !== MODES.EMERGENCY_HEATING &&
       elapsed < getMinDuration(state, cfg)) {
-    var result = makeResult(state.currentMode, flags);
+    var result = makeResult(state.currentMode, flags, dc);
     // Emergency overlay still applies during min-duration hold
     if (t.greenhouse !== null && flags.emergencyHeatingActive) {
       result.actuators.space_heater = true;
@@ -237,10 +253,10 @@ function evaluate(state, config) {
   // ── Combine pump mode + emergency overlay ──
   if (flags.emergencyHeatingActive && pumpMode === MODES.IDLE) {
     // No useful pump mode — pure emergency (space heater + immersion)
-    return makeResult(MODES.EMERGENCY_HEATING, flags);
+    return makeResult(MODES.EMERGENCY_HEATING, flags, dc);
   }
 
-  var result = makeResult(pumpMode, flags);
+  var result = makeResult(pumpMode, flags, dc);
   if (flags.emergencyHeatingActive) {
     // Pump mode active + emergency — overlay space heater onto pump mode
     result.actuators.space_heater = true;
