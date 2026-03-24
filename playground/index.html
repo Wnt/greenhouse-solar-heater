@@ -47,6 +47,10 @@
         <span class="material-symbols-outlined">tune</span>
         Controls
       </a>
+      <a data-view="device" class="live-only" style="display:none;">
+        <span class="material-symbols-outlined">settings_remote</span>
+        Device
+      </a>
     </nav>
     <div class="mode-toggle" id="mode-toggle">
       <span class="mode-toggle-label" id="mode-toggle-label">Simulation</span>
@@ -79,6 +83,10 @@
     <a data-view="controls">
       <span class="material-symbols-outlined">tune</span>
       <span>Controls</span>
+    </a>
+    <a data-view="device" class="live-only" style="display:none;">
+      <span class="material-symbols-outlined">settings_remote</span>
+      <span>Device</span>
     </a>
   </nav>
 
@@ -295,6 +303,61 @@
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
           <button class="primary" id="btn-reset">Reset Simulation</button>
           <span style="font-size:13px;color:var(--on-surface-variant);" id="sim-status-text">Ready — press play to start</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ DEVICE VIEW (live mode only) ═══ -->
+    <section id="view-device" class="view">
+      <div class="view-header">
+        <h2>Device configuration.</h2>
+        <p>Runtime settings for the Shelly controller. Changes are pushed instantly via MQTT.</p>
+      </div>
+
+      <div class="card" id="device-config-card">
+        <div id="device-config-loading" style="color:var(--on-surface-variant);font-size:14px;">Loading device config...</div>
+        <div id="device-config-form" style="display:none;">
+          <div class="device-config-row">
+            <label class="device-config-label">Controls Enabled</label>
+            <div class="device-toggle" id="dc-ce" data-field="ce"></div>
+          </div>
+          <h4 style="margin:20px 0 12px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Enabled Actuators</h4>
+          <div class="device-config-row"><label class="device-config-label">Valves</label><div class="device-toggle" id="dc-ea-v" data-bit="1"></div></div>
+          <div class="device-config-row"><label class="device-config-label">Pump</label><div class="device-toggle" id="dc-ea-p" data-bit="2"></div></div>
+          <div class="device-config-row"><label class="device-config-label">Fan</label><div class="device-toggle" id="dc-ea-f" data-bit="4"></div></div>
+          <div class="device-config-row"><label class="device-config-label">Space Heater</label><div class="device-toggle" id="dc-ea-sh" data-bit="8"></div></div>
+          <div class="device-config-row"><label class="device-config-label">Immersion Heater</label><div class="device-toggle" id="dc-ea-ih" data-bit="16"></div></div>
+
+          <h4 style="margin:20px 0 12px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Mode Override</h4>
+          <div class="device-config-row">
+            <label class="device-config-label">Forced Mode</label>
+            <select id="dc-fm" class="device-select">
+              <option value="">Automatic</option>
+              <option value="I">Idle</option>
+              <option value="SC">Solar Charging</option>
+              <option value="GH">Greenhouse Heating</option>
+              <option value="AD">Active Drain</option>
+              <option value="EH">Emergency Heating</option>
+            </select>
+          </div>
+
+          <h4 style="margin:20px 0 12px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Allowed Modes</h4>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin-bottom:8px;">Uncheck modes to prevent automation from selecting them. Leave all checked for unrestricted.</p>
+          <div class="device-config-checks">
+            <label class="device-check"><input type="checkbox" id="dc-am-I" value="I" checked> Idle</label>
+            <label class="device-check"><input type="checkbox" id="dc-am-SC" value="SC" checked> Solar Charging</label>
+            <label class="device-check"><input type="checkbox" id="dc-am-GH" value="GH" checked> Greenhouse Heating</label>
+            <label class="device-check"><input type="checkbox" id="dc-am-AD" value="AD" checked> Active Drain</label>
+            <label class="device-check"><input type="checkbox" id="dc-am-EH" value="EH" checked> Emergency Heating</label>
+          </div>
+
+          <div style="margin-top:20px;display:flex;gap:12px;align-items:center;">
+            <button class="primary" id="dc-save">Save &amp; Push to Device</button>
+            <span id="dc-status" style="font-size:13px;color:var(--on-surface-variant);"></span>
+          </div>
+          <div style="margin-top:8px;font-size:11px;color:var(--on-surface-variant);">
+            Version: <span id="dc-version">-</span> | Size: <span id="dc-size">-</span>/256 bytes
+          </div>
         </div>
       </div>
     </section>
@@ -641,6 +704,7 @@
 
       // Initialize live/simulation mode toggle
       initModeToggle();
+      initDeviceConfig();
     }
 
     function buildFallbackConfig() {
@@ -1465,6 +1529,121 @@
     function setOpacity(id, val) {
       const el = document.getElementById(id);
       if (el) el.setAttribute('opacity', val);
+    }
+
+    // ── Device Config UI ──
+    let deviceConfigData = null;
+
+    function initDeviceConfig() {
+      // Toggle buttons
+      document.querySelectorAll('.device-toggle').forEach(el => {
+        el.addEventListener('click', () => el.classList.toggle('active'));
+      });
+
+      // Save button
+      document.getElementById('dc-save').addEventListener('click', saveDeviceConfig);
+
+      // Load on first view
+      loadDeviceConfig();
+    }
+
+    function loadDeviceConfig() {
+      const loading = document.getElementById('device-config-loading');
+      const form = document.getElementById('device-config-form');
+      loading.style.display = '';
+      form.style.display = 'none';
+
+      fetch('/api/device-config')
+        .then(r => r.json())
+        .then(cfg => {
+          deviceConfigData = cfg;
+          populateDeviceForm(cfg);
+          loading.style.display = 'none';
+          form.style.display = '';
+        })
+        .catch(err => {
+          loading.textContent = 'Failed to load config: ' + err.message;
+        });
+    }
+
+    function populateDeviceForm(cfg) {
+      // Controls enabled toggle
+      setToggle('dc-ce', cfg.ce);
+
+      // Actuator bitmask toggles
+      const ea = cfg.ea || 0;
+      setToggle('dc-ea-v', !!(ea & 1));
+      setToggle('dc-ea-p', !!(ea & 2));
+      setToggle('dc-ea-f', !!(ea & 4));
+      setToggle('dc-ea-sh', !!(ea & 8));
+      setToggle('dc-ea-ih', !!(ea & 16));
+
+      // Forced mode
+      document.getElementById('dc-fm').value = cfg.fm || '';
+
+      // Allowed modes
+      const allCodes = ['I', 'SC', 'GH', 'AD', 'EH'];
+      const am = cfg.am; // null = all allowed
+      allCodes.forEach(code => {
+        const cb = document.getElementById('dc-am-' + code);
+        if (cb) cb.checked = !am || am.indexOf(code) >= 0;
+      });
+
+      // Version & size
+      document.getElementById('dc-version').textContent = cfg.v || '-';
+      document.getElementById('dc-size').textContent = JSON.stringify(cfg).length;
+    }
+
+    function setToggle(id, on) {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('active', on);
+    }
+
+    function saveDeviceConfig() {
+      const status = document.getElementById('dc-status');
+      status.textContent = 'Saving...';
+      status.style.color = 'var(--on-surface-variant)';
+
+      // Read form state
+      const ce = document.getElementById('dc-ce').classList.contains('active');
+      let ea = 0;
+      if (document.getElementById('dc-ea-v').classList.contains('active')) ea |= 1;
+      if (document.getElementById('dc-ea-p').classList.contains('active')) ea |= 2;
+      if (document.getElementById('dc-ea-f').classList.contains('active')) ea |= 4;
+      if (document.getElementById('dc-ea-sh').classList.contains('active')) ea |= 8;
+      if (document.getElementById('dc-ea-ih').classList.contains('active')) ea |= 16;
+
+      const fmSelect = document.getElementById('dc-fm');
+      const fm = fmSelect.value || null;
+
+      // Allowed modes: null if all checked, array of codes otherwise
+      const allCodes = ['I', 'SC', 'GH', 'AD', 'EH'];
+      const checked = allCodes.filter(c => document.getElementById('dc-am-' + c).checked);
+      const am = checked.length >= 5 ? null : (checked.length === 0 ? null : checked);
+
+      const body = { ce, ea, fm, am };
+
+      fetch('/api/device-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+        .then(r => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(cfg => {
+          deviceConfigData = cfg;
+          document.getElementById('dc-version').textContent = cfg.v;
+          document.getElementById('dc-size').textContent = JSON.stringify(cfg).length;
+          status.textContent = 'Saved (v' + cfg.v + ')';
+          status.style.color = 'var(--secondary)';
+          setTimeout(() => { status.textContent = ''; }, 3000);
+        })
+        .catch(err => {
+          status.textContent = 'Error: ' + err.message;
+          status.style.color = 'var(--error)';
+        });
     }
 
     init();

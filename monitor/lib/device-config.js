@@ -13,18 +13,18 @@ var s3Client = null;
 var s3Config = null;
 var currentConfig = null;
 
+// Compact keys to fit Shelly KVS 256-byte limit:
+//   ce = controls_enabled (bool)
+//   ea = enabled_actuators bitmask (valves=1, pump=2, fan=4, sh=8, ih=16)
+//   fm = forced_mode ("I","SC","GH","AD","EH", or null)
+//   am = allowed_modes (["I","SC",...] or null = all)
+//   v  = version (int)
 var DEFAULT_CONFIG = {
-  controls_enabled: false,
-  enabled_actuators: {
-    valves: false,
-    pump: false,
-    fan: false,
-    space_heater: false,
-    immersion_heater: false,
-  },
-  forced_mode: null,
-  allowed_modes: null,
-  version: 1,
+  ce: false,
+  ea: 0,
+  fm: null,
+  am: null,
+  v: 1,
 };
 
 function getS3Config() {
@@ -143,32 +143,25 @@ function getConfig() {
 
 function updateConfig(newConfig, callback) {
   var config = getConfig();
-  if (newConfig.controls_enabled !== undefined) {
-    config.controls_enabled = !!newConfig.controls_enabled;
+  if (newConfig.ce !== undefined) {
+    config.ce = !!newConfig.ce;
   }
-  if (newConfig.enabled_actuators) {
-    var ea = newConfig.enabled_actuators;
-    if (!config.enabled_actuators) config.enabled_actuators = {};
-    var keys = ['valves', 'pump', 'fan', 'space_heater', 'immersion_heater'];
-    for (var i = 0; i < keys.length; i++) {
-      if (ea[keys[i]] !== undefined) {
-        config.enabled_actuators[keys[i]] = !!ea[keys[i]];
-      }
-    }
+  if (newConfig.ea !== undefined) {
+    config.ea = parseInt(newConfig.ea, 10) || 0;
   }
-  if (newConfig.forced_mode !== undefined) {
-    config.forced_mode = newConfig.forced_mode || null;
+  if (newConfig.fm !== undefined) {
+    config.fm = newConfig.fm || null;
   }
-  if (newConfig.allowed_modes !== undefined) {
-    var am = newConfig.allowed_modes;
+  if (newConfig.am !== undefined) {
+    var am = newConfig.am;
     // null or all 5 modes = unrestricted; normalize to null to save KVS space
     if (!Array.isArray(am) || am.length === 0 || am.length >= 5) {
-      config.allowed_modes = null;
+      config.am = null;
     } else {
-      config.allowed_modes = am;
+      config.am = am;
     }
   }
-  config.version = (config.version || 0) + 1;
+  config.v = (config.v || 0) + 1;
   save(config, function (err) {
     if (err) { callback(err); return; }
     callback(null, config);

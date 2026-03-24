@@ -33,15 +33,10 @@ function saveConfig(cfg) {
 
 function isSafetyCritical(oldCfg, newCfg) {
   if (!oldCfg) return true;
-  if (oldCfg.controls_enabled !== newCfg.controls_enabled) return true;
-  if (oldCfg.forced_mode !== newCfg.forced_mode) return true;
-  if (JSON.stringify(oldCfg.allowed_modes) !== JSON.stringify(newCfg.allowed_modes)) return true;
-  if (oldCfg.enabled_actuators && newCfg.enabled_actuators) {
-    var keys = ["valves", "pump", "fan", "space_heater", "immersion_heater"];
-    for (var i = 0; i < keys.length; i++) {
-      if (oldCfg.enabled_actuators[keys[i]] !== newCfg.enabled_actuators[keys[i]]) return true;
-    }
-  }
+  if (oldCfg.ce !== newCfg.ce) return true;
+  if (oldCfg.ea !== newCfg.ea) return true;
+  if (oldCfg.fm !== newCfg.fm) return true;
+  if (JSON.stringify(oldCfg.am) !== JSON.stringify(newCfg.am)) return true;
   return false;
 }
 

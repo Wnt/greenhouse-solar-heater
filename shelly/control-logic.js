@@ -100,6 +100,29 @@ function anySensorStale(sensorAge, threshold) {
   return false;
 }
 
+// Device config uses compact keys to fit Shelly KVS 256-byte limit:
+//   ce (bool)   = controls_enabled
+//   ea (int)    = enabled_actuators bitmask: valves=1, pump=2, fan=4, sh=8, ih=16
+//   fm (string) = forced_mode: "I","SC","GH","AD","EH", or null
+//   am (array)  = allowed_modes: ["I","SC",...] or null (all)
+//   v  (int)    = version
+
+var EA_VALVES = 1;
+var EA_PUMP = 2;
+var EA_FAN = 4;
+var EA_SPACE_HEATER = 8;
+var EA_IMMERSION = 16;
+
+var MODE_CODE = {
+  I: "IDLE", SC: "SOLAR_CHARGING", GH: "GREENHOUSE_HEATING",
+  AD: "ACTIVE_DRAIN", EH: "EMERGENCY_HEATING"
+};
+
+function expandModeCode(code) {
+  if (!code) return null;
+  return MODE_CODE[code] || code.toUpperCase();
+}
+
 function makeResult(mode, flags, deviceConfig) {
   var valves = {};
   var actuators = {};
@@ -119,16 +142,15 @@ function makeResult(mode, flags, deviceConfig) {
     flags: flags,
     suppressed: false
   };
-  // If device config disables controls, mark actuator commands as suppressed
-  if (deviceConfig && !deviceConfig.controls_enabled) {
+  if (deviceConfig && !deviceConfig.ce) {
     result.suppressed = true;
-  } else if (deviceConfig && deviceConfig.enabled_actuators) {
-    var ea = deviceConfig.enabled_actuators;
-    if (!ea.pump) actuators.pump = false;
-    if (!ea.fan) actuators.fan = false;
-    if (!ea.space_heater) actuators.space_heater = false;
-    if (!ea.immersion_heater) actuators.immersion_heater = false;
-    if (!ea.valves) {
+  } else if (deviceConfig) {
+    var ea = deviceConfig.ea || 0;
+    if (!(ea & EA_PUMP)) actuators.pump = false;
+    if (!(ea & EA_FAN)) actuators.fan = false;
+    if (!(ea & EA_SPACE_HEATER)) actuators.space_heater = false;
+    if (!(ea & EA_IMMERSION)) actuators.immersion_heater = false;
+    if (!(ea & EA_VALVES)) {
       for (key in valves) { valves[key] = false; }
     }
   }
@@ -251,10 +273,10 @@ function evaluate(state, config, deviceConfig) {
   }
 
   // ── Forced mode override (for staged deployment / manual testing) ──
-  if (dc && dc.forced_mode) {
-    var fm = dc.forced_mode.toUpperCase();
-    if (MODES[fm]) {
-      pumpMode = MODES[fm];
+  if (dc && dc.fm) {
+    var forcedMode = expandModeCode(dc.fm);
+    if (MODES[forcedMode]) {
+      pumpMode = MODES[forcedMode];
       flags.emergencyHeatingActive = false;
       return makeResult(pumpMode, flags, dc);
     }
@@ -262,21 +284,19 @@ function evaluate(state, config, deviceConfig) {
 
   // ── Combine pump mode + emergency overlay ──
   if (flags.emergencyHeatingActive && pumpMode === MODES.IDLE) {
-    // No useful pump mode — pure emergency (space heater + immersion)
     return makeResult(MODES.EMERGENCY_HEATING, flags, dc);
   }
 
   var result = makeResult(pumpMode, flags, dc);
   if (flags.emergencyHeatingActive) {
-    // Pump mode active + emergency — overlay space heater onto pump mode
     result.actuators.space_heater = true;
   }
 
   // ── Allowed modes filter (for staged deployment) ──
-  if (dc && dc.allowed_modes && dc.allowed_modes.length > 0) {
+  if (dc && dc.am && dc.am.length > 0) {
     var allowed = false;
-    for (var ami = 0; ami < dc.allowed_modes.length; ami++) {
-      if (dc.allowed_modes[ami].toUpperCase() === result.nextMode) {
+    for (var ami = 0; ami < dc.am.length; ami++) {
+      if (expandModeCode(dc.am[ami]) === result.nextMode) {
         allowed = true;
         break;
       }
@@ -341,6 +361,12 @@ if (typeof module !== "undefined" && module.exports) {
     formatDuration: formatDuration,
     formatTemp: formatTemp,
     buildDisplayLabels: buildDisplayLabels,
-    MODE_SHORT: MODE_SHORT
+    MODE_SHORT: MODE_SHORT,
+    MODE_CODE: MODE_CODE,
+    EA_VALVES: EA_VALVES,
+    EA_PUMP: EA_PUMP,
+    EA_FAN: EA_FAN,
+    EA_SPACE_HEATER: EA_SPACE_HEATER,
+    EA_IMMERSION: EA_IMMERSION
   };
 }

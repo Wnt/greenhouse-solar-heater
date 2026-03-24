@@ -27,14 +27,8 @@ var SENSOR_IDS = {
 };
 
 // Device config — loaded from KVS on boot, updated via events from telemetry script
-var deviceConfig = {
-  controls_enabled: false,
-  enabled_actuators: {
-    valves: false, pump: false, fan: false,
-    space_heater: false, immersion_heater: false,
-  },
-  version: 0,
-};
+// Compact config: ce=controls_enabled, ea=actuator bitmask, fm=forced_mode, am=allowed_modes, v=version
+var deviceConfig = { ce: false, ea: 0, fm: null, am: null, v: 0 };
 
 var state = {
   mode: MODES.IDLE,
@@ -60,33 +54,33 @@ var state = {
 // ── Actuator commands with config guards ──
 
 function setPump(on) {
-  if (on && !deviceConfig.controls_enabled) { state.pump_on = false; return; }
-  if (on && !deviceConfig.enabled_actuators.pump) { state.pump_on = false; return; }
+  if (on && !deviceConfig.ce) { state.pump_on = false; return; }
+  if (on && !(deviceConfig.ea & EA_PUMP)) { state.pump_on = false; return; }
   Shelly.call("Switch.Set", {id: 0, on: on});
   state.pump_on = on;
 }
 
 function setFan(on) {
-  if (on && !deviceConfig.controls_enabled) return;
-  if (on && !deviceConfig.enabled_actuators.fan) return;
+  if (on && !deviceConfig.ce) return;
+  if (on && !(deviceConfig.ea & EA_FAN)) return;
   Shelly.call("Switch.Set", {id: 1, on: on});
 }
 
 function setImmersion(on) {
-  if (on && !deviceConfig.controls_enabled) return;
-  if (on && !deviceConfig.enabled_actuators.immersion_heater) return;
+  if (on && !deviceConfig.ce) return;
+  if (on && !(deviceConfig.ea & EA_IMMERSION)) return;
   Shelly.call("Switch.Set", {id: 2, on: on});
 }
 
 function setSpaceHeater(on) {
-  if (on && !deviceConfig.controls_enabled) return;
-  if (on && !deviceConfig.enabled_actuators.space_heater) return;
+  if (on && !deviceConfig.ce) return;
+  if (on && !(deviceConfig.ea & EA_SPACE_HEATER)) return;
   Shelly.call("Switch.Set", {id: 3, on: on});
 }
 
 function setValve(name, open, cb) {
-  if (open && !deviceConfig.controls_enabled) { if (cb) cb(true); return; }
-  if (open && !deviceConfig.enabled_actuators.valves) { if (cb) cb(true); return; }
+  if (open && !deviceConfig.ce) { if (cb) cb(true); return; }
+  if (open && !(deviceConfig.ea & EA_VALVES)) { if (cb) cb(true); return; }
   var v = VALVES[name];
   var cmd = (name === "v_air") ? !open : open;
   var url = "http://" + v.ip + "/rpc/Switch.Set?id=" + v.id +
@@ -228,7 +222,7 @@ function buildStateSnapshot() {
       collectors_drained: state.collectors_drained,
       emergency_heating_active: state.emergency_heating_active,
     },
-    controls_enabled: deviceConfig.controls_enabled,
+    controls_enabled: deviceConfig.ce,
   };
 }
 

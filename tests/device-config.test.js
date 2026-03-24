@@ -33,10 +33,11 @@ describe('device-config', () => {
   it('returns default config when no file exists', (t, done) => {
     deviceConfig.load(function (err, config) {
       assert.ifError(err);
-      assert.strictEqual(config.controls_enabled, false);
-      assert.strictEqual(config.enabled_actuators.pump, false);
-      assert.strictEqual(config.enabled_actuators.valves, false);
-      assert.strictEqual(config.version, 1);
+      assert.strictEqual(config.ce, false);
+      assert.strictEqual(config.ea, 0);
+      assert.strictEqual(config.fm, null);
+      assert.strictEqual(config.am, null);
+      assert.strictEqual(config.v, 1);
       done();
     });
   });
@@ -47,7 +48,7 @@ describe('device-config', () => {
       const res = mockResponse();
       deviceConfig.handleGet({}, res);
       const body = JSON.parse(res._body);
-      assert.strictEqual(body.controls_enabled, false);
+      assert.strictEqual(body.ce, false);
       assert.strictEqual(res._statusCode, 200);
       done();
     });
@@ -56,23 +57,17 @@ describe('device-config', () => {
   it('PUT updates and increments version', (t, done) => {
     deviceConfig.load(function (err) {
       assert.ifError(err);
-      const body = JSON.stringify({
-        controls_enabled: true,
-        enabled_actuators: { pump: true, valves: true },
-      });
+      // ea: valves=1, pump=2 → 3
+      const body = JSON.stringify({ ce: true, ea: 3 });
       const res = mockResponse();
       deviceConfig.handlePut({}, res, body, function (config) {
-        assert.strictEqual(config.controls_enabled, true);
-        assert.strictEqual(config.enabled_actuators.pump, true);
-        assert.strictEqual(config.enabled_actuators.valves, true);
-        // Other actuators remain false
-        assert.strictEqual(config.enabled_actuators.fan, false);
-        assert.strictEqual(config.version, 2);
+        assert.strictEqual(config.ce, true);
+        assert.strictEqual(config.ea, 3);
+        assert.strictEqual(config.v, 2);
 
-        // Verify persisted to disk
         const saved = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        assert.strictEqual(saved.version, 2);
-        assert.strictEqual(saved.controls_enabled, true);
+        assert.strictEqual(saved.v, 2);
+        assert.strictEqual(saved.ce, true);
         done();
       });
     });
@@ -91,9 +86,9 @@ describe('device-config', () => {
   it('persistence round-trip works', (t, done) => {
     deviceConfig.load(function (err) {
       assert.ifError(err);
-      deviceConfig.updateConfig({ controls_enabled: true }, function (err2, config) {
+      deviceConfig.updateConfig({ ce: true }, function (err2, config) {
         assert.ifError(err2);
-        assert.strictEqual(config.controls_enabled, true);
+        assert.strictEqual(config.ce, true);
 
         // Reload from disk
         deviceConfig._reset();
@@ -103,8 +98,8 @@ describe('device-config', () => {
         process.env.DEVICE_CONFIG_PATH = configPath;
         fresh.load(function (err3, loaded) {
           assert.ifError(err3);
-          assert.strictEqual(loaded.controls_enabled, true);
-          assert.strictEqual(loaded.version, 2);
+          assert.strictEqual(loaded.ce, true);
+          assert.strictEqual(loaded.v, 2);
           done();
         });
       });
