@@ -27,6 +27,9 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `monitor/lib/logger.js` → structured JSON logger (used by server and auth modules)
 - `monitor/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
 - `monitor/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload openvpn.conf)
+- `monitor/lib/db.js` → PostgreSQL/TimescaleDB module (schema init, sensor readings, state events, history queries)
+- `monitor/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB)
+- `monitor/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push)
 - `deploy/` → cloud deployment infrastructure
 - `deploy/terraform/` → UpCloud server, firewall rules, Managed Object Storage (Terraform)
 - `deploy/docker/` → App Dockerfile only
@@ -58,10 +61,11 @@ When making changes, **update system.yaml first**, then propagate to affected do
 
 The `shelly/` directory contains the actual device scripts deployed to Shelly hardware:
 
-- `shelly/control-logic.js` — Pure decision logic (ES5-compatible). Exports an `evaluate(state, config)` function with no side effects and no Shelly API calls. This is the testable core.
-- `shelly/control.js` — Shelly shell script that handles timers, RPC, relays, KVS, sensors. Imports `control-logic.js` (concatenated at deploy time).
-- `shelly/deploy.sh` — Deploys scripts to the Shelly Pro 4PM via HTTP RPC. Reads device IPs from `devices.conf`.
-- `shelly/devices.conf` — DHCP-reserved IP addresses for all Shelly devices.
+- `shelly/control-logic.js` — Pure decision logic (ES5-compatible). Exports an `evaluate(state, config, deviceConfig)` function with no side effects and no Shelly API calls. This is the testable core. The `deviceConfig` parameter enables actuator suppression when controls are disabled.
+- `shelly/control.js` — Shelly shell script that handles timers, RPC, relays, KVS, sensors, config guards, and state event emission. Imports `control-logic.js` (concatenated at deploy time). Reads device config from KVS and listens for `config_changed` events from the telemetry script.
+- `shelly/telemetry.js` — Separate Shelly script for MQTT publish/subscribe, config bootstrap (HTTP GET on boot), KVS config persistence, and inter-script events. Publishes state snapshots to `greenhouse/state` and subscribes to `greenhouse/config` for push-based config updates.
+- `shelly/deploy.sh` — Deploys scripts to the Shelly Pro 4PM via HTTP RPC. Deploys both control script (slot 1) and telemetry script (slot 3). Supports `DEPLOY_VIA_VPN=true` for VPN deployment. Can configure MQTT on the device via `MQTT_BROKER_HOST`.
+- `shelly/devices.conf` — DHCP-reserved IP addresses for all Shelly devices. Includes `PRO4PM_VPN` for VPN-routable access.
 
 **Shelly scripting constraints**: Scripts must use ES5-compatible JavaScript — no `const`/`let`, no arrow functions, no destructuring, no template literals, no ES6 classes. The linter enforces these rules.
 
@@ -87,7 +91,7 @@ Height scales in SVGs are approximate — `system-height-layout.svg` is the most
 The `playground/` directory contains a single-page thermal simulation app. Dark editorial theme based on the Stitch "Digital Sanctuary" design system (`design/Stitch/`): dark backgrounds (#0c0e12), gold primary (#e9c349), teal secondary (#43aea4), Newsreader serif headings, Manrope sans-serif body, tonal layering (no border lines for structure). Responsive: desktop sidebar nav (256px), mobile (<768px) glassmorphic bottom nav. Single HTML file with 4 JS-switched views, `<script type="importmap">` for ES modules.
 
 - `playground/index.html` — single-page app: Status (default, bento grid dashboard), Components (sensors/valves/actuators), Schematic (SVG system visualization), Controls (sliders, reset). Floating play/pause FAB.
-- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), UI, yaml-loader
+- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), data-source (LiveSource/SimulationSource abstraction), UI, yaml-loader
 - `playground/css/style.css` — shared styles
 - `design/Stitch/` — Stitch UI design mockups (desktop + mobile) with DESIGN.md spec and code.html references
 
@@ -150,9 +154,14 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/push-storage.test.js` — unit tests for push storage adapter (VAPID keys, subscriptions, deduplication)
 - `tests/valve-poller.test.js` — unit tests for valve state change detection (pure functions, poller behavior)
 - `tests/sw.test.js` — unit tests for service worker fetch handler, offline caching, and push handler preservation
+- `tests/db.test.js` — unit tests for PostgreSQL/TimescaleDB module (schema init, inserts, queries)
+- `tests/mqtt-bridge.test.js` — unit tests for MQTT bridge (state change detection, connection status)
+- `tests/device-config.test.js` — unit tests for device config store (default config, CRUD, persistence)
+- `tests/data-source.test.js` — unit tests for data source abstraction (state mapping, connection transitions)
 - `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
 - `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
 - `tests/e2e/pwa.spec.js` — Playwright e2e tests for PWA installability (manifest, Apple meta tags, offline page)
+- `tests/e2e/live-mode.spec.js` — Playwright e2e tests for live mode toggle, WebSocket connection, simulation fallback
 - `tests/e2e/take-screenshots.spec.js` — Screenshot generator: runs 24h simulation, captures all views (excluded from normal test runs via `testIgnore` in `playwright.config.js`, uses separate `playwright.screenshots.config.js`)
 
 ### Test Setup Notes
