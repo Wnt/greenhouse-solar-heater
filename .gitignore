@@ -13,7 +13,6 @@ deploy/terraform/.terraform/
 deploy/terraform/*.tfstate*
 deploy/terraform/terraform.tfvars
 deploy/terraform/.terraform.lock.hcl
-deploy/terraform/db-ca-cert.pem
 
 # Copied runtime deps for playground (from repo root into playground/ for GH Pages compatibility)
 playground/system.yaml
