@@ -5,13 +5,13 @@
 
 ## Summary
 
-Connect the playground's Status, Components, and Schematic views to the real greenhouse system via MQTT. The Shelly Pro 4PM control script publishes consolidated state snapshots to a Mosquitto broker on the cloud server. The Node.js server subscribes to MQTT, persists data in SQLite (tiered retention: 48h full resolution, 30s long-term, events forever), and forwards live state to browser clients via WebSocket. The playground becomes the unified app (replacing the monitor), with deployment-aware mode detection: simulation-only on GitHub Pages, live-with-toggle on greenhouse.madekivi.com.
+Connect the playground's Status, Components, and Schematic views to the real greenhouse system via MQTT. The Shelly Pro 4PM control script publishes consolidated state snapshots to a Mosquitto broker on the cloud server. The Node.js server subscribes to MQTT, persists data in UpCloud Managed PostgreSQL with TimescaleDB (tiered retention: 48h full resolution via retention policy, automatic 30s continuous aggregates for long-term, state events forever), and forwards live state to browser clients via WebSocket. The playground becomes the unified app (replacing the monitor), with deployment-aware mode detection: simulation-only on GitHub Pages, live-with-toggle on greenhouse.madekivi.com. The database is provisioned via Terraform alongside existing infrastructure.
 
 ## Technical Context
 
 **Language/Version**: JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS)
-**Primary Dependencies**: `better-sqlite3` (SQLite), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push`
-**Storage**: SQLite via `better-sqlite3` (in-process, WAL mode) + S3 backup for durability
+**Primary Dependencies**: `pg` (node-postgres), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push`
+**Storage**: UpCloud Managed PostgreSQL with TimescaleDB extension (plan `1x1xCPU-2GB-25GB`, zone `fi-hel1`), provisioned via Terraform
 **Testing**: `node:test` (unit), Playwright (e2e), existing test infrastructure
 **Target Platform**: Linux server (UpCloud DEV-1xCPU-1GB-10GB), Shelly Pro 4PM (ES5), browsers (ES6+)
 **Project Type**: IoT monitoring web application + embedded device scripts
@@ -31,8 +31,8 @@ Connect the playground's Status, Components, and Schematic views to the real gre
 | II. Pure Logic / IO Separation | PASS | MQTT publishing is added to the I/O layer (`control.js`), not the pure logic (`control-logic.js`). The `evaluate()` function remains untouched. |
 | III. Safe by Default (NON-NEGOTIABLE) | PASS | MQTT is fire-and-forget — `MQTT.publish()` returns false if disconnected but control logic continues unaffected (FR-006). No new actuation paths. |
 | IV. Proportional Test Coverage | PASS | New code requires: unit tests for DB module + MQTT bridge + data source abstraction, e2e tests for live/simulation toggle. Existing simulation tests must not regress. |
-| V. Token-Based Cloud Auth | PASS | No new UpCloud authentication. Mosquitto uses local/VPN-only access, no cloud API tokens needed. |
-| VI. Durable Data Persistence | PASS | SQLite DB backed up to S3 periodically. State change events and downsampled data survive server recreation. Local SQLite file is the working copy; S3 is the durable backup. |
+| V. Token-Based Cloud Auth | PASS | UpCloud Managed Database uses Terraform-provisioned credentials. UpCloud API access continues via `UPCLOUD_TOKEN`. |
+| VI. Durable Data Persistence | PASS | UpCloud Managed PostgreSQL with automated backups and PITR. Data survives container recreation by design — external managed service. |
 
 ### Post-Design Re-Check
 
@@ -40,10 +40,10 @@ Connect the playground's Status, Components, and Schematic views to the real gre
 |-----------|--------|-------|
 | I. Hardware Spec as Source of Truth | PASS | MQTT message schema derives from `system.yaml` entities. Topic name (`greenhouse/state`) is new but doesn't conflict. |
 | II. Pure Logic / IO Separation | PASS | `control-logic.js` unchanged. MQTT publishing added in `control.js` I/O layer only. Server-side data source abstraction separates data fetching from UI rendering. |
-| III. Safe by Default (NON-NEGOTIABLE) | PASS | No new actuation. MQTT failure = silent skip. WebSocket is read-only (server→client). SQLite failure = log error, continue serving live data without history. |
+| III. Safe by Default (NON-NEGOTIABLE) | PASS | No new actuation. MQTT failure = silent skip. WebSocket is read-only (server→client). DB failure = log error, continue serving live data without history. |
 | IV. Proportional Test Coverage | PASS | Test plan: unit tests for `db.js`, `mqtt-bridge.js`, `data-source.js`; e2e tests for mode toggle, live data display, history graph. |
-| V. Token-Based Cloud Auth | PASS | No changes to cloud auth. |
-| VI. Durable Data Persistence | PASS | SQLite + S3 backup. Downsampling job runs in-process. Named Docker volume for working copy. |
+| V. Token-Based Cloud Auth | PASS | UpCloud Managed Database provisioned via Terraform using `UPCLOUD_TOKEN`. Database credentials passed to app via cloud-init `.env.secrets`. |
+| VI. Durable Data Persistence | PASS | UpCloud Managed PostgreSQL — external managed service with automated backups, PITR, and 25 GB storage. No container-local data. |
 
 ## Project Structure
 
@@ -76,9 +76,9 @@ shelly/
 monitor/
 ├── server.js               # MODIFIED: add MQTT subscriber, WebSocket server, history API, serve playground
 ├── lib/
-│   ├── db.js               # NEW: SQLite database module (schema, CRUD, downsampling)
+│   ├── db.js               # NEW: PostgreSQL/TimescaleDB module (schema, CRUD, queries)
 │   ├── mqtt-bridge.js      # NEW: MQTT subscription + WebSocket broadcast
-│   ├── s3-storage.js       # EXISTING: extended for SQLite backup
+│   ├── s3-storage.js       # EXISTING: unchanged
 │   ├── push-storage.js     # EXISTING: unchanged
 │   ├── valve-poller.js     # DEPRECATED: replaced by MQTT subscription
 │   └── logger.js           # EXISTING: unchanged
@@ -98,12 +98,17 @@ playground/
 └── vendor/                  # EXISTING: unchanged
 
 deploy/
+├── terraform/
+│   ├── main.tf             # MODIFIED: add managed PostgreSQL + TimescaleDB resource
+│   ├── variables.tf        # MODIFIED: add db_plan variable
+│   ├── outputs.tf          # MODIFIED: add database connection outputs
+│   └── cloud-init.yaml     # MODIFIED: add DATABASE_URL to .env.secrets
 └── deployer/
     ├── docker-compose.yml  # MODIFIED: add mosquitto service
     └── config.env          # MODIFIED: add MQTT_HOST env var
 
 tests/
-├── db.test.js              # NEW: SQLite module unit tests
+├── db.test.js              # NEW: PostgreSQL/TimescaleDB module unit tests
 ├── mqtt-bridge.test.js     # NEW: MQTT bridge unit tests
 ├── data-source.test.js     # NEW: data source abstraction tests
 ├── control-logic.test.js   # EXISTING: unchanged
@@ -113,7 +118,7 @@ tests/
     └── live-mode.spec.js   # NEW: live mode toggle, WebSocket, history
 ```
 
-**Structure Decision**: Follows the existing project layout. No new top-level directories. New server-side modules go in `monitor/lib/`, new browser modules in `playground/js/`, new tests in `tests/`. The Mosquitto broker is added as a service in the existing Docker Compose stack.
+**Structure Decision**: Follows the existing project layout. No new top-level directories. New server-side modules go in `monitor/lib/`, new browser modules in `playground/js/`, new tests in `tests/`. The Mosquitto broker is added as a Docker Compose service. The PostgreSQL+TimescaleDB database is provisioned via Terraform as an UpCloud Managed Database (external to the server).
 
 ## Complexity Tracking
 

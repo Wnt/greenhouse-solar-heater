@@ -21,25 +21,72 @@
 
 ## R2: Time Series Database
 
-**Decision**: SQLite via `better-sqlite3` npm package, running in-process within the Node.js server.
+**Decision**: UpCloud Managed Database PostgreSQL with TimescaleDB extension, provisioned via Terraform.
 
-**Rationale**: The server runs on a 1 CPU / 1 GB RAM / 10 GB disk UpCloud instance already hosting 3 Docker containers (Node.js, Caddy, OpenVPN). Dedicated time series databases (InfluxDB ≥1 GB RAM, TimescaleDB ≥512 MB, QuestDB ≥2 GB) are too heavy. SQLite adds zero RAM for a separate process — it runs inside the existing Node.js process with ~2-5 MB page cache. `better-sqlite3` provides synchronous C++ bindings, WAL mode for concurrent reads/writes, and can handle 50K+ inserts/second in batched transactions.
+**Rationale**: UpCloud offers managed PostgreSQL with TimescaleDB as a supported built-in extension. Using a managed database offloads operational burden (backups, PITR, failover) from the application server, fully satisfies Constitution VI (Durable Data Persistence) without custom S3 backup logic, and provides TimescaleDB's native features: hypertables for automatic time-based partitioning, continuous aggregates for downsampling, and compression for long-term storage efficiency.
+
+**UpCloud Managed PostgreSQL details**:
+- Smallest plan: `1x1xCPU-2GB-25GB` (1 CPU, 2 GB RAM, 25 GB storage)
+- Single-node (Development tier): 2-day backup retention, 24h PITR
+- TimescaleDB extension available — enable with `CREATE EXTENSION timescaledb;`
+- Terraform resource: `upcloud_managed_database_postgresql`
+- Connection: `postgres://user:password@host:port/defaultdb?sslmode=require`
+- Zone: `fi-hel1` (same as server)
+
+**Terraform provisioning**:
+```hcl
+resource "upcloud_managed_database_postgresql" "timeseries" {
+  name  = "greenhouse-timeseries"
+  plan  = "1x1xCPU-2GB-25GB"
+  title = "Greenhouse TimescaleDB"
+  zone  = "fi-hel1"
+
+  properties {
+    public_access = false
+    timescaledb {
+      max_background_workers = 4
+    }
+  }
+}
+```
+
+**Node.js client**: `pg` npm package (node-postgres) — the standard PostgreSQL client for Node.js. CommonJS compatible, connection pooling, parameterized queries.
+
+**Downsampling approach**: TimescaleDB continuous aggregates — define a materialized view that automatically aggregates raw data into 30-second buckets. Combined with a retention policy that drops raw data older than 48 hours. No application-level cron job needed.
+
+```sql
+-- Continuous aggregate for 30s downsampling
+CREATE MATERIALIZED VIEW sensor_readings_30s
+WITH (timescaledb.continuous) AS
+SELECT time_bucket('30 seconds', ts) AS bucket,
+       sensor_id,
+       AVG(value) AS value
+FROM sensor_readings
+GROUP BY bucket, sensor_id;
+
+-- Retention policy: drop raw data after 48 hours
+SELECT add_retention_policy('sensor_readings', INTERVAL '48 hours');
+
+-- Refresh policy: keep continuous aggregate up to date
+SELECT add_continuous_aggregate_policy('sensor_readings_30s',
+  start_offset => INTERVAL '1 hour',
+  end_offset => INTERVAL '5 minutes',
+  schedule_interval => INTERVAL '30 minutes');
+```
 
 **Storage estimates**:
-- Full resolution 48h (5s interval): ~590K rows/day × 2 days ≈ 30 MB
-- Downsampled 30s long-term: ~1-2 GB/year
-- State change events: sparse, negligible
-- Total after 1 year: ~1-2 GB (well within 10 GB disk)
+- Full resolution 48h (5s interval): ~590K rows/day × 2 days ≈ 30 MB (auto-dropped by retention policy)
+- Downsampled 30s long-term: ~300 MB/year (with TimescaleDB compression: ~30-60 MB/year)
+- State change events: sparse, negligible (<5 MB/year)
+- Total after 5 years: ~200-400 MB (well within 25 GB managed storage)
 
-**Downsampling approach**: Application-level periodic job (hourly `setInterval`) that aggregates raw data older than 48h into 30s buckets, inserts aggregated rows, deletes raw rows.
-
-**Persistence (Constitution VI)**: SQLite database file must be backed up to S3 periodically. The file persists in a Docker volume, but S3 backup ensures survival across server recreation. The existing `s3-storage.js` adapter can be extended for this.
+**Persistence (Constitution VI)**: Fully satisfied — UpCloud Managed Database provides automated backups, PITR, and durable storage external to the application containers. No custom backup logic needed.
 
 **Alternatives considered**:
-- InfluxDB 2.x: Best features (retention policies, continuous queries) but 1-2 GB RAM minimum. Non-starter on 1 GB server.
-- TimescaleDB: Excellent downsampling (continuous aggregates) but PostgreSQL base needs 512 MB+ RAM and 800 MB+ Docker image.
-- QuestDB: High-performance but needs 2-8 GB RAM. Completely oversized.
-- In-memory with file persistence: Rejected in clarification — user explicitly wants a database.
+- SQLite via `better-sqlite3` (in-process): Zero additional RAM, simple. Rejected because it requires custom S3 backup logic for Constitution VI compliance, manual downsampling via application code, and doesn't provide PITR or automated backups.
+- InfluxDB 2.x: Best native time-series features but 1-2 GB RAM minimum for self-hosted. No managed option on UpCloud.
+- QuestDB: High-performance but 2-8 GB RAM. No managed option on UpCloud.
+- Self-hosted PostgreSQL+TimescaleDB in Docker: Would save the managed DB cost but adds ~512 MB RAM to the already constrained 1 GB server and requires manual backup management.
 
 ## R3: MQTT-to-Browser Communication
 
