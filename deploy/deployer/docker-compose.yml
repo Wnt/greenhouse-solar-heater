@@ -51,6 +51,8 @@ services:
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
+    dns:
+      - 127.0.0.11
     volumes:
       - ./openvpn.conf:/etc/openvpn/server.conf:ro
     ports:

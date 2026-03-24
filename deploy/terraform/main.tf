@@ -78,6 +78,10 @@ resource "upcloud_server" "monitor" {
     type = "public"
   }
 
+  network_interface {
+    type = "utility"
+  }
+
   login {
     keys = [var.ssh_public_key]
   }
@@ -95,8 +99,6 @@ resource "upcloud_server" "monitor" {
     github_repo      = lower(var.github_repo)
   })
 }
-
-# ── Firewall ──
 
 # ── Managed PostgreSQL with TimescaleDB ──
 
