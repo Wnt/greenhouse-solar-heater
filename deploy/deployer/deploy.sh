@@ -77,7 +77,7 @@ if ! docker compose -f "$COMPOSE_FILE" pull --quiet 2>/dev/null; then
 fi
 
 # Step 5: Resolve app image name for one-shot S3 operations
-APP_IMAGE=$(cd "$APP_DIR" && docker compose config --images app 2>/dev/null)
+APP_IMAGE=$(cd "$APP_DIR" && docker compose config --images app 2>/dev/null | grep -v openvpn | head -1)
 if [ -z "$APP_IMAGE" ]; then
   log "WARNING: Could not determine app image — skipping VPN config sync"
 else
