@@ -41,7 +41,7 @@ output "database_port" {
 }
 
 output "database_url" {
-  description = "Full PostgreSQL connection URL for the app"
-  value       = "postgres://${upcloud_managed_database_user.app.username}:${var.db_password}@${upcloud_managed_database_postgresql.timeseries.service_host}:${upcloud_managed_database_postgresql.timeseries.service_port}/defaultdb?sslmode=require"
+  description = "Full PostgreSQL connection URL (auto-generated, stored in S3)"
+  value       = upcloud_managed_database_postgresql.timeseries.service_uri
   sensitive   = true
 }

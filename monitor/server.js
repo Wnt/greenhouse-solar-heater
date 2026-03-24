@@ -25,7 +25,6 @@ const PLAYGROUND_DIR = path.join(__dirname, '..', 'playground');
 const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
 const VPN_CHECK_HOST = process.env.VPN_CHECK_HOST || '';
 const MQTT_HOST = process.env.MQTT_HOST || '';
-const DATABASE_URL = process.env.DATABASE_URL || '';
 
 const MIME = {
   '.html': 'text/html',
@@ -533,22 +532,25 @@ function startValvePoller() {
 }
 
 function initServices(callback) {
-  // Initialize database if configured
-  if (DATABASE_URL) {
-    db = require('./lib/db');
-    db.initSchema(function (err) {
-      if (err) {
-        log.error('db schema init failed', { error: err.message });
-        db = null;
-      } else {
-        log.info('database initialized');
-      }
+  // Resolve DATABASE_URL from env or S3
+  var dbModule = require('./lib/db');
+  dbModule.resolveUrl(function (err, url) {
+    if (url) {
+      db = dbModule;
+      db.initSchema(function (schemaErr) {
+        if (schemaErr) {
+          log.error('db schema init failed', { error: schemaErr.message });
+          db = null;
+        } else {
+          log.info('database initialized');
+        }
+        callback();
+      });
+    } else {
+      log.info('DATABASE_URL not found (checked env and S3) — history features disabled');
       callback();
-    });
-  } else {
-    log.info('DATABASE_URL not set — history features disabled');
-    callback();
-  }
+    }
+  });
 }
 
 function startMqttBridge() {

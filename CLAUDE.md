@@ -27,7 +27,8 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `monitor/lib/logger.js` → structured JSON logger (used by server and auth modules)
 - `monitor/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
 - `monitor/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload openvpn.conf)
-- `monitor/lib/db.js` → PostgreSQL/TimescaleDB module (schema init, sensor readings, state events, history queries)
+- `monitor/lib/db.js` → PostgreSQL/TimescaleDB module (schema init, sensor readings, state events, history queries). Resolves DATABASE_URL from env or S3 (`database-url.json`)
+- `monitor/lib/db-config.js` → Database URL S3 persistence CLI (store/load DATABASE_URL in object storage)
 - `monitor/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB)
 - `monitor/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push)
 - `deploy/` → cloud deployment infrastructure

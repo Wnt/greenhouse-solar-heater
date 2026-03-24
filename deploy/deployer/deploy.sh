@@ -99,6 +99,22 @@ else
     log "WARNING: VPN config download failed — continuing without VPN config"
   fi
 
+  # Step 6b: Fetch DATABASE_URL from S3 and add to .env
+  log "Checking S3 for database URL"
+  DB_URL=$(timeout 30 docker run --rm --network host --env-file "$APP_DIR/.env" \
+    "$APP_IMAGE" \
+    node monitor/lib/db-config.js load 2>/dev/null) || true
+  if [ -n "$DB_URL" ]; then
+    # Add/replace DATABASE_URL in .env
+    grep -v '^DATABASE_URL=' "$ENV_FILE" > "$ENV_FILE.tmp" || true
+    echo "DATABASE_URL=$DB_URL" >> "$ENV_FILE.tmp"
+    mv "$ENV_FILE.tmp" "$ENV_FILE"
+    chmod 0600 "$ENV_FILE"
+    log "DATABASE_URL loaded from S3 and added to .env"
+  else
+    log "No DATABASE_URL found in S3 — database features will be disabled"
+  fi
+
   # Step 7: Upload VPN config to S3 if local exists but S3 doesn't (bootstrap)
   if [ -f "$VPN_CONFIG" ]; then
     log "Local VPN config found — ensuring S3 backup exists"

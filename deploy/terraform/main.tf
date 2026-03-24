@@ -93,7 +93,6 @@ resource "upcloud_server" "monitor" {
     s3_secret_key    = upcloud_managed_object_storage_user_access_key.app.secret_access_key
     s3_region        = var.objsto_region
     github_repo      = lower(var.github_repo)
-    database_url     = "postgres://${upcloud_managed_database_user.app.username}:${var.db_password}@${upcloud_managed_database_postgresql.timeseries.service_host}:${upcloud_managed_database_postgresql.timeseries.service_port}/defaultdb?sslmode=require"
   })
 }
 
@@ -115,10 +114,31 @@ resource "upcloud_managed_database_postgresql" "timeseries" {
   }
 }
 
-resource "upcloud_managed_database_user" "app" {
-  service = upcloud_managed_database_postgresql.timeseries.id
-  username = "app"
-  password = var.db_password
+# ── Store DATABASE_URL in S3 ──
+# Uses the app image to run the db-config.js helper, same pattern as VPN config.
+# Runs on the Terraform operator's machine (needs node + npm install).
+
+resource "null_resource" "store_db_url" {
+  triggers = {
+    service_uri = upcloud_managed_database_postgresql.timeseries.service_uri
+  }
+
+  provisioner "local-exec" {
+    working_dir = "${path.module}/../.."
+    command     = "node monitor/lib/db-config.js store \"${upcloud_managed_database_postgresql.timeseries.service_uri}\""
+    environment = {
+      S3_ENDPOINT          = "https://${[for e in upcloud_managed_object_storage.credentials.endpoint : e.domain_name if e.type == "public"][0]}"
+      S3_BUCKET            = upcloud_managed_object_storage_bucket.credentials.name
+      S3_ACCESS_KEY_ID     = upcloud_managed_object_storage_user_access_key.app.access_key_id
+      S3_SECRET_ACCESS_KEY = upcloud_managed_object_storage_user_access_key.app.secret_access_key
+      S3_REGION            = var.objsto_region
+    }
+  }
+
+  depends_on = [
+    upcloud_managed_object_storage_user_policy.app_rw,
+    upcloud_managed_database_postgresql.timeseries,
+  ]
 }
 
 # ── Firewall ──

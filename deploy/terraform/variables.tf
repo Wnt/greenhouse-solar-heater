@@ -54,9 +54,3 @@ variable "db_plan" {
   type        = string
   default     = "1x1xCPU-2GB-25GB"
 }
-
-variable "db_password" {
-  description = "Password for the managed database app user"
-  type        = string
-  sensitive   = true
-}

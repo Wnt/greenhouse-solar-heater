@@ -1,8 +1,9 @@
 /**
  * PostgreSQL/TimescaleDB module for sensor readings and state events.
  *
- * Environment variables:
- *   DATABASE_URL - PostgreSQL connection string
+ * Connection URL resolution (in order):
+ *   1. DATABASE_URL environment variable
+ *   2. S3 object storage (database-url.json) — loaded via resolveUrl()
  *
  * CLI: node monitor/lib/db.js --init   (creates schema)
  */
@@ -11,12 +12,43 @@ var createLogger = require('./logger');
 var log = createLogger('db');
 
 var pool = null;
+var resolvedUrl = null;
+
+function getConnectionUrl() {
+  return resolvedUrl || process.env.DATABASE_URL || null;
+}
+
+function resolveUrl(callback) {
+  // 1. Environment variable takes precedence
+  if (process.env.DATABASE_URL) {
+    resolvedUrl = process.env.DATABASE_URL;
+    callback(null, resolvedUrl);
+    return;
+  }
+
+  // 2. Try S3
+  var dbConfig = require('./db-config');
+  dbConfig.load(function (err, url) {
+    if (err) {
+      log.warn('failed to load DATABASE_URL from S3', { error: err.message });
+      callback(null, null);
+      return;
+    }
+    if (url) {
+      resolvedUrl = url;
+      log.info('DATABASE_URL loaded from S3');
+    }
+    callback(null, resolvedUrl);
+  });
+}
 
 function getPool() {
   if (pool) return pool;
+  var url = getConnectionUrl();
+  if (!url) return null;
   var Pool = require('pg').Pool;
   pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: url,
     max: 5,
     idleTimeoutMillis: 30000,
   });
@@ -257,17 +289,19 @@ function close(callback) {
 
 if (require.main === module) {
   if (process.argv.includes('--init')) {
-    if (!process.env.DATABASE_URL) {
-      console.error('DATABASE_URL environment variable is required');
-      process.exit(1);
-    }
-    initSchema(function (err) {
-      if (err) {
-        console.error('Schema initialization failed:', err.message);
+    resolveUrl(function (err, url) {
+      if (!url) {
+        console.error('DATABASE_URL not found (checked env and S3)');
         process.exit(1);
       }
-      console.log('Schema initialized successfully');
-      close(function () { process.exit(0); });
+      initSchema(function (schemaErr) {
+        if (schemaErr) {
+          console.error('Schema initialization failed:', schemaErr.message);
+          process.exit(1);
+        }
+        console.log('Schema initialized successfully');
+        close(function () { process.exit(0); });
+      });
     });
   } else {
     console.error('Usage: node monitor/lib/db.js --init');
@@ -276,6 +310,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  resolveUrl: resolveUrl,
   getPool: getPool,
   initSchema: initSchema,
   insertSensorReadings: insertSensorReadings,
