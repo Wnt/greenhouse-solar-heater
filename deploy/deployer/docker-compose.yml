@@ -20,9 +20,8 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2-openssl
     restart: unless-stopped
-    read_only: true
     network_mode: "service:openvpn"
-    command: mosquitto -c /dev/null -p 1883 -v
+    command: mosquitto -p 1883 -v
     tmpfs:
       - /mosquitto/data:noexec,nosuid,size=64m
     depends_on:
