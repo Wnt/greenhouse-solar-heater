@@ -29,6 +29,8 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `monitor/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload openvpn.conf)
 - `monitor/lib/db.js` → PostgreSQL/TimescaleDB module (schema init, sensor readings, state events, history queries). Resolves DATABASE_URL from env or S3 (`database-url.json`)
 - `monitor/lib/db-config.js` → Database URL S3 persistence CLI (store/load DATABASE_URL in object storage)
+- `monitor/lib/nr-config.js` → New Relic license key S3 persistence CLI (store/load license key in object storage)
+- `monitor/lib/tracing.js` → OpenTelemetry SDK initialization (loaded via `--require`, no-op when `NEW_RELIC_LICENSE_KEY` not set)
 - `monitor/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB)
 - `monitor/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push)
 - `deploy/` → cloud deployment infrastructure
@@ -156,6 +158,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/valve-poller.test.js` — unit tests for valve state change detection (pure functions, poller behavior)
 - `tests/sw.test.js` — unit tests for service worker fetch handler, offline caching, and push handler preservation
 - `tests/db.test.js` — unit tests for PostgreSQL/TimescaleDB module (schema init, inserts, queries)
+- `tests/tracing.test.js` — unit tests for OpenTelemetry tracing initialization, graceful no-op, MQTT spans, log trace context injection, nr-config S3 helper
 - `tests/mqtt-bridge.test.js` — unit tests for MQTT bridge (state change detection, connection status)
 - `tests/device-config.test.js` — unit tests for device config store (default config, CRUD, persistence)
 - `tests/device-config-integration.test.js` — integration tests: UI config format → Shelly control-logic interpretation (staged deployment scenarios)
@@ -210,6 +213,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - SQLite via `better-sqlite3` (in-process, WAL mode) + S3 backup for durability (010-live-system-playground)
 - JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `pg` (node-postgres), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push` (010-live-system-playground)
 - UpCloud Managed PostgreSQL with TimescaleDB extension (plan `1x1xCPU-2GB-25GB`, zone `fi-hel1`), provisioned via Terraform (010-live-system-playground)
+- Node.js 20 LTS (CommonJS server, ES6+ browser modules) + `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/exporter-metrics-otlp-http`, `@opentelemetry/exporter-logs-otlp-http` (011-newrelic-observability)
+- UpCloud S3-compatible Object Storage (license key persistence), UpCloud Managed PostgreSQL with TimescaleDB (011-newrelic-observability)
 
 ## Cloud Deployment Architecture
 
@@ -240,7 +245,47 @@ Server environment is split into two sources, merged by the deployer:
 
 VPN is always-on (the app uses `network_mode: "service:openvpn"`). Firewall rule controlled via `enable_vpn=true` in Terraform.
 
+## Observability (New Relic)
+
+The app supports optional New Relic observability via OpenTelemetry. All telemetry is disabled by default (zero overhead) and activates only when a license key is configured.
+
+### Enabling
+
+```bash
+cd deploy/terraform
+terraform apply -var="new_relic_license_key=NRAK-..."
+```
+
+The deployer picks up the key from S3 within 5 minutes and restarts containers with tracing enabled.
+
+### Architecture
+
+- **`monitor/lib/tracing.js`** — OTel SDK init, loaded via `--require` before server.js. No-op when `NEW_RELIC_LICENSE_KEY` is unset.
+- **`monitor/lib/nr-config.js`** — S3 persistence helper for the license key (same pattern as `db-config.js`). S3 key: `newrelic-config.json`.
+- **`monitor/lib/logger.js`** — Injects `trace.id` and `span.id` into JSON log entries for trace-log correlation.
+- **`monitor/lib/mqtt-bridge.js`** — Manual MQTT spans (`mqtt.message`, `mqtt.publish`) via `@opentelemetry/api`.
+- **Docker Compose `monitoring` profile** — `newrelic-infra` (host/container metrics) and `nri-postgresql` (database health). Only started when license key is present.
+
+### Environment Variables
+
+| Variable | Source | Purpose |
+|----------|--------|---------|
+| `NEW_RELIC_LICENSE_KEY` | S3 (via deployer) | Ingest license key. Empty = telemetry disabled. |
+| `NRIA_LICENSE_KEY` | S3 (via deployer) | Same key, for infra agent container. |
+| `OTEL_SERVICE_NAME` | config.env | Service name in New Relic (default: `greenhouse-monitor`). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | config.env | OTLP endpoint (default: `https://otlp.nr-data.net`). |
+
+### What Gets Traced
+
+- HTTP requests (incoming + outgoing Shelly proxy) — auto-instrumented
+- PostgreSQL queries — auto-instrumented via `pg` driver
+- S3 operations — auto-instrumented via AWS SDK
+- MQTT operations (connect, subscribe, publish, message) — manual spans
+- Node.js runtime metrics (heap, GC, event loop) — auto-instrumented
+- Host/container metrics — via New Relic Infrastructure agent
+- PostgreSQL health — via nri-postgresql integration
+
 ## Recent Changes
+- 011-newrelic-observability: Added Node.js 20 LTS (CommonJS server, ES6+ browser modules) + `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/exporter-metrics-otlp-http`, `@opentelemetry/exporter-logs-otlp-http`
 - 010-live-system-playground: Added JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `pg` (node-postgres), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push`
 - 010-live-system-playground: Added JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `better-sqlite3` (SQLite), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push`
-- 009-add-home-screen-support: Added JavaScript ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + None new — extends existing service worker and manifest

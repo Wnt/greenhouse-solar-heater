@@ -3,7 +3,7 @@ FROM docker:cli
 WORKDIR /config
 
 # Copy deployment config files
-COPY docker-compose.yml Caddyfile config.env ./
+COPY docker-compose.yml Caddyfile config.env nri-postgresql-config.yml ./
 
 # Inject GITHUB_REPO at build time (from CI) so config.env is always correct
 ARG GITHUB_REPO=""

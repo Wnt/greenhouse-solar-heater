@@ -6,6 +6,8 @@
 
 var createLogger = require('./logger');
 var log = createLogger('mqtt-bridge');
+var { trace } = require('@opentelemetry/api');
+var tracer = trace.getTracer('mqtt-bridge');
 
 var mqttClient = null;
 var wsServer = null;
@@ -62,15 +64,18 @@ function start(options) {
   mqttClient.on('message', function (topic, message) {
     if (topic !== 'greenhouse/state') return;
 
+    var span = tracer.startSpan('mqtt.message', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': topic } });
     var payload;
     try {
       payload = JSON.parse(message.toString());
     } catch (e) {
       log.warn('invalid JSON on greenhouse/state', { error: e.message });
+      span.end();
       return;
     }
 
     handleStateMessage(payload);
+    span.end();
   });
 
   return mqttClient;
@@ -167,7 +172,9 @@ function publishConfig(config) {
     log.warn('cannot publish config: MQTT not connected');
     return false;
   }
+  var span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': 'greenhouse/config' } });
   mqttClient.publish('greenhouse/config', JSON.stringify(config), { qos: 1, retain: true });
+  span.end();
   return true;
 }
 
