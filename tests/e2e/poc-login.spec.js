@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 
 test.describe('PoC Login Page', () => {
   test('loads without JavaScript errors', async ({ page }) => {

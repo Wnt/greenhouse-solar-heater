@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 
 test.describe('Logout Feature', () => {
   test('logout button is hidden by default when auth status returns 404', async ({ page }) => {

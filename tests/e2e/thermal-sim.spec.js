@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 
 // Helper: navigate to a view via sidebar (desktop) or bottom nav
 async function goToView(page, viewName) {
@@ -16,8 +16,6 @@ async function setSlider(page, id, value) {
 
 test.describe('Thermal Simulation UI', () => {
   test.beforeEach(async ({ page }) => {
-    // Block external font requests so load event fires in offline/restricted environments
-    await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.abort());
     await page.goto('/playground/');
     // Wait for controls to render (7 control groups: 6 sliders + day/night toggle)
     await goToView(page, 'controls');

@@ -1,5 +1,5 @@
 // @ts-check
-const { test, expect } = require('@playwright/test');
+import { test, expect } from './fixtures.js';
 
 test.describe('Live mode toggle', () => {
   test('mode toggle is visible on non-GitHub-Pages deployment', async ({ page }) => {

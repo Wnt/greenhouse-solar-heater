@@ -1,5 +1,5 @@
 // @ts-check
-const { test, expect } = require('@playwright/test');
+import { test, expect } from './fixtures.js';
 
 /**
  * E2E tests for the Device config management UI.
@@ -16,9 +16,6 @@ async function setupDeviceView(page, initialConfig) {
   const config = { ...DEFAULT_CONFIG, ...initialConfig };
   let savedConfig = { ...config };
   const putRequests = [];
-
-  // Block external fonts so load event fires in restricted environments
-  await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.abort());
 
   // Mock GET /api/device-config
   await page.route('**/api/device-config', async (route) => {
@@ -260,7 +257,6 @@ test.describe('Device config UI', () => {
   });
 
   test('device view only visible in live mode', async ({ page }) => {
-    await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.abort());
     await page.route('**/api/device-config', route => route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify(DEFAULT_CONFIG),

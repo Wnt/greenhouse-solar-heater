@@ -5,7 +5,7 @@
  *
  * Usage: npm run screenshots
  */
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import path from 'path';
 
 const screenshotDir = path.join('tests', 'e2e', 'screenshots');
