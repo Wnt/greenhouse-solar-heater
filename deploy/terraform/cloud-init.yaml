@@ -55,11 +55,25 @@ write_files:
       [Install]
       WantedBy=timers.target
 
+  # Docker DNS: systemd-resolved listens on 127.0.0.53 (loopback only),
+  # which is unreachable from Docker container network namespaces.
+  # Fix: make resolved also listen on the docker0 bridge IP (172.17.0.1)
+  # so containers can use it as their DNS server.
+  - path: /etc/systemd/resolved.conf.d/docker.conf
+    permissions: "0644"
+    content: |
+      [Resolve]
+      DNSStubListenerExtra=172.17.0.1
+
 runcmd:
   # Install Docker from official repo
   - curl -fsSL https://get.docker.com | sh
   - systemctl enable docker
   - systemctl start docker
+
+  # Restart systemd-resolved to pick up DNSStubListenerExtra config
+  # (must happen after Docker creates the docker0 bridge)
+  - systemctl restart systemd-resolved
 
   # Deploy user with Docker group
   - useradd -m -s /bin/bash -G docker deploy

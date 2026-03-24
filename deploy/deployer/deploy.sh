@@ -85,14 +85,14 @@ if [ -z "$APP_IMAGE" ]; then
 else
   log "Resolved app image: $APP_IMAGE"
   # Step 6: Download VPN config from S3 (if available)
-  # --network host: Docker bridge containers cannot reach the host's
-  # systemd-resolved (127.0.0.53) or UpCloud's DNS servers directly.
-  # Host networking gives one-shot S3 operations reliable DNS resolution.
+  # --dns 172.17.0.1: systemd-resolved listens on the docker0 bridge IP
+  # (configured via cloud-init DNSStubListenerExtra), so one-shot containers
+  # on the default bridge network can resolve external hostnames.
   # Ensure the target file is writable by app user (UID 1000) — the deployer
   # runs as root but the app image runs as 1000:1000.
   touch "$VPN_CONFIG" && chown 1000:1000 "$VPN_CONFIG"
   log "Checking S3 for VPN config"
-  if ! timeout 30 docker run --rm --network host --env-file "$APP_DIR/.env" \
+  if ! timeout 30 docker run --rm --dns 172.17.0.1 --env-file "$APP_DIR/.env" \
     -v "$APP_DIR:/opt/app" \
     "$APP_IMAGE" \
     node monitor/lib/vpn-config.js download /opt/app/openvpn.conf 2>&1; then
@@ -101,7 +101,7 @@ else
 
   # Step 6b: Fetch DATABASE_URL from S3 and add to .env
   log "Checking S3 for database URL"
-  DB_URL=$(timeout 30 docker run --rm --network host --env-file "$APP_DIR/.env" \
+  DB_URL=$(timeout 30 docker run --rm --dns 172.17.0.1 --env-file "$APP_DIR/.env" \
     "$APP_IMAGE" \
     node monitor/lib/db-config.js load 2>/dev/null) || true
   if [ -n "$DB_URL" ]; then
@@ -118,7 +118,7 @@ else
   # Step 7: Upload VPN config to S3 if local exists but S3 doesn't (bootstrap)
   if [ -f "$VPN_CONFIG" ]; then
     log "Local VPN config found — ensuring S3 backup exists"
-    if ! timeout 30 docker run --rm --network host --env-file "$APP_DIR/.env" \
+    if ! timeout 30 docker run --rm --dns 172.17.0.1 --env-file "$APP_DIR/.env" \
       -v "$APP_DIR:/opt/app" \
       "$APP_IMAGE" \
       node monitor/lib/vpn-config.js upload /opt/app/openvpn.conf 2>&1; then
