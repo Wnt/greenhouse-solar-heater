@@ -78,6 +78,10 @@ resource "upcloud_server" "monitor" {
     type = "public"
   }
 
+  network_interface {
+    type = "utility"
+  }
+
   login {
     keys = [var.ssh_public_key]
   }
@@ -94,13 +98,6 @@ resource "upcloud_server" "monitor" {
     s3_region        = var.objsto_region
     github_repo      = lower(var.github_repo)
   })
-}
-
-# ── Utility network (private access to managed database) ──
-
-resource "upcloud_server_network_interface" "utility" {
-  server_id = upcloud_server.monitor.id
-  type      = "utility"
 }
 
 # ── Managed PostgreSQL with TimescaleDB ──
