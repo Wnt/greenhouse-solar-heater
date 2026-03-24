@@ -77,9 +77,7 @@ if ! docker compose -f "$COMPOSE_FILE" pull --quiet 2>/dev/null; then
 fi
 
 # Step 5: Resolve app image name for one-shot S3 operations
-# docker compose config --images lists ALL service images (no service filter).
-# Filter to the app image by excluding known non-app images (caddy, openvpn, mosquitto).
-APP_IMAGE=$(cd "$APP_DIR" && docker compose config --images 2>/dev/null | grep -v -e openvpn -e caddy -e mosquitto | head -1)
+APP_IMAGE=$(cd "$APP_DIR" && docker compose config --images app 2>/dev/null)
 if [ -z "$APP_IMAGE" ]; then
   log "WARNING: Could not determine app image — skipping VPN config sync"
 else
