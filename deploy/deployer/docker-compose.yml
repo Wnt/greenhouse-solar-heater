@@ -65,6 +65,37 @@ services:
     sysctls:
       - net.ipv4.ip_forward=1
 
+  nri-postgresql:
+    image: newrelic/infrastructure-bundle:latest
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    network_mode: "service:openvpn"
+    dns:
+      - 172.17.0.1
+    environment:
+      - NRIA_LICENSE_KEY=${NRIA_LICENSE_KEY}
+      - NRIA_DISPLAY_NAME=${DOMAIN:-greenhouse}-postgresql
+    volumes:
+      - ./nri-postgresql-config.yml:/etc/newrelic-infra/integrations.d/postgresql-config.yml:ro
+
+  newrelic-infra:
+    image: newrelic/infrastructure:latest
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    privileged: true
+    network_mode: host
+    pid: host
+    environment:
+      - NRIA_LICENSE_KEY=${NRIA_LICENSE_KEY}
+      - NRIA_DISPLAY_NAME=${DOMAIN:-greenhouse}
+    volumes:
+      - /sys:/sys:ro
+      - /proc:/proc:ro
+      - /etc:/etc:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
 volumes:
   caddy_data:
   caddy_config:

@@ -143,6 +143,34 @@ resource "null_resource" "store_db_url" {
   ]
 }
 
+# ── Store New Relic license key in S3 ──
+# Same S3 bootstrap pattern as DATABASE_URL (Constitution principle VII).
+# Runs on operator's machine. Key is fetched by the deployer on each cycle.
+
+resource "null_resource" "store_nr_key" {
+  count = var.new_relic_license_key != "" ? 1 : 0
+
+  triggers = {
+    license_key = var.new_relic_license_key
+  }
+
+  provisioner "local-exec" {
+    working_dir = "${path.module}/../.."
+    command     = "node monitor/lib/nr-config.js store \"${var.new_relic_license_key}\""
+    environment = {
+      S3_ENDPOINT          = "https://${[for e in upcloud_managed_object_storage.credentials.endpoint : e.domain_name if e.type == "public"][0]}"
+      S3_BUCKET            = upcloud_managed_object_storage_bucket.credentials.name
+      S3_ACCESS_KEY_ID     = upcloud_managed_object_storage_user_access_key.app.access_key_id
+      S3_SECRET_ACCESS_KEY = upcloud_managed_object_storage_user_access_key.app.secret_access_key
+      S3_REGION            = var.objsto_region
+    }
+  }
+
+  depends_on = [
+    upcloud_managed_object_storage_user_policy.app_rw,
+  ]
+}
+
 # ── Firewall ──
 
 resource "upcloud_firewall_rules" "monitor" {

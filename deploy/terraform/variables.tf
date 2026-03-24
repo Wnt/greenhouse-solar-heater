@@ -54,3 +54,10 @@ variable "db_plan" {
   type        = string
   default     = "1x1xCPU-1GB-10GB"
 }
+
+variable "new_relic_license_key" {
+  description = "New Relic ingest license key (NRAK-...). Leave empty to disable observability. Enable with: terraform apply -var=\"new_relic_license_key=NRAK-...\""
+  type        = string
+  sensitive   = true
+  default     = ""
+}

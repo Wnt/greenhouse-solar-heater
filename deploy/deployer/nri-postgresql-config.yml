@@ -1,0 +1,16 @@
+---
+# New Relic PostgreSQL integration configuration.
+# Templated by deploy.sh with credentials from DATABASE_URL.
+# See: https://docs.newrelic.com/docs/infrastructure/host-integrations/host-integrations-list/postgresql/postgresql-integration/
+integrations:
+  - name: nri-postgresql
+    env:
+      HOSTNAME: __PG_HOST__
+      PORT: "__PG_PORT__"
+      USERNAME: __PG_USER__
+      PASSWORD: __PG_PASSWORD__
+      DATABASE: __PG_DATABASE__
+      ENABLE_SSL: "true"
+      TRUST_SERVER_CERTIFICATE: "true"
+      COLLECTION_LIST: ALL
+    interval: 30s

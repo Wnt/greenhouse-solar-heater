@@ -15,13 +15,13 @@
 
 **Purpose**: Install OTel packages, create the S3 persistence helper, and wire up Terraform + deployer for the license key
 
-- [ ] T001 Install OpenTelemetry packages: `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/exporter-metrics-otlp-http`, `@opentelemetry/exporter-logs-otlp-http`, `@opentelemetry/api` in package.json
-- [ ] T002 [P] Create New Relic license key S3 persistence helper in monitor/lib/nr-config.js (clone pattern from monitor/lib/db-config.js — store/load CLI, S3 key `newrelic-config.json`, exports `load()` and `store()`)
-- [ ] T003 [P] Add `new_relic_license_key` variable (sensitive, default `""`) in deploy/terraform/variables.tf
-- [ ] T004 Add `null_resource.store_nr_key` in deploy/terraform/main.tf — runs `node monitor/lib/nr-config.js store` with S3 env vars, triggers on key change, depends on S3 policy (same pattern as `null_resource.store_db_url`)
-- [ ] T005 Add NR license key fetch step in deploy/deployer/deploy.sh — after DB_URL fetch (Step 6b), run `node monitor/lib/nr-config.js load`, add `NEW_RELIC_LICENSE_KEY` and `NRIA_LICENSE_KEY` to .env if non-empty
-- [ ] T006 Add conditional `--profile monitoring` to `docker compose up` command in deploy/deployer/deploy.sh — if `NEW_RELIC_LICENSE_KEY` is set in .env, append `--profile monitoring`
-- [ ] T007 [P] Add `OTEL_SERVICE_NAME=greenhouse-monitor` and `OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.nr-data.net` to deploy/deployer/config.env
+- [x] T001 Install OpenTelemetry packages: `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/exporter-metrics-otlp-http`, `@opentelemetry/exporter-logs-otlp-http`, `@opentelemetry/api` in package.json
+- [x] T002 [P] Create New Relic license key S3 persistence helper in monitor/lib/nr-config.js (clone pattern from monitor/lib/db-config.js — store/load CLI, S3 key `newrelic-config.json`, exports `load()` and `store()`)
+- [x] T003 [P] Add `new_relic_license_key` variable (sensitive, default `""`) in deploy/terraform/variables.tf
+- [x] T004 Add `null_resource.store_nr_key` in deploy/terraform/main.tf — runs `node monitor/lib/nr-config.js store` with S3 env vars, triggers on key change, depends on S3 policy (same pattern as `null_resource.store_db_url`)
+- [x] T005 Add NR license key fetch step in deploy/deployer/deploy.sh — after DB_URL fetch (Step 6b), run `node monitor/lib/nr-config.js load`, add `NEW_RELIC_LICENSE_KEY` and `NRIA_LICENSE_KEY` to .env if non-empty
+- [x] T006 Add conditional `--profile monitoring` to `docker compose up` command in deploy/deployer/deploy.sh — if `NEW_RELIC_LICENSE_KEY` is set in .env, append `--profile monitoring`
+- [x] T007 [P] Add `OTEL_SERVICE_NAME=greenhouse-monitor` and `OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.nr-data.net` to deploy/deployer/config.env
 
 ---
 
@@ -31,9 +31,9 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T008 Create OTel tracing initialization module in monitor/lib/tracing.js — check `NEW_RELIC_LICENSE_KEY` env var; if empty, exit immediately (no-op); if set, init `NodeSDK` with auto-instrumentations, OTLP trace/metrics/logs exporters, set `api-key` header to the license key, configure service name from `OTEL_SERVICE_NAME`
-- [ ] T009 Update Dockerfile CMD in deploy/docker/Dockerfile — change `CMD ["node", "monitor/server.js"]` to `CMD ["node", "--require", "./monitor/lib/tracing.js", "monitor/server.js"]`
-- [ ] T010 Add unit tests for tracing initialization in tests/tracing.test.js — test: graceful no-op when `NEW_RELIC_LICENSE_KEY` is unset, verify no errors thrown, verify module exports expected interface
+- [x] T008 Create OTel tracing initialization module in monitor/lib/tracing.js — check `NEW_RELIC_LICENSE_KEY` env var; if empty, exit immediately (no-op); if set, init `NodeSDK` with auto-instrumentations, OTLP trace/metrics/logs exporters, set `api-key` header to the license key, configure service name from `OTEL_SERVICE_NAME`
+- [x] T009 Update Dockerfile CMD in deploy/docker/Dockerfile — change `CMD ["node", "monitor/server.js"]` to `CMD ["node", "--require", "./monitor/lib/tracing.js", "monitor/server.js"]`
+- [x] T010 Add unit tests for tracing initialization in tests/tracing.test.js — test: graceful no-op when `NEW_RELIC_LICENSE_KEY` is unset, verify no errors thrown, verify module exports expected interface
 
 **Checkpoint**: Foundation ready — OTel SDK initializes conditionally, app works with and without tracing
 
@@ -47,10 +47,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Verify auto-instrumentation works for HTTP incoming requests by starting the app with `--require monitor/lib/tracing.js` and confirming `http` module is patched (check `@opentelemetry/instrumentation-http` in tracing.js configuration — enabled by default via auto-instrumentations-node, no code needed beyond T008)
-- [ ] T012 [US1] Verify auto-instrumentation works for `pg` (PostgreSQL) queries — the `@opentelemetry/instrumentation-pg` is included in auto-instrumentations-node; verify by running a query and checking span output in tests/tracing.test.js
-- [ ] T013 [US1] Add manual MQTT spans in monitor/lib/mqtt-bridge.js — wrap `mqtt.connect()` callback with a span (`mqtt.connect`), wrap `client.subscribe()` callback with a span (`mqtt.subscribe`), wrap `client.publish()` with a span (`mqtt.publish`), and wrap the `message` event handler (`handleStateMessage`) with a span (`mqtt.message`). Use `@opentelemetry/api` tracer. ~5 lines of span creation code.
-- [ ] T014 [US1] Add unit test for MQTT spans in tests/tracing.test.js — verify spans are created when OTel is initialized, verify no-op when OTel is not initialized (import `@opentelemetry/api` and check tracer behavior)
+- [x] T011 [US1] Verify auto-instrumentation works for HTTP incoming requests by starting the app with `--require monitor/lib/tracing.js` and confirming `http` module is patched (check `@opentelemetry/instrumentation-http` in tracing.js configuration — enabled by default via auto-instrumentations-node, no code needed beyond T008)
+- [x] T012 [US1] Verify auto-instrumentation works for `pg` (PostgreSQL) queries — the `@opentelemetry/instrumentation-pg` is included in auto-instrumentations-node; verify by running a query and checking span output in tests/tracing.test.js
+- [x] T013 [US1] Add manual MQTT spans in monitor/lib/mqtt-bridge.js — wrap `mqtt.connect()` callback with a span (`mqtt.connect`), wrap `client.subscribe()` callback with a span (`mqtt.subscribe`), wrap `client.publish()` with a span (`mqtt.publish`), and wrap the `message` event handler (`handleStateMessage`) with a span (`mqtt.message`). Use `@opentelemetry/api` tracer. ~5 lines of span creation code.
+- [x] T014 [US1] Add unit test for MQTT spans in tests/tracing.test.js — verify spans are created when OTel is initialized, verify no-op when OTel is not initialized (import `@opentelemetry/api` and check tracer behavior)
 
 **Checkpoint**: User Story 1 complete — HTTP, DB, S3, and MQTT operations produce traces. App works normally without license key.
 
@@ -64,9 +64,9 @@
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Modify monitor/lib/logger.js to inject OTel trace context — import `@opentelemetry/api`, get active span context in each log method (info/warn/error), add `trace.id` and `span.id` fields to the JSON output when context is available. When no active span, omit these fields (no-op).
-- [ ] T016 [US2] Verify OTel logs exporter is configured in monitor/lib/tracing.js — the `@opentelemetry/exporter-logs-otlp-http` should already be wired in T008; confirm it sends the `api-key` header and targets the OTLP endpoint
-- [ ] T017 [US2] Add unit test for log trace context injection in tests/tracing.test.js — verify logger output includes `trace.id` and `span.id` when within an active span, verify they are absent when no span is active
+- [x] T015 [US2] Modify monitor/lib/logger.js to inject OTel trace context — import `@opentelemetry/api`, get active span context in each log method (info/warn/error), add `trace.id` and `span.id` fields to the JSON output when context is available. When no active span, omit these fields (no-op).
+- [x] T016 [US2] Verify OTel logs exporter is configured in monitor/lib/tracing.js — the `@opentelemetry/exporter-logs-otlp-http` should already be wired in T008; confirm it sends the `api-key` header and targets the OTLP endpoint
+- [x] T017 [US2] Add unit test for log trace context injection in tests/tracing.test.js — verify logger output includes `trace.id` and `span.id` when within an active span, verify they are absent when no span is active
 
 **Checkpoint**: User Story 2 complete — logs include trace context and are forwarded to New Relic
 
@@ -80,8 +80,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T018 [P] [US3] Add `newrelic-infra` service to deploy/deployer/docker-compose.yml — image: `newrelic/infrastructure:latest`, profile: `monitoring`, privileged: true, network_mode: host, pid: host, volumes: `/sys:/sys:ro`, `/proc:/proc:ro`, `/etc:/etc:ro`, `/var/run/docker.sock:/var/run/docker.sock:ro`, env: `NRIA_LICENSE_KEY=${NRIA_LICENSE_KEY}`, `NRIA_DISPLAY_NAME=${DOMAIN}`
-- [ ] T019 [US3] Verify the deployer `--profile monitoring` logic from T006 correctly starts the newrelic-infra container only when `NEW_RELIC_LICENSE_KEY` is present
+- [x] T018 [P] [US3] Add `newrelic-infra` service to deploy/deployer/docker-compose.yml — image: `newrelic/infrastructure:latest`, profile: `monitoring`, privileged: true, network_mode: host, pid: host, volumes: `/sys:/sys:ro`, `/proc:/proc:ro`, `/etc:/etc:ro`, `/var/run/docker.sock:/var/run/docker.sock:ro`, env: `NRIA_LICENSE_KEY=${NRIA_LICENSE_KEY}`, `NRIA_DISPLAY_NAME=${DOMAIN}`
+- [x] T019 [US3] Verify the deployer `--profile monitoring` logic from T006 correctly starts the newrelic-infra container only when `NEW_RELIC_LICENSE_KEY` is present
 
 **Checkpoint**: User Story 3 complete — host and container metrics flow to New Relic when license key is configured
 
@@ -95,7 +95,7 @@
 
 ### Implementation for User Story 4
 
-- [ ] T020 [US4] Verify runtime metrics are exported by the OTel SDK configured in T008 — the `@opentelemetry/auto-instrumentations-node` includes `@opentelemetry/instrumentation-runtime-node` which reports heap, GC, and event loop metrics. Confirm the metrics OTLP exporter (`@opentelemetry/exporter-metrics-otlp-http`) sends these to New Relic. May need to explicitly add `@opentelemetry/instrumentation-runtime-node` if not included in the auto-instrumentation bundle.
+- [x] T020 [US4] Verify runtime metrics are exported by the OTel SDK configured in T008 — the `@opentelemetry/auto-instrumentations-node` includes `@opentelemetry/instrumentation-runtime-node` which reports heap, GC, and event loop metrics. Confirm the metrics OTLP exporter (`@opentelemetry/exporter-metrics-otlp-http`) sends these to New Relic. May need to explicitly add `@opentelemetry/instrumentation-runtime-node` if not included in the auto-instrumentation bundle.
 
 **Checkpoint**: User Story 4 complete — Node.js runtime metrics charted in New Relic
 
@@ -109,9 +109,9 @@
 
 ### Implementation for User Story 5
 
-- [ ] T021 [P] [US5] Add `nri-postgresql` service to deploy/deployer/docker-compose.yml — image: `newrelic/infrastructure-bundle:latest`, profile: `monitoring`, network_mode: `service:openvpn` (same as app, for DB access), env: `NRIA_LICENSE_KEY=${NRIA_LICENSE_KEY}`, volume mount a postgresql config YAML that defines the connection to the managed PG instance using `DATABASE_URL`
-- [ ] T022 [US5] Create nri-postgresql integration config file at deploy/deployer/nri-postgresql-config.yml — define the PostgreSQL connection (host, port, user, password parsed from DATABASE_URL), enable collection of `pg_stat_database`, `pg_stat_user_tables`, `pg_stat_bgwriter`
-- [ ] T023 [US5] Update deploy/deployer/deploy.sh to template the nri-postgresql config with DATABASE_URL credentials extracted from .env before starting containers
+- [x] T021 [P] [US5] Add `nri-postgresql` service to deploy/deployer/docker-compose.yml — image: `newrelic/infrastructure-bundle:latest`, profile: `monitoring`, network_mode: `service:openvpn` (same as app, for DB access), env: `NRIA_LICENSE_KEY=${NRIA_LICENSE_KEY}`, volume mount a postgresql config YAML that defines the connection to the managed PG instance using `DATABASE_URL`
+- [x] T022 [US5] Create nri-postgresql integration config file at deploy/deployer/nri-postgresql-config.yml — define the PostgreSQL connection (host, port, user, password parsed from DATABASE_URL), enable collection of `pg_stat_database`, `pg_stat_user_tables`, `pg_stat_bgwriter`
+- [x] T023 [US5] Update deploy/deployer/deploy.sh to template the nri-postgresql config with DATABASE_URL credentials extracted from .env before starting containers
 
 **Checkpoint**: User Story 5 complete — PostgreSQL health dashboard populated in New Relic
 
@@ -121,11 +121,11 @@
 
 **Purpose**: Documentation, CI validation, and cleanup
 
-- [ ] T024 [P] Update CLAUDE.md with New Relic observability section — document tracing.js, nr-config.js, environment variables, Docker Compose monitoring profile, and how to enable/disable
-- [ ] T025 [P] Copy quickstart content from specs/011-newrelic-observability/quickstart.md into the appropriate project documentation location (design/docs/ or README section) — document the `terraform apply -var="new_relic_license_key=..."` enablement flow
-- [ ] T026 Run full test suite (`npm test`) to verify no regressions — all existing tests must pass with OTel packages installed but no license key configured
-- [ ] T027 Verify Dockerfile builds successfully with new OTel dependencies in deploy/docker/Dockerfile
-- [ ] T028 Verify Shelly linter still passes (`node shelly/lint/bin/shelly-lint.js`) — OTel changes should not affect Shelly scripts
+- [x] T024 [P] Update CLAUDE.md with New Relic observability section — document tracing.js, nr-config.js, environment variables, Docker Compose monitoring profile, and how to enable/disable
+- [x] T025 [P] Copy quickstart content from specs/011-newrelic-observability/quickstart.md into the appropriate project documentation location (design/docs/ or README section) — document the `terraform apply -var="new_relic_license_key=..."` enablement flow
+- [x] T026 Run full test suite (`npm test`) to verify no regressions — all existing tests must pass with OTel packages installed but no license key configured
+- [x] T027 Verify Dockerfile builds successfully with new OTel dependencies in deploy/docker/Dockerfile
+- [x] T028 Verify Shelly linter still passes (`node shelly/lint/bin/shelly-lint.js`) — OTel changes should not affect Shelly scripts
 
 ---
 

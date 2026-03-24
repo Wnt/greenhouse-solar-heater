@@ -31,4 +31,4 @@ ENV PORT=3000
 # Run as non-root user (node user is built into node:alpine, UID 1000)
 USER node
 
-CMD ["node", "monitor/server.js"]
+CMD ["node", "--require", "./monitor/lib/tracing.js", "monitor/server.js"]

@@ -9,6 +9,8 @@
  *   {"ts":"2026-03-20T12:00:00.000Z","level":"info","component":"auth","msg":"user logged in","userId":"..."}
  */
 
+var otelApi = require('@opentelemetry/api');
+
 function createLogger(component) {
   function write(level, msg, data) {
     var entry = {
@@ -17,6 +19,15 @@ function createLogger(component) {
       component: component,
       msg: msg,
     };
+    // Inject OTel trace context for log correlation (no-op when SDK not initialized)
+    var spanContext = otelApi.trace.getSpan(otelApi.context.active());
+    if (spanContext) {
+      var ctx = spanContext.spanContext();
+      if (ctx && ctx.traceId) {
+        entry['trace.id'] = ctx.traceId;
+        entry['span.id'] = ctx.spanId;
+      }
+    }
     if (data) {
       var keys = Object.keys(data);
       for (var i = 0; i < keys.length; i++) {

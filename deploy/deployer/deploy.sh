@@ -115,6 +115,25 @@ else
     log "No DATABASE_URL found in S3 — database features will be disabled"
   fi
 
+  # Step 6c: Fetch New Relic license key from S3 and add to .env
+  log "Checking S3 for New Relic license key"
+  NR_KEY=$(timeout 30 docker run --rm --dns 172.17.0.1 --env-file "$APP_DIR/.env" \
+    "$APP_IMAGE" \
+    node monitor/lib/nr-config.js load 2>/dev/null) || true
+  if [ -n "$NR_KEY" ]; then
+    # Add/replace NEW_RELIC_LICENSE_KEY and NRIA_LICENSE_KEY in .env
+    grep -v '^NEW_RELIC_LICENSE_KEY=' "$ENV_FILE" > "$ENV_FILE.tmp" || true
+    grep -v '^NRIA_LICENSE_KEY=' "$ENV_FILE.tmp" > "$ENV_FILE.tmp2" || true
+    echo "NEW_RELIC_LICENSE_KEY=$NR_KEY" >> "$ENV_FILE.tmp2"
+    echo "NRIA_LICENSE_KEY=$NR_KEY" >> "$ENV_FILE.tmp2"
+    mv "$ENV_FILE.tmp2" "$ENV_FILE"
+    rm -f "$ENV_FILE.tmp"
+    chmod 0600 "$ENV_FILE"
+    log "New Relic license key loaded from S3 and added to .env"
+  else
+    log "No New Relic license key found in S3 — observability disabled"
+  fi
+
   # Step 7: Upload VPN config to S3 if local exists but S3 doesn't (bootstrap)
   if [ -f "$VPN_CONFIG" ]; then
     log "Local VPN config found — ensuring S3 backup exists"
@@ -127,9 +146,43 @@ else
   fi
 fi
 
+# Step 7b: Template nri-postgresql config with DATABASE_URL credentials
+NRI_PG_TEMPLATE="$CONFIG_SRC/nri-postgresql-config.yml"
+NRI_PG_CONFIG="$APP_DIR/nri-postgresql-config.yml"
+if [ -f "$NRI_PG_TEMPLATE" ]; then
+  DB_URL_ENV=$(grep '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+  if [ -n "$DB_URL_ENV" ]; then
+    # Parse postgres://user:pass@host:port/dbname?sslmode=require
+    PG_USER=$(echo "$DB_URL_ENV" | sed -n 's|.*//\([^:]*\):.*|\1|p')
+    PG_PASSWORD=$(echo "$DB_URL_ENV" | sed -n 's|.*//[^:]*:\([^@]*\)@.*|\1|p')
+    PG_HOST=$(echo "$DB_URL_ENV" | sed -n 's|.*@\([^:]*\):.*|\1|p')
+    PG_PORT=$(echo "$DB_URL_ENV" | sed -n 's|.*:\([0-9]*\)/.*|\1|p')
+    PG_DATABASE=$(echo "$DB_URL_ENV" | sed -n 's|.*/\([^?]*\).*|\1|p')
+    sed -e "s|__PG_HOST__|$PG_HOST|g" \
+        -e "s|__PG_PORT__|$PG_PORT|g" \
+        -e "s|__PG_USER__|$PG_USER|g" \
+        -e "s|__PG_PASSWORD__|$PG_PASSWORD|g" \
+        -e "s|__PG_DATABASE__|$PG_DATABASE|g" \
+        "$NRI_PG_TEMPLATE" > "$NRI_PG_CONFIG"
+    chmod 0600 "$NRI_PG_CONFIG"
+    log "nri-postgresql config templated with DATABASE_URL credentials"
+  else
+    # Copy template as-is (will fail to connect but won't block startup)
+    cp "$NRI_PG_TEMPLATE" "$NRI_PG_CONFIG"
+    log "No DATABASE_URL — nri-postgresql config not templated"
+  fi
+fi
+
 # Step 8: Apply the service stack
-log "Applying service stack"
-docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+# Enable monitoring profile (newrelic-infra, nri-postgresql) if NR license key is configured
+COMPOSE_PROFILES=""
+if grep -q '^NEW_RELIC_LICENSE_KEY=.\+' "$ENV_FILE" 2>/dev/null; then
+  COMPOSE_PROFILES="--profile monitoring"
+  log "Applying service stack with monitoring profile"
+else
+  log "Applying service stack (no monitoring — NEW_RELIC_LICENSE_KEY not set)"
+fi
+docker compose -f "$COMPOSE_FILE" $COMPOSE_PROFILES up -d --remove-orphans
 
 # Step 9: Deploy Shelly scripts via VPN (optional)
 # Runs inside the app container which shares the OpenVPN network namespace.
