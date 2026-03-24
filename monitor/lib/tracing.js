@@ -21,7 +21,9 @@ var { OTLPLogExporter } = require('@opentelemetry/exporter-logs-otlp-http');
 var { PeriodicExportingMetricReader } = require('@opentelemetry/sdk-metrics');
 var { BatchLogRecordProcessor } = require('@opentelemetry/sdk-logs');
 
-var endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'https://otlp.nr-data.net';
+// Auto-detect EU vs US endpoint from license key prefix (eu01xx = EU)
+var defaultEndpoint = licenseKey.startsWith('eu01xx') ? 'https://otlp.eu01.nr-data.net' : 'https://otlp.nr-data.net';
+var endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || defaultEndpoint;
 var serviceName = process.env.OTEL_SERVICE_NAME || 'greenhouse-monitor';
 
 var headers = {
@@ -60,6 +62,17 @@ var sdk = new opentelemetry.NodeSDK({
 });
 
 sdk.start();
+
+// Log tracing config at startup (visible in container logs)
+var msg = JSON.stringify({
+  ts: new Date().toISOString(),
+  level: 'info',
+  component: 'tracing',
+  msg: 'OTel SDK started',
+  service: serviceName,
+  endpoint: endpoint,
+});
+process.stdout.write(msg + '\n');
 
 // Graceful shutdown
 process.on('SIGTERM', function () {

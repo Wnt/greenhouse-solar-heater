@@ -3,8 +3,9 @@ const assert = require('node:assert');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
+const tracingPath = path.resolve(__dirname, '../monitor/lib/tracing.js');
+
 describe('tracing module', () => {
-  const tracingPath = path.resolve(__dirname, '../monitor/lib/tracing.js');
 
   describe('graceful no-op when no license key', () => {
     it('should exit without errors when NEW_RELIC_LICENSE_KEY is not set', () => {
@@ -132,6 +133,57 @@ describe('logger trace context injection', () => {
     assert.strictEqual(entry.msg, 'traced message');
     // With no-op SDK, trace context may or may not be injected
     // (depends on whether traceId is non-zero). Either way, no error.
+  });
+});
+
+describe('EU endpoint auto-detection', () => {
+  it('should use EU endpoint for eu01xx license keys', () => {
+    const result = execFileSync('node', ['-e', `
+      process.env.NEW_RELIC_LICENSE_KEY = 'eu01xxFAKEKEY1234567890';
+      delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+      require("${tracingPath.replace(/\\/g, '\\\\')}");
+    `], {
+      env: { ...process.env, NEW_RELIC_LICENSE_KEY: 'eu01xxFAKEKEY1234567890', OTEL_EXPORTER_OTLP_ENDPOINT: '' },
+      encoding: 'utf-8',
+      timeout: 10000,
+    });
+    const lines = result.trim().split('\n');
+    const startupLog = lines.find(l => l.includes('"OTel SDK started"'));
+    assert.ok(startupLog, 'should log OTel SDK started');
+    const parsed = JSON.parse(startupLog);
+    assert.strictEqual(parsed.endpoint, 'https://otlp.eu01.nr-data.net');
+  });
+
+  it('should use US endpoint for non-EU license keys', () => {
+    const result = execFileSync('node', ['-e', `
+      process.env.NEW_RELIC_LICENSE_KEY = 'us01xxFAKEKEY1234567890';
+      delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+      require("${tracingPath.replace(/\\/g, '\\\\')}");
+    `], {
+      env: { ...process.env, NEW_RELIC_LICENSE_KEY: 'us01xxFAKEKEY1234567890', OTEL_EXPORTER_OTLP_ENDPOINT: '' },
+      encoding: 'utf-8',
+      timeout: 10000,
+    });
+    const lines = result.trim().split('\n');
+    const startupLog = lines.find(l => l.includes('"OTel SDK started"'));
+    assert.ok(startupLog, 'should log OTel SDK started');
+    const parsed = JSON.parse(startupLog);
+    assert.strictEqual(parsed.endpoint, 'https://otlp.nr-data.net');
+  });
+
+  it('should allow OTEL_EXPORTER_OTLP_ENDPOINT to override auto-detection', () => {
+    const result = execFileSync('node', ['-e', `
+      require("${tracingPath.replace(/\\/g, '\\\\')}");
+    `], {
+      env: { ...process.env, NEW_RELIC_LICENSE_KEY: 'eu01xxFAKEKEY1234567890', OTEL_EXPORTER_OTLP_ENDPOINT: 'https://custom.endpoint.example' },
+      encoding: 'utf-8',
+      timeout: 10000,
+    });
+    const lines = result.trim().split('\n');
+    const startupLog = lines.find(l => l.includes('"OTel SDK started"'));
+    assert.ok(startupLog, 'should log OTel SDK started');
+    const parsed = JSON.parse(startupLog);
+    assert.strictEqual(parsed.endpoint, 'https://custom.endpoint.example');
   });
 });
 
