@@ -11,6 +11,7 @@
 
 - Q: How long should the system retain historical time series data? → A: Indefinite — keep all data permanently, no automatic expiry.
 - Q: How frequently should data be recorded to the time series database? → A: Tiered — full MQTT resolution retained for 48 hours, downsampled to 30-second intervals for long-term storage. All state change events (mode transitions, valve/actuator changes) stored indefinitely at full resolution regardless of tier.
+- Q: Where should the MQTT broker run? → A: Cloud server only — Shelly devices publish over the VPN tunnel to the cloud-hosted broker. The Node.js server subscribes locally on the same host.
 
 ## User Scenarios & Testing
 
@@ -150,7 +151,7 @@ When in live monitoring mode, the Status view's history graph shows actual histo
 ## Assumptions
 
 - The Shelly Pro 4PM supports MQTT publishing from its scripting environment (Shelly devices have built-in MQTT support that can be enabled alongside HTTP RPC).
-- An MQTT broker will be deployed as part of the infrastructure (e.g., as a container alongside the existing Docker Compose stack).
+- An MQTT broker will be deployed on the cloud server as a container alongside the existing Docker Compose stack. Shelly devices connect to it over the VPN tunnel.
 - The existing monitor server (Node.js) will be extended to act as the MQTT-to-browser bridge, rather than introducing a separate service.
 - The playground app and monitor app will be merged or co-served from the same origin on greenhouse.madekivi.com.
 - The server subscribes to MQTT and forwards state to browser clients via a real-time channel.
