@@ -63,3 +63,39 @@ Published by the Shelly Pro 4PM control script. Retained so new subscribers rece
 3. `"valves_opening"` — new mode's valves opening
 4. `"pump_start"` — pump started (after 5s prime)
 5. `null` with `transitioning: false` — transition complete
+
+---
+
+### `greenhouse/config` (retained)
+
+Published by the Node.js server when an operator updates the device configuration. Retained so the Shelly receives the latest config immediately on MQTT connect (or reconnect). The Shelly subscribes to this topic for push-based config updates.
+
+**QoS**: 1 (at least once)
+**Retain**: true
+**Publisher**: Node.js server (on `PUT /api/device-config`)
+**Subscribers**: Shelly Pro 4PM control script
+
+**Payload** (JSON):
+
+```json
+{
+  "controls_enabled": false,
+  "enabled_actuators": {
+    "valves": false,
+    "pump": false,
+    "fan": false,
+    "space_heater": false,
+    "immersion_heater": false
+  },
+  "version": 1
+}
+```
+
+**Publish triggers**:
+- Operator updates config via `PUT /api/device-config`
+
+**Shelly-side behavior on receive**:
+1. Parse JSON payload
+2. Compare `version` with current KVS config version
+3. If different: update KVS, apply new config immediately
+4. If `controls_enabled` changed to `false` while a mode is active: safe shutdown on next control loop iteration (stop pump → close valves → idle)

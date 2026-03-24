@@ -139,7 +139,7 @@ curl -X PUT http://localhost:3000/api/device-config \
 curl http://localhost:3000/api/device-config
 ```
 
-The Shelly device fetches config on startup and every ~5 minutes. Config is persisted in KVS so the device can start without internet.
+Config changes are pushed to the Shelly instantly via MQTT (`greenhouse/config` retained topic). The Shelly also fetches config via HTTP on boot (before MQTT connects). Config is persisted in KVS so the device can start without internet. Disabling controls while a mode is active triggers an immediate safe shutdown (pump stop, valves close).
 
 ## Key Files (new/modified)
 

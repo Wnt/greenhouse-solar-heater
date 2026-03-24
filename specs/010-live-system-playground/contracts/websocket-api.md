@@ -146,4 +146,7 @@ Runtime configuration for the Shelly controller. Not exposed through Caddy — o
 
 **Response**: Updated config (with new `version`).
 
-**Side effects**: Config persisted to S3/local storage. Next Shelly config fetch picks up changes.
+**Side effects**:
+1. Config persisted to S3/local storage
+2. Config published to `greenhouse/config` MQTT topic (retained, QoS 1) — Shelly receives it immediately via subscription
+3. Shelly applies on next control loop iteration (~30s worst case). If controls disabled while active, triggers safe shutdown.

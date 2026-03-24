@@ -52,8 +52,8 @@
 
 ### Device Configuration Module
 
-- [ ] T014 Create device configuration store at monitor/lib/device-config.js — S3/local persistence (same adapter pattern as credentials), default config with all controls disabled, `GET /api/device-config` handler (unauthenticated — VPN-only access), `PUT /api/device-config` handler (auth required), auto-increment version on updates per contracts/websocket-api.md device config API
-- [ ] T015 Create unit tests for device config at tests/device-config.test.js — default config (all disabled), GET returns current config, PUT updates and increments version, persistence round-trip
+- [ ] T014 Create device configuration store at monitor/lib/device-config.js — S3/local persistence (same adapter pattern as credentials), default config with all controls disabled, `GET /api/device-config` handler (unauthenticated — VPN-only access), `PUT /api/device-config` handler (auth required), auto-increment version on updates; on PUT: persist to S3, then publish to `greenhouse/config` MQTT topic (retained, QoS 1) for instant push to device per contracts/mqtt-topics.md
+- [ ] T015 Create unit tests for device config at tests/device-config.test.js — default config (all disabled), GET returns current config, PUT updates and increments version, PUT publishes to MQTT, persistence round-trip
 
 ### Remote Deployment
 
@@ -75,8 +75,8 @@
 
 ### Implementation
 
-- [ ] T019 [US2] Add config fetch and KVS persistence to shelly/control.js — on boot: read `config` key from KVS (default: all controls disabled if not found); attempt HTTP GET to cloud config endpoint; if version differs, update KVS; periodic re-fetch every 5 minutes (FR-021, FR-022)
-- [ ] T020 [US2] Add actuator enable guards to shelly/control.js — before any setPump/setFan/setImmersion/setSpaceHeater/setValve call, check config.controls_enabled and per-actuator flags; if disabled, skip hardware command but still track logical state (FR-019, FR-020)
+- [ ] T019 [US2] Add config bootstrap and MQTT subscription to shelly/control.js — on boot: read `config` key from KVS (default: all controls disabled if not found); attempt HTTP GET to cloud config endpoint for bootstrap; subscribe to `greenhouse/config` MQTT topic for push-based live updates; on config message: compare version, update KVS if different, apply immediately (FR-021, FR-022)
+- [ ] T020 [US2] Add actuator enable guards to shelly/control.js — before any setPump/setFan/setImmersion/setSpaceHeater/setValve call, check config.controls_enabled and per-actuator flags; if disabled, skip hardware command but still track logical state; if controls disabled while mode is active, trigger safe shutdown on next control loop (stop pump → close valves → idle) (FR-019, FR-020)
 - [ ] T021 [US2] Modify shelly/control-logic.js evaluate() to accept config parameter — when controls disabled, return mode decisions as usual but mark actuator commands as suppressed in the result, so I/O layer knows to skip them while still reporting the logical mode
 - [ ] T022 [US2] Add MQTT.publish() call at end of existing poll cycle in shelly/control.js — publish consolidated JSON state snapshot to `greenhouse/state` with QoS 1 and retain flag, per mqtt-topics.md payload schema (ts, mode, transitioning, transition_step, temps, valves, actuators, flags, controls_enabled)
 - [ ] T023 [US2] Add immediate MQTT.publish() calls in shelly/control.js during mode transition steps (pump_stop, valves_closing, valves_opening, pump_start) so each transition step is published
@@ -84,7 +84,7 @@
 - [ ] T025 [US2] Update tests/control-logic.test.js to verify config-gated actuator behavior — evaluate() with controls disabled returns suppressed actuator commands; evaluate() with partial actuator enables respects per-actuator flags
 - [ ] T026 [US2] Run Shelly linter (`node shelly/lint/bin/shelly-lint.js shelly/control.js`) to verify ES5 compliance of all additions
 
-**Checkpoint**: Shelly device publishes complete state snapshots via MQTT, fetches config from cloud, persists in KVS, and respects actuator enable flags. Verifiable with `mosquitto_sub -t greenhouse/state`.
+**Checkpoint**: Shelly device publishes state snapshots via MQTT, receives config push via `greenhouse/config` topic, persists in KVS, and respects actuator enable flags. Config changes take effect immediately (next control loop). Verifiable with `mosquitto_sub -t greenhouse/state` and `mosquitto_pub -t greenhouse/config`.
 
 ---
 
@@ -176,7 +176,7 @@
 - [ ] T047 [P] Create e2e test for live mode toggle and WebSocket connection at tests/e2e/live-mode.spec.js — verify mode toggle visibility based on deployment, WebSocket connection, live data display
 - [ ] T048 [P] Verify existing e2e tests pass unchanged (tests/e2e/thermal-sim.spec.js) — simulation mode must not regress (SC-004)
 - [ ] T049 Verify existing monitor features preserved in unified app — WebAuthn auth, push notifications, PWA installability (FR-017)
-- [ ] T050 Verify device config safety — fresh device with no KVS config starts in monitoring-only mode (SC-009); enabling controls via API takes effect within one poll cycle (SC-010)
+- [ ] T050 Verify device config safety — fresh device with no KVS config starts in monitoring-only mode (SC-009); config change via PUT is pushed via MQTT and takes effect on next control loop (SC-010); disabling controls while mode is active triggers safe shutdown
 - [ ] T051 Run full test suite (`npm test`) and fix any regressions
 - [ ] T052 Update quickstart.md if any development workflow steps changed during implementation
 - [ ] T053 Run Shelly linter on all shelly/ files to confirm no ES5 violations
@@ -268,5 +268,6 @@ Stream 3 (US5): T042 → T043 → T044 → T045 → T046
 - Existing simulation tests must not regress — SC-004 is a hard requirement
 - All actuator control is disabled by default — a fresh device only monitors (reads sensors, publishes MQTT) until explicitly configured
 - Device config endpoint (`/api/device-config` GET) is unauthenticated because Shelly can't do WebAuthn — access control relies on VPN/network boundary
-- Config changes are persisted in Shelly KVS so the device survives reboots and internet outages without losing its configuration
+- Config updates are pushed instantly via MQTT (`greenhouse/config` retained topic) — no polling. Disabling controls mid-operation triggers immediate safe shutdown
+- Config is persisted in Shelly KVS so the device survives reboots and internet outages; HTTP bootstrap on boot, MQTT push for live updates
 - Remote Shelly deployment uses the same HTTP RPC protocol as LAN deployment — only the target IP changes (VPN-routable)

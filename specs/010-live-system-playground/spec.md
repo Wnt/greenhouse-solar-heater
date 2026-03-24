@@ -16,7 +16,8 @@
 - Q: How should Shelly devices publish data via MQTT? → A: Script-based custom publishing from the control script. Publishes consolidated JSON state snapshots containing mode, transition status, temperatures, valve states, and actuator states — not raw Shelly built-in topics.
 - Q: How should Shelly control scripts be deployed/updated? → A: Remotely via the VPN tunnel as part of the deployment process. The deploy.sh script should work with VPN-reachable IPs, not just LAN. Script updates should be triggerable from the CD pipeline without physical access.
 - Q: Should all controls (valves, pump, fans, heaters) be enabled by default? → A: No — all actuator control must be disabled by default. The system should be safe to deploy without accidentally commanding hardware. Enabling controls should not require a new deployment — runtime configuration only.
-- Q: How should the Shelly device get its runtime configuration? → A: On startup, the Shelly queries a cloud config endpoint for the latest settings (enabled actuators, thresholds, etc.). The config is persisted locally in KVS so the device can start without internet connectivity using the last known configuration. Periodic re-checks keep the config in sync.
+- Q: How should the Shelly device get its runtime configuration? → A: On startup, the Shelly fetches config from a cloud HTTP endpoint (bootstrap — before MQTT is available). After that, config changes are pushed instantly via MQTT retained message on `greenhouse/config`. The Shelly subscribes to this topic and applies changes immediately — critical for safety (e.g., disabling a circuit mid-operation must stop the pump and close valves within seconds, not wait for polling). Config is persisted in KVS for offline resilience.
+- Q: How fast must config changes take effect? → A: Immediately — within the current or next poll cycle (~30s worst case). Disabling actuators while a mode is active must trigger a safe shutdown (stop pump, close valves) on the very next control loop iteration, not wait for a polling interval.
 
 ## User Scenarios & Testing
 
@@ -113,8 +114,8 @@ When in live monitoring mode, the Status view's history graph shows actual histo
 - What happens if MQTT messages arrive faster than the UI can render? The app should use the latest state snapshot and skip intermediate ones to avoid UI lag.
 - What happens when viewing a time range that spans the 48-hour full-resolution/downsampled boundary? The graph should blend seamlessly — higher resolution for the recent portion, 30-second intervals for the older portion.
 - What happens when the Shelly device starts with no internet and no prior KVS config? All actuator control remains disabled (safe default). The device reads sensors and publishes MQTT when connectivity returns, but does not command any hardware until it receives an explicit config enabling controls.
-- What happens when the cloud config endpoint is unreachable during a config refresh? The device continues with its current KVS-persisted config unchanged. No config = no change.
-- What happens when a config update disables actuators while the system is actively running a mode? The system should transition to idle first (safe shutdown sequence), then apply the new config.
+- What happens when the cloud config endpoint is unreachable during initial boot fetch? The device continues with its KVS-persisted config (or all-disabled default if no KVS). Once MQTT connects, it will receive the retained config message.
+- What happens when a config update disables actuators while the system is actively running a mode? The config change arrives instantly via MQTT. On the next control loop iteration, evaluate() sees controls disabled and the I/O layer performs a safe shutdown: stop pump, close all valves, transition to idle. This happens within one poll cycle (~30s worst case).
 
 ## Requirements
 
@@ -139,11 +140,11 @@ When in live monitoring mode, the Status view's history graph shows actual histo
 - **FR-017**: The unified app MUST retain the monitor app's existing capabilities: WebAuthn passkey authentication (when deployed), push notifications for state changes, and PWA installability (home screen, offline fallback).
 - **FR-018**: The unified app MUST work as a fully static site on GitHub Pages (no server dependency for simulation mode).
 - **FR-019**: All actuator control (valves, pump, fan, space heater, immersion heater) MUST be disabled by default. The Shelly device MUST NOT command any hardware until explicitly enabled via runtime configuration.
-- **FR-020**: Enabling or disabling actuator control MUST be possible at runtime without deploying new code. Configuration changes take effect on the next poll cycle.
-- **FR-021**: The Shelly device MUST fetch runtime configuration from a cloud endpoint on startup and periodically thereafter. Configuration MUST be persisted in KVS so the device can start without internet connectivity using the last known settings.
+- **FR-020**: Enabling or disabling actuator control MUST be possible at runtime without deploying new code. Configuration changes MUST be pushed to the device via MQTT and take effect on the next control loop iteration. Disabling controls while a mode is active MUST trigger a safe shutdown (stop pump, close valves).
+- **FR-021**: The Shelly device MUST fetch runtime configuration from a cloud HTTP endpoint on startup (bootstrap) and subscribe to an MQTT config topic for live updates. Configuration MUST be persisted in KVS so the device can start without internet connectivity using the last known settings.
 - **FR-022**: If no configuration exists (fresh device, no KVS, no cloud access), the device MUST default to all controls disabled (monitoring-only mode: reads sensors, publishes MQTT, but does not actuate).
 - **FR-023**: Shelly control scripts MUST be deployable remotely via the VPN tunnel. The deployment process MUST NOT require physical/LAN access to the device.
-- **FR-024**: The server MUST provide a device configuration API endpoint that the Shelly device can query (HTTP GET) and that operators can update (HTTP PUT/POST via the web UI or API).
+- **FR-024**: The server MUST provide a device configuration API endpoint (HTTP GET for bootstrap, HTTP PUT for operator updates). On config update, the server MUST publish the new config to the MQTT config topic so the device receives it immediately.
 
 ### Key Entities
 
@@ -165,7 +166,7 @@ When in live monitoring mode, the Status view's history graph shows actual histo
 - **SC-007**: The app clearly indicates when live data is unavailable (connection lost, devices unreachable) rather than showing stale data silently.
 - **SC-008**: Historical temperature data is available in the Status view's time-series graph during live monitoring, with the full retained history browsable (not limited to 24 hours).
 - **SC-009**: A freshly deployed Shelly device with no prior configuration does NOT command any hardware — it only reads sensors and publishes MQTT.
-- **SC-010**: Enabling actuator control via the config endpoint takes effect within one poll cycle (~30s) without a code deployment or device restart.
+- **SC-010**: Config changes via the API take effect on the device within one control loop iteration (~30s worst case). Disabling controls while active triggers immediate safe shutdown (pump stop, valves close).
 - **SC-011**: A Shelly device that loses internet connectivity continues operating with the last known KVS-persisted configuration.
 
 ## Assumptions

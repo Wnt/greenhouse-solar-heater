@@ -183,20 +183,28 @@ The time-series store (`store.addPoint()`) accepts the same structure from eithe
 }
 ```
 
+**Config delivery — dual channel**:
+- **Bootstrap (HTTP)**: On boot, before MQTT is connected, the Shelly fetches config via HTTP GET from the cloud endpoint. This handles the cold-start case.
+- **Live updates (MQTT push)**: The server publishes config to `greenhouse/config` (retained, QoS 1) whenever an operator updates it via the API. The Shelly subscribes to this topic and applies changes immediately. Retained messages mean the Shelly also gets the latest config on MQTT connect/reconnect — no polling needed.
+- **KVS persistence**: Every config update (from either channel) is persisted to KVS. This is the offline fallback — if the device reboots without internet and before MQTT connects, it uses the KVS copy.
+
 **Shelly-side flow**:
 1. On boot: read `config` from KVS. If not found, use default (all disabled).
-2. Attempt HTTP GET to cloud config endpoint (e.g., `http://<cloud-vpn-ip>:3000/api/device-config`).
-3. If cloud responds and `version` differs: update KVS, apply new config.
+2. Attempt HTTP GET to cloud config endpoint (e.g., `http://<cloud-vpn-ip>:3000/api/device-config`). If response has different `version`, update KVS and apply.
+3. Subscribe to `greenhouse/config` MQTT topic. On message: compare `version`, update KVS if different, apply immediately.
 4. On each poll cycle (~30s): if config has `controls_enabled: false`, skip all actuator commands but still read sensors and publish MQTT.
-5. Periodic re-fetch (every 5 minutes or on MQTT reconnect) to pick up config changes without restart.
+5. If controls are disabled while a mode is active: the next control loop iteration triggers a safe shutdown (stop pump → close valves → transition to idle).
 
 **Server-side**:
 - `monitor/lib/device-config.js`: stores config in S3/local (same adapter as credentials). Provides `GET /api/device-config` (no auth — Shelly can't do WebAuthn) and `PUT /api/device-config` (auth required — operator only).
+- On PUT: persist to S3/local, then publish to `greenhouse/config` MQTT topic (retained). The Shelly receives it immediately via its MQTT subscription.
 - The GET endpoint is unauthenticated because Shelly devices can't perform WebAuthn. Access control relies on the VPN tunnel — only devices on the VPN can reach the server's internal port. The Caddy reverse proxy does NOT expose `/api/device-config` publicly.
 - Config changes could also trigger a push notification to inform the operator.
 
+**Why MQTT push for config updates**: Disabling a heating circuit while the system is active is a safety-critical operation — the pump must stop and valves must close immediately, not after a 5-minute polling interval. MQTT retained messages also eliminate polling entirely: the Shelly gets the latest config on every connect/reconnect automatically.
+
 **Pure logic integration**: The `evaluate()` function in `control-logic.js` receives config as a parameter: `evaluate(state, config)`. When `controls_enabled` is false or specific actuators are disabled, `evaluate()` returns the decision as usual but the I/O layer in `control.js` skips the actual hardware commands. This keeps the pure logic testable and the safety guard in the I/O boundary.
 
-**Alternative considered**: Storing config in MQTT retained message on a `greenhouse/config` topic. Rejected because KVS is simpler (no MQTT dependency for config), and config changes are rare (not a real-time data stream).
+**Alternative considered**: Polling-only config (HTTP GET every 5 minutes). Rejected — unacceptable latency for safety-critical config changes like disabling an active circuit. MQTT push provides near-instant delivery.
 
 **Alternative considered**: Config in `control-logic.js` constants (deploy new code to change config). Rejected — violates the requirement that enabling controls should not require a new deployment.

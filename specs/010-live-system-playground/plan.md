@@ -41,7 +41,7 @@ All actuator control is disabled by default — a freshly deployed device monito
 | Principle | Status | Notes |
 |-----------|--------|-------|
 | I. Hardware Spec as Source of Truth | PASS | MQTT message schema derives from `system.yaml` entities. Topic name (`greenhouse/state`) is new but doesn't conflict. |
-| II. Pure Logic / IO Separation | PASS | `control-logic.js` unchanged. MQTT publishing added in `control.js` I/O layer only. Server-side data source abstraction separates data fetching from UI rendering. |
+| II. Pure Logic / IO Separation | PASS | `control-logic.js` gains a `config` parameter but remains pure (config is data input, not I/O). MQTT publishing and config fetch/subscribe are in `control.js` I/O layer. Actuator enable guards in I/O boundary. |
 | III. Safe by Default (NON-NEGOTIABLE) | PASS | All actuator control disabled by default — device monitors only until config explicitly enables controls (FR-019, FR-022). MQTT failure = silent skip. WebSocket is read-only (server→client). DB failure = log error, continue serving live data without history. |
 | IV. Proportional Test Coverage | PASS | Test plan: unit tests for `db.js`, `mqtt-bridge.js`, `data-source.js`; e2e tests for mode toggle, live data display, history graph. |
 | V. Token-Based Cloud Auth | PASS | UpCloud Managed Database provisioned via Terraform using `UPCLOUD_TOKEN`. Database credentials passed to app via cloud-init `.env.secrets`. |
