@@ -10,6 +10,7 @@
 ### Session 2026-03-24
 
 - Q: How long should the system retain historical time series data? → A: Indefinite — keep all data permanently, no automatic expiry.
+- Q: How frequently should data be recorded to the time series database? → A: Tiered — full MQTT resolution retained for 48 hours, downsampled to 30-second intervals for long-term storage. All state change events (mode transitions, valve/actuator changes) stored indefinitely at full resolution regardless of tier.
 
 ## User Scenarios & Testing
 
@@ -104,6 +105,7 @@ When in live monitoring mode, the Status view's history graph shows actual histo
 - What happens when a user is in simulation mode and the live system changes mode? The simulation should be unaffected — mode switching is independent.
 - What happens on the first visit when no historical data exists? The history graph should show an empty state with a message indicating data collection has started.
 - What happens if MQTT messages arrive faster than the UI can render? The app should use the latest state snapshot and skip intermediate ones to avoid UI lag.
+- What happens when viewing a time range that spans the 48-hour full-resolution/downsampled boundary? The graph should blend seamlessly — higher resolution for the recent portion, 30-second intervals for the older portion.
 
 ## Requirements
 
@@ -122,8 +124,9 @@ When in live monitoring mode, the Status view's history graph shows actual histo
 - **FR-011**: During mode transitions, the app MUST visualize intermediate steps (pump stop, valve changes, pump start) as they occur on the hardware.
 - **FR-012**: The app MUST indicate connection status — showing when the live data feed is connected, reconnecting, or disconnected.
 - **FR-013**: The server MUST relay MQTT data to browser clients (browsers cannot connect to MQTT directly in this architecture).
-- **FR-014**: The system MUST persist all state snapshots indefinitely in a time series database to provide historical data for the Status view's time-series graph. No automatic data expiry or pruning.
-- **FR-015**: The Status view MUST support browsing historical data beyond 24 hours, with appropriate time range options for the full retained history.
+- **FR-014**: The system MUST persist all state snapshots in a time series database using a tiered retention policy: full-resolution data for the most recent 48 hours, downsampled to 30-second intervals for long-term storage.
+- **FR-015**: All state change events (mode transitions, valve open/close, actuator on/off) MUST be stored indefinitely at full resolution, regardless of the downsampling tier.
+- **FR-016**: The Status view MUST support browsing historical data beyond 24 hours, with appropriate time range options for the full retained history.
 
 ### Key Entities
 
