@@ -3,17 +3,23 @@
 **Feature**: 010-live-system-playground
 **Date**: 2026-03-24
 
-## R1: Shelly MQTT Publishing from Scripts
+## R1: Shelly MQTT API from Scripts
 
-**Decision**: Use `MQTT.publish(topic, message, qos, retain)` from the Shelly control script.
+**Decision**: Use `MQTT.publish()` and `MQTT.subscribe()` from a dedicated telemetry script (separate from the control script — see R9).
 
-**Rationale**: Shelly Gen2 scripting natively supports `MQTT.publish()` — no HTTP bridge or external proxy needed. The API returns `true` if enqueued, `false` if disconnected, making it safe to call fire-and-forget without disrupting control logic (FR-006).
+**Rationale**: Shelly Gen2 scripting natively supports both MQTT publish and subscribe:
+- `MQTT.publish(topic, message, qos, retain)` — returns `true` if enqueued, `false` if disconnected
+- `MQTT.subscribe(topic, callback)` — callback receives `{topic, message, userdata}`. Up to 10 subscriptions per script.
+- `MQTT.isConnected()` — check connection status
+- `MQTT.setConnectHandler(callback)` / `MQTT.setDisconnectHandler(callback)` — connection lifecycle
 
 **Constraints discovered**:
 - MQTT must be enabled in device settings first (`Mqtt.SetConfig({enable: true, server: "..."})` + reboot)
-- Current script size: `control.js` (9.9 KB) + `control-logic.js` (9.4 KB) = ~19.4 KB combined. 16 KB limit means deploy likely minifies/strips. Adding MQTT publishing needs to be compact.
-- Current resource usage: 4 of 5 timers, 0 event subscriptions, ~12 `Shelly.call()` invocations. One timer slot available.
-- No separate timer needed — publish at end of existing 30s poll cycle + on mode transitions
+- Current script size: `control.js` (9.9 KB) + `control-logic.js` (9.4 KB) = **19.4 KB combined — already exceeds 16 KB per-script limit**. Cannot add MQTT + config code to the control script. Solution: separate telemetry script (R9).
+- Current resource usage: 6 static `Timer.set` calls (lint warns at 5), 11 `Shelly.call` invocations (lint warns at 5). These don't overlap at runtime but adding more increases risk.
+- Shelly Pro 4PM supports ~3 concurrent scripts. Currently 2 running (control + sensor-display). One slot available.
+- KVS limit: 30 keys, 256 bytes per value. Config JSON (~155 bytes) fits.
+- MQTT subscription limit: 10 per script (only need 1 for `greenhouse/config`).
 
 **Alternatives considered**:
 - Built-in Shelly MQTT (enable MQTT in settings, auto-publishes standard topics): Rejected — publishes raw switch states without mode, transition status, or consolidated sensor data.
@@ -188,12 +194,20 @@ The time-series store (`store.addPoint()`) accepts the same structure from eithe
 - **Live updates (MQTT push)**: The server publishes config to `greenhouse/config` (retained, QoS 1) whenever an operator updates it via the API. The Shelly subscribes to this topic and applies changes immediately. Retained messages mean the Shelly also gets the latest config on MQTT connect/reconnect — no polling needed.
 - **KVS persistence**: Every config update (from either channel) is persisted to KVS. This is the offline fallback — if the device reboots without internet and before MQTT connects, it uses the KVS copy.
 
-**Shelly-side flow**:
+**Shelly-side flow** (split across two scripts — see R9):
+
+*Telemetry script (new):*
 1. On boot: read `config` from KVS. If not found, use default (all disabled).
-2. Attempt HTTP GET to cloud config endpoint (e.g., `http://<cloud-vpn-ip>:3000/api/device-config`). If response has different `version`, update KVS and apply.
-3. Subscribe to `greenhouse/config` MQTT topic. On message: compare `version`, update KVS if different, apply new config. If safety-critical fields changed (any `enabled_actuators` flag or `controls_enabled`), call `controlLoop()` immediately to act on the change without waiting for the 30s schedule. Non-critical changes (thresholds) take effect on the next regular cycle.
-4. On each poll cycle (~30s): if config has `controls_enabled: false`, skip all actuator commands but still read sensors and publish MQTT.
-5. If controls are disabled while a mode is active: the immediate `controlLoop()` call triggers a safe shutdown (stop pump → close valves → transition to idle). The existing `if (state.transitioning) return` guard in `controlLoop()` prevents conflicts if a transition is already in progress.
+2. Attempt HTTP GET to cloud config endpoint (e.g., `http://<cloud-vpn-ip>:3000/api/device-config`). If response has different `version`, update KVS.
+3. Subscribe to `greenhouse/config` MQTT topic. On message: compare `version`, update KVS if different.
+4. On any config change: emit `Shelly.emitEvent("config_changed", {config: ..., safety_critical: true/false})` so the control script is notified immediately.
+5. Listen for `state_updated` events from the control script; publish state to `greenhouse/state` via MQTT.
+
+*Control script (existing, modified):*
+1. On boot: read `config` from KVS. If not found, use default (all disabled).
+2. Register event handler for `config_changed` events: update local config, and if `safety_critical` is true, call `controlLoop()` immediately.
+3. On each poll cycle (~30s): if config has `controls_enabled: false`, skip all actuator commands but still read sensors. Emit `state_updated` event with current state.
+4. If controls are disabled while a mode is active: the immediate `controlLoop()` call triggers a safe shutdown (stop pump → close valves → transition to idle). The existing `if (state.transitioning) return` guard prevents conflicts.
 
 **Server-side**:
 - `monitor/lib/device-config.js`: stores config in S3/local (same adapter as credentials). Provides `GET /api/device-config` (no auth — Shelly can't do WebAuthn) and `PUT /api/device-config` (auth required — operator only).
@@ -201,10 +215,83 @@ The time-series store (`store.addPoint()`) accepts the same structure from eithe
 - The GET endpoint is unauthenticated because Shelly devices can't perform WebAuthn. Access control relies on the VPN tunnel — only devices on the VPN can reach the server's internal port. The Caddy reverse proxy does NOT expose `/api/device-config` publicly.
 - Config changes could also trigger a push notification to inform the operator.
 
-**Why MQTT push + immediate control loop**: Disabling a heating circuit while the system is active is a safety-critical operation — the pump must stop and valves must close immediately. MQTT delivers the config change within seconds, and the callback triggers `controlLoop()` directly so the shutdown happens without waiting for the 30s schedule. This is simple to implement: `controlLoop()` is already a standalone function with a re-entrancy guard (`if (state.transitioning) return`), so calling it from the MQTT callback is safe. Non-critical config changes (temperature thresholds) don't need an immediate iteration and can wait for the regular cycle. MQTT retained messages also eliminate polling: the Shelly gets the latest config on every connect/reconnect automatically.
+**Why MQTT push + immediate control loop**: Disabling a heating circuit while the system is active is a safety-critical operation — the pump must stop and valves must close immediately. MQTT delivers the config to the telemetry script within seconds; it emits `config_changed` to the control script; the event handler calls `controlLoop()` directly. This is safe because `controlLoop()` is a standalone function with a re-entrancy guard (`if (state.transitioning) return`). Non-critical config changes (temperature thresholds) don't trigger an immediate iteration and wait for the regular cycle. MQTT retained messages also eliminate polling: the Shelly gets the latest config on every connect/reconnect automatically.
 
 **Pure logic integration**: The `evaluate()` function in `control-logic.js` receives config as a parameter: `evaluate(state, config)`. When `controls_enabled` is false or specific actuators are disabled, `evaluate()` returns the decision as usual but the I/O layer in `control.js` skips the actual hardware commands. This keeps the pure logic testable and the safety guard in the I/O boundary.
 
 **Alternative considered**: Polling-only config (HTTP GET every 5 minutes). Rejected — unacceptable latency for safety-critical config changes like disabling an active circuit. MQTT push provides near-instant delivery.
 
 **Alternative considered**: Config in `control-logic.js` constants (deploy new code to change config). Rejected — violates the requirement that enabling controls should not require a new deployment.
+
+## R9: Shelly Script Splitting Architecture
+
+**Decision**: Split Shelly functionality across two scripts on the Pro 4PM — the existing control script and a new telemetry script. Communicate via `Shelly.emitEvent()`/`Shelly.addEventHandler()` and shared KVS.
+
+**Rationale**: The combined control-logic.js + control.js is 19.4 KB — already exceeding the 16 KB per-script limit (note: these scripts have not been deployed to a Shelly device yet, only the monitoring PoC has run on hardware). Adding MQTT publishing (~300 bytes), MQTT subscription + config callback (~500 bytes), HTTP config bootstrap (~400 bytes), KVS config management (~300 bytes), and JSON payload construction (~200 bytes) would push it to ~21 KB. Even if the Pro 4PM has a higher practical limit than the documented 16 KB, the script needs to be split regardless.
+
+**Architecture**:
+
+```
+Script 1: Control (existing, modified)
+├── control-logic.js     — pure evaluate() function (gains config parameter)
+├── control.js           — timers, RPC, relays, sensors, actuator guards
+├── reads config from KVS on boot
+├── listens for config_changed events (from Script 3)
+├── emits state_updated events (for Script 3 to publish)
+└── calls controlLoop() immediately on safety-critical config changes
+
+Script 2: Sensor Display (existing, unchanged)
+└── monitor/shelly/sensor-display.js
+
+Script 3: Telemetry (NEW)
+├── shelly/telemetry.js
+├── MQTT.subscribe("greenhouse/config") — config push from server
+├── MQTT.publish("greenhouse/state") — state snapshots to server
+├── HTTP GET for config bootstrap on boot
+├── KVS read/write for config persistence
+├── Shelly.emitEvent("config_changed") — notify control script
+└── Shelly.addEventHandler — listen for state_updated from control script
+```
+
+**Inter-script communication**:
+- `Shelly.emitEvent(name, data)` / `Shelly.addEventHandler(callback)` — the official Shelly inter-script mechanism. Events are delivered asynchronously to all scripts. Event object structure: `{component: "script:<id>", info: {event: "<name>", data: <payload>}}`.
+- KVS as shared state — both scripts read/write the `config` key. No locking, but write contention is minimal (telemetry writes on MQTT receive, control reads on boot and on config_changed event).
+- Each script stays well under 16 KB. The telemetry script is estimated at ~3-4 KB.
+
+**Size budget**:
+| Script | Current | After changes | Limit |
+|--------|---------|---------------|-------|
+| Control (logic + shell) | 19.4 KB | ~18 KB (add config guards + event handling, may need minor trimming) | 16 KB |
+| Sensor Display | ~2 KB | ~2 KB (unchanged) | 16 KB |
+| Telemetry (new) | 0 | ~3-4 KB | 16 KB |
+
+**Note on control script size**: At 19.4 KB, the control script already exceeds the documented 16 KB limit. This is a pre-existing issue unrelated to this feature — the scripts have not yet been deployed to hardware. The control script may need minor trimming (removing comments, shortening variable names, or moving the HTTPServer status endpoint to the telemetry script) before first deployment. This should be tracked as a prerequisite task.
+
+**Pro 4PM concurrent script capacity**: The Pro 4PM supports 3+ concurrent scripts. Currently 2 running (control + sensor-display). Adding the telemetry script brings it to 3 — within capacity.
+
+**Event flow for config change**:
+```
+Server PUT /api/device-config
+  → publishes to greenhouse/config (MQTT retained)
+    → Telemetry script receives MQTT message
+      → updates KVS
+      → emits config_changed event (with safety_critical flag)
+        → Control script event handler fires
+          → updates local config
+          → if safety_critical: calls controlLoop() immediately
+            → safe shutdown if controls now disabled
+```
+
+**Event flow for state publishing**:
+```
+Control script completes poll cycle / transition step
+  → emits state_updated event (with full state snapshot)
+    → Telemetry script event handler fires
+      → MQTT.publish("greenhouse/state", ..., 1, true)
+```
+
+**Alternatives considered**:
+- Add MQTT code to the control script: Rejected — already over 16 KB limit. Would exceed ~21 KB.
+- Use KVS polling instead of events: Rejected — adds latency and timer usage. Events are instant and don't consume timers.
+- Use local HTTP endpoints between scripts: Rejected — consumes HTTP.GET call slots and adds overhead. Events are lighter weight.
+- Minify the control script to fit everything: Possible but fragile — minification complicates debugging on-device and the combined codebase would grow over time. Clean separation is more maintainable.

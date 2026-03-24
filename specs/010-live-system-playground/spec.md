@@ -171,7 +171,9 @@ When in live monitoring mode, the Status view's history graph shows actual histo
 
 ## Assumptions
 
-- The Shelly Pro 4PM supports MQTT publishing from its scripting environment (Shelly devices have built-in MQTT support that can be enabled alongside HTTP RPC).
+- The Shelly Pro 4PM supports MQTT publishing and subscribing from its scripting environment (`MQTT.publish()`, `MQTT.subscribe()`, up to 10 subscriptions per script).
+- The Shelly Pro 4PM supports multiple concurrent scripts (~3) with inter-script communication via `Shelly.emitEvent()`/`Shelly.addEventHandler()` and shared KVS.
+- MQTT and telemetry functionality is implemented as a separate Shelly script to stay within the per-script size limit. The control script (control-logic.js + control.js) is already ~19 KB — near or at the limit. Adding MQTT + config code to it would exceed it.
 - An MQTT broker will be deployed on the cloud server as a container alongside the existing Docker Compose stack. Shelly devices connect to it over the VPN tunnel.
 - The existing monitor server (Node.js) will be extended to act as the MQTT-to-browser bridge, rather than introducing a separate service.
 - The playground app replaces the monitor app as a single unified application. The monitor's existing features (temperature gauges, time-series chart, WebAuthn auth, push notifications, PWA support) are absorbed into the playground. The monitor app will be retired once the unified app is feature-complete.
@@ -179,4 +181,4 @@ When in live monitoring mode, the Status view's history graph shows actual histo
 - A time series database will be deployed as part of the infrastructure to store all state snapshots indefinitely.
 - The existing authentication (WebAuthn passkeys) will apply to the live monitoring mode on greenhouse.madekivi.com.
 - Shelly devices are reachable from the cloud server via the VPN tunnel for both MQTT communication and HTTP RPC (script deployment, config queries).
-- The Shelly KVS (Key-Value Store) persists across reboots and can store the device configuration as a JSON string.
+- The Shelly KVS (Key-Value Store) persists across reboots and can store the device configuration as a JSON string. KVS limit: 30 keys, 256 bytes per value. Config JSON (~155 bytes) fits within the value limit.

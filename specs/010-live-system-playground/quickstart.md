@@ -145,9 +145,10 @@ Config changes are pushed to the Shelly instantly via MQTT (`greenhouse/config` 
 
 | File | Change |
 |------|--------|
-| `shelly/control.js` | Add MQTT.publish() calls, config fetch + KVS persistence, actuator enable guards |
-| `shelly/control-logic.js` | evaluate() respects config.enabled flags |
-| `shelly/deploy.sh` | Support VPN IPs, configure MQTT on device |
+| `shelly/control.js` | Add KVS config reading, event handler for config_changed, actuator enable guards, emit state_updated events |
+| `shelly/control-logic.js` | evaluate() accepts config parameter, respects enabled flags |
+| `shelly/telemetry.js` | NEW: MQTT publish/subscribe, config bootstrap, KVS config persistence, inter-script events |
+| `shelly/deploy.sh` | Support VPN IPs, configure MQTT, deploy telemetry.js as separate script |
 | `shelly/devices.conf` | Add VPN-reachable IPs |
 | `monitor/server.js` | Add MQTT subscriber, WebSocket server, history API, device config API, serve playground |
 | `monitor/lib/db.js` | NEW: PostgreSQL/TimescaleDB module (schema, insert, query) |

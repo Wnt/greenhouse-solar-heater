@@ -18,7 +18,7 @@ All actuator control is disabled by default — a freshly deployed device monito
 **Target Platform**: Linux server (UpCloud DEV-1xCPU-1GB-10GB), Shelly Pro 4PM (ES5), browsers (ES6+)
 **Project Type**: IoT monitoring web application + embedded device scripts
 **Performance Goals**: <5s end-to-end latency (sensor change → UI update), 60 FPS UI rendering
-**Constraints**: 1 GB RAM server (shared with Caddy + OpenVPN + Mosquitto), 16 KB Shelly script size limit, 5 Shelly timers (4 currently used), ES5-only on Shelly
+**Constraints**: 1 GB RAM server (shared with Caddy + OpenVPN + Mosquitto), 16 KB Shelly per-script size limit (control script already at 19.4 KB — needs trimming), ~3 concurrent Shelly scripts on Pro 4PM (2 currently used), 5 Shelly timers per script (6 static in control.js), 10 MQTT subscriptions per script, ES5-only on Shelly
 **Scale/Scope**: 1-3 concurrent browser clients, 5 sensors at ~5s intervals, indefinite data retention
 
 ## Constitution Check
@@ -30,7 +30,7 @@ All actuator control is disabled by default — a freshly deployed device monito
 | Principle | Status | Notes |
 |-----------|--------|-------|
 | I. Hardware Spec as Source of Truth | PASS | No hardware spec changes. MQTT topics and data shapes derive from existing `system.yaml` sensor/valve/actuator definitions. |
-| II. Pure Logic / IO Separation | PASS | MQTT publishing is added to the I/O layer (`control.js`), not the pure logic (`control-logic.js`). The `evaluate()` function remains untouched. |
+| II. Pure Logic / IO Separation | PASS | MQTT publishing isolated in a separate telemetry script. Config is a data parameter to `evaluate()`, not I/O. Control script I/O layer handles actuator guards. |
 | III. Safe by Default (NON-NEGOTIABLE) | PASS | MQTT is fire-and-forget — `MQTT.publish()` returns false if disconnected but control logic continues unaffected (FR-006). All actuator control disabled by default (FR-019) — device must receive explicit config to enable hardware commands. No new actuation paths. |
 | IV. Proportional Test Coverage | PASS | New code requires: unit tests for DB module + MQTT bridge + data source abstraction, e2e tests for live/simulation toggle. Existing simulation tests must not regress. |
 | V. Token-Based Cloud Auth | PASS | UpCloud Managed Database uses Terraform-provisioned credentials. UpCloud API access continues via `UPCLOUD_TOKEN`. |
@@ -70,9 +70,10 @@ specs/010-live-system-playground/
 
 ```text
 shelly/
-├── control.js              # MODIFIED: add MQTT.publish() calls, config fetch + KVS persistence, actuator enable guards
-├── control-logic.js        # MODIFIED: evaluate() respects config.enabled flags — disabled actuators never commanded
-├── deploy.sh               # MODIFIED: support VPN IPs, configure MQTT on device, triggerable from deployer
+├── control.js              # MODIFIED: add config reading from KVS, event handler for config_changed, actuator enable guards, emit state_updated events
+├── control-logic.js        # MODIFIED: evaluate() accepts config parameter — disabled actuators marked as suppressed
+├── telemetry.js            # NEW: MQTT publish/subscribe, config bootstrap (HTTP GET), KVS config persistence, inter-script events
+├── deploy.sh               # MODIFIED: support VPN IPs, configure MQTT on device, deploy telemetry.js as separate script
 └── devices.conf            # MODIFIED: add VPN-reachable IPs alongside LAN IPs
 
 monitor/
@@ -123,7 +124,7 @@ tests/
     └── live-mode.spec.js   # NEW: live mode toggle, WebSocket, history
 ```
 
-**Structure Decision**: Follows the existing project layout. No new top-level directories. New server-side modules go in `monitor/lib/`, new browser modules in `playground/js/`, new tests in `tests/`. The Mosquitto broker is added as a Docker Compose service. The PostgreSQL+TimescaleDB database is provisioned via Terraform as an UpCloud Managed Database (external to the server). Device configuration is persisted via the existing S3/local storage adapter pattern (same as credentials and push subscriptions). Remote Shelly deployment is integrated into the deployer, reusing the existing `deploy.sh` with VPN-routable IPs. The `control-logic.js` pure logic layer gains a `config` parameter to respect enabled/disabled flags while keeping the function pure (config is data, not I/O).
+**Structure Decision**: Follows the existing project layout. No new top-level directories. New server-side modules go in `monitor/lib/`, new browser modules in `playground/js/`, new tests in `tests/`. The Mosquitto broker is added as a Docker Compose service. The PostgreSQL+TimescaleDB database is provisioned via Terraform as an UpCloud Managed Database (external to the server). Device configuration is persisted via the existing S3/local storage adapter pattern (same as credentials and push subscriptions). Remote Shelly deployment is integrated into the deployer, reusing the existing `deploy.sh` with VPN-routable IPs. The `control-logic.js` pure logic layer gains a `config` parameter to respect enabled/disabled flags while keeping the function pure (config is data, not I/O). MQTT and config management are in a separate `shelly/telemetry.js` script to stay within the 16 KB per-script limit — the control script is already 19.4 KB and needs trimming before first hardware deployment. Inter-script communication uses `Shelly.emitEvent()`/`Shelly.addEventHandler()`.
 
 ## Complexity Tracking
 

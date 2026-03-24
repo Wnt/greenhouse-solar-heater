@@ -58,7 +58,7 @@
 ### Remote Deployment
 
 - [ ] T016 [P] Add VPN-reachable IP entries to shelly/devices.conf (e.g., `PRO4PM_VPN` alongside existing LAN IPs)
-- [ ] T017 Update shelly/deploy.sh to support VPN deployment — accept `DEPLOY_VIA_VPN=true` env var to select VPN IPs from devices.conf, add MQTT configuration step (`Mqtt.SetConfig` RPC call with broker address)
+- [ ] T017 Update shelly/deploy.sh to support VPN deployment and telemetry script — accept `DEPLOY_VIA_VPN=true` env var to select VPN IPs from devices.conf, deploy telemetry.js as a separate script (different script ID), add MQTT configuration step (`Mqtt.SetConfig` RPC call with broker address)
 - [ ] T018 Add Shelly script deployment step to deploy/deployer/deploy.sh — run shelly/deploy.sh inside the VPN network namespace after `docker compose up -d` (uses app container which shares openvpn network)
 
 **Checkpoint**: Database schema, MQTT bridge, device config, remote deployment, and infrastructure configs ready. User story implementation can begin.
@@ -73,18 +73,27 @@
 
 **Why before US1**: MQTT publishing is the data source that US1 consumes. Without it, there's no live data.
 
-### Implementation
+### Control Script Changes (shelly/control.js + control-logic.js)
 
-- [ ] T019 [US2] Add config bootstrap and MQTT subscription to shelly/control.js — on boot: read `config` key from KVS (default: all controls disabled if not found); attempt HTTP GET to cloud config endpoint for bootstrap; subscribe to `greenhouse/config` MQTT topic for push-based live updates; on config message: compare version, update KVS if different, apply new config; if safety-critical fields changed (controls_enabled or any enabled_actuators flag), call controlLoop() immediately to act without waiting for 30s schedule; non-critical changes (thresholds) wait for regular cycle (FR-021, FR-022)
-- [ ] T020 [US2] Add actuator enable guards to shelly/control.js — before any setPump/setFan/setImmersion/setSpaceHeater/setValve call, check config.controls_enabled and per-actuator flags; if disabled, skip hardware command but still track logical state; if controls disabled while mode is active, the immediate controlLoop() from T019 triggers safe shutdown (stop pump → close valves → idle) (FR-019, FR-020)
-- [ ] T021 [US2] Modify shelly/control-logic.js evaluate() to accept config parameter — when controls disabled, return mode decisions as usual but mark actuator commands as suppressed in the result, so I/O layer knows to skip them while still reporting the logical mode
-- [ ] T022 [US2] Add MQTT.publish() call at end of existing poll cycle in shelly/control.js — publish consolidated JSON state snapshot to `greenhouse/state` with QoS 1 and retain flag, per mqtt-topics.md payload schema (ts, mode, transitioning, transition_step, temps, valves, actuators, flags, controls_enabled)
-- [ ] T023 [US2] Add immediate MQTT.publish() calls in shelly/control.js during mode transition steps (pump_stop, valves_closing, valves_opening, pump_start) so each transition step is published
-- [ ] T024 [US2] Add MQTT failure guard in shelly/control.js — wrap MQTT.publish() so false return (broker unavailable) is silently ignored; control logic continues unaffected (FR-006)
-- [ ] T025 [US2] Update tests/control-logic.test.js to verify config-gated actuator behavior — evaluate() with controls disabled returns suppressed actuator commands; evaluate() with partial actuator enables respects per-actuator flags
-- [ ] T026 [US2] Run Shelly linter (`node shelly/lint/bin/shelly-lint.js shelly/control.js`) to verify ES5 compliance of all additions
+- [ ] T019 [US2] Modify shelly/control-logic.js evaluate() to accept config parameter — when controls disabled, return mode decisions as usual but mark actuator commands as suppressed in the result, so I/O layer knows to skip them while still reporting the logical mode
+- [ ] T020 [US2] Add config reading from KVS to shelly/control.js boot sequence — read `config` key from KVS on startup (default: all controls disabled if not found); pass config to evaluate() (FR-022)
+- [ ] T021 [US2] Add event handler in shelly/control.js for `config_changed` events from telemetry script — update local config; if event.safety_critical is true, call controlLoop() immediately; non-critical changes wait for regular 30s cycle (FR-020, FR-021)
+- [ ] T022 [US2] Add actuator enable guards to shelly/control.js — before any setPump/setFan/setImmersion/setSpaceHeater/setValve call, check config.controls_enabled and per-actuator flags; if disabled, skip hardware command but still track logical state (FR-019)
+- [ ] T023 [US2] Add state_updated event emission in shelly/control.js — emit `Shelly.emitEvent("state_updated", stateSnapshot)` at end of each poll cycle and during each transition step, so telemetry script can publish to MQTT
+- [ ] T024 [US2] Trim shelly/control.js to fit within 16 KB limit when concatenated with control-logic.js — remove comments, shorten status endpoint (or move to telemetry script), minimize variable names in non-critical paths. Current: 19.4 KB, target: ≤16 KB
 
-**Checkpoint**: Shelly device publishes state snapshots via MQTT, receives config push via `greenhouse/config` topic, persists in KVS, and respects actuator enable flags. Config changes take effect immediately (next control loop). Verifiable with `mosquitto_sub -t greenhouse/state` and `mosquitto_pub -t greenhouse/config`.
+### Telemetry Script (shelly/telemetry.js — NEW)
+
+- [ ] T025 [P] [US2] Create shelly/telemetry.js — MQTT config subscription: subscribe to `greenhouse/config`, on message compare version with KVS, update KVS if different, emit `Shelly.emitEvent("config_changed", {config, safety_critical})` where safety_critical is true if controls_enabled or any enabled_actuators flag changed
+- [ ] T026 [P] [US2] Add HTTP config bootstrap to shelly/telemetry.js — on boot, HTTP GET cloud config endpoint; if version differs from KVS, update KVS and emit config_changed event (FR-021)
+- [ ] T027 [US2] Add MQTT state publishing to shelly/telemetry.js — listen for `state_updated` events from control script via Shelly.addEventHandler(); publish state to `greenhouse/state` with QoS 1 and retain flag per mqtt-topics.md; guard with MQTT.isConnected() (FR-005, FR-006)
+
+### Tests and Verification
+
+- [ ] T028 [US2] Update tests/control-logic.test.js to verify config-gated actuator behavior — evaluate() with controls disabled returns suppressed actuator commands; evaluate() with partial actuator enables respects per-actuator flags
+- [ ] T029 [US2] Run Shelly linter on shelly/control.js and shelly/telemetry.js — verify ES5 compliance and per-script size ≤16 KB
+
+**Checkpoint**: Control script reads config from KVS and respects actuator flags. Telemetry script publishes state via MQTT and pushes config changes via events. Config changes take effect immediately for safety-critical fields. Verifiable with `mosquitto_sub -t greenhouse/state` and `mosquitto_pub -t greenhouse/config`.
 
 ---
 
@@ -96,20 +105,20 @@
 
 ### Server Integration
 
-- [ ] T027 [US1] Modify monitor/server.js to initialize MQTT bridge (mqtt-bridge.js) and WebSocket server (`ws` attached to existing http.Server at path `/ws`) with auth middleware — WebSocket upgrade rejected without valid session cookie per websocket-api.md
-- [ ] T028 [US1] Modify monitor/server.js to initialize db.js connection pool on startup (if DATABASE_URL set) and call schema init; pass db reference to MQTT bridge for persistence
-- [ ] T029 [US1] Modify monitor/server.js to register device-config.js API handlers and serve playground/ static files as the primary app (replacing or alongside monitor/ static files)
+- [ ] T030 [US1] Modify monitor/server.js to initialize MQTT bridge (mqtt-bridge.js) and WebSocket server (`ws` attached to existing http.Server at path `/ws`) with auth middleware — WebSocket upgrade rejected without valid session cookie per websocket-api.md
+- [ ] T031 [US1] Modify monitor/server.js to initialize db.js connection pool on startup (if DATABASE_URL set) and call schema init; pass db reference to MQTT bridge for persistence
+- [ ] T032 [US1] Modify monitor/server.js to register device-config.js API handlers and serve playground/ static files as the primary app (replacing or alongside monitor/ static files)
 
 ### Browser Data Source
 
-- [ ] T030 [US1] Create data source abstraction at playground/js/data-source.js — DataSource interface with `start()`, `stop()`, `onUpdate(callback)`, `onConnectionChange(callback)` methods; SimulationSource wrapping existing ThermalModel + ControlStateMachine; LiveSource using native WebSocket to `/ws` with auto-reconnect and connection status tracking
-- [ ] T031 [US1] Create unit tests for data source at tests/data-source.test.js — SimulationSource produces state updates, LiveSource parses WebSocket messages per websocket-api.md contract, connection status transitions (connected → disconnected → reconnecting → connected)
+- [ ] T033 [US1] Create data source abstraction at playground/js/data-source.js — DataSource interface with `start()`, `stop()`, `onUpdate(callback)`, `onConnectionChange(callback)` methods; SimulationSource wrapping existing ThermalModel + ControlStateMachine; LiveSource using native WebSocket to `/ws` with auto-reconnect and connection status tracking
+- [ ] T034 [US1] Create unit tests for data source at tests/data-source.test.js — SimulationSource produces state updates, LiveSource parses WebSocket messages per websocket-api.md contract, connection status transitions (connected → disconnected → reconnecting → connected)
 
 ### Playground UI Updates
 
-- [ ] T032 [US1] Modify playground/index.html to import data-source.js and wire DataSource updates into existing `updateDisplay(state, result)` — map MQTT state snapshot shape to the playground's internal state/result format used by Status, Components, and Schematic views
-- [ ] T033 [P] [US1] Add connection status indicator to playground/js/ui.js — show connected/disconnected/reconnecting state in the UI header (FR-012), with staleness indicator when no data received for >60s, controls_enabled status visible
-- [ ] T034 [P] [US1] Add connection status and live mode indicator styles to playground/css/style.css — status dot (green/yellow/red), staleness warning banner, controls-disabled indicator
+- [ ] T035 [US1] Modify playground/index.html to import data-source.js and wire DataSource updates into existing `updateDisplay(state, result)` — map MQTT state snapshot shape to the playground's internal state/result format used by Status, Components, and Schematic views
+- [ ] T036 [P] [US1] Add connection status indicator to playground/js/ui.js — show connected/disconnected/reconnecting state in the UI header (FR-012), with staleness indicator when no data received for >60s, controls_enabled status visible
+- [ ] T037 [P] [US1] Add connection status and live mode indicator styles to playground/css/style.css — status dot (green/yellow/red), staleness warning banner, controls-disabled indicator
 
 **Checkpoint**: Playground shows live system data from MQTT via WebSocket. Status, Components, and Schematic views all update in real time.
 
@@ -123,10 +132,10 @@
 
 ### Implementation
 
-- [ ] T035 [US3] Add deployment context detection to playground/index.html — detect GitHub Pages (`*.github.io` hostname) vs deployed app vs localhost; set `isLiveCapable` flag (FR-001)
-- [ ] T036 [US3] Add live/simulation mode toggle UI to playground/index.html — visible only when `isLiveCapable` is true; toggles between LiveSource and SimulationSource without page reload (FR-008); Controls view available only in simulation mode
-- [ ] T037 [US3] Add mode toggle styles to playground/css/style.css — toggle switch component, active mode indicator, Controls view show/hide based on mode
-- [ ] T038 [US3] Ensure GitHub Pages mode works fully statically — SimulationSource has no WebSocket dependency, no server requests, existing simulation unchanged (FR-009, FR-018)
+- [ ] T038 [US3] Add deployment context detection to playground/index.html — detect GitHub Pages (`*.github.io` hostname) vs deployed app vs localhost; set `isLiveCapable` flag (FR-001)
+- [ ] T039 [US3] Add live/simulation mode toggle UI to playground/index.html — visible only when `isLiveCapable` is true; toggles between LiveSource and SimulationSource without page reload (FR-008); Controls view available only in simulation mode
+- [ ] T040 [US3] Add mode toggle styles to playground/css/style.css — toggle switch component, active mode indicator, Controls view show/hide based on mode
+- [ ] T041 [US3] Ensure GitHub Pages mode works fully statically — SimulationSource has no WebSocket dependency, no server requests, existing simulation unchanged (FR-009, FR-018)
 
 **Checkpoint**: Mode toggle works. GitHub Pages = simulation only. Deployed app = live default with toggle.
 
@@ -140,9 +149,9 @@
 
 ### Implementation
 
-- [ ] T039 [US4] Update playground/js/data-source.js LiveSource to detect transition states from MQTT snapshots — track `transitioning` and `transition_step` fields, emit transition step events to UI
-- [ ] T040 [US4] Update playground/js/ui.js to render transition sequence in Components view — show each valve/actuator state change step-by-step as they arrive from LiveSource, with visual indication of in-progress transition
-- [ ] T041 [US4] Update Schematic view rendering in playground/index.html to animate valve and pump state changes during transitions — highlight changing components, show transition_step label (FR-011)
+- [ ] T042 [US4] Update playground/js/data-source.js LiveSource to detect transition states from MQTT snapshots — track `transitioning` and `transition_step` fields, emit transition step events to UI
+- [ ] T043 [US4] Update playground/js/ui.js to render transition sequence in Components view — show each valve/actuator state change step-by-step as they arrive from LiveSource, with visual indication of in-progress transition
+- [ ] T044 [US4] Update Schematic view rendering in playground/index.html to animate valve and pump state changes during transitions — highlight changing components, show transition_step label (FR-011)
 
 **Checkpoint**: Mode transitions show intermediate steps in real time on Components and Schematic views.
 
@@ -156,14 +165,14 @@
 
 ### Server History API
 
-- [ ] T042 [US5] Add `GET /api/history` endpoint to monitor/server.js — accepts `range` and optional `sensor` query params per websocket-api.md contract; queries db.js for sensor readings (raw for ≤6h, blended for 24h/48h, 30s aggregate for ≥7d) and state events; returns JSON response
-- [ ] T043 [US5] Add history query functions to monitor/lib/db.js — `getHistory(range, sensor)` that selects from `sensor_readings` (raw) or `sensor_readings_30s` (aggregate) based on range; `getEvents(range, entityType)` for state_events; pivot sensor rows into `{ts, collector, tank_top, ...}` response format
+- [ ] T045 [US5] Add `GET /api/history` endpoint to monitor/server.js — accepts `range` and optional `sensor` query params per websocket-api.md contract; queries db.js for sensor readings (raw for ≤6h, blended for 24h/48h, 30s aggregate for ≥7d) and state events; returns JSON response
+- [ ] T046 [US5] Add history query functions to monitor/lib/db.js — `getHistory(range, sensor)` that selects from `sensor_readings` (raw) or `sensor_readings_30s` (aggregate) based on range; `getEvents(range, entityType)` for state_events; pivot sensor rows into `{ts, collector, tank_top, ...}` response format
 
 ### Browser History Integration
 
-- [ ] T044 [US5] Update playground Status view chart in playground/index.html to fetch historical data from `/api/history` API when in live mode — replace simulation time-series with real data; add time range selector (1h, 6h, 24h, 7d, 30d, 1y, all) per websocket-api.md
-- [ ] T045 [US5] Update chart rendering to show mode transition event markers from history API `events` array — vertical lines or annotations at mode change timestamps on the time-series graph
-- [ ] T046 [US5] Handle empty history state — show "Data collection started" message when no historical data exists yet; handle seamless resolution blending at 48h boundary
+- [ ] T047 [US5] Update playground Status view chart in playground/index.html to fetch historical data from `/api/history` API when in live mode — replace simulation time-series with real data; add time range selector (1h, 6h, 24h, 7d, 30d, 1y, all) per websocket-api.md
+- [ ] T048 [US5] Update chart rendering to show mode transition event markers from history API `events` array — vertical lines or annotations at mode change timestamps on the time-series graph
+- [ ] T049 [US5] Handle empty history state — show "Data collection started" message when no historical data exists yet; handle seamless resolution blending at 48h boundary
 
 **Checkpoint**: History graph shows real temperature trends and mode transitions with browsable time ranges.
 
@@ -173,13 +182,13 @@
 
 **Purpose**: E2E tests, integration verification, and cleanup.
 
-- [ ] T047 [P] Create e2e test for live mode toggle and WebSocket connection at tests/e2e/live-mode.spec.js — verify mode toggle visibility based on deployment, WebSocket connection, live data display
-- [ ] T048 [P] Verify existing e2e tests pass unchanged (tests/e2e/thermal-sim.spec.js) — simulation mode must not regress (SC-004)
-- [ ] T049 Verify existing monitor features preserved in unified app — WebAuthn auth, push notifications, PWA installability (FR-017)
-- [ ] T050 Verify device config safety — fresh device with no KVS config starts in monitoring-only mode (SC-009); safety-critical config change via PUT triggers immediate controlLoop() on device within seconds (SC-010); disabling controls while mode is active triggers safe shutdown without 30s wait
-- [ ] T051 Run full test suite (`npm test`) and fix any regressions
-- [ ] T052 Update quickstart.md if any development workflow steps changed during implementation
-- [ ] T053 Run Shelly linter on all shelly/ files to confirm no ES5 violations
+- [ ] T050 [P] Create e2e test for live mode toggle and WebSocket connection at tests/e2e/live-mode.spec.js — verify mode toggle visibility based on deployment, WebSocket connection, live data display
+- [ ] T051 [P] Verify existing e2e tests pass unchanged (tests/e2e/thermal-sim.spec.js) — simulation mode must not regress (SC-004)
+- [ ] T052 Verify existing monitor features preserved in unified app — WebAuthn auth, push notifications, PWA installability (FR-017)
+- [ ] T053 Verify device config safety — fresh device with no KVS config starts in monitoring-only mode (SC-009); safety-critical config change via PUT triggers immediate controlLoop() on device within seconds via event from telemetry script (SC-010); disabling controls while mode is active triggers safe shutdown without 30s wait
+- [ ] T054 Run full test suite (`npm test`) and fix any regressions
+- [ ] T055 Update quickstart.md if any development workflow steps changed during implementation
+- [ ] T056 Run Shelly linter on all shelly/ files (control.js, telemetry.js) to confirm ES5 compliance and per-script size ≤16 KB
 
 ---
 
@@ -214,9 +223,10 @@
 
 - **Phase 1**: T002 and T003 can run in parallel
 - **Phase 2**: T005, T006, T009, T016 can run in parallel; T010, T012, T014 can run in parallel (different files)
-- **Phase 4**: T033 and T034 can run in parallel (ui.js and style.css)
+- **Phase 3**: T025 and T026 can run in parallel (telemetry.js features, independent sections)
+- **Phase 4**: T036 and T037 can run in parallel (ui.js and style.css)
 - **Phase 5–7**: US3, US4, US5 can run in parallel after US1 is complete (different files and concerns)
-- **Phase 8**: T047 and T048 can run in parallel (different test files)
+- **Phase 8**: T050 and T051 can run in parallel (different test files)
 
 ---
 
@@ -225,9 +235,9 @@
 ```
 # These three user stories can proceed in parallel after US1:
 
-Stream 1 (US3): T035 → T036 → T037 → T038
-Stream 2 (US4): T039 → T040 → T041
-Stream 3 (US5): T042 → T043 → T044 → T045 → T046
+Stream 1 (US3): T038 → T039 → T040 → T041
+Stream 2 (US4): T042 → T043 → T044
+Stream 3 (US5): T045 → T046 → T047 → T048 → T049
 ```
 
 ---
@@ -263,7 +273,9 @@ Stream 3 (US5): T042 → T043 → T044 → T045 → T046
 - [P] tasks = different files, no dependencies on incomplete tasks
 - [Story] label maps task to specific user story for traceability
 - US2 is implemented before US1 despite lower business priority because it's the data source US1 depends on
-- Shelly script changes (US2) must pass the ES5 linter — no const/let, no arrow functions, no template literals
+- Shelly scripts split across two files: control.js (+ control-logic.js) for safety-critical control loop, telemetry.js for MQTT and config — each must be ≤16 KB and ES5 compliant
+- The existing control script (19.4 KB) needs trimming to fit the 16 KB limit — this is a pre-existing issue, the scripts have not yet run on hardware
+- Inter-script communication via Shelly.emitEvent()/addEventHandler() — events are instant, no polling
 - Database module supports graceful degradation — if DATABASE_URL is not set, history features are disabled but live WebSocket still works
 - Existing simulation tests must not regress — SC-004 is a hard requirement
 - All actuator control is disabled by default — a fresh device only monitors (reads sensors, publishes MQTT) until explicitly configured
