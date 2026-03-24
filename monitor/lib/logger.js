@@ -46,7 +46,7 @@ function createLogger(component) {
 
     // Emit OTel log record (no-op when SDK not initialized)
     var otelLogger = otelLogs.logs.getLogger(component);
-    var attributes = { component: component };
+    var attributes = { component: component, level: level };
     if (data) {
       var dataKeys = Object.keys(data);
       for (var j = 0; j < dataKeys.length; j++) {
