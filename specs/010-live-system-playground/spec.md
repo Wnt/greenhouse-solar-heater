@@ -12,6 +12,7 @@
 - Q: How long should the system retain historical time series data? → A: Indefinite — keep all data permanently, no automatic expiry.
 - Q: How frequently should data be recorded to the time series database? → A: Tiered — full MQTT resolution retained for 48 hours, downsampled to 30-second intervals for long-term storage. All state change events (mode transitions, valve/actuator changes) stored indefinitely at full resolution regardless of tier.
 - Q: Where should the MQTT broker run? → A: Cloud server only — Shelly devices publish over the VPN tunnel to the cloud-hosted broker. The Node.js server subscribes locally on the same host.
+- Q: Should the playground replace the monitor app or coexist with it? → A: Playground replaces the monitor — single unified app. The monitor's current features (gauges, chart, auth, push notifications) are absorbed into the playground. One app served from both GitHub Pages (simulation-only) and greenhouse.madekivi.com (live + simulation).
 
 ## User Scenarios & Testing
 
@@ -128,6 +129,8 @@ When in live monitoring mode, the Status view's history graph shows actual histo
 - **FR-014**: The system MUST persist all state snapshots in a time series database using a tiered retention policy: full-resolution data for the most recent 48 hours, downsampled to 30-second intervals for long-term storage.
 - **FR-015**: All state change events (mode transitions, valve open/close, actuator on/off) MUST be stored indefinitely at full resolution, regardless of the downsampling tier.
 - **FR-016**: The Status view MUST support browsing historical data beyond 24 hours, with appropriate time range options for the full retained history.
+- **FR-017**: The unified app MUST retain the monitor app's existing capabilities: WebAuthn passkey authentication (when deployed), push notifications for state changes, and PWA installability (home screen, offline fallback).
+- **FR-018**: The unified app MUST work as a fully static site on GitHub Pages (no server dependency for simulation mode).
 
 ### Key Entities
 
@@ -153,7 +156,7 @@ When in live monitoring mode, the Status view's history graph shows actual histo
 - The Shelly Pro 4PM supports MQTT publishing from its scripting environment (Shelly devices have built-in MQTT support that can be enabled alongside HTTP RPC).
 - An MQTT broker will be deployed on the cloud server as a container alongside the existing Docker Compose stack. Shelly devices connect to it over the VPN tunnel.
 - The existing monitor server (Node.js) will be extended to act as the MQTT-to-browser bridge, rather than introducing a separate service.
-- The playground app and monitor app will be merged or co-served from the same origin on greenhouse.madekivi.com.
+- The playground app replaces the monitor app as a single unified application. The monitor's existing features (temperature gauges, time-series chart, WebAuthn auth, push notifications, PWA support) are absorbed into the playground. The monitor app will be retired once the unified app is feature-complete.
 - The server subscribes to MQTT and forwards state to browser clients via a real-time channel.
 - A time series database will be deployed as part of the infrastructure to store all state snapshots indefinitely.
 - The existing authentication (WebAuthn passkeys) will apply to the live monitoring mode on greenhouse.madekivi.com.
