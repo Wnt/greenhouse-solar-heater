@@ -117,9 +117,10 @@ resource "upcloud_managed_database_postgresql" "timeseries" {
 }
 
 # ── Store DATABASE_URL and CA certificate in S3 ──
-# Extracts the CA cert from the database TLS connection via openssl, then stores
-# both the connection URL and CA cert in S3 using the db-config.js helper.
-# Runs on the Terraform operator's machine (needs node + npm install + openssl).
+# Stores the connection URL and (optionally) CA cert in S3 via db-config.js.
+# To include the CA cert, place it at deploy/terraform/db-ca-cert.pem (download
+# from UpCloud control panel → Database → Overview → CA Certificate).
+# Runs on the Terraform operator's machine (needs node + npm install).
 
 resource "null_resource" "store_db_url" {
   triggers = {
@@ -129,13 +130,12 @@ resource "null_resource" "store_db_url" {
   provisioner "local-exec" {
     working_dir = "${path.module}/../.."
     command     = <<-EOT
-      openssl s_client -connect ${upcloud_managed_database_postgresql.timeseries.service_host}:${upcloud_managed_database_postgresql.timeseries.service_port} \
-        -showcerts </dev/null 2>/dev/null \
-        | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' \
-        > /tmp/db-ca-cert.pem \
-      && [ -s /tmp/db-ca-cert.pem ] \
-      && node monitor/lib/db-config.js store "${upcloud_managed_database_postgresql.timeseries.service_uri}" --ca /tmp/db-ca-cert.pem \
-      && rm -f /tmp/db-ca-cert.pem
+      if [ -f deploy/terraform/db-ca-cert.pem ]; then
+        node monitor/lib/db-config.js store "${upcloud_managed_database_postgresql.timeseries.service_uri}" --ca deploy/terraform/db-ca-cert.pem
+      else
+        echo "WARNING: deploy/terraform/db-ca-cert.pem not found — storing URL without CA cert"
+        node monitor/lib/db-config.js store "${upcloud_managed_database_postgresql.timeseries.service_uri}"
+      fi
     EOT
     environment = {
       S3_ENDPOINT          = "https://${[for e in upcloud_managed_object_storage.credentials.endpoint : e.domain_name if e.type == "public"][0]}"
