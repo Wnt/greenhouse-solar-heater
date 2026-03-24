@@ -52,15 +52,15 @@ async function setupDeviceView(page, initialConfig) {
 
   await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
   // Wait for live mode to activate (localhost is live-capable)
-  await expect(page.locator('#mode-toggle')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#mode-toggle')).toBeVisible();
 
   // Navigate to Device view
   const deviceNav = page.locator('.sidebar-nav [data-view="device"]');
-  await expect(deviceNav).toBeVisible({ timeout: 10000 });
+  await expect(deviceNav).toBeVisible();
   await deviceNav.click();
 
   // Wait for form to load
-  await expect(page.locator('#device-config-form')).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('#device-config-form')).toBeVisible();
 
   return { putRequests, getConfig: () => ({ ...savedConfig }) };
 }
@@ -267,7 +267,7 @@ test.describe('Device config UI', () => {
     }));
 
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#mode-toggle')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('#mode-toggle')).toBeVisible();
 
     // In live mode (default on localhost), Device nav is visible
     const deviceNav = page.locator('.sidebar-nav [data-view="device"]');

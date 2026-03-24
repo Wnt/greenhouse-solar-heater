@@ -375,7 +375,8 @@
     // Detect deployment context: GitHub Pages = simulation only, deployed app = live capable
     const isGitHubPages = location.hostname.endsWith('.github.io');
     const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    const isLiveCapable = !isGitHubPages;
+    const forceSimulation = new URLSearchParams(location.search).get('mode') === 'sim';
+    const isLiveCapable = !isGitHubPages && !forceSimulation;
 
     let activeSource = 'simulation'; // 'simulation' or 'live'
     let liveSource = null;

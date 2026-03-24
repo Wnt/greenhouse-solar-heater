@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Delay after Script.Stop (allow device to settle); set to 0 for testing
+DEPLOY_STOP_DELAY="${DEPLOY_STOP_DELAY:-1}"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONF="$SCRIPT_DIR/devices.conf"
 LOGIC_JS="$SCRIPT_DIR/control-logic.js"
@@ -85,7 +88,7 @@ print('Upload OK (%d bytes in %d chunks)' % (total, chunk_num))
 echo "Deploying control-logic.js + control.js to $DEVICE (script $CONTROL_SCRIPT_ID)..."
 
 curl -s "http://$DEVICE/rpc/Script.Stop?id=$CONTROL_SCRIPT_ID" > /dev/null 2>&1 || true
-sleep 1
+sleep "$DEPLOY_STOP_DELAY"
 
 echo "Uploading control script..."
 upload_script "$CONTROL_SCRIPT_ID" "$LOGIC_JS" "$CONTROL_JS" "$DEVICE"
@@ -104,7 +107,7 @@ if [ -f "$TELEMETRY_JS" ]; then
   echo "Deploying telemetry.js to $DEVICE (script $TELEMETRY_SCRIPT_ID)..."
 
   curl -s "http://$DEVICE/rpc/Script.Stop?id=$TELEMETRY_SCRIPT_ID" > /dev/null 2>&1 || true
-  sleep 1
+  sleep "$DEPLOY_STOP_DELAY"
 
   echo "Uploading telemetry script..."
   upload_script "$TELEMETRY_SCRIPT_ID" "$TELEMETRY_JS" "$DEVICE"

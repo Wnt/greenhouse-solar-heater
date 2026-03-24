@@ -23,7 +23,7 @@ async function setSlider(page, id, value) {
 test.describe('Status View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
 
-    await page.goto('/playground/');
+    await page.goto('/playground/?mode=sim');
     await expect(page.locator('#view-status')).toBeVisible();
   });
 
@@ -58,9 +58,9 @@ test.describe('Status View Screenshots', () => {
     await page.waitForFunction(() => {
       const el = document.getElementById('mode-card-title');
       return el && el.textContent !== 'Idle';
-    }, { timeout: 15000 });
+    }, { timeout: 3000 });
 
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(100);
     await page.screenshot(shot('status-solar-charging-desktop'));
   });
 
@@ -81,9 +81,9 @@ test.describe('Status View Screenshots', () => {
     await page.waitForFunction(() => {
       const el = document.getElementById('mode-card-title');
       return el && el.textContent !== 'Idle';
-    }, { timeout: 15000 });
+    }, { timeout: 3000 });
 
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(100);
     await page.screenshot(shot('status-greenhouse-heating-desktop'));
   });
 
@@ -101,9 +101,9 @@ test.describe('Status View Screenshots', () => {
     await page.waitForFunction(() => {
       const el = document.getElementById('mode-card-title');
       return el && el.textContent !== 'Idle';
-    }, { timeout: 15000 });
+    }, { timeout: 3000 });
 
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(100);
     await page.screenshot(shot('status-running-mobile'));
   });
 });
@@ -113,7 +113,7 @@ test.describe('Status View Screenshots', () => {
 test.describe('Components View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
 
-    await page.goto('/playground/');
+    await page.goto('/playground/?mode=sim');
     await page.locator('[data-view="components"]').first().click();
     await expect(page.locator('#view-components')).toBeVisible();
   });
@@ -134,7 +134,7 @@ test.describe('Components View Screenshots', () => {
 test.describe('Schematic View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
 
-    await page.goto('/playground/');
+    await page.goto('/playground/?mode=sim');
     await page.locator('[data-view="schematic"]').first().click();
     await expect(page.locator('#view-schematic')).toBeVisible();
   });
@@ -155,7 +155,7 @@ test.describe('Schematic View Screenshots', () => {
 test.describe('Controls View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
 
-    await page.goto('/playground/');
+    await page.goto('/playground/?mode=sim');
     await page.locator('[data-view="controls"]').first().click();
     await expect(page.locator('#view-controls')).toBeVisible();
   });
@@ -170,7 +170,7 @@ test.describe('Controls View Screenshots', () => {
     const toggle = page.locator('#day-night-toggle');
     if (await toggle.isVisible()) {
       await toggle.check();
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(100);
     }
     await page.screenshot(shot('controls-daynight-desktop'));
   });

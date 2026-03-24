@@ -9,7 +9,7 @@ test.describe('Logout Feature', () => {
 
     await page.goto('/monitor/');
     // Wait for the auth check to complete
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(100);
     const logoutBtn = page.locator('#logout-btn');
     await expect(logoutBtn).toBeHidden();
   });
@@ -40,7 +40,7 @@ test.describe('Logout Feature', () => {
 
     await page.goto('/monitor/');
     // Wait for the auth check to complete
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(100);
     const logoutBtn = page.locator('#logout-btn');
     await expect(logoutBtn).toBeHidden();
   });

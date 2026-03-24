@@ -19,7 +19,7 @@ function runDeploy(ip, scriptId) {
   return new Promise((resolve, reject) => {
     const child = spawn('bash', [DEPLOY_SH, ip, String(scriptId)], {
       cwd: SCRIPTS_DIR,
-      env: process.env,
+      env: { ...process.env, DEPLOY_STOP_DELAY: '0' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -29,7 +29,7 @@ function runDeploy(ip, scriptId) {
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error('deploy timed out\nstdout: ' + stdout + '\nstderr: ' + stderr));
-    }, 15000);
+    }, 5000);
     child.on('close', (code) => {
       clearTimeout(timer);
       resolve({ code, stdout, stderr });
