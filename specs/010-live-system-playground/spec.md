@@ -13,6 +13,7 @@
 - Q: How frequently should data be recorded to the time series database? → A: Tiered — full MQTT resolution retained for 48 hours, downsampled to 30-second intervals for long-term storage. All state change events (mode transitions, valve/actuator changes) stored indefinitely at full resolution regardless of tier.
 - Q: Where should the MQTT broker run? → A: Cloud server only — Shelly devices publish over the VPN tunnel to the cloud-hosted broker. The Node.js server subscribes locally on the same host.
 - Q: Should the playground replace the monitor app or coexist with it? → A: Playground replaces the monitor — single unified app. The monitor's current features (gauges, chart, auth, push notifications) are absorbed into the playground. One app served from both GitHub Pages (simulation-only) and greenhouse.madekivi.com (live + simulation).
+- Q: How should Shelly devices publish data via MQTT? → A: Script-based custom publishing from the control script. Publishes consolidated JSON state snapshots containing mode, transition status, temperatures, valve states, and actuator states — not raw Shelly built-in topics.
 
 ## User Scenarios & Testing
 
@@ -117,7 +118,7 @@ When in live monitoring mode, the Status view's history graph shows actual histo
 - **FR-002**: When in live mode, the app MUST display current readings from all five temperature sensors (collector, tank top, tank bottom, greenhouse, outdoor).
 - **FR-003**: When in live mode, the app MUST display the current state of all eight motorized valves and four actuators (pump, fan, immersion heater, space heater).
 - **FR-004**: When in live mode, the app MUST display the current operating mode (Idle, Solar Charging, Greenhouse Heating, Active Drain, Emergency Heating).
-- **FR-005**: The Shelly controller MUST publish complete system state snapshots via MQTT, including temperatures, valve states, actuator states, current mode, and transition status.
+- **FR-005**: The Shelly control script MUST publish consolidated JSON state snapshots via custom MQTT calls, including temperatures, valve states, actuator states, current mode, and transition status. Built-in Shelly MQTT topics are not used.
 - **FR-006**: MQTT publishing MUST NOT interfere with the primary control logic — if MQTT fails, the system MUST continue operating normally.
 - **FR-007**: The app MUST receive live updates within a few seconds of a state change on the physical system.
 - **FR-008**: On greenhouse.madekivi.com, users MUST be able to toggle between live monitoring mode and simulation mode without reloading the page.
