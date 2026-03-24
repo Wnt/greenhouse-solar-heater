@@ -78,10 +78,6 @@ resource "upcloud_server" "monitor" {
     type = "public"
   }
 
-  network_interface {
-    type = "utility"
-  }
-
   login {
     keys = [var.ssh_public_key]
   }
@@ -100,7 +96,12 @@ resource "upcloud_server" "monitor" {
   })
 }
 
-# ── Firewall ──
+# ── Utility network (private access to managed database) ──
+
+resource "upcloud_server_network_interface" "utility" {
+  server_id = upcloud_server.monitor.id
+  type      = "utility"
+}
 
 # ── Managed PostgreSQL with TimescaleDB ──
 
