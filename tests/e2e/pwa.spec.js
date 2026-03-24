@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 
 test.describe('PWA Installability', () => {
   test('index.html has manifest link', async ({ page }) => {

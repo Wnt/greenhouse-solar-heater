@@ -29,3 +29,19 @@ output "s3_secret_access_key" {
   value       = upcloud_managed_object_storage_user_access_key.app.secret_access_key
   sensitive   = true
 }
+
+output "database_host" {
+  description = "Managed PostgreSQL host"
+  value       = upcloud_managed_database_postgresql.timeseries.service_host
+}
+
+output "database_port" {
+  description = "Managed PostgreSQL port"
+  value       = upcloud_managed_database_postgresql.timeseries.service_port
+}
+
+output "database_url" {
+  description = "Full PostgreSQL connection URL (auto-generated, stored in S3)"
+  value       = upcloud_managed_database_postgresql.timeseries.service_uri
+  sensitive   = true
+}

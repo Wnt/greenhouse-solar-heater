@@ -48,3 +48,9 @@ variable "github_repo" {
   description = "GitHub repository in owner/name format for GHCR image. Automatically lowercased for Docker compatibility."
   type        = string
 }
+
+variable "db_plan" {
+  description = "UpCloud Managed PostgreSQL plan"
+  type        = string
+  default     = "1x1xCPU-2GB-25GB"
+}

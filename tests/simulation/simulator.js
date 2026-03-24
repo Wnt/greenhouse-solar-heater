@@ -5,6 +5,7 @@ const { tick, createModel } = require('./thermal-model.js');
 const { evaluate, MODES } = require('../../shelly/control-logic.js');
 
 const CONTROL_INTERVAL = 30;  // seconds between evaluate() calls
+const SIM_STEP = 10;  // seconds per simulation tick (must evenly divide CONTROL_INTERVAL)
 
 function simulate(scenario, config) {
   const initTemps = scenario.initialState || {};
@@ -25,13 +26,13 @@ function simulate(scenario, config) {
   // Initial evaluate
   let decisions = runEvaluate(0);
 
-  for (let t = 0; t < scenario.duration; t++) {
+  for (let t = 0; t < scenario.duration; t += SIM_STEP) {
     // Update environment
     model.outdoor = scenario.ambient(t);
     model.irradiance = scenario.irradiance(t);
 
     // Tick thermal model
-    model = tick(model, 1, decisions);
+    model = tick(model, SIM_STEP, decisions);
 
     // Drain completion: simulate shell's dry-run detection
     if (currentMode === MODES.ACTIVE_DRAIN) {

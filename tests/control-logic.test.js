@@ -770,3 +770,111 @@ describe('buildDisplayLabels', () => {
     assert.strictEqual(labels.length, 4);
   });
 });
+
+// ── Device config gated actuator tests ──
+
+// Compact device config format: ce, ea (bitmask), fm (mode code), am (mode codes), v
+describe('config-gated actuator behavior', () => {
+  // ea bitmask: valves=1, pump=2, fan=4, space_heater=8, immersion_heater=16
+  const disabledConfig = { ce: false, ea: 0, v: 1 };
+  const partialConfig = { ce: true, ea: 1 | 2, v: 2 }; // valves + pump only
+  const allEnabled = { ce: true, ea: 31, v: 1 }; // all actuators
+
+  it('returns suppressed flag when controls are disabled', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, disabledConfig);
+    assert.strictEqual(result.suppressed, true);
+  });
+
+  it('still computes correct mode when controls disabled', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, disabledConfig);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+
+  it('respects per-actuator bitmask — disables fan when not in mask', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 },
+    }), null, partialConfig);
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+    assert.strictEqual(result.actuators.pump, true);
+    assert.strictEqual(result.actuators.fan, false);
+  });
+
+  it('keeps pump on when enabled in partial config', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, partialConfig);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.actuators.pump, true);
+    assert.strictEqual(result.suppressed, false);
+  });
+
+  it('disables valves when valve bit is off', () => {
+    const noValvesConfig = { ce: true, ea: 2 | 4 | 8 | 16, v: 3 }; // everything except valves
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, noValvesConfig);
+    for (const key in result.valves) {
+      assert.strictEqual(result.valves[key], false, key + ' should be closed');
+    }
+  });
+
+  it('works without deviceConfig (backward compatible)', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.suppressed, false);
+    assert.strictEqual(result.actuators.pump, true);
+  });
+
+  it('forced_mode overrides automatic mode selection', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, { ...allEnabled, fm: 'SC' });
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+
+  it('forced_mode works with full mode names', () => {
+    const result = evaluate(makeState({}), null, { ...allEnabled, fm: 'GH' });
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+  });
+
+  it('allowed_modes filters out disallowed modes', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 },
+    }), null, { ...allEnabled, am: ['I', 'SC'] });
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('allowed_modes permits allowed modes', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, { ...allEnabled, am: ['I', 'SC'] });
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+
+  it('device config JSON fits within Shelly KVS 256-byte limit', () => {
+    const worstCase = {
+      ce: true, ea: 31, fm: 'GH',
+      am: ['I', 'SC', 'GH', 'AD'], // 4 modes = max before normalization to null
+      v: 9999,
+    };
+    const json = JSON.stringify(worstCase);
+    assert.ok(json.length <= 256,
+      'device config JSON is ' + json.length + ' bytes, must be <= 256. Content: ' + json);
+    // Also verify it's well under — target is 1/4 of limit
+    assert.ok(json.length <= 64,
+      'device config should be <= 64 bytes (1/4 of KVS limit), got ' + json.length);
+  });
+
+  it('forced_mode still respects safety drain preemption', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
+    }), null, { ...allEnabled, fm: 'SC' });
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+});

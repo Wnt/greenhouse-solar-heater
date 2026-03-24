@@ -99,6 +99,22 @@ else
     log "WARNING: VPN config download failed — continuing without VPN config"
   fi
 
+  # Step 6b: Fetch DATABASE_URL from S3 and add to .env
+  log "Checking S3 for database URL"
+  DB_URL=$(timeout 30 docker run --rm --network host --env-file "$APP_DIR/.env" \
+    "$APP_IMAGE" \
+    node monitor/lib/db-config.js load 2>/dev/null) || true
+  if [ -n "$DB_URL" ]; then
+    # Add/replace DATABASE_URL in .env
+    grep -v '^DATABASE_URL=' "$ENV_FILE" > "$ENV_FILE.tmp" || true
+    echo "DATABASE_URL=$DB_URL" >> "$ENV_FILE.tmp"
+    mv "$ENV_FILE.tmp" "$ENV_FILE"
+    chmod 0600 "$ENV_FILE"
+    log "DATABASE_URL loaded from S3 and added to .env"
+  else
+    log "No DATABASE_URL found in S3 — database features will be disabled"
+  fi
+
   # Step 7: Upload VPN config to S3 if local exists but S3 doesn't (bootstrap)
   if [ -f "$VPN_CONFIG" ]; then
     log "Local VPN config found — ensuring S3 backup exists"
@@ -114,5 +130,19 @@ fi
 # Step 8: Apply the service stack
 log "Applying service stack"
 docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+
+# Step 9: Deploy Shelly scripts via VPN (optional)
+# Runs inside the app container which shares the OpenVPN network namespace.
+CONTROLLER_VPN_IP=$(grep '^CONTROLLER_VPN_IP=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+if [ -n "$CONTROLLER_VPN_IP" ] && [ -n "$APP_IMAGE" ]; then
+  log "Deploying Shelly scripts to $CONTROLLER_VPN_IP via VPN"
+  if ! timeout 60 docker compose -f "$COMPOSE_FILE" exec -T app \
+    env DEPLOY_VIA_VPN=true CONTROLLER_VPN_IP="$CONTROLLER_VPN_IP" \
+    bash shelly/deploy.sh 2>&1; then
+    log "WARNING: Shelly script deployment failed — continuing"
+  fi
+else
+  log "Skipping Shelly deployment (CONTROLLER_VPN_IP not set)"
+fi
 
 log "Deploy complete"

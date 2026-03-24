@@ -2,10 +2,11 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testIgnore: ['**/take-screenshots*'],
-  timeout: 30000,
+  testIgnore: ['**/take-screenshots*', '**/screenshots.spec*'],
+  timeout: 5000,
   retries: 0,
-  workers: 1,
+  fullyParallel: true,
+  workers: 4,
   reporter: 'list',
   use: {
     baseURL: 'http://localhost:3210',

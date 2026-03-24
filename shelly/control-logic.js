@@ -100,7 +100,30 @@ function anySensorStale(sensorAge, threshold) {
   return false;
 }
 
-function makeResult(mode, flags) {
+// Device config uses compact keys to fit Shelly KVS 256-byte limit:
+//   ce (bool)   = controls_enabled
+//   ea (int)    = enabled_actuators bitmask: valves=1, pump=2, fan=4, sh=8, ih=16
+//   fm (string) = forced_mode: "I","SC","GH","AD","EH", or null
+//   am (array)  = allowed_modes: ["I","SC",...] or null (all)
+//   v  (int)    = version
+
+var EA_VALVES = 1;
+var EA_PUMP = 2;
+var EA_FAN = 4;
+var EA_SPACE_HEATER = 8;
+var EA_IMMERSION = 16;
+
+var MODE_CODE = {
+  I: "IDLE", SC: "SOLAR_CHARGING", GH: "GREENHOUSE_HEATING",
+  AD: "ACTIVE_DRAIN", EH: "EMERGENCY_HEATING"
+};
+
+function expandModeCode(code) {
+  if (!code) return null;
+  return MODE_CODE[code] || code.toUpperCase();
+}
+
+function makeResult(mode, flags, deviceConfig) {
   var valves = {};
   var actuators = {};
   var key;
@@ -112,12 +135,26 @@ function makeResult(mode, flags) {
   for (key in ma) {
     actuators[key] = ma[key];
   }
-  return {
+  var result = {
     nextMode: mode,
     valves: valves,
     actuators: actuators,
-    flags: flags
+    flags: flags,
+    suppressed: false
   };
+  if (deviceConfig && !deviceConfig.ce) {
+    result.suppressed = true;
+  } else if (deviceConfig) {
+    var ea = deviceConfig.ea || 0;
+    if (!(ea & EA_PUMP)) actuators.pump = false;
+    if (!(ea & EA_FAN)) actuators.fan = false;
+    if (!(ea & EA_SPACE_HEATER)) actuators.space_heater = false;
+    if (!(ea & EA_IMMERSION)) actuators.immersion_heater = false;
+    if (!(ea & EA_VALVES)) {
+      for (key in valves) { valves[key] = false; }
+    }
+  }
+  return result;
 }
 
 function getMinDuration(state, cfg) {
@@ -129,8 +166,9 @@ function getMinDuration(state, cfg) {
   return cfg.minModeDuration;
 }
 
-function evaluate(state, config) {
+function evaluate(state, config, deviceConfig) {
   var cfg = applyDefaults(config);
+  var dc = deviceConfig || null;
   var t = state.temps;
   var elapsed = state.now - state.modeEnteredAt;
   var flags = {
@@ -142,35 +180,35 @@ function evaluate(state, config) {
   // Sensor staleness — any sensor stale triggers IDLE, emergency off
   if (anySensorStale(state.sensorAge, cfg.sensorStaleThreshold)) {
     flags.emergencyHeatingActive = false;
-    return makeResult(MODES.IDLE, flags);
+    return makeResult(MODES.IDLE, flags, dc);
   }
 
   // Already draining — stay until shell completes or timeout
   if (state.currentMode === MODES.ACTIVE_DRAIN) {
     if (elapsed > cfg.drainTimeout) {
       flags.collectorsDrained = true;
-      return makeResult(MODES.IDLE, flags);
+      return makeResult(MODES.IDLE, flags, dc);
     }
-    return makeResult(MODES.ACTIVE_DRAIN, flags);
+    return makeResult(MODES.ACTIVE_DRAIN, flags, dc);
   }
 
   // Freeze protection — preempts immediately, ignores min duration
   if (t.outdoor !== null && t.outdoor < cfg.freezeDrainTemp &&
       !state.collectorsDrained) {
-    return makeResult(MODES.ACTIVE_DRAIN, flags);
+    return makeResult(MODES.ACTIVE_DRAIN, flags, dc);
   }
 
   // Overheat protection — preempts immediately
   if (t.tank_top !== null && t.tank_top > cfg.overheatDrainTemp &&
       !state.collectorsDrained) {
-    return makeResult(MODES.ACTIVE_DRAIN, flags);
+    return makeResult(MODES.ACTIVE_DRAIN, flags, dc);
   }
 
   // Minimum mode duration (not for IDLE or EMERGENCY_HEATING, not for drain above)
   if (state.currentMode !== MODES.IDLE &&
       state.currentMode !== MODES.EMERGENCY_HEATING &&
       elapsed < getMinDuration(state, cfg)) {
-    var result = makeResult(state.currentMode, flags);
+    var result = makeResult(state.currentMode, flags, dc);
     // Emergency overlay still applies during min-duration hold
     if (t.greenhouse !== null && flags.emergencyHeatingActive) {
       result.actuators.space_heater = true;
@@ -234,17 +272,40 @@ function evaluate(state, config) {
     }
   }
 
-  // ── Combine pump mode + emergency overlay ──
-  if (flags.emergencyHeatingActive && pumpMode === MODES.IDLE) {
-    // No useful pump mode — pure emergency (space heater + immersion)
-    return makeResult(MODES.EMERGENCY_HEATING, flags);
+  // ── Forced mode override (for staged deployment / manual testing) ──
+  if (dc && dc.fm) {
+    var forcedMode = expandModeCode(dc.fm);
+    if (MODES[forcedMode]) {
+      pumpMode = MODES[forcedMode];
+      flags.emergencyHeatingActive = false;
+      return makeResult(pumpMode, flags, dc);
+    }
   }
 
-  var result = makeResult(pumpMode, flags);
+  // ── Combine pump mode + emergency overlay ──
+  if (flags.emergencyHeatingActive && pumpMode === MODES.IDLE) {
+    return makeResult(MODES.EMERGENCY_HEATING, flags, dc);
+  }
+
+  var result = makeResult(pumpMode, flags, dc);
   if (flags.emergencyHeatingActive) {
-    // Pump mode active + emergency — overlay space heater onto pump mode
     result.actuators.space_heater = true;
   }
+
+  // ── Allowed modes filter (for staged deployment) ──
+  if (dc && dc.am && dc.am.length > 0) {
+    var allowed = false;
+    for (var ami = 0; ami < dc.am.length; ami++) {
+      if (expandModeCode(dc.am[ami]) === result.nextMode) {
+        allowed = true;
+        break;
+      }
+    }
+    if (!allowed) {
+      return makeResult(MODES.IDLE, flags, dc);
+    }
+  }
+
   return result;
 }
 
@@ -300,6 +361,12 @@ if (typeof module !== "undefined" && module.exports) {
     formatDuration: formatDuration,
     formatTemp: formatTemp,
     buildDisplayLabels: buildDisplayLabels,
-    MODE_SHORT: MODE_SHORT
+    MODE_SHORT: MODE_SHORT,
+    MODE_CODE: MODE_CODE,
+    EA_VALVES: EA_VALVES,
+    EA_PUMP: EA_PUMP,
+    EA_FAN: EA_FAN,
+    EA_SPACE_HEATER: EA_SPACE_HEATER,
+    EA_IMMERSION: EA_IMMERSION
   };
 }

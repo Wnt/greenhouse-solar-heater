@@ -1018,3 +1018,191 @@ button.primary:hover { opacity: 0.9; }
   .bento-span-3 { grid-column: span 2; }
   .components-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ── Connection Status Indicator ── */
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  padding: 4px 0;
+}
+
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6f7683;
+  flex-shrink: 0;
+}
+
+.connection-dot.connected { background: #76ff03; box-shadow: 0 0 6px #76ff03; }
+.connection-dot.disconnected { background: #ee7d77; }
+.connection-dot.reconnecting { background: #e9c349; animation: pulse-dot 1.5s ease-in-out infinite; }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.staleness-banner {
+  display: none;
+  background: var(--error-container);
+  color: var(--error);
+  padding: 8px 16px;
+  font-size: 12px;
+  font-family: 'Manrope', sans-serif;
+  text-align: center;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.staleness-banner.visible { display: block; }
+
+/* ── Mode Toggle ── */
+
+.mode-toggle {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  padding: 8px 0;
+}
+
+.mode-toggle.visible { display: flex; }
+
+.mode-toggle-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: var(--surface-container);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  border: 1px solid var(--outline-variant);
+}
+
+.mode-toggle-switch.active { background: var(--secondary-container); border-color: var(--secondary); }
+
+.mode-toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--on-surface-variant);
+  transition: transform 0.2s, background 0.2s;
+}
+
+.mode-toggle-switch.active::after {
+  transform: translateX(20px);
+  background: var(--secondary);
+}
+
+.mode-toggle-label { font-weight: 500; }
+.mode-toggle-label.active { color: var(--secondary); }
+
+/* ── Controls disabled indicator ── */
+
+.controls-indicator {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  padding: 2px 0;
+}
+
+.controls-indicator.visible { display: flex; }
+
+/* ── Device Config View ── */
+
+.device-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.device-config-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  color: var(--on-surface);
+}
+
+.device-toggle {
+  width: 44px;
+  height: 24px;
+  background: var(--surface-container);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  border: 1px solid var(--outline-variant);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.device-toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--on-surface-variant);
+  transition: transform 0.2s, background 0.2s;
+}
+
+.device-toggle.active {
+  background: var(--secondary-container);
+  border-color: var(--secondary);
+}
+
+.device-toggle.active::after {
+  transform: translateX(20px);
+  background: var(--secondary);
+}
+
+.device-select {
+  background: var(--surface-container);
+  color: var(--on-surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.device-select:focus { outline: 1px solid var(--secondary); }
+
+.device-config-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.device-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  color: var(--on-surface);
+  cursor: pointer;
+}
+
+.device-check input[type="checkbox"] {
+  accent-color: var(--secondary);
+  width: 16px;
+  height: 16px;
+}

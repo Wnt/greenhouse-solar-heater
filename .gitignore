@@ -18,6 +18,9 @@ deploy/terraform/.terraform.lock.hcl
 playground/system.yaml
 playground/shelly/
 
+# Runtime config (created at runtime, may contain device state)
+monitor/device-config.json
+
 # Environment files
 .env
 .env.*

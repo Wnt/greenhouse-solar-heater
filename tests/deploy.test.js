@@ -19,7 +19,7 @@ function runDeploy(ip, scriptId) {
   return new Promise((resolve, reject) => {
     const child = spawn('bash', [DEPLOY_SH, ip, String(scriptId)], {
       cwd: SCRIPTS_DIR,
-      env: process.env,
+      env: { ...process.env, DEPLOY_STOP_DELAY: '0' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -29,7 +29,7 @@ function runDeploy(ip, scriptId) {
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error('deploy timed out\nstdout: ' + stdout + '\nstderr: ' + stderr));
-    }, 15000);
+    }, 5000);
     child.on('close', (code) => {
       clearTimeout(timer);
       resolve({ code, stdout, stderr });
@@ -39,7 +39,7 @@ function runDeploy(ip, scriptId) {
 
 function createMockServer(handler) {
   const calls = [];
-  let uploadedCode = '';
+  const uploadedCodes = {}; // per-script-id uploaded code
 
   const defaultHandler = (req, res, body) => {
     const url = req.url;
@@ -48,9 +48,10 @@ function createMockServer(handler) {
       res.end(JSON.stringify({ id: 1, was_running: true }));
     } else if (url.includes('Script.PutCode')) {
       const data = JSON.parse(body);
-      if (!data.append) { uploadedCode = data.code; } else { uploadedCode += data.code; }
+      const id = data.id || 1;
+      if (!data.append) { uploadedCodes[id] = data.code; } else { uploadedCodes[id] = (uploadedCodes[id] || '') + data.code; }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ len: uploadedCode.length }));
+      res.end(JSON.stringify({ len: (uploadedCodes[id] || '').length }));
     } else if (url.includes('Script.SetConfig')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ restart_required: false }));
@@ -75,7 +76,7 @@ function createMockServer(handler) {
   return {
     server,
     calls,
-    getUploadedCode: () => uploadedCode,
+    getUploadedCode: (id) => uploadedCodes[id || 1] || '',
   };
 }
 
@@ -94,7 +95,7 @@ describe('deploy.sh', () => {
       });
     });
     fs.writeFileSync(CONF_PATH,
-      `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\n`
+      `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\nPRO4PM_VPN=127.0.0.1:${port}\n`
     );
     deployResult = await runDeploy(`127.0.0.1:${port}`, 1);
   });
@@ -108,14 +109,19 @@ describe('deploy.sh', () => {
     assert.strictEqual(deployResult.code, 0, 'deploy should succeed: ' + deployResult.stderr);
   });
 
-  it('stops the script before uploading', () => {
+  it('stops the control script before uploading', () => {
     const stopCalls = mock.calls.filter(c => c.url.includes('Script.Stop'));
-    assert.strictEqual(stopCalls.length, 1, 'should call Script.Stop once');
+    assert.ok(stopCalls.length >= 1, 'should call Script.Stop at least once');
     assert.ok(stopCalls[0].url.includes('id=1'), 'should stop script id 1');
   });
 
-  it('uploads code in chunks with append flag', () => {
-    const putCalls = mock.calls.filter(c => c.url.includes('Script.PutCode'));
+  it('uploads control code in chunks with append flag', () => {
+    // Filter PutCode calls for script id 1 (control)
+    const putCalls = mock.calls.filter(c => {
+      if (!c.url.includes('Script.PutCode')) return false;
+      const body = JSON.parse(c.body);
+      return body.id === 1;
+    });
     assert.ok(putCalls.length > 1, `should upload in multiple chunks, got ${putCalls.length}`);
 
     const first = JSON.parse(putCalls[0].body);
@@ -128,12 +134,21 @@ describe('deploy.sh', () => {
     }
   });
 
-  it('reassembles to the full concatenated source', () => {
+  it('reassembles control script to the full concatenated source', () => {
     const logicContent = fs.readFileSync(path.join(SCRIPTS_DIR, 'control-logic.js'), 'utf8');
     const controlContent = fs.readFileSync(path.join(SCRIPTS_DIR, 'control.js'), 'utf8');
     const expected = logicContent + '\n' + controlContent + '\n';
 
-    assert.strictEqual(mock.getUploadedCode(), expected);
+    // Reconstruct only the script id=1 uploads
+    let controlCode = '';
+    const putCalls = mock.calls.filter(c => c.url.includes('Script.PutCode'));
+    for (const call of putCalls) {
+      const body = JSON.parse(call.body);
+      if (body.id === 1) {
+        if (!body.append) { controlCode = body.code; } else { controlCode += body.code; }
+      }
+    }
+    assert.strictEqual(controlCode, expected);
   });
 
   it('chunks are at most 512 bytes each', () => {
@@ -147,12 +162,12 @@ describe('deploy.sh', () => {
 
   it('enables auto-start after upload', () => {
     const configCalls = mock.calls.filter(c => c.url.includes('Script.SetConfig'));
-    assert.strictEqual(configCalls.length, 1, 'should call Script.SetConfig once');
+    assert.ok(configCalls.length >= 1, 'should call Script.SetConfig at least once');
     const configBody = JSON.parse(configCalls[0].body);
     assert.strictEqual(configBody.config.enable, true);
   });
 
-  it('calls RPCs in order: Stop, PutCode, SetConfig, Start', () => {
+  it('calls RPCs in order: Stop, PutCode, SetConfig, Start for control script', () => {
     const stopIdx = mock.calls.findIndex(c => c.url.includes('Script.Stop'));
     const firstPutIdx = mock.calls.findIndex(c => c.url.includes('Script.PutCode'));
     const configIdx = mock.calls.findIndex(c => c.url.includes('Script.SetConfig'));
@@ -161,6 +176,15 @@ describe('deploy.sh', () => {
     assert.ok(stopIdx < firstPutIdx, 'Stop before PutCode');
     assert.ok(firstPutIdx < configIdx, 'PutCode before SetConfig');
     assert.ok(configIdx < startIdx, 'SetConfig before Start');
+  });
+
+  it('also deploys telemetry script', () => {
+    const putCalls = mock.calls.filter(c => {
+      if (!c.url.includes('Script.PutCode')) return false;
+      const body = JSON.parse(c.body);
+      return body.id === 3;
+    });
+    assert.ok(putCalls.length > 0, 'should upload telemetry script (id=3)');
   });
 });
 
@@ -179,9 +203,9 @@ describe('deploy.sh with custom script ID', () => {
       });
     });
     fs.writeFileSync(CONF_PATH,
-      `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\n`
+      `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\nPRO4PM_VPN=127.0.0.1:${port}\n`
     );
-    deployResult = await runDeploy(`127.0.0.1:${port}`, 3);
+    deployResult = await runDeploy(`127.0.0.1:${port}`, 2);
   });
 
   after(async () => {
@@ -189,13 +213,14 @@ describe('deploy.sh with custom script ID', () => {
     await new Promise((resolve) => mock.server.close(resolve));
   });
 
-  it('passes script ID through to all PutCode calls', () => {
+  it('passes custom control script ID through to PutCode calls', () => {
     assert.strictEqual(deployResult.code, 0);
-    const putCalls = mock.calls.filter(c => c.url.includes('Script.PutCode'));
-    for (const call of putCalls) {
-      const body = JSON.parse(call.body);
-      assert.strictEqual(body.id, 3);
-    }
+    const putCalls = mock.calls.filter(c => {
+      if (!c.url.includes('Script.PutCode')) return false;
+      const body = JSON.parse(c.body);
+      return body.id === 2;
+    });
+    assert.ok(putCalls.length > 0, 'should have PutCode calls with id=2');
   });
 });
 
@@ -224,7 +249,7 @@ describe('deploy.sh error handling', () => {
       });
     });
     fs.writeFileSync(CONF_PATH,
-      `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\n`
+      `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\nPRO4PM_VPN=127.0.0.1:${port}\n`
     );
   });
 

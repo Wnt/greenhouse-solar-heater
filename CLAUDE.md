@@ -27,6 +27,10 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `monitor/lib/logger.js` → structured JSON logger (used by server and auth modules)
 - `monitor/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
 - `monitor/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload openvpn.conf)
+- `monitor/lib/db.js` → PostgreSQL/TimescaleDB module (schema init, sensor readings, state events, history queries). Resolves DATABASE_URL from env or S3 (`database-url.json`)
+- `monitor/lib/db-config.js` → Database URL S3 persistence CLI (store/load DATABASE_URL in object storage)
+- `monitor/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB)
+- `monitor/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push)
 - `deploy/` → cloud deployment infrastructure
 - `deploy/terraform/` → UpCloud server, firewall rules, Managed Object Storage (Terraform)
 - `deploy/docker/` → App Dockerfile only
@@ -58,10 +62,11 @@ When making changes, **update system.yaml first**, then propagate to affected do
 
 The `shelly/` directory contains the actual device scripts deployed to Shelly hardware:
 
-- `shelly/control-logic.js` — Pure decision logic (ES5-compatible). Exports an `evaluate(state, config)` function with no side effects and no Shelly API calls. This is the testable core.
-- `shelly/control.js` — Shelly shell script that handles timers, RPC, relays, KVS, sensors. Imports `control-logic.js` (concatenated at deploy time).
-- `shelly/deploy.sh` — Deploys scripts to the Shelly Pro 4PM via HTTP RPC. Reads device IPs from `devices.conf`.
-- `shelly/devices.conf` — DHCP-reserved IP addresses for all Shelly devices.
+- `shelly/control-logic.js` — Pure decision logic (ES5-compatible). Exports an `evaluate(state, config, deviceConfig)` function with no side effects and no Shelly API calls. This is the testable core. The `deviceConfig` parameter enables actuator suppression when controls are disabled.
+- `shelly/control.js` — Shelly shell script that handles timers, RPC, relays, KVS, sensors, config guards, and state event emission. Imports `control-logic.js` (concatenated at deploy time). Reads device config from KVS and listens for `config_changed` events from the telemetry script.
+- `shelly/telemetry.js` — Separate Shelly script for MQTT publish/subscribe, config bootstrap (HTTP GET on boot), KVS config persistence, and inter-script events. Publishes state snapshots to `greenhouse/state` and subscribes to `greenhouse/config` for push-based config updates.
+- `shelly/deploy.sh` — Deploys scripts to the Shelly Pro 4PM via HTTP RPC. Deploys both control script (slot 1) and telemetry script (slot 3). Supports `DEPLOY_VIA_VPN=true` for VPN deployment. Can configure MQTT on the device via `MQTT_BROKER_HOST`.
+- `shelly/devices.conf` — DHCP-reserved IP addresses for all Shelly devices. Includes `PRO4PM_VPN` for VPN-routable access.
 
 **Shelly scripting constraints**: Scripts must use ES5-compatible JavaScript — no `const`/`let`, no arrow functions, no destructuring, no template literals, no ES6 classes. The linter enforces these rules.
 
@@ -87,7 +92,7 @@ Height scales in SVGs are approximate — `system-height-layout.svg` is the most
 The `playground/` directory contains a single-page thermal simulation app. Dark editorial theme based on the Stitch "Digital Sanctuary" design system (`design/Stitch/`): dark backgrounds (#0c0e12), gold primary (#e9c349), teal secondary (#43aea4), Newsreader serif headings, Manrope sans-serif body, tonal layering (no border lines for structure). Responsive: desktop sidebar nav (256px), mobile (<768px) glassmorphic bottom nav. Single HTML file with 4 JS-switched views, `<script type="importmap">` for ES modules.
 
 - `playground/index.html` — single-page app: Status (default, bento grid dashboard), Components (sensors/valves/actuators), Schematic (SVG system visualization), Controls (sliders, reset). Floating play/pause FAB.
-- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), UI, yaml-loader
+- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), data-source (LiveSource/SimulationSource abstraction), UI, yaml-loader
 - `playground/css/style.css` — shared styles
 - `design/Stitch/` — Stitch UI design mockups (desktop + mobile) with DESIGN.md spec and code.html references
 
@@ -150,9 +155,17 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/push-storage.test.js` — unit tests for push storage adapter (VAPID keys, subscriptions, deduplication)
 - `tests/valve-poller.test.js` — unit tests for valve state change detection (pure functions, poller behavior)
 - `tests/sw.test.js` — unit tests for service worker fetch handler, offline caching, and push handler preservation
+- `tests/db.test.js` — unit tests for PostgreSQL/TimescaleDB module (schema init, inserts, queries)
+- `tests/mqtt-bridge.test.js` — unit tests for MQTT bridge (state change detection, connection status)
+- `tests/device-config.test.js` — unit tests for device config store (default config, CRUD, persistence)
+- `tests/device-config-integration.test.js` — integration tests: UI config format → Shelly control-logic interpretation (staged deployment scenarios)
+- `tests/data-source.test.js` — unit tests for data source abstraction (state mapping, connection transitions)
 - `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
+- `tests/e2e/fixtures.js` — shared Playwright fixture: blocks Google Fonts for offline environments. **All e2e tests must import from this file, not from `@playwright/test`.**
 - `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
+- `tests/e2e/device-config.spec.js` — Playwright e2e tests for the Device config UI (toggle switches, dropdowns, checkboxes → compact JSON format)
 - `tests/e2e/pwa.spec.js` — Playwright e2e tests for PWA installability (manifest, Apple meta tags, offline page)
+- `tests/e2e/live-mode.spec.js` — Playwright e2e tests for live mode toggle, WebSocket connection, simulation fallback
 - `tests/e2e/take-screenshots.spec.js` — Screenshot generator: runs 24h simulation, captures all views (excluded from normal test runs via `testIgnore` in `playwright.config.js`, uses separate `playwright.screenshots.config.js`)
 
 ### Test Setup Notes
@@ -160,6 +173,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - **Playwright version**: Must match the cached Chromium browser revision. Currently `@playwright/test@1.56.0` matches `chromium-1194`. If you see "browser not found" errors, check `~/.cache/ms-playwright/` for available revisions and install the matching Playwright version.
 - **Static server**: Tests use `npx serve` on port 3210 to serve the playground. The Playwright config auto-starts this server.
 - **No `-s` flag on serve**: Do NOT use `serve -s` (SPA mode) — it breaks direct HTML file access by redirecting all routes.
+- **Shared fixtures**: All e2e tests import `{ test, expect }` from `./fixtures.js` (NOT from `@playwright/test`). The fixture blocks Google Fonts requests to prevent page load hanging in offline/restricted environments. Always use `import { test, expect } from './fixtures.js'` when adding new e2e test files.
 - Individual test timeouts are 30s. E2e tests verify the 2D SVG schematic and simulation behavior.
 
 ## CI / GitHub Actions
@@ -192,6 +206,10 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - S3-compatible object storage for credentials (existing, unchanged schema); in-memory for invitations and rate limits (008-add-passkey-registration)
 - JavaScript ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + None new — extends existing service worker and manifest (009-add-home-screen-support)
 - N/A — no new persistent data (009-add-home-screen-support)
+- JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `better-sqlite3` (SQLite), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push` (010-live-system-playground)
+- SQLite via `better-sqlite3` (in-process, WAL mode) + S3 backup for durability (010-live-system-playground)
+- JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `pg` (node-postgres), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push` (010-live-system-playground)
+- UpCloud Managed PostgreSQL with TimescaleDB extension (plan `1x1xCPU-2GB-25GB`, zone `fi-hel1`), provisioned via Terraform (010-live-system-playground)
 
 ## Cloud Deployment Architecture
 
@@ -223,6 +241,6 @@ Server environment is split into two sources, merged by the deployer:
 VPN is always-on (the app uses `network_mode: "service:openvpn"`). Firewall rule controlled via `enable_vpn=true` in Terraform.
 
 ## Recent Changes
+- 010-live-system-playground: Added JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `pg` (node-postgres), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push`
+- 010-live-system-playground: Added JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `better-sqlite3` (SQLite), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push`
 - 009-add-home-screen-support: Added JavaScript ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + None new — extends existing service worker and manifest
-- 008-add-passkey-registration: Added Node.js 20 LTS (CommonJS server-side), ES6+ browser modules + `@simplewebauthn/server` (existing), `@simplewebauthn/browser` (vendored, existing), `qrcode` (new, vendored browser bundle for QR generation)
-- 007-switch-to-openvpn: Added POSIX shell (setup script, deployer), HCL (Terraform >= 1.5), Node.js 20 LTS (vpn-config.js), YAML (docker-compose) + OpenVPN (Alpine package), Docker Compose v2, @aws-sdk/client-s3 (existing)

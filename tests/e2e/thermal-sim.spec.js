@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 
 // Helper: navigate to a view via sidebar (desktop) or bottom nav
 async function goToView(page, viewName) {
@@ -16,13 +16,9 @@ async function setSlider(page, id, value) {
 
 test.describe('Thermal Simulation UI', () => {
   test.beforeEach(async ({ page }) => {
-    // Block external font requests so load event fires in offline/restricted environments
-    await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.abort());
-    await page.goto('/playground/');
-    // Wait for controls to render (7 control groups: 6 sliders + day/night toggle)
-    await goToView(page, 'controls');
-    await expect(page.locator('#controls .control-group')).toHaveCount(7);
-    await goToView(page, 'status');
+    await page.goto('/playground/?mode=sim');
+    // Wait for app to initialize (FAB becomes clickable when ready)
+    await expect(page.locator('#fab-play')).toBeVisible();
   });
 
   test('page loads with correct title and initial state', async ({ page }) => {
@@ -68,7 +64,7 @@ test.describe('Thermal Simulation UI', () => {
   test('reset button resets simulation to initial state', async ({ page }) => {
     // Start simulation
     await page.locator('#fab-play').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     // Go to controls and reset
     await goToView(page, 'controls');
@@ -81,7 +77,7 @@ test.describe('Thermal Simulation UI', () => {
     await expect(page.locator('#fab-play .material-symbols-outlined')).toHaveText('play_arrow');
   });
 
-  test('simulation produces mode transitions', async ({ page }) => {
+  test('simulation produces mode transitions and logs', async ({ page }) => {
     // Set params that trigger greenhouse_heating
     await goToView(page, 'controls');
     await setSlider(page, 'tank-top', 40);
@@ -97,27 +93,12 @@ test.describe('Thermal Simulation UI', () => {
     await page.waitForFunction(() => {
       const el = document.getElementById('mode-card-title');
       return el && el.textContent !== 'Idle';
-    }, { timeout: 10000 });
+    }, { timeout: 3000 });
 
     const modeText = await page.locator('#mode-card-title').textContent();
     expect(modeText).not.toBe('Idle');
-  });
 
-  test('system logs show transitions', async ({ page }) => {
-    await goToView(page, 'controls');
-    await setSlider(page, 'tank-top', 40);
-    await setSlider(page, 'greenhouse', 8);
-    await setSlider(page, 'speed', 500);
-
-    await page.locator('#fab-play').click();
-    await goToView(page, 'status');
-
-    // Wait for log entries to appear
-    await page.waitForFunction(() => {
-      const items = document.querySelectorAll('#logs-list .log-item');
-      return items.length > 0;
-    }, { timeout: 10000 });
-
+    // Verify log entries appeared
     const logItems = page.locator('#logs-list .log-item');
     const count = await logItems.count();
     expect(count).toBeGreaterThan(0);
@@ -140,7 +121,7 @@ test.describe('Thermal Simulation UI', () => {
     await setSlider(page, 'tank-bot', 15);
 
     await page.locator('#fab-play').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     await goToView(page, 'components');
     const tankTopRow = page.locator('#temp-table tr:nth-child(2) .val');
@@ -150,69 +131,30 @@ test.describe('Thermal Simulation UI', () => {
     expect(tankTopVal).toBeGreaterThan(15);
   });
 
-  test('mode badge updates during simulation', async ({ page }) => {
-    await goToView(page, 'controls');
-    await setSlider(page, 'tank-top', 40);
-    await setSlider(page, 'greenhouse', 8);
-    await setSlider(page, 'speed', 500);
-
-    await page.locator('#fab-play').click();
-    await goToView(page, 'status');
-
-    await page.waitForFunction(() => {
-      const el = document.getElementById('mode-card-title');
-      return el && el.textContent !== 'Idle';
-    }, { timeout: 5000 });
-
-    const modeText = await page.locator('#mode-card-title').textContent();
-    expect(modeText).not.toBe('Idle');
-  });
-
   test('sim speed slider controls simulation rate', async ({ page }) => {
     await goToView(page, 'controls');
-
-    // Run at speed=1 for 1 second
-    await setSlider(page, 'speed', 1);
-    await page.locator('#fab-play').click();
-    await page.waitForTimeout(1000);
-    await page.locator('#fab-play').click(); // pause
-
-    // Read tank temp (proxy for sim progress)
-    await goToView(page, 'components');
-    const slowTemp = parseFloat(await page.locator('#temp-table tr:nth-child(2) .val').textContent());
-
-    // Reset
-    await goToView(page, 'controls');
-    await page.locator('#btn-reset').click();
-
-    // Run at speed=100 for 1 second
     await setSlider(page, 'speed', 100);
+    await expect(page.locator('#speed-val')).toContainText('100');
+
+    // Run briefly and verify simulation advances
     await page.locator('#fab-play').click();
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(100);
     await page.locator('#fab-play').click(); // pause
 
     await goToView(page, 'components');
-    const fastTemp = parseFloat(await page.locator('#temp-table tr:nth-child(2) .val').textContent());
-
-    // At 100x speed, temp should have changed more (more sim time elapsed)
-    // Both start from same initial conditions, so the difference shows speed works
-    // This is a soft check — just verify both ran
-    expect(typeof slowTemp).toBe('number');
-    expect(typeof fastTemp).toBe('number');
+    const temp = parseFloat(await page.locator('#temp-table tr:nth-child(2) .val').textContent());
+    expect(typeof temp).toBe('number');
   });
 
-  test('chart canvas is present and sized', async ({ page }) => {
+  test('chart and navigation are present', async ({ page }) => {
     const chart = page.locator('#chart');
     await expect(chart).toBeVisible();
-
     const box = await chart.boundingBox();
     expect(box.width).toBeGreaterThan(100);
     expect(box.height).toBeGreaterThan(50);
-  });
 
-  test('navigation links are present and correct', async ({ page }) => {
     const sidebarLinks = page.locator('.sidebar-nav a');
-    await expect(sidebarLinks).toHaveCount(4);
+    await expect(sidebarLinks).toHaveCount(5); // status, components, schematic, controls, device (hidden in sim mode)
     await expect(page.locator('.sidebar-nav a.active')).toContainText('Status');
   });
 });

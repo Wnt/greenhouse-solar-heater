@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Delay after Script.Stop (allow device to settle); set to 0 for testing
+DEPLOY_STOP_DELAY="${DEPLOY_STOP_DELAY:-1}"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONF="$SCRIPT_DIR/devices.conf"
 LOGIC_JS="$SCRIPT_DIR/control-logic.js"
 CONTROL_JS="$SCRIPT_DIR/control.js"
+TELEMETRY_JS="$SCRIPT_DIR/telemetry.js"
 
 if [ ! -f "$CONF" ]; then
   echo "Error: $CONF not found" >&2
@@ -24,18 +28,26 @@ fi
 # shellcheck source=/dev/null
 source "$CONF"
 
-DEVICE="${1:-$PRO4PM}"
-SCRIPT_ID="${2:-1}"
+# Select device IP: VPN or LAN
+if [ "${DEPLOY_VIA_VPN:-false}" = "true" ]; then
+  DEVICE="${1:-$PRO4PM_VPN}"
+  echo "Using VPN IP: $DEVICE"
+else
+  DEVICE="${1:-$PRO4PM}"
+fi
 
-echo "Deploying control-logic.js + control.js to $DEVICE (script $SCRIPT_ID)..."
+CONTROL_SCRIPT_ID="${2:-1}"
+TELEMETRY_SCRIPT_ID="${3:-3}"
 
-# Stop existing script (ignore errors if not running)
-curl -s "http://$DEVICE/rpc/Script.Stop?id=$SCRIPT_ID" > /dev/null 2>&1 || true
-sleep 1
+# ── Helper: upload script files to a Shelly script slot ──
+upload_script() {
+  local script_id="$1"
+  shift
+  local files=("$@")
+  local device_ip="${files[-1]}"
+  unset 'files[-1]'
 
-# Upload code in chunks (Shelly PutCode limit is ~1024 bytes per request)
-echo "Uploading code..."
-python3 -c "
+  python3 -c "
 import json, sys, urllib.request
 
 CHUNK_SIZE = 512
@@ -69,15 +81,55 @@ while offset < total:
     print('  chunk %d: %d/%d bytes' % (chunk_num, min(offset, total), total))
 
 print('Upload OK (%d bytes in %d chunks)' % (total, chunk_num))
-" "$LOGIC_JS" "$CONTROL_JS" "$SCRIPT_ID" "$DEVICE"
+" "${files[@]}" "$script_id" "$device_ip"
+}
 
-# Enable auto-start on boot
+# ── Deploy control script (slot 1) ──
+echo "Deploying control-logic.js + control.js to $DEVICE (script $CONTROL_SCRIPT_ID)..."
+
+curl -s "http://$DEVICE/rpc/Script.Stop?id=$CONTROL_SCRIPT_ID" > /dev/null 2>&1 || true
+sleep "$DEPLOY_STOP_DELAY"
+
+echo "Uploading control script..."
+upload_script "$CONTROL_SCRIPT_ID" "$LOGIC_JS" "$CONTROL_JS" "$DEVICE"
+
 curl -s -X POST "http://$DEVICE/rpc/Script.SetConfig" \
   -H "Content-Type: application/json" \
-  -d "{\"id\":$SCRIPT_ID,\"config\":{\"enable\":true}}" > /dev/null
+  -d "{\"id\":$CONTROL_SCRIPT_ID,\"config\":{\"enable\":true}}" > /dev/null
 
-echo "Auto-start enabled"
+echo "Control script auto-start enabled"
+curl -s "http://$DEVICE/rpc/Script.Start?id=$CONTROL_SCRIPT_ID" > /dev/null
+echo "Control script started on $DEVICE"
 
-# Start the script
-curl -s "http://$DEVICE/rpc/Script.Start?id=$SCRIPT_ID" > /dev/null
-echo "Script started on $DEVICE"
+# ── Deploy telemetry script (slot 3) ──
+if [ -f "$TELEMETRY_JS" ]; then
+  echo ""
+  echo "Deploying telemetry.js to $DEVICE (script $TELEMETRY_SCRIPT_ID)..."
+
+  curl -s "http://$DEVICE/rpc/Script.Stop?id=$TELEMETRY_SCRIPT_ID" > /dev/null 2>&1 || true
+  sleep "$DEPLOY_STOP_DELAY"
+
+  echo "Uploading telemetry script..."
+  upload_script "$TELEMETRY_SCRIPT_ID" "$TELEMETRY_JS" "$DEVICE"
+
+  curl -s -X POST "http://$DEVICE/rpc/Script.SetConfig" \
+    -H "Content-Type: application/json" \
+    -d "{\"id\":$TELEMETRY_SCRIPT_ID,\"config\":{\"enable\":true}}" > /dev/null
+
+  echo "Telemetry script auto-start enabled"
+  curl -s "http://$DEVICE/rpc/Script.Start?id=$TELEMETRY_SCRIPT_ID" > /dev/null
+  echo "Telemetry script started on $DEVICE"
+fi
+
+# ── Configure MQTT on device (if MQTT_BROKER_HOST is set) ──
+if [ -n "${MQTT_BROKER_HOST:-}" ]; then
+  echo ""
+  echo "Configuring MQTT broker: $MQTT_BROKER_HOST:${MQTT_BROKER_PORT:-1883}"
+  curl -s -X POST "http://$DEVICE/rpc/Mqtt.SetConfig" \
+    -H "Content-Type: application/json" \
+    -d "{\"config\":{\"enable\":true,\"server\":\"$MQTT_BROKER_HOST:${MQTT_BROKER_PORT:-1883}\"}}" > /dev/null
+  echo "MQTT configured — device may reboot to apply"
+fi
+
+echo ""
+echo "Deployment complete"
