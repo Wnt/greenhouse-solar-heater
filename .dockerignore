@@ -4,9 +4,7 @@ tests/
 specs/
 deploy/terraform/
 design/
-playground/
 .github/
-shelly/
 test-results/
 *.md
 !monitor/**/*.md
