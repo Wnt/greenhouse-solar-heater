@@ -49,8 +49,16 @@ function serveStatic(req, res) {
   var urlPath = new URL(req.url, 'http://localhost').pathname;
   if (urlPath === '/') urlPath = '/index.html';
 
+  // Strip /playground/ prefix — PLAYGROUND_DIR already points to the playground folder
+  var playgroundUrlPath = urlPath;
+  if (urlPath === '/playground' || urlPath === '/playground/') {
+    playgroundUrlPath = '/index.html';
+  } else if (urlPath.startsWith('/playground/')) {
+    playgroundUrlPath = urlPath.slice('/playground'.length);
+  }
+
   // Try playground first, then monitor directory
-  var playgroundPath = path.join(PLAYGROUND_DIR, urlPath);
+  var playgroundPath = path.join(PLAYGROUND_DIR, playgroundUrlPath);
   var monitorPath = path.join(MONITOR_DIR, urlPath);
 
   // Security: prevent directory traversal
