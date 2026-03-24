@@ -52,5 +52,5 @@ variable "github_repo" {
 variable "db_plan" {
   description = "UpCloud Managed PostgreSQL plan"
   type        = string
-  default     = "1x1xCPU-2GB-25GB"
+  default     = "1x1xCPU-1GB-10GB"
 }
