@@ -6,8 +6,7 @@ services:
     user: "1000:1000"
     network_mode: "service:openvpn"
     dns:
-      - 8.8.8.8
-      - 1.1.1.1
+      - 172.17.0.1
     env_file: .env
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
@@ -56,8 +55,7 @@ services:
     cap_add:
       - NET_ADMIN
     dns:
-      - 8.8.8.8
-      - 1.1.1.1
+      - 172.17.0.1
     volumes:
       - ./openvpn.conf:/etc/openvpn/server.conf:ro
     ports:
