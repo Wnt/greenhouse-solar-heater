@@ -97,5 +97,6 @@ Published by the Node.js server when an operator updates the device configuratio
 **Shelly-side behavior on receive**:
 1. Parse JSON payload
 2. Compare `version` with current KVS config version
-3. If different: update KVS, apply new config immediately
-4. If `controls_enabled` changed to `false` while a mode is active: safe shutdown on next control loop iteration (stop pump → close valves → idle)
+3. If different: update KVS, apply new config
+4. If safety-critical fields changed (`controls_enabled` or any `enabled_actuators` flag): call `controlLoop()` immediately — do not wait for the 30s schedule. This triggers safe shutdown (stop pump → close valves → idle) within seconds if controls were disabled while active.
+5. Non-critical changes (e.g., temperature thresholds): applied to config in memory, take effect on next regular 30s cycle
