@@ -215,6 +215,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - UpCloud Managed PostgreSQL with TimescaleDB extension (plan `1x1xCPU-2GB-25GB`, zone `fi-hel1`), provisioned via Terraform (010-live-system-playground)
 - Node.js 20 LTS (CommonJS server, ES6+ browser modules) + `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/exporter-metrics-otlp-http`, `@opentelemetry/exporter-logs-otlp-http` (011-newrelic-observability)
 - UpCloud S3-compatible Object Storage (license key persistence), UpCloud Managed PostgreSQL with TimescaleDB (011-newrelic-observability)
+- JavaScript — Node.js 20 LTS (CommonJS server), ES6+ (browser modules) + Node.js `http` module (server), browser `fetch` API (client). No new dependencies. (012-secure-rpc-api)
+- N/A — no data model changes (012-secure-rpc-api)
 
 ## Cloud Deployment Architecture
 
@@ -286,6 +288,6 @@ The deployer picks up the key from S3 within 5 minutes and restarts containers w
 - PostgreSQL health — via nri-postgresql integration
 
 ## Recent Changes
+- 012-secure-rpc-api: Added JavaScript — Node.js 20 LTS (CommonJS server), ES6+ (browser modules) + Node.js `http` module (server), browser `fetch` API (client). No new dependencies.
 - 011-newrelic-observability: Added Node.js 20 LTS (CommonJS server, ES6+ browser modules) + `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/exporter-metrics-otlp-http`, `@opentelemetry/exporter-logs-otlp-http`
 - 010-live-system-playground: Added JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `pg` (node-postgres), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push`
-- 010-live-system-playground: Added JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `better-sqlite3` (SQLite), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push`
