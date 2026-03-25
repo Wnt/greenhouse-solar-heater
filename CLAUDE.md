@@ -163,6 +163,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/device-config.test.js` — unit tests for device config store (default config, CRUD, persistence)
 - `tests/device-config-integration.test.js` — integration tests: UI config format → Shelly control-logic interpretation (staged deployment scenarios)
 - `tests/data-source.test.js` — unit tests for data source abstraction (state mapping, connection transitions)
+- `tests/rpc-proxy.test.js` — unit tests for RPC proxy security (marker header validation, method enforcement, CORS preflight, body parsing)
 - `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
 - `tests/e2e/fixtures.js` — shared Playwright fixture: blocks Google Fonts for offline environments. **All e2e tests must import from this file, not from `@playwright/test`.**
 - `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation

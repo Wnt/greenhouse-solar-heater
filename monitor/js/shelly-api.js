@@ -35,17 +35,22 @@ export class ShellyAPI {
    * @returns {Promise<object>} Parsed JSON response
    */
   async rpcTo(host, method, params = {}) {
-    const searchParams = new URLSearchParams({ _host: host });
-    for (const [k, v] of Object.entries(params)) {
-      searchParams.set(k, v);
-    }
-    const url = `/api/rpc/${method}?${searchParams}`;
+    const url = `/api/rpc/${method}`;
+    const body = JSON.stringify({ _host: host, ...params });
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeout);
 
     try {
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'greenhouse-monitor',
+        },
+        body,
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } finally {
