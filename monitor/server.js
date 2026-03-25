@@ -17,6 +17,8 @@ const valvePoller = require('./lib/valve-poller');
 const mqttBridge = require('./lib/mqtt-bridge');
 const deviceConfig = require('./lib/device-config');
 
+const otelApi = require('@opentelemetry/api');
+
 const log = createLogger('server');
 const pushLog = createLogger('push');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
@@ -338,10 +340,32 @@ function handleDeviceConfigApi(req, res, urlPath, body) {
   jsonResponse(res, 405, { error: 'Method not allowed' });
 }
 
+// ── HTTP route detection (for OTel span naming) ──
+
+function resolveRoute(urlPath, method) {
+  if (urlPath === '/health') return '/health';
+  if (urlPath.startsWith('/auth/')) return '/auth/*';
+  if (urlPath === '/api/device-config') return '/api/device-config';
+  if (urlPath === '/api/history') return '/api/history';
+  if (urlPath.startsWith('/api/rpc/')) return '/api/rpc/*';
+  if (urlPath.startsWith('/api/push/')) return '/api/push/*';
+  if (urlPath === '/ws') return '/ws';
+  if (urlPath.startsWith('/playground/')) return '/playground/*';
+  return urlPath;
+}
+
 // ── HTTP Server ──
 
 var server = http.createServer(function (req, res) {
   var urlPath = new URL(req.url, 'http://localhost').pathname;
+
+  // Set http.route on the active span for better grouping in APM
+  var route = resolveRoute(urlPath, req.method);
+  var span = otelApi.trace.getSpan(otelApi.context.active());
+  if (span) {
+    span.setAttribute('http.route', route);
+    span.updateName(req.method + ' ' + route);
+  }
 
   // Health — always accessible
   if (urlPath === '/health') {
