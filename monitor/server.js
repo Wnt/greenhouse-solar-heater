@@ -99,19 +99,77 @@ function serveFile(filePath, urlPath, res) {
   });
 }
 
-function proxyRpc(req, res) {
-  var parsed = new URL(req.url, 'http://localhost');
-  var host = parsed.searchParams.get('_host');
-  if (!host) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Missing _host parameter' }));
+// ── RPC proxy security ──
+
+var RPC_MARKER_HEADER = 'x-requested-with';
+var RPC_MARKER_VALUE = 'greenhouse-monitor';
+
+function getCorsOrigin(req) {
+  var origin = process.env.ORIGIN || '';
+  return origin || (req.headers.origin || '*');
+}
+
+function handleRpcRequest(req, res) {
+  var urlPath = new URL(req.url, 'http://localhost').pathname;
+
+  // CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': getCorsOrigin(req),
+      'Access-Control-Allow-Methods': 'POST',
+      'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With',
+      'Access-Control-Max-Age': '86400',
+    });
+    res.end();
     return;
   }
 
-  var rpcPath = parsed.pathname.replace(/^\/api/, '');
-  parsed.searchParams.delete('_host');
-  var query = parsed.searchParams.toString();
+  // Method enforcement — only POST allowed
+  if (req.method !== 'POST') {
+    res.writeHead(405, {
+      'Allow': 'POST, OPTIONS',
+      'Content-Type': 'application/json',
+    });
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
+    return;
+  }
+
+  // Marker header validation
+  if (req.headers[RPC_MARKER_HEADER] !== RPC_MARKER_VALUE) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden' }));
+    return;
+  }
+
+  // Parse JSON body and proxy to Shelly device
+  readBody(req, function (rawBody) {
+    var parsed;
+    try { parsed = JSON.parse(rawBody); } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+      return;
+    }
+
+    var host = parsed._host;
+    if (!host) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Missing _host parameter' }));
+      return;
+    }
+
+    proxyRpc(req, res, urlPath, host, parsed);
+  });
+}
+
+function proxyRpc(req, res, urlPath, host, params) {
+  var rpcPath = urlPath.replace(/^\/api/, '');
+  var searchParams = new URLSearchParams();
+  for (var key in params) {
+    if (key !== '_host') searchParams.set(key, params[key]);
+  }
+  var query = searchParams.toString();
   var shellyUrl = 'http://' + host + rpcPath + (query ? '?' + query : '');
+  var corsOrigin = getCorsOrigin(req);
 
   http.get(shellyUrl, { timeout: 5000 }, function (shellyRes) {
     var body = '';
@@ -119,7 +177,7 @@ function proxyRpc(req, res) {
     shellyRes.on('end', function () {
       res.writeHead(shellyRes.statusCode, {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': corsOrigin,
       });
       res.end(body);
     });
@@ -429,7 +487,7 @@ var server = http.createServer(function (req, res) {
   } else if (urlPath === '/api/history') {
     handleHistoryApi(req, res);
   } else if (req.url.startsWith('/api/rpc/')) {
-    proxyRpc(req, res);
+    handleRpcRequest(req, res);
   } else {
     serveStatic(req, res);
   }
