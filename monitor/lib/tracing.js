@@ -53,30 +53,6 @@ var logExporter = new OTLPLogExporter({
   headers: headers,
 });
 
-// Wrap trace exporter to log first export result for diagnostics
-var origExport = traceExporter.export.bind(traceExporter);
-var exportLogged = false;
-traceExporter.export = function (spans, resultCallback) {
-  if (!exportLogged) {
-    exportLogged = true;
-    origExport(spans, function (result) {
-      var logEntry = JSON.stringify({
-        ts: new Date().toISOString(),
-        level: result.code === 0 ? 'info' : 'error',
-        component: 'tracing',
-        msg: 'first trace export ' + (result.code === 0 ? 'succeeded' : 'FAILED'),
-        code: result.code,
-        error: result.error ? result.error.message : undefined,
-        spans: spans.length,
-      });
-      process.stdout.write(logEntry + '\n');
-      resultCallback(result);
-    });
-  } else {
-    origExport(spans, resultCallback);
-  }
-};
-
 var sdk = new opentelemetry.NodeSDK({
   serviceName: serviceName,
   resource: resourceFromAttributes(resourceAttrs),
