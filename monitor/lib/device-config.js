@@ -129,7 +129,9 @@ function save(config, callback) {
       fs.mkdirSync(dir, { recursive: true });
     }
     try {
-      fs.writeFileSync(filePath, JSON.stringify(config, null, 2));
+      var tmpPath = filePath + '.tmp';
+      fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2));
+      fs.renameSync(tmpPath, filePath);
       callback(null);
     } catch (err) {
       callback(err);

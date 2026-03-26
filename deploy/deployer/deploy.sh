@@ -182,6 +182,10 @@ else
 fi
 docker compose -f "$COMPOSE_FILE" $COMPOSE_PROFILES up -d --remove-orphans
 
+# Step 8b: Remove unused images to prevent disk filling up
+log "Pruning unused Docker images"
+docker image prune -a -f 2>/dev/null || true
+
 # Step 9: Deploy Shelly scripts via VPN (optional)
 # Runs inside the app container which shares the OpenVPN network namespace.
 CONTROLLER_VPN_IP=$(grep '^CONTROLLER_VPN_IP=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)

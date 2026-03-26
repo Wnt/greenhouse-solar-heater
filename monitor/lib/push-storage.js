@@ -120,7 +120,10 @@ function writeLocal(filename, data, callback) {
     fs.mkdirSync(dir, { recursive: true });
   }
   try {
-    fs.writeFileSync(path.join(dir, filename), JSON.stringify(data, null, 2));
+    var filePath = path.join(dir, filename);
+    var tmpPath = filePath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
+    fs.renameSync(tmpPath, filePath);
     callback(null);
   } catch (err) {
     callback(err);

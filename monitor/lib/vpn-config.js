@@ -60,7 +60,11 @@ function download(localPath, callback) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(localPath, body);
+    // Write to temp file first, then rename — prevents truncating
+    // the existing config if the write fails (e.g. disk full)
+    var tmpPath = localPath + '.tmp';
+    fs.writeFileSync(tmpPath, body);
+    fs.renameSync(tmpPath, localPath);
     callback(null, 'downloaded');
   }).catch(function (err) {
     if (err.name === 'NoSuchKey' || (err.$metadata && err.$metadata.httpStatusCode === 404)) {

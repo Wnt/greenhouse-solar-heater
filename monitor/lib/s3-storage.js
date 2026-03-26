@@ -121,7 +121,9 @@ function writeLocal(data, callback) {
     fs.mkdirSync(dir, { recursive: true });
   }
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    var tmpPath = filePath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
+    fs.renameSync(tmpPath, filePath);
     callback(null);
   } catch (err) {
     callback(err);
@@ -165,7 +167,9 @@ function writeSync(data) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  var tmpPath = filePath + '.tmp';
+  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
+  fs.renameSync(tmpPath, filePath);
 }
 
 // Reset cached clients (for testing)
