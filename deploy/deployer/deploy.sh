@@ -93,7 +93,7 @@ else
   if ! timeout 30 docker run --rm --dns 172.17.0.1 --env-file "$APP_DIR/.env" \
     -v "$APP_DIR:/opt/app" \
     "$APP_IMAGE" \
-    node monitor/lib/vpn-config.js download /opt/app/openvpn.conf 2>&1; then
+    node server/lib/vpn-config.js download /opt/app/openvpn.conf 2>&1; then
     log "WARNING: VPN config download failed — continuing without VPN config"
   fi
 
@@ -101,7 +101,7 @@ else
   log "Checking S3 for database URL"
   DB_URL=$(timeout 30 docker run --rm --dns 172.17.0.1 --env-file "$APP_DIR/.env" \
     "$APP_IMAGE" \
-    node monitor/lib/db-config.js load 2>/dev/null) || true
+    node server/lib/db-config.js load 2>/dev/null) || true
   if [ -n "$DB_URL" ]; then
     # Add/replace DATABASE_URL in .env
     grep -v '^DATABASE_URL=' "$ENV_FILE" > "$ENV_FILE.tmp" || true
@@ -117,7 +117,7 @@ else
   log "Checking S3 for New Relic license key"
   NR_KEY=$(timeout 30 docker run --rm --dns 172.17.0.1 --env-file "$APP_DIR/.env" \
     "$APP_IMAGE" \
-    node monitor/lib/nr-config.js load 2>/dev/null) || true
+    node server/lib/nr-config.js load 2>/dev/null) || true
   if [ -n "$NR_KEY" ]; then
     # Add/replace NEW_RELIC_LICENSE_KEY and NRIA_LICENSE_KEY in .env
     grep -v '^NEW_RELIC_LICENSE_KEY=' "$ENV_FILE" > "$ENV_FILE.tmp" || true
@@ -138,7 +138,7 @@ else
     if ! timeout 30 docker run --rm --dns 172.17.0.1 --env-file "$APP_DIR/.env" \
       -v "$APP_DIR:/opt/app" \
       "$APP_IMAGE" \
-      node monitor/lib/vpn-config.js upload /opt/app/openvpn.conf 2>&1; then
+      node server/lib/vpn-config.js upload /opt/app/openvpn.conf 2>&1; then
       log "WARNING: VPN config upload failed — continuing"
     fi
   fi

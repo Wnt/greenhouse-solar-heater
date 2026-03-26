@@ -7,7 +7,7 @@ test.describe('Logout Feature', () => {
       route.fulfill({ status: 404, body: 'Not Found' })
     );
 
-    await page.goto('/monitor/');
+    await page.goto('/');
     // Wait for the auth check to complete
     await page.waitForTimeout(100);
     const logoutBtn = page.locator('#logout-btn');
@@ -23,7 +23,7 @@ test.describe('Logout Feature', () => {
       })
     );
 
-    await page.goto('/monitor/');
+    await page.goto('/');
     const logoutBtn = page.locator('#logout-btn');
     await expect(logoutBtn).toBeVisible();
     await expect(logoutBtn).toHaveText('Logout');
@@ -38,7 +38,7 @@ test.describe('Logout Feature', () => {
       })
     );
 
-    await page.goto('/monitor/');
+    await page.goto('/');
     // Wait for the auth check to complete
     await page.waitForTimeout(100);
     const logoutBtn = page.locator('#logout-btn');
@@ -68,7 +68,7 @@ test.describe('Logout Feature', () => {
       })
     );
 
-    await page.goto('/monitor/');
+    await page.goto('/');
     const logoutBtn = page.locator('#logout-btn');
     await expect(logoutBtn).toBeVisible();
 
@@ -89,7 +89,7 @@ test.describe('Logout Feature', () => {
     // Mock /auth/logout to fail
     await page.route('**/auth/logout', route => route.abort('connectionfailed'));
 
-    await page.goto('/monitor/');
+    await page.goto('/');
     const logoutBtn = page.locator('#logout-btn');
     await expect(logoutBtn).toBeVisible();
 
