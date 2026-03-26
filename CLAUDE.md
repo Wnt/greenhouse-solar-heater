@@ -21,18 +21,22 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `system.yaml` → authoritative specs (heights, valve states, modes, components)
 - `shelly/` → Shelly device scripts and deployment tooling
 - `shelly/lint/` → Shelly platform conformance linter (CLI, standalone package)
-- `playground/` → thermal simulation SPA (single-page app with 4 views)
-- `monitor/` → temperature monitor web app (server, UI, auth, push notifications)
-- `monitor/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers, invitation-based registration)
-- `monitor/lib/logger.js` → structured JSON logger (used by server and auth modules)
-- `monitor/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
-- `monitor/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload openvpn.conf)
-- `monitor/lib/db.js` → PostgreSQL/TimescaleDB module (schema init, sensor readings, state events, history queries). Resolves DATABASE_URL from env or S3 (`database-url.json`)
-- `monitor/lib/db-config.js` → Database URL S3 persistence CLI (store/load DATABASE_URL in object storage)
-- `monitor/lib/nr-config.js` → New Relic license key S3 persistence CLI (store/load license key in object storage)
-- `monitor/lib/tracing.js` → OpenTelemetry SDK initialization (loaded via `--require`, no-op when `NEW_RELIC_LICENSE_KEY` not set)
-- `monitor/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB)
-- `monitor/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push)
+- `playground/` → main web app SPA (single-page app with 5 views: Status, Components, Schematic, Controls, Device). Deep-linkable via URL hash fragments (`#status`, `#schematic`, etc.). Protected by passkey auth in cloud mode.
+- `playground/login.html` → passkey login page (WebAuthn registration + authentication)
+- `playground/js/login.js` → passkey auth client-side logic
+- `playground/vendor/simplewebauthn-browser.mjs` → vendored @simplewebauthn/browser 13.3.0
+- `playground/vendor/qrcode-generator.mjs` → vendored qrcode-generator 2.0.4 (invitation QR codes)
+- `server/` → Node.js API server (serves playground, proxies Shelly RPC, WebSocket, auth, device config, history)
+- `server/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers, invitation-based registration)
+- `server/lib/logger.js` → structured JSON logger (used by server and auth modules)
+- `server/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
+- `server/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload openvpn.conf)
+- `server/lib/db.js` → PostgreSQL/TimescaleDB module (schema init, sensor readings, state events, history queries). Resolves DATABASE_URL from env or S3 (`database-url.json`)
+- `server/lib/db-config.js` → Database URL S3 persistence CLI (store/load DATABASE_URL in object storage)
+- `server/lib/nr-config.js` → New Relic license key S3 persistence CLI (store/load license key in object storage)
+- `server/lib/tracing.js` → OpenTelemetry SDK initialization (loaded via `--require`, no-op when `NEW_RELIC_LICENSE_KEY` not set)
+- `server/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB)
+- `server/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push)
 - `deploy/` → cloud deployment infrastructure
 - `deploy/terraform/` → UpCloud server, firewall rules, Managed Object Storage (Terraform)
 - `deploy/docker/` → App Dockerfile only
@@ -91,10 +95,11 @@ Height scales in SVGs are approximate — `system-height-layout.svg` is the most
 
 ## Playground Architecture
 
-The `playground/` directory contains a single-page thermal simulation app. Dark editorial theme based on the Stitch "Digital Sanctuary" design system (`design/Stitch/`): dark backgrounds (#0c0e12), gold primary (#e9c349), teal secondary (#43aea4), Newsreader serif headings, Manrope sans-serif body, tonal layering (no border lines for structure). Responsive: desktop sidebar nav (256px), mobile (<768px) glassmorphic bottom nav. Single HTML file with 4 JS-switched views, `<script type="importmap">` for ES modules.
+The `playground/` directory is the main web application — a solar heating monitoring and control system. Dark editorial theme based on the Stitch "Digital Sanctuary" design system (`design/Stitch/`): dark backgrounds (#0c0e12), gold primary (#e9c349), teal secondary (#43aea4), Newsreader serif headings, Manrope sans-serif body, tonal layering (no border lines for structure). Responsive: desktop sidebar nav (256px), mobile (<768px) glassmorphic bottom nav. Single HTML file with 5 hash-routed views, `<script type="importmap">` for ES modules. Deep-linkable via URL fragments (`#status`, `#components`, `#schematic`, `#controls`, `#device`).
 
-- `playground/index.html` — single-page app: Status (default, bento grid dashboard), Components (sensors/valves/actuators), Schematic (SVG system visualization), Controls (sliders, reset). Floating play/pause FAB.
-- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), data-source (LiveSource/SimulationSource abstraction), UI, yaml-loader
+- `playground/index.html` — single-page app: Status (default, bento grid dashboard), Components (sensors/valves/actuators), Schematic (SVG system visualization), Controls (sliders, reset), Device (runtime Shelly config with explanations). Floating play/pause FAB.
+- `playground/login.html` — passkey login page (moved from monitor/)
+- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), data-source (LiveSource/SimulationSource abstraction), UI, yaml-loader, login (passkey auth)
 - `playground/css/style.css` — shared styles
 - `design/Stitch/` — Stitch UI design mockups (desktop + mobile) with DESIGN.md spec and code.html references
 
@@ -107,36 +112,21 @@ The playground simulator uses the **real Shelly control logic** (`shelly/control
 All third-party libraries are vendored locally in `playground/vendor/` to avoid CDN/CORS issues in restricted environments (e.g. Claude Code web runtime, CI, offline):
 
 - `playground/vendor/js-yaml.mjs` — js-yaml 4.1.0 (ESM), used by all playground pages
+- `playground/vendor/simplewebauthn-browser.mjs` — @simplewebauthn/browser 13.3.0 (ESM, for passkey auth)
+- `playground/vendor/qrcode-generator.mjs` — qrcode-generator 2.0.4 (ESM, for invitation QR codes)
 
 **Do NOT replace these with CDN URLs.** The importmaps in each HTML file point to `./vendor/...` paths. If upgrading a dependency, download via `npm pack`, extract the dist files, and copy to `playground/vendor/`.
 
-## Temperature Monitor
+## Server
 
-The `monitor/` directory contains the temperature monitoring web app that reads live DS18B20 temperatures from a Shelly 1 sensor add-on and displays them in a browser-based UI. It can run locally (direct LAN access) or deployed to the cloud (via VPN).
+The `server/` directory contains the Node.js API server that serves the playground app, proxies Shelly RPC, bridges MQTT to WebSocket, and provides authentication, device config, and history APIs.
 
-- `monitor/server.js` — Node.js HTTP server: serves static files, proxies RPC to Shelly devices, health endpoint, auth middleware (when `AUTH_ENABLED=true`), push notification API, valve state poller
-- `monitor/index.html` — Web UI: SVG gauges + Canvas time-series chart (last 6h), notification toggle, Apple PWA meta tags
-- `monitor/manifest.json` — PWA manifest (standalone display, app name, icons, maskable 512px icon, stable `id`)
-- `monitor/sw.js` — Service worker: push notifications + fetch handler (network-first with offline fallback)
-- `monitor/offline.html` — Branded offline fallback page (auto-retry on connectivity)
-- `monitor/icons/` — PWA icons (icon-192.png, icon-512.png)
-- `monitor/login.html` — Passkey authentication page (registration + login)
-- `monitor/js/` — ES modules: `shelly-api.js` (HTTP RPC client), `gauge.js` (SVG gauge), `chart.js` (Canvas chart), `app.js` (orchestration), `login.js` (passkey auth), `push.js` (push subscription management)
-- `monitor/auth/` — Server-side auth: `credentials.js` (credential store via S3 adapter), `session.js` (HMAC cookies), `webauthn.js` (WebAuthn handlers)
-- `monitor/lib/logger.js` — Structured JSON logger
-- `monitor/lib/s3-storage.js` — S3/local storage adapter (reads/writes credentials to UpCloud Object Storage or local filesystem)
-- `monitor/lib/push-storage.js` — S3/local storage adapter for push subscriptions (`push-subscriptions.json`) and VAPID keys (`push-config.json`)
-- `monitor/lib/valve-poller.js` — Server-side valve state polling and change detection (polls Shelly controller via HTTP RPC)
-- `monitor/vendor/simplewebauthn-browser.mjs` — Vendored @simplewebauthn/browser 13.3.0 (ESM)
-- `monitor/vendor/qrcode-generator.mjs` — Vendored qrcode-generator 2.0.4 (ESM, for invitation QR codes)
-- `monitor/css/style.css` — Standalone styles (not shared with playground)
-- `monitor/shelly/sensor-display.js` — ES5 Shelly script for Pro 4PM
-- `monitor/shelly/deploy-poc.sh` — Deploys the script to Pro 4PM via HTTP RPC
+- `server/server.js` — HTTP server: serves playground at `/`, auth middleware (when `AUTH_ENABLED=true`), RPC proxy, WebSocket, device-config API, history API, health endpoint, valve state poller
+- `server/auth/` — WebAuthn passkey auth: `credentials.js` (S3-backed store), `session.js` (HMAC cookies), `webauthn.js` (handlers), `invitations.js` (registration invitations)
+- `server/lib/` — Shared libraries: logger, S3 storage adapter, database module, MQTT bridge, device config, tracing, valve poller, config CLIs (vpn-config, db-config, nr-config)
 
-**Local mode**: `node monitor/server.js` — no auth, direct LAN access to Shelly devices.
-**Cloud mode**: `AUTH_ENABLED=true RPID=domain ORIGIN=https://domain node monitor/server.js` — passkey auth required, VPN tunnel to reach devices.
-
-**Do NOT replace vendored libs with CDN URLs.** The importmap in `login.html` points to `./vendor/...` paths.
+**Local mode**: `node server/server.js` — no auth, direct LAN access to Shelly devices.
+**Cloud mode**: `AUTH_ENABLED=true RPID=domain ORIGIN=https://domain node server/server.js` — passkey auth required, VPN tunnel to reach devices.
 
 ## Running Tests
 
@@ -154,9 +144,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/auth.test.js` — unit tests for auth modules (session signing, credential store)
 - `tests/s3-storage.test.js` — unit tests for S3 storage adapter (local fallback mode, S3 detection)
 - `tests/vpn-config.test.js` — unit tests for VPN config S3 persistence helper
-- `tests/push-storage.test.js` — unit tests for push storage adapter (VAPID keys, subscriptions, deduplication)
 - `tests/valve-poller.test.js` — unit tests for valve state change detection (pure functions, poller behavior)
-- `tests/sw.test.js` — unit tests for service worker fetch handler, offline caching, and push handler preservation
 - `tests/db.test.js` — unit tests for PostgreSQL/TimescaleDB module (schema init, inserts, queries)
 - `tests/tracing.test.js` — unit tests for OpenTelemetry tracing initialization, graceful no-op, MQTT spans, log trace context injection, nr-config S3 helper
 - `tests/mqtt-bridge.test.js` — unit tests for MQTT bridge (state change detection, connection status)
@@ -168,7 +156,6 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/e2e/fixtures.js` — shared Playwright fixture: blocks Google Fonts for offline environments. **All e2e tests must import from this file, not from `@playwright/test`.**
 - `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
 - `tests/e2e/device-config.spec.js` — Playwright e2e tests for the Device config UI (toggle switches, dropdowns, checkboxes → compact JSON format)
-- `tests/e2e/pwa.spec.js` — Playwright e2e tests for PWA installability (manifest, Apple meta tags, offline page)
 - `tests/e2e/live-mode.spec.js` — Playwright e2e tests for live mode toggle, WebSocket connection, simulation fallback
 - `tests/e2e/take-screenshots.spec.js` — Screenshot generator: runs 24h simulation, captures all views (excluded from normal test runs via `testIgnore` in `playwright.config.js`, uses separate `playwright.screenshots.config.js`)
 
@@ -218,6 +205,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - UpCloud S3-compatible Object Storage (license key persistence), UpCloud Managed PostgreSQL with TimescaleDB (011-newrelic-observability)
 - JavaScript — Node.js 20 LTS (CommonJS server), ES6+ (browser modules) + Node.js `http` module (server), browser `fetch` API (client). No new dependencies. (012-secure-rpc-api)
 - N/A — no data model changes (012-secure-rpc-api)
+- JavaScript ES6+ (browser modules), Node.js 20 LTS (CommonJS server), ES5 (Shelly scripts), POSIX shell (deploy scripts) + `ws` (WebSocket), `mqtt` (MQTT client), `pg` (PostgreSQL), `@aws-sdk/client-s3`, `@opentelemetry/*`, `@simplewebauthn/server` — removed `web-push` (013-remove-monitor-app)
+- PostgreSQL/TimescaleDB (sensor history), UpCloud S3-compatible Object Storage (config persistence) (013-remove-monitor-app)
 
 ## Cloud Deployment Architecture
 
@@ -232,7 +221,7 @@ Internet → Caddy (:443, TLS) → OpenVPN (shared network) → Node.js app (:30
 - **Containers**: Docker Compose with `app` (Node.js, shares openvpn network via `network_mode: "service:openvpn"`) + `caddy` (reverse proxy, auto TLS) + `openvpn` (VPN). Caddy connects to `openvpn:3000` since the app shares the openvpn network namespace.
 - **Container hardening**: App and Caddy containers run with read-only root filesystems and as non-root users. OpenVPN needs NET_ADMIN capability and /dev/net/tun access.
 - **Persistence**: UpCloud Managed Object Storage (S3-compatible, €5/month) — no Docker volumes for app data. Stores WebAuthn credentials (`credentials.json`) and VPN config (`openvpn.conf`).
-- **VPN config persistence**: The deployer downloads `openvpn.conf` from S3 before starting containers (survives server recreation). On first setup, it uploads a locally-placed config to S3 for future rebuilds. Uses the app image as a one-shot S3 helper (`monitor/lib/vpn-config.js`).
+- **VPN config persistence**: The deployer downloads `openvpn.conf` from S3 before starting containers (survives server recreation). On first setup, it uploads a locally-placed config to S3 for future rebuilds. Uses the app image as a one-shot S3 helper (`server/lib/vpn-config.js`).
 - **VPN networking**: The app container uses `network_mode: "service:openvpn"` to share the OpenVPN container's network namespace. This gives the app direct access to the VPN tunnel, allowing it to proxy RPC requests to Shelly devices on the home LAN. Firewall rule controlled via `enable_vpn` Terraform variable. OpenVPN uses static key (PSK) mode for compatibility with UniFi site-to-site VPN.
 - **Auth**: WebAuthn passkeys via @simplewebauthn, HMAC-signed session cookies (30-day expiry)
 - **CD**: GitHub Actions → GHCR (app + deployer images) → systemd timer pulls deployer → deployer runs `docker compose up -d`
@@ -243,7 +232,7 @@ Internet → Caddy (:443, TLS) → OpenVPN (shared network) → Node.js app (:30
 Server environment is split into two sources, merged by the deployer:
 
 - **`.env.secrets`** (cloud-init, immutable) — secrets that require server recreation to change: `SESSION_SECRET`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`
-- **`config.env`** (deployer image, mutable) — service config that deploys via CD without server recreation: `PORT`, `AUTH_ENABLED`, `RPID`, `ORIGIN`, `DOMAIN`, `GITHUB_REPO`, `VPN_CHECK_HOST`, `VPN_CONFIG_KEY`, `SETUP_WINDOW_MINUTES`, `NODE_ENV`, `CONTROLLER_IP`, `CONTROLLER_SCRIPT_ID`, `VAPID_SUBJECT`
+- **`config.env`** (deployer image, mutable) — service config that deploys via CD without server recreation: `PORT`, `AUTH_ENABLED`, `RPID`, `ORIGIN`, `DOMAIN`, `GITHUB_REPO`, `VPN_CHECK_HOST`, `VPN_CONFIG_KEY`, `SETUP_WINDOW_MINUTES`, `NODE_ENV`, `CONTROLLER_IP`, `CONTROLLER_SCRIPT_ID`, `CONTROLLER_VPN_IP`, `MQTT_HOST`
 - **`.env`** (deployer merge output) — merged file consumed by Docker Compose. Secrets win on duplicate keys.
 
 VPN is always-on (the app uses `network_mode: "service:openvpn"`). Firewall rule controlled via `enable_vpn=true` in Terraform.
@@ -263,10 +252,10 @@ The deployer picks up the key from S3 within 5 minutes and restarts containers w
 
 ### Architecture
 
-- **`monitor/lib/tracing.js`** — OTel SDK init, loaded via `--require` before server.js. No-op when `NEW_RELIC_LICENSE_KEY` is unset.
-- **`monitor/lib/nr-config.js`** — S3 persistence helper for the license key (same pattern as `db-config.js`). S3 key: `newrelic-config.json`.
-- **`monitor/lib/logger.js`** — Injects `trace.id` and `span.id` into JSON log entries for trace-log correlation.
-- **`monitor/lib/mqtt-bridge.js`** — Manual MQTT spans (`mqtt.message`, `mqtt.publish`) via `@opentelemetry/api`.
+- **`server/lib/tracing.js`** — OTel SDK init, loaded via `--require` before server.js. No-op when `NEW_RELIC_LICENSE_KEY` is unset.
+- **`server/lib/nr-config.js`** — S3 persistence helper for the license key (same pattern as `db-config.js`). S3 key: `newrelic-config.json`.
+- **`server/lib/logger.js`** — Injects `trace.id` and `span.id` into JSON log entries for trace-log correlation.
+- **`server/lib/mqtt-bridge.js`** — Manual MQTT spans (`mqtt.message`, `mqtt.publish`) via `@opentelemetry/api`.
 - **Docker Compose `monitoring` profile** — `newrelic-infra` (host/container metrics) and `nri-postgresql` (database health). Only started when license key is present.
 
 ### Environment Variables
@@ -289,6 +278,6 @@ The deployer picks up the key from S3 within 5 minutes and restarts containers w
 - PostgreSQL health — via nri-postgresql integration
 
 ## Recent Changes
+- 013-remove-monitor-app: Removed monitor web UI, push notifications, PoC Shelly scripts, PWA artifacts. Promoted playground as main app served at `/` behind passkey auth. Added URL hash deep linking for all views. Added device config explanations. Moved server code from `monitor/` to `server/`. Removed `web-push` dependency. Added Shelly script deployment to Docker image.
 - 012-secure-rpc-api: Added JavaScript — Node.js 20 LTS (CommonJS server), ES6+ (browser modules) + Node.js `http` module (server), browser `fetch` API (client). No new dependencies.
 - 011-newrelic-observability: Added Node.js 20 LTS (CommonJS server, ES6+ browser modules) + `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/exporter-metrics-otlp-http`, `@opentelemetry/exporter-logs-otlp-http`
-- 010-live-system-playground: Added JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `pg` (node-postgres), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push`
