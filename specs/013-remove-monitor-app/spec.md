@@ -9,18 +9,18 @@
 
 ### User Story 1 - Simplified Project with Playground as Main App (Priority: P1)
 
-As a project maintainer, I want the monitor app (web UI, server-side auth, PoC Shelly scripts, and all related code) removed from the codebase so that the playground becomes the sole web application, reducing complexity and eliminating dead code.
+As a project maintainer, I want the monitor app UI (gauges, charts, sensor display), push notifications, PoC Shelly scripts, and PWA artifacts removed from the codebase so that the playground becomes the sole web application, while keeping the passkey authentication system to protect the control interface.
 
-**Why this priority**: The monitor app is being retired. Removing it is the prerequisite for all other changes — the playground cannot become the main app while the monitor still exists and serves as the entry point.
+**Why this priority**: The monitor app UI is being retired. Removing it is the prerequisite for all other changes — the playground cannot become the main app while the monitor still exists and serves as the entry point. Authentication must be retained because the system controls real hardware.
 
-**Independent Test**: After removal, the project builds and deploys with only the playground app. All monitor-specific files, imports, references, tests, and documentation are gone. The server serves the playground at the root URL. Existing playground functionality (simulation, live mode, all views) continues to work.
+**Independent Test**: After removal, the project builds and deploys with only the playground app behind passkey auth. Monitor-specific UI files, push notification code, PoC Shelly scripts, and PWA artifacts are gone. The server serves the playground at the root URL. Authentication protects all views and API endpoints. Existing playground functionality (simulation, live mode, all views) continues to work.
 
 **Acceptance Scenarios**:
 
-1. **Given** the full codebase, **When** the monitor app is removed, **Then** no monitor-specific UI files remain (HTML pages, CSS, client JS, icons, service worker, manifest, vendored auth/QR libs) and the PoC Shelly directory is deleted.
-2. **Given** the monitor app is removed, **When** server-side code is reviewed, **Then** authentication middleware, push notification endpoints, and monitor-specific API routes are removed — but APIs needed by the playground (WebSocket, device config, RPC proxy, history) are preserved.
-3. **Given** the monitor app is removed, **When** deployment artifacts are built, **Then** the Docker image, deploy scripts, and CI workflows reference the playground as the main app, served at the root path `/`.
-4. **Given** the monitor app is removed, **When** tests are run, **Then** monitor-specific tests (auth, push storage, service worker, RPC proxy) are removed, and all remaining tests pass.
+1. **Given** the full codebase, **When** the monitor app UI is removed, **Then** no monitor-specific UI files remain (monitor HTML, CSS, client JS for gauges/charts, icons, service worker, manifest) and the PoC Shelly directory is deleted. Authentication code (credentials, sessions, WebAuthn, login page, vendored auth libs) is preserved.
+2. **Given** the monitor UI is removed, **When** server-side code is reviewed, **Then** push notification endpoints and monitor-specific static file serving are removed — but authentication middleware, WebSocket, device config, RPC proxy, and history APIs are preserved and protected by passkey auth.
+3. **Given** the monitor UI is removed, **When** deployment artifacts are built, **Then** the Docker image, deploy scripts, and CI workflows reference the playground as the main app, served at the root path `/` behind passkey authentication.
+4. **Given** the monitor UI is removed, **When** tests are run, **Then** push notification and service worker tests are removed, auth tests are preserved, and all remaining tests pass.
 
 ---
 
@@ -85,11 +85,11 @@ As a system operator, I want the Shelly Pro 4PM control scripts to be automatica
 
 ### Functional Requirements
 
-- **FR-001**: System MUST remove all monitor app web UI files (HTML pages, CSS, client-side JavaScript, icons, service worker, manifest, vendored libraries used only by monitor).
-- **FR-002**: System MUST remove all monitor authentication code (credential store, session management, WebAuthn handlers, invitation system).
+- **FR-001**: System MUST remove monitor app UI files (monitor HTML page, CSS, client-side JavaScript for gauges/charts/push, icons, service worker, manifest).
+- **FR-002**: System MUST preserve all authentication code (credential store, session management, WebAuthn handlers, invitation system, login page, vendored auth libraries) and apply it to protect the playground app.
 - **FR-003**: System MUST remove the PoC Shelly scripts directory (`monitor/shelly/` containing `sensor-display.js` and `deploy-poc.sh`).
-- **FR-004**: System MUST remove monitor-specific server features: push notification endpoints, authentication middleware, and login-related API routes.
-- **FR-005**: System MUST preserve server-side libraries needed by the playground in live mode: structured logging, S3 storage adapter, database module, MQTT bridge, device config store, tracing, and valve poller.
+- **FR-004**: System MUST remove push notification endpoints and push storage from the server. Authentication middleware and login-related API routes MUST be preserved.
+- **FR-005**: System MUST preserve server-side libraries needed by the playground in live mode: structured logging, S3 storage adapter, database module, MQTT bridge, device config store, tracing, valve poller, and authentication modules.
 - **FR-006**: System MUST serve the playground app at the root URL path (`/`) instead of at a sub-path.
 - **FR-007**: System MUST implement URL fragment-based navigation so each view has a unique, bookmarkable URL (e.g., `#status`, `#components`, `#schematic`, `#controls`, `#device`).
 - **FR-008**: System MUST update the URL fragment when the user navigates between views.
@@ -101,7 +101,7 @@ As a system operator, I want the Shelly Pro 4PM control scripts to be automatica
 - **FR-014**: System MUST set the Shelly Pro 4PM IP address to 192.168.1.174 in the deployment configuration.
 - **FR-015**: System MUST include Shelly script deployment as a step in the application deployment pipeline.
 - **FR-016**: System MUST handle Shelly script deployment failure gracefully — log a warning but do not fail the overall deployment.
-- **FR-017**: System MUST remove monitor-specific tests and update remaining tests to reflect the new project structure.
+- **FR-017**: System MUST remove push notification and service worker tests. Auth tests MUST be preserved and updated for the new project structure.
 - **FR-018**: System MUST update the Dockerfile, docker-compose, deploy scripts, and CI workflows to reflect the playground as the sole app.
 - **FR-019**: System MUST update project documentation (CLAUDE.md) to remove monitor app references and reflect the new structure.
 
@@ -115,7 +115,7 @@ As a system operator, I want the Shelly Pro 4PM control scripts to be automatica
 
 ### Measurable Outcomes
 
-- **SC-001**: The codebase contains zero files or directories related to the monitor app web UI, authentication, PoC Shelly scripts, or push notifications after removal.
+- **SC-001**: The codebase contains zero files related to the monitor app UI (gauges, charts, sensor display), push notifications, PoC Shelly scripts, service worker, or PWA manifest. Authentication code is preserved and functional.
 - **SC-002**: The playground app loads at the root URL (`/`) and all five views (Status, Components, Schematic, Controls, Device) are accessible and functional.
 - **SC-003**: Every view is reachable via a direct URL with a fragment identifier, and the correct view displays when the URL is opened in a new browser session.
 - **SC-004**: Browser back/forward buttons correctly navigate between previously visited views.

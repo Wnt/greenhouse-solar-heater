@@ -5,12 +5,12 @@
 
 ## Summary
 
-Remove the monitor web app (UI, auth, push notifications, PoC Shelly scripts) from the project. Restructure so the playground app is the sole web application served at `/`. Add URL fragment-based deep linking for all views, add explanatory descriptions to the Device configuration view, and integrate Shelly script deployment into the deploy pipeline with the Pro 4PM at 192.168.1.174.
+Remove the monitor web app UI (gauges, charts, push notifications, PoC Shelly scripts, PWA artifacts) from the project while retaining passkey authentication to protect the control system. Restructure so the playground app is the sole web application served at `/` behind auth. Add URL fragment-based deep linking for all views, add explanatory descriptions to the Device configuration view, and integrate Shelly script deployment into the deploy pipeline with the Pro 4PM at 192.168.1.174.
 
 ## Technical Context
 
 **Language/Version**: JavaScript ES6+ (browser modules), Node.js 20 LTS (CommonJS server), ES5 (Shelly scripts), POSIX shell (deploy scripts)
-**Primary Dependencies**: `ws` (WebSocket), `mqtt` (MQTT client), `pg` (PostgreSQL), `@aws-sdk/client-s3`, `@opentelemetry/*` — removing `web-push`, `@simplewebauthn/server`
+**Primary Dependencies**: `ws` (WebSocket), `mqtt` (MQTT client), `pg` (PostgreSQL), `@aws-sdk/client-s3`, `@opentelemetry/*`, `@simplewebauthn/server` (retained for passkey auth) — removing `web-push`
 **Storage**: PostgreSQL/TimescaleDB (sensor history), UpCloud S3-compatible Object Storage (config persistence)
 **Testing**: `node:test` (unit), Playwright (e2e), `serve` (static server for tests)
 **Target Platform**: Linux server (Docker), modern browsers (ES6+ modules)
@@ -55,9 +55,14 @@ specs/013-remove-monitor-app/
 **After this feature, the project structure becomes:**
 
 ```text
-# Server (retained from monitor/lib/ + simplified server.js)
+# Server (retained from monitor/ — server.js, lib/, auth/)
 server/
-├── server.js            # Simplified: static files, WebSocket, RPC proxy, device-config, history
+├── server.js            # Simplified: static files, auth, WebSocket, RPC proxy, device-config, history
+├── auth/
+│   ├── credentials.js   # Passkey credential store (S3-backed)
+│   ├── invitations.js   # Invitation-based registration
+│   ├── session.js       # HMAC session cookies
+│   └── webauthn.js      # WebAuthn registration/authentication handlers
 └── lib/
     ├── logger.js
     ├── s3-storage.js
@@ -70,21 +75,25 @@ server/
     ├── vpn-config.js
     └── valve-poller.js
 
-# Frontend (playground promoted to root-level app)
+# Frontend (playground promoted to root-level app, behind auth)
 playground/
 ├── index.html           # Modified: deep linking, device config descriptions
+├── login.html           # Moved from monitor/ — passkey login page
 ├── css/style.css
 ├── js/
 │   ├── control-logic-loader.js
 │   ├── control.js
 │   ├── data-source.js
+│   ├── login.js         # Moved from monitor/js/ — passkey auth client
 │   ├── physics.js
 │   ├── ui.js
 │   └── yaml-loader.js
 └── vendor/
     ├── js-yaml.mjs
     ├── material-symbols-outlined.woff2
-    └── material-symbols.css
+    ├── material-symbols.css
+    ├── simplewebauthn-browser.mjs  # Moved from monitor/vendor/
+    └── qrcode-generator.mjs       # Moved from monitor/vendor/ (invitation QR codes)
 
 # Shelly device scripts (unchanged)
 shelly/
@@ -95,10 +104,11 @@ shelly/
 ├── devices.conf
 └── lint/
 
-# Tests (monitor-specific tests removed)
+# Tests (push/SW tests removed, auth tests preserved)
 tests/
 ├── control-logic.test.js
 ├── playground-control.test.js
+├── auth.test.js            # Preserved — path updates for server/auth/
 ├── s3-storage.test.js
 ├── db.test.js
 ├── tracing.test.js
@@ -106,6 +116,7 @@ tests/
 ├── device-config.test.js
 ├── device-config-integration.test.js
 ├── data-source.test.js
+├── rpc-proxy.test.js       # Preserved — path updates for server/
 ├── valve-poller.test.js
 ├── vpn-config.test.js
 ├── simulation/
@@ -126,7 +137,7 @@ deploy/
 └── ...
 ```
 
-**Structure Decision**: The `monitor/` directory is split: `server.js` and `lib/` move to a new `server/` directory. Everything else in `monitor/` is deleted. The playground remains at `playground/`. This avoids the confusing `monitor/` name while preserving the server/frontend separation.
+**Structure Decision**: The `monitor/` directory is split: `server.js`, `auth/`, and `lib/` move to a new `server/` directory. Login page and auth client JS move to `playground/`. Monitor UI files, push notifications, PoC Shelly scripts, and PWA artifacts are deleted. The playground remains at `playground/`. This avoids the confusing `monitor/` name while preserving the server/frontend separation and retaining passkey auth.
 
 ## Complexity Tracking
 

@@ -34,13 +34,18 @@ Runtime settings pushed to Shelly controller via MQTT. Schema unchanged — only
 | fm | string | Forced Mode — empty (auto), `I`, `SC`, `GH`, `AD`, `EH` |
 | am | string[] | Allowed Modes — subset of `["I","SC","GH","AD","EH"]` |
 
+### Preserved Entities (authentication)
+
+The following auth entities are retained to protect the control system:
+
+- **WebAuthn Credential** — passkey credentials stored in S3 (`credentials.json`). Unchanged.
+- **Session** — HMAC-signed session cookies (30-day expiry). Unchanged.
+- **Invitation** — registration invitation tokens (in-memory, rate-limited). Unchanged.
+
 ### Removed Entities
 
 The following data entities are removed with the monitor app:
 
-- **WebAuthn Credential** — passkey credentials stored in S3 (`credentials.json`)
-- **Session** — HMAC-signed session cookies
-- **Invitation** — registration invitation tokens (in-memory)
 - **Push Subscription** — web push subscription endpoints stored in S3 (`push-subscriptions.json`)
 - **VAPID Keys** — push notification keys stored in S3 (`push-config.json`)
 

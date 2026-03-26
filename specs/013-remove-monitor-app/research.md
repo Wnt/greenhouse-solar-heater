@@ -5,11 +5,10 @@
 
 ## R1: Monitor App File Inventory — What to Delete
 
-**Decision**: Delete all monitor-specific files; preserve server-side libraries needed by playground live mode.
+**Decision**: Delete monitor UI and push notification files; preserve and relocate auth code and server-side libraries.
 
 **Files to DELETE**:
-- `monitor/index.html` — monitor web UI
-- `monitor/login.html` — passkey login page
+- `monitor/index.html` — monitor web UI (gauges, charts)
 - `monitor/offline.html` — PWA offline fallback
 - `monitor/sw.js` — service worker (push notifications, offline caching)
 - `monitor/manifest.json` — PWA manifest
@@ -17,23 +16,20 @@
 - `monitor/js/app.js` — monitor app orchestration
 - `monitor/js/chart.js` — Canvas time-series chart
 - `monitor/js/gauge.js` — SVG gauge component
-- `monitor/js/login.js` — passkey auth client
 - `monitor/js/push.js` — push subscription management
 - `monitor/js/shelly-api.js` — HTTP RPC client (monitor-specific)
 - `monitor/icons/icon-192.png` — PWA icon
 - `monitor/icons/icon-512.png` — PWA icon
-- `monitor/auth/credentials.js` — credential store
-- `monitor/auth/invitations.js` — invitation system
-- `monitor/auth/session.js` — HMAC session management
-- `monitor/auth/webauthn.js` — WebAuthn handlers
-- `monitor/vendor/simplewebauthn-browser.mjs` — vendored WebAuthn client
-- `monitor/vendor/qrcode-generator.mjs` — vendored QR code generator
 - `monitor/shelly/sensor-display.js` — PoC Shelly script
 - `monitor/shelly/deploy-poc.sh` — PoC deploy script
 - `monitor/lib/push-storage.js` — push subscription storage
 
 **Files to MOVE** (from `monitor/` to `server/`):
 - `monitor/server.js` → `server/server.js` (with modifications)
+- `monitor/auth/credentials.js` → `server/auth/credentials.js`
+- `monitor/auth/invitations.js` → `server/auth/invitations.js`
+- `monitor/auth/session.js` → `server/auth/session.js`
+- `monitor/auth/webauthn.js` → `server/auth/webauthn.js`
 - `monitor/lib/logger.js` → `server/lib/logger.js`
 - `monitor/lib/s3-storage.js` → `server/lib/s3-storage.js`
 - `monitor/lib/db.js` → `server/lib/db.js`
@@ -45,25 +41,31 @@
 - `monitor/lib/vpn-config.js` → `server/lib/vpn-config.js`
 - `monitor/lib/valve-poller.js` → `server/lib/valve-poller.js`
 
-**Rationale**: Clean separation — `monitor/` is fully removed. Server code retains all functionality needed for live mode (WebSocket, MQTT bridge, RPC proxy, device config, history, valve polling).
+**Files to MOVE** (from `monitor/` to `playground/`):
+- `monitor/login.html` → `playground/login.html`
+- `monitor/js/login.js` → `playground/js/login.js`
+- `monitor/vendor/simplewebauthn-browser.mjs` → `playground/vendor/simplewebauthn-browser.mjs`
+- `monitor/vendor/qrcode-generator.mjs` → `playground/vendor/qrcode-generator.mjs`
+
+**Rationale**: Clean separation — `monitor/` is fully removed. Auth code is essential for protecting the control system and moves to `server/auth/`. Login page and client-side auth JS move to `playground/` since that's where the frontend lives. Server code retains all functionality needed for live mode (WebSocket, MQTT bridge, RPC proxy, device config, history, valve polling, authentication).
 
 **Alternatives considered**:
 - Keep files in `monitor/` → confusing name for a project that no longer has a "monitor" app
+- Remove auth entirely → unacceptable, the system controls real hardware and must be protected
 - Move everything to root → too flat, loses server/frontend distinction
 
 ## R2: Server.js Simplification — What to Remove
 
-**Decision**: Strip auth middleware, push notification routes, and monitor-specific static file serving. Keep WebSocket, RPC proxy, device-config, history, and health routes.
+**Decision**: Strip push notification routes and monitor-specific static file serving. Keep auth middleware, WebSocket, RPC proxy, device-config, history, and health routes.
 
 **Routes to REMOVE from server.js**:
-- Auth middleware (the `authMiddleware` function and its setup)
-- `/auth/*` routes (registration, login, challenge, verify)
 - `/api/push/*` routes (subscribe, unsubscribe, vapid key)
 - Push notification logic (valve change → push notification)
 - Monitor static file serving (serving `monitor/` at `/`)
-- Login page asset allowlist
 
 **Routes to KEEP**:
+- Auth middleware (protects playground and API routes)
+- `/auth/*` routes (registration, login, challenge, verify)
 - `/api/rpc/*` — RPC proxy to Shelly devices (used by playground for live data)
 - `/api/device-config` — GET/PUT device configuration (used by playground Device view)
 - `/api/history` — sensor history (used by playground)
@@ -71,12 +73,15 @@
 - `/health` — health endpoint
 - Static file serving for `playground/` (at `/` instead of `/playground/`)
 - Static file serving for `shelly/control-logic.js` and `system.yaml`
+- Login page asset allowlist (updated for new paths: `login.html`, `js/login.js`, `vendor/simplewebauthn-browser.mjs`, `vendor/qrcode-generator.mjs`)
 
 **Dependencies to REMOVE from package.json**:
 - `web-push` — only used for push notifications
-- `@simplewebauthn/server` — only used for WebAuthn auth
 
-**Rationale**: Without auth, the server becomes a simple static file server + API proxy + WebSocket bridge. No auth is needed because the system runs on a private VPN — only accessible from the home network or via VPN tunnel.
+**Dependencies to KEEP**:
+- `@simplewebauthn/server` — used for WebAuthn passkey auth (retained)
+
+**Rationale**: The system controls real hardware (valves, pump, heaters) and must be protected by authentication. Passkey auth via WebAuthn provides strong, phishing-resistant authentication. Push notifications are removed as they were a monitor-specific feature.
 
 ## R3: Deep Linking Implementation Approach
 
@@ -149,12 +154,11 @@ fi
 ## R6: Test Impact Analysis
 
 **Tests to DELETE** (monitor-specific):
-- `tests/auth.test.js` — tests WebAuthn auth (being removed)
 - `tests/push-storage.test.js` — tests push subscription storage (being removed)
 - `tests/sw.test.js` — tests service worker (being removed)
-- `tests/rpc-proxy.test.js` — tests RPC proxy security headers (RPC proxy stays but test is tightly coupled to monitor server specifics — may need rewrite or removal)
 
-**Tests to MODIFY**:
+**Tests to MODIFY** (import path updates from `monitor/` to `server/`):
+- `tests/auth.test.js` — update import paths from `monitor/auth/` to `server/auth/`
 - `tests/s3-storage.test.js` — update import paths from `monitor/lib/` to `server/lib/`
 - `tests/db.test.js` — update import paths
 - `tests/tracing.test.js` — update import paths
@@ -162,6 +166,7 @@ fi
 - `tests/device-config.test.js` — update import paths
 - `tests/device-config-integration.test.js` — update import paths
 - `tests/data-source.test.js` — update import paths (if any)
+- `tests/rpc-proxy.test.js` — update import paths
 - `tests/valve-poller.test.js` — update import paths
 - `tests/vpn-config.test.js` — update import paths
 
@@ -190,6 +195,7 @@ fi
 **Dockerfile changes**:
 - Replace `COPY monitor/ ./monitor/` with `COPY server/ ./server/`
 - Add `COPY shelly/ ./shelly/` (full directory for deploy capability)
+- Keep `COPY playground/ ./playground/` (now includes login.html, login.js, auth vendor libs)
 - Update CMD from `node --require ./monitor/lib/tracing.js monitor/server.js` to `node --require ./server/lib/tracing.js server/server.js`
 
 **deploy.sh changes**:
