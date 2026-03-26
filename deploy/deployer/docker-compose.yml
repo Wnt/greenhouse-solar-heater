@@ -49,7 +49,7 @@ services:
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
+      test: ["CMD", "wget", "--spider", "-q", "--no-check-certificate", "https://localhost:443"]
       interval: 30s
       timeout: 5s
       start_period: 10s
