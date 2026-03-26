@@ -5,8 +5,8 @@ describe('mqtt-bridge', () => {
   let bridge;
 
   beforeEach(() => {
-    delete require.cache[require.resolve('../monitor/lib/mqtt-bridge.js')];
-    bridge = require('../monitor/lib/mqtt-bridge.js');
+    delete require.cache[require.resolve('../server/lib/mqtt-bridge.js')];
+    bridge = require('../server/lib/mqtt-bridge.js');
     bridge._reset();
   });
 

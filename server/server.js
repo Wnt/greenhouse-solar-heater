@@ -11,8 +11,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const createLogger = require('./lib/logger');
-const webpush = require('web-push');
-const pushStorage = require('./lib/push-storage');
 const valvePoller = require('./lib/valve-poller');
 const mqttBridge = require('./lib/mqtt-bridge');
 const deviceConfig = require('./lib/device-config');
@@ -20,9 +18,7 @@ const deviceConfig = require('./lib/device-config');
 const otelApi = require('@opentelemetry/api');
 
 const log = createLogger('server');
-const pushLog = createLogger('push');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
-const MONITOR_DIR = __dirname;
 const PLAYGROUND_DIR = path.join(__dirname, '..', 'playground');
 const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
 const VPN_CHECK_HOST = process.env.VPN_CHECK_HOST || '';
@@ -45,7 +41,7 @@ const MIME = {
 };
 
 // ── Static file serving ──
-// Monitor is the primary app at /; playground is served under /playground/.
+// Playground is served at /; shelly/ and system.yaml served for simulation support.
 
 var SHELLY_DIR = path.join(__dirname, '..', 'shelly');
 var REPO_ROOT = path.join(__dirname, '..');
@@ -53,35 +49,23 @@ var REPO_ROOT = path.join(__dirname, '..');
 function serveStatic(req, res) {
   var urlPath = new URL(req.url, 'http://localhost').pathname;
 
-  // Playground routes: /playground, /playground/, /playground/**
-  if (urlPath === '/playground' || urlPath === '/playground/') {
-    return serveFile(path.join(PLAYGROUND_DIR, 'index.html'), '/index.html', res);
-  }
-  if (urlPath.startsWith('/playground/')) {
-    var subPath = urlPath.slice('/playground'.length); // e.g. /js/app.js
-
-    // /playground/shelly/* → serve from shelly/ dir (control-logic-loader fetches relative 'shelly/control-logic.js')
-    if (subPath.startsWith('/shelly/')) {
-      var shellyFile = path.join(SHELLY_DIR, subPath.slice('/shelly'.length));
-      if (!shellyFile.startsWith(SHELLY_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
-      return serveFile(shellyFile, subPath, res);
-    }
-
-    var filePath = path.join(PLAYGROUND_DIR, subPath);
-    if (!filePath.startsWith(PLAYGROUND_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
-    return serveFile(filePath, subPath, res);
-  }
-
-  // Serve system.yaml from repo root (playground fetches ../system.yaml → /system.yaml)
+  // Serve system.yaml from repo root (playground fetches /system.yaml)
   if (urlPath === '/system.yaml') {
     return serveFile(path.join(REPO_ROOT, 'system.yaml'), urlPath, res);
   }
 
-  // Monitor routes: everything else from MONITOR_DIR
+  // /shelly/* → serve from shelly/ dir (control-logic-loader fetches 'shelly/control-logic.js')
+  if (urlPath.startsWith('/shelly/')) {
+    var shellyFile = path.join(SHELLY_DIR, urlPath.slice('/shelly'.length));
+    if (!shellyFile.startsWith(SHELLY_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
+    return serveFile(shellyFile, urlPath, res);
+  }
+
+  // Everything else from playground directory
   if (urlPath === '/') urlPath = '/index.html';
-  var monitorPath = path.join(MONITOR_DIR, urlPath);
-  if (!monitorPath.startsWith(MONITOR_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
-  serveFile(monitorPath, urlPath, res);
+  var filePath = path.join(PLAYGROUND_DIR, urlPath);
+  if (!filePath.startsWith(PLAYGROUND_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
+  serveFile(filePath, urlPath, res);
 }
 
 function serveFile(filePath, urlPath, res) {
@@ -93,7 +77,6 @@ function serveFile(filePath, urlPath, res) {
     }
     var ext = path.extname(filePath);
     var contentType = MIME[ext] || 'application/octet-stream';
-    if (urlPath === '/manifest.json') contentType = 'application/manifest+json';
     res.writeHead(200, { 'Content-Type': contentType });
     res.end(data);
   });
@@ -241,106 +224,6 @@ function jsonResponse(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
-// ── Push notifications ──
-
-var vapidReady = false;
-var vapidPublicKey = null;
-
-function initVapid() {
-  pushStorage.loadVapidKeys(function (err, keys) {
-    if (err) {
-      pushLog.error('failed to load VAPID keys', { error: err.message });
-      return;
-    }
-    if (keys) {
-      webpush.setVapidDetails(keys.subject, keys.publicKey, keys.privateKey);
-      vapidPublicKey = keys.publicKey;
-      vapidReady = true;
-      pushLog.info('VAPID keys loaded');
-      return;
-    }
-    var generated = webpush.generateVAPIDKeys();
-    var config = {
-      publicKey: generated.publicKey,
-      privateKey: generated.privateKey,
-      subject: process.env.VAPID_SUBJECT || 'mailto:noreply@localhost',
-    };
-    pushStorage.saveVapidKeys(config, function (saveErr) {
-      if (saveErr) {
-        pushLog.error('failed to save VAPID keys', { error: saveErr.message });
-        return;
-      }
-      webpush.setVapidDetails(config.subject, config.publicKey, config.privateKey);
-      vapidPublicKey = config.publicKey;
-      vapidReady = true;
-      pushLog.info('VAPID keys generated and saved');
-    });
-  });
-}
-
-initVapid();
-
-function handlePushApi(req, res, urlPath, body) {
-  if (urlPath === '/api/push/vapid-public-key' && req.method === 'GET') {
-    if (!vapidReady) {
-      jsonResponse(res, 503, { error: 'Push notifications not available' });
-      return;
-    }
-    jsonResponse(res, 200, { publicKey: vapidPublicKey });
-    return;
-  }
-
-  if (urlPath === '/api/push/subscribe' && req.method === 'POST') {
-    var sub;
-    try { sub = JSON.parse(body); } catch (e) {
-      jsonResponse(res, 400, { error: 'Invalid JSON' });
-      return;
-    }
-    if (!sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
-      jsonResponse(res, 400, { error: 'Invalid subscription: missing endpoint or keys' });
-      return;
-    }
-    pushStorage.addSubscription(sub, function (err, existing) {
-      if (err) {
-        pushLog.error('failed to save subscription', { error: err.message });
-        jsonResponse(res, 500, { error: 'Failed to save subscription' });
-        return;
-      }
-      pushLog.info('subscription saved', { endpoint: sub.endpoint, existing: existing });
-      jsonResponse(res, existing ? 200 : 201, { ok: true, existing: !!existing });
-    });
-    return;
-  }
-
-  if (urlPath === '/api/push/unsubscribe' && req.method === 'POST') {
-    var data;
-    try { data = JSON.parse(body); } catch (e) {
-      jsonResponse(res, 400, { error: 'Invalid JSON' });
-      return;
-    }
-    if (!data.endpoint) {
-      jsonResponse(res, 400, { error: 'Missing endpoint' });
-      return;
-    }
-    pushStorage.removeSubscription(data.endpoint, function (err, removed) {
-      if (err) {
-        pushLog.error('failed to remove subscription', { error: err.message });
-        jsonResponse(res, 500, { error: 'Failed to remove subscription' });
-        return;
-      }
-      if (!removed) {
-        jsonResponse(res, 404, { error: 'Subscription not found' });
-        return;
-      }
-      pushLog.info('subscription removed', { endpoint: data.endpoint });
-      jsonResponse(res, 200, { ok: true });
-    });
-    return;
-  }
-
-  jsonResponse(res, 404, { error: 'Not found' });
-}
-
 // ── History API ──
 
 var db = null;
@@ -406,9 +289,7 @@ function resolveRoute(urlPath, method) {
   if (urlPath === '/api/device-config') return '/api/device-config';
   if (urlPath === '/api/history') return '/api/history';
   if (urlPath.startsWith('/api/rpc/')) return '/api/rpc/*';
-  if (urlPath.startsWith('/api/push/')) return '/api/push/*';
   if (urlPath === '/ws') return '/ws';
-  if (urlPath.startsWith('/playground/')) return '/playground/*';
   return urlPath;
 }
 
@@ -440,13 +321,7 @@ var server = http.createServer(function (req, res) {
   }
 
   // Login page and its assets — accessible without auth
-  if (urlPath === '/login.html' || urlPath === '/js/login.js' || urlPath === '/vendor/simplewebauthn-browser.mjs' || urlPath === '/vendor/qrcode-generator.mjs' || urlPath === '/css/style.css') {
-    serveStatic(req, res);
-    return;
-  }
-
-  // PWA resources — accessible without auth
-  if (urlPath === '/manifest.json' || urlPath === '/sw.js' || urlPath === '/offline.html' || urlPath.startsWith('/icons/')) {
+  if (urlPath === '/login.html' || urlPath === '/js/login.js' || urlPath === '/vendor/simplewebauthn-browser.mjs' || urlPath === '/vendor/qrcode-generator.mjs') {
     serveStatic(req, res);
     return;
   }
@@ -472,15 +347,7 @@ var server = http.createServer(function (req, res) {
   }
 
   // Authenticated routes
-  if (urlPath.startsWith('/api/push/')) {
-    if (req.method === 'GET') {
-      handlePushApi(req, res, urlPath, '');
-    } else {
-      readBody(req, function (body) {
-        handlePushApi(req, res, urlPath, body);
-      });
-    }
-  } else if (urlPath === '/api/device-config') {
+  if (urlPath === '/api/device-config') {
     readBody(req, function (body) {
       handleDeviceConfigApi(req, res, urlPath, body);
     });
@@ -569,46 +436,21 @@ function printBanner(port, networkIp) {
   console.log('');
 }
 
-// ── Valve poller + push notification delivery ──
-
-function sendValveNotification(change) {
-  if (!vapidReady) return;
-  var valveLabel = change.valve.toUpperCase();
-  var title = 'Valve ' + valveLabel + ' ' + change.state;
-  var body = valveLabel + ' changed to ' + change.state + ' (' + change.mode + ' mode)';
-  var payload = JSON.stringify({ title: title, body: body, tag: 'valve-change', data: change });
-
-  pushStorage.loadSubscriptions(function (err, subs) {
-    if (err) { pushLog.error('failed to load subscriptions', { error: err.message }); return; }
-    if (subs.length === 0) return;
-    pushLog.info('sending notifications', { valve: change.valve, state: change.state, subscribers: subs.length });
-    subs.forEach(function (sub) {
-      webpush.sendNotification(sub, payload).catch(function (sendErr) {
-        if (sendErr.statusCode === 404 || sendErr.statusCode === 410) {
-          pushLog.info('removing stale subscription', { endpoint: sub.endpoint, status: sendErr.statusCode });
-          pushStorage.removeSubscription(sub.endpoint, function () {});
-        } else {
-          pushLog.error('push delivery failed', { endpoint: sub.endpoint, status: sendErr.statusCode, error: sendErr.message });
-        }
-      });
-    });
-  });
-}
+// ── Valve poller ──
 
 function startValvePoller() {
   var started = valvePoller.start(
     function onChange(change) {
-      pushLog.info('valve state changed', change);
-      sendValveNotification(change);
+      log.info('valve state changed', change);
     },
     function onError(err) {
-      pushLog.warn('valve poll error', { error: err.message });
+      log.warn('valve poll error', { error: err.message });
     }
   );
   if (started) {
-    pushLog.info('valve poller started', { host: process.env.CONTROLLER_IP });
+    log.info('valve poller started', { host: process.env.CONTROLLER_IP });
   } else {
-    pushLog.info('valve poller not started (CONTROLLER_IP not set)');
+    log.info('valve poller not started (CONTROLLER_IP not set)');
   }
 }
 

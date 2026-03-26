@@ -12,8 +12,8 @@ var testFile = path.join(testDir, 'openvpn.conf');
 var sampleConfig = 'dev tun\nproto udp\nport 1194\nifconfig 10.10.10.1 10.10.10.2\n<secret>\ntestkey\n</secret>\n';
 
 function loadModule() {
-  delete require.cache[require.resolve('../monitor/lib/vpn-config')];
-  return require('../monitor/lib/vpn-config');
+  delete require.cache[require.resolve('../server/lib/vpn-config')];
+  return require('../server/lib/vpn-config');
 }
 
 describe('vpn-config CLI argument parsing', function () {

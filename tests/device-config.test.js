@@ -20,8 +20,8 @@ describe('device-config', () => {
     delete process.env.S3_SECRET_ACCESS_KEY;
     process.env.DEVICE_CONFIG_PATH = configPath;
 
-    delete require.cache[require.resolve('../monitor/lib/device-config.js')];
-    deviceConfig = require('../monitor/lib/device-config.js');
+    delete require.cache[require.resolve('../server/lib/device-config.js')];
+    deviceConfig = require('../server/lib/device-config.js');
     deviceConfig._reset();
   });
 
@@ -92,8 +92,8 @@ describe('device-config', () => {
 
         // Reload from disk
         deviceConfig._reset();
-        delete require.cache[require.resolve('../monitor/lib/device-config.js')];
-        const fresh = require('../monitor/lib/device-config.js');
+        delete require.cache[require.resolve('../server/lib/device-config.js')];
+        const fresh = require('../server/lib/device-config.js');
         fresh._reset();
         process.env.DEVICE_CONFIG_PATH = configPath;
         fresh.load(function (err3, loaded) {

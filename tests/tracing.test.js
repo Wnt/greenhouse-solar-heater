@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
-const tracingPath = path.resolve(__dirname, '../monitor/lib/tracing.js');
+const tracingPath = path.resolve(__dirname, '../server/lib/tracing.js');
 
 describe('tracing module', () => {
 
@@ -57,8 +57,8 @@ describe('tracing module', () => {
 describe('MQTT spans', () => {
   it('should create no-op spans without errors when OTel SDK is not initialized', () => {
     // Clear module cache to get fresh mqtt-bridge with OTel API
-    delete require.cache[require.resolve('../monitor/lib/mqtt-bridge.js')];
-    const mqttBridge = require('../monitor/lib/mqtt-bridge.js');
+    delete require.cache[require.resolve('../server/lib/mqtt-bridge.js')];
+    const mqttBridge = require('../server/lib/mqtt-bridge.js');
 
     // handleStateMessage uses no tracer spans directly, but the message handler does.
     // Calling handleStateMessage directly should not throw even without OTel SDK.
@@ -84,8 +84,8 @@ describe('MQTT spans', () => {
 
 describe('logger trace context injection', () => {
   it('should not include trace.id or span.id when no active span', () => {
-    delete require.cache[require.resolve('../monitor/lib/logger.js')];
-    const createLogger = require('../monitor/lib/logger.js');
+    delete require.cache[require.resolve('../server/lib/logger.js')];
+    const createLogger = require('../server/lib/logger.js');
     const log = createLogger('test');
 
     // Capture stdout
@@ -106,8 +106,8 @@ describe('logger trace context injection', () => {
   });
 
   it('should not throw when within active span (no-op tracer)', () => {
-    delete require.cache[require.resolve('../monitor/lib/logger.js')];
-    const createLogger = require('../monitor/lib/logger.js');
+    delete require.cache[require.resolve('../server/lib/logger.js')];
+    const createLogger = require('../server/lib/logger.js');
     const log = createLogger('test');
     const api = require('@opentelemetry/api');
     const tracer = api.trace.getTracer('test-logger');
@@ -189,11 +189,11 @@ describe('EU endpoint auto-detection', () => {
 
 describe('nr-config module', () => {
   beforeEach(() => {
-    delete require.cache[require.resolve('../monitor/lib/nr-config.js')];
+    delete require.cache[require.resolve('../server/lib/nr-config.js')];
   });
 
   it('should export load and store functions', () => {
-    const nrConfig = require('../monitor/lib/nr-config.js');
+    const nrConfig = require('../server/lib/nr-config.js');
     assert.strictEqual(typeof nrConfig.load, 'function');
     assert.strictEqual(typeof nrConfig.store, 'function');
   });
@@ -215,7 +215,7 @@ describe('nr-config module', () => {
     delete process.env.S3_ACCESS_KEY_ID;
     delete process.env.S3_SECRET_ACCESS_KEY;
 
-    const nrConfig = require('../monitor/lib/nr-config.js');
+    const nrConfig = require('../server/lib/nr-config.js');
     nrConfig.load(function (err) {
       // Restore env
       if (origEndpoint) process.env.S3_ENDPOINT = origEndpoint;

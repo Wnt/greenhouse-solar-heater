@@ -2,20 +2,22 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install curl for healthcheck
-RUN apk add --no-cache curl
+# Install curl for healthcheck, python3 for Shelly script deploy
+RUN apk add --no-cache curl python3
 
 # Copy package files and install production dependencies
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# Copy application code
-COPY monitor/ ./monitor/
+# Copy server code
+COPY server/ ./server/
 
-# Copy playground and its runtime dependencies (system.yaml, control logic)
+# Copy playground (main app) and its runtime dependencies
 COPY playground/ ./playground/
 COPY system.yaml ./
-COPY shelly/control-logic.js ./shelly/
+
+# Copy Shelly scripts (for simulation support and device deployment)
+COPY shelly/ ./shelly/
 
 # Make app directory owned by node user
 RUN chown -R node:node /app
@@ -33,4 +35,4 @@ ENV PORT=3000
 # Run as non-root user (node user is built into node:alpine, UID 1000)
 USER node
 
-CMD ["node", "--require", "./monitor/lib/tracing.js", "monitor/server.js"]
+CMD ["node", "--require", "./server/lib/tracing.js", "server/server.js"]

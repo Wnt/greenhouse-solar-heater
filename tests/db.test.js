@@ -11,7 +11,7 @@ describe('db module', () => {
   beforeEach(() => {
     capturedQueries = [];
     // Clear module cache to get fresh state
-    delete require.cache[require.resolve('../monitor/lib/db.js')];
+    delete require.cache[require.resolve('../server/lib/db.js')];
 
     // Mock pg module
     const mockPool = {
@@ -39,7 +39,7 @@ describe('db module', () => {
       exports: { Pool: function () { return mockPool; } },
     };
 
-    db = require('../monitor/lib/db.js');
+    db = require('../server/lib/db.js');
   });
 
   it('initSchema runs all schema SQL statements', (t, done) => {
@@ -59,8 +59,8 @@ describe('db module', () => {
     db._reset();
 
     // Re-require with mock still in place
-    delete require.cache[require.resolve('../monitor/lib/db.js')];
-    db = require('../monitor/lib/db.js');
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
 
     const ts = new Date('2024-01-01T12:00:00Z');
     db.insertSensorReadings(ts, {
@@ -81,8 +81,8 @@ describe('db module', () => {
   it('insertSensorReadings skips null values', (t, done) => {
     process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
     db._reset();
-    delete require.cache[require.resolve('../monitor/lib/db.js')];
-    db = require('../monitor/lib/db.js');
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
 
     const ts = new Date();
     db.insertSensorReadings(ts, {
@@ -101,8 +101,8 @@ describe('db module', () => {
   it('insertStateEvent stores event with correct parameters', (t, done) => {
     process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
     db._reset();
-    delete require.cache[require.resolve('../monitor/lib/db.js')];
-    db = require('../monitor/lib/db.js');
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
 
     const ts = new Date();
     db.insertStateEvent(ts, 'mode', 'mode', 'idle', 'solar_charging', function (err) {

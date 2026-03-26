@@ -5,7 +5,7 @@ test.describe('PoC Login Page', () => {
     const jsErrors = [];
     page.on('pageerror', (err) => jsErrors.push(err.message));
 
-    await page.goto('/monitor/login.html', { waitUntil: 'load' });
+    await page.goto('/playground/login.html', { waitUntil: 'load' });
 
     // If simplewebauthn module fails to load, we get a JS error
     // instead of the graceful "browser does not support" message
@@ -13,7 +13,7 @@ test.describe('PoC Login Page', () => {
   });
 
   test('shows error message (module loaded correctly)', async ({ page }) => {
-    await page.goto('/monitor/login.html', { waitUntil: 'load' });
+    await page.goto('/playground/login.html', { waitUntil: 'load' });
 
     // Without a backend, checkStatus() fails with a fetch error.
     // The key assertion is that the error is a *handled* message in the
@@ -33,7 +33,7 @@ test.describe('PoC Login Page', () => {
   });
 
   test('login and register buttons are present', async ({ page }) => {
-    await page.goto('/monitor/login.html', { waitUntil: 'load' });
+    await page.goto('/playground/login.html', { waitUntil: 'load' });
 
     await expect(page.locator('#login-btn')).toBeAttached();
     await expect(page.locator('#register-btn')).toBeAttached();

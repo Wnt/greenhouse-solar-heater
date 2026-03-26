@@ -49,8 +49,8 @@ describe('db-config', () => {
     process.env.S3_ACCESS_KEY_ID = 'test-key';
     process.env.S3_SECRET_ACCESS_KEY = 'test-secret';
 
-    delete require.cache[require.resolve('../monitor/lib/db-config.js')];
-    dbConfig = require('../monitor/lib/db-config.js');
+    delete require.cache[require.resolve('../server/lib/db-config.js')];
+    dbConfig = require('../server/lib/db-config.js');
     dbConfig._resetClient();
   });
 
@@ -91,8 +91,8 @@ describe('db-config', () => {
   it('fails when S3 is not configured', (t, done) => {
     delete process.env.S3_ENDPOINT;
     dbConfig._resetClient();
-    delete require.cache[require.resolve('../monitor/lib/db-config.js')];
-    dbConfig = require('../monitor/lib/db-config.js');
+    delete require.cache[require.resolve('../server/lib/db-config.js')];
+    dbConfig = require('../server/lib/db-config.js');
 
     dbConfig.load(function (err) {
       assert.ok(err);
