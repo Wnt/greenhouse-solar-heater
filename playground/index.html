@@ -321,28 +321,37 @@
             <label class="device-config-label">Controls Enabled</label>
             <div class="device-toggle" id="dc-ce" data-field="ce"></div>
           </div>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin:-4px 0 8px;">Master switch for all hardware control. When disabled, the controller monitors sensors but does not actuate any relays &mdash; valves stay closed, pump stays off. Use this to safely disable all automation while keeping monitoring active.</p>
+
           <h4 style="margin:20px 0 12px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Enabled Actuators</h4>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin-bottom:8px;">Selectively enable or disable individual actuators. Disabled actuators will not be activated by any operating mode, even if the mode would normally use them.</p>
           <div class="device-config-row"><label class="device-config-label">Valves</label><div class="device-toggle" id="dc-ea-v" data-bit="1"></div></div>
+          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Motorized ball valves that direct water flow between tank, collectors, and radiators.</p>
           <div class="device-config-row"><label class="device-config-label">Pump</label><div class="device-toggle" id="dc-ea-p" data-bit="2"></div></div>
+          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Circulation pump that moves water through the system.</p>
           <div class="device-config-row"><label class="device-config-label">Fan</label><div class="device-toggle" id="dc-ea-f" data-bit="4"></div></div>
+          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Greenhouse ventilation fan for forced air circulation.</p>
           <div class="device-config-row"><label class="device-config-label">Space Heater</label><div class="device-toggle" id="dc-ea-sh" data-bit="8"></div></div>
+          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Electric space heater for greenhouse backup heating.</p>
           <div class="device-config-row"><label class="device-config-label">Immersion Heater</label><div class="device-toggle" id="dc-ea-ih" data-bit="16"></div></div>
+          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Electric immersion heater in the water tank for direct water heating.</p>
 
           <h4 style="margin:20px 0 12px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Mode Override</h4>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin-bottom:8px;">Override automatic mode selection. When set, the controller stays in the selected mode regardless of sensor readings. Set to Automatic to restore normal operation.</p>
           <div class="device-config-row">
             <label class="device-config-label">Forced Mode</label>
             <select id="dc-fm" class="device-select">
               <option value="">Automatic</option>
-              <option value="I">Idle</option>
-              <option value="SC">Solar Charging</option>
-              <option value="GH">Greenhouse Heating</option>
-              <option value="AD">Active Drain</option>
-              <option value="EH">Emergency Heating</option>
+              <option value="I">Idle &mdash; monitors only, all actuators off</option>
+              <option value="SC">Solar Charging &mdash; circulates water through collectors to capture solar heat</option>
+              <option value="GH">Greenhouse Heating &mdash; circulates hot water through radiators</option>
+              <option value="AD">Active Drain &mdash; drains collectors to prevent freezing</option>
+              <option value="EH">Emergency Heating &mdash; activates backup electric heating</option>
             </select>
           </div>
 
           <h4 style="margin:20px 0 12px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Allowed Modes</h4>
-          <p style="font-size:12px;color:var(--on-surface-variant);margin-bottom:8px;">Uncheck modes to prevent automation from selecting them. Leave all checked for unrestricted.</p>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin-bottom:8px;">Restrict which modes the automation can select. Unchecked modes will never be activated automatically. The forced mode override is not affected by this setting.</p>
           <div class="device-config-checks">
             <label class="device-check"><input type="checkbox" id="dc-am-I" value="I" checked> Idle</label>
             <label class="device-check"><input type="checkbox" id="dc-am-SC" value="SC" checked> Solar Charging</label>
@@ -723,18 +732,41 @@
       };
     }
 
-    // ── Navigation ──
+    // ── Navigation (hash-based deep linking) ──
+    const VALID_VIEWS = ['status', 'components', 'schematic', 'controls', 'device'];
+
+    function navigateToView(viewId) {
+      if (!VALID_VIEWS.includes(viewId)) viewId = 'status';
+      // Device view requires live mode — fall back to status if not available
+      const deviceNav = document.querySelector('[data-view="device"]');
+      if (viewId === 'device' && deviceNav && deviceNav.style.display === 'none') {
+        viewId = 'status';
+      }
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById('view-' + viewId).classList.add('active');
+      document.querySelectorAll('[data-view]').forEach(l => l.classList.remove('active'));
+      document.querySelectorAll(`[data-view="${viewId}"]`).forEach(l => l.classList.add('active'));
+    }
+
     function setupNavigation() {
+      // Click handler: update hash (triggers hashchange → navigateToView)
       document.querySelectorAll('[data-view]').forEach(link => {
         link.addEventListener('click', (e) => {
           e.preventDefault();
-          const viewId = link.dataset.view;
-          document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-          document.getElementById('view-' + viewId).classList.add('active');
-          document.querySelectorAll('[data-view]').forEach(l => l.classList.remove('active'));
-          document.querySelectorAll(`[data-view="${viewId}"]`).forEach(l => l.classList.add('active'));
+          window.location.hash = link.dataset.view;
         });
       });
+
+      // Hash change handler: navigate to the view in the hash
+      window.addEventListener('hashchange', () => {
+        const viewId = window.location.hash.replace('#', '') || 'status';
+        navigateToView(viewId);
+      });
+
+      // Initial view from hash (or default to status)
+      const initialView = window.location.hash.replace('#', '') || 'status';
+      if (window.location.hash === '') window.location.hash = 'status';
+      navigateToView(initialView);
     }
 
     // ── FAB ──
