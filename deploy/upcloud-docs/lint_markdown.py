@@ -47,6 +47,11 @@ def lint_file(path: Path, fix: bool = False):
         lineno = text[:m.start()].count("\n") + 1
         issues.append((lineno, "excessive blank lines"))
 
+    # 6. Leaked secrets (Aiven service passwords)
+    for m in re.finditer(r"AVNS_[A-Za-z0-9_/+-]{8,}", text):
+        lineno = text[:m.start()].count("\n") + 1
+        issues.append((lineno, f"possible secret: {m.group()[:20]}..."))
+
     if fix and issues:
         fixed = text
         # Fix multi-line links
@@ -66,6 +71,9 @@ def lint_file(path: Path, fix: bool = False):
         # Fix bare read more
         fixed = re.sub(r"^[ \t]*Read more[ \t]*$", "", fixed, flags=re.MULTILINE | re.IGNORECASE)
         fixed = re.sub(r"^[ \t]*Learn more[ \t]*$", "", fixed, flags=re.MULTILINE | re.IGNORECASE)
+
+        # Redact secrets
+        fixed = re.sub(r"AVNS_[A-Za-z0-9_/+-]{8,}", "EXAMPLE_PASSWORD", fixed)
 
         if fixed != text:
             path.write_text(fixed, encoding="utf-8")

@@ -128,6 +128,10 @@ def _lint_markdown(text: str) -> str:
     # 4. Remove trailing whitespace on lines
     text = re.sub(r"[ \t]+$", "", text, flags=re.MULTILINE)
 
+    # 5. Redact strings that look like secrets (API keys, service passwords)
+    #    Aiven/UpCloud service passwords: AVNS_<base64-ish>
+    text = re.sub(r"AVNS_[A-Za-z0-9_/+-]{8,}", "EXAMPLE_PASSWORD", text)
+
     return text
 
 
