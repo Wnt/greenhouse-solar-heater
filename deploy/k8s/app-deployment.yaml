@@ -64,6 +64,11 @@ spec:
         # ── OpenVPN sidecar ──
         - name: openvpn
           image: ghcr.io/wnt/greenhouse-solar-heater-openvpn:latest
+          ports:
+            - name: openvpn
+              containerPort: 1194
+              hostPort: 1194
+              protocol: UDP
           securityContext:
             capabilities:
               add:

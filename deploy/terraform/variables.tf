@@ -70,6 +70,11 @@ variable "ssh_public_key" {
   default     = ""
 }
 
+variable "vpn_allowed_cidrs" {
+  description = "List of CIDRs allowed to connect to OpenVPN port 1194/UDP (e.g. your home network's public IP). Enforced via CiliumNetworkPolicy."
+  type        = list(string)
+}
+
 variable "openvpn_config_file" {
   description = "Path to OpenVPN configuration file. Download from S3 with: node server/lib/vpn-config.js download openvpn.conf"
   type        = string

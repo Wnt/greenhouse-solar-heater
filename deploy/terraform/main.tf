@@ -332,6 +332,57 @@ resource "kubernetes_config_map" "app_config" {
   depends_on = [upcloud_kubernetes_node_group.default]
 }
 
+# ── OpenVPN Network Policy ──
+# CiliumNetworkPolicy restricting UDP 1194 to whitelisted CIDRs only.
+# Uses null_resource + kubectl because kubernetes_manifest CRDs require
+# a live cluster connection during plan (fails on first apply).
+
+resource "null_resource" "openvpn_network_policy" {
+  triggers = {
+    cidrs    = jsonencode(var.vpn_allowed_cidrs)
+    kubeconfig = data.upcloud_kubernetes_cluster.main.kubeconfig
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      TMPKUBE=$(mktemp) && echo "$KUBECONFIG_DATA" > "$TMPKUBE" && \
+      kubectl --kubeconfig="$TMPKUBE" apply -f - <<'YAML'
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: greenhouse-ingress
+spec:
+  endpointSelector:
+    matchLabels:
+      app: greenhouse
+  ingress:
+    - fromCIDR: ${jsonencode(var.vpn_allowed_cidrs)}
+      toPorts:
+        - ports:
+            - port: "1194"
+              protocol: UDP
+    - toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+    - toPorts:
+        - ports:
+            - port: "1883"
+              protocol: TCP
+YAML
+      rm -f "$TMPKUBE"
+    EOT
+    environment = {
+      KUBECONFIG_DATA = data.upcloud_kubernetes_cluster.main.kubeconfig
+    }
+  }
+
+  depends_on = [
+    upcloud_kubernetes_node_group.default,
+    helm_release.ingress_nginx,
+  ]
+}
+
 resource "kubernetes_config_map" "mosquitto_config" {
   metadata {
     name = "mosquitto-config"

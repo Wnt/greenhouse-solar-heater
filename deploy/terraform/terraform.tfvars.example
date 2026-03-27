@@ -29,6 +29,10 @@ session_secret = "REPLACE_ME"
 # Find your IP: curl -s ifconfig.me
 control_plane_ip_filter = ["your.public.ip/32"]
 
+# Restrict OpenVPN (UDP 1194) to your IoT/home network's public IP (REQUIRED)
+# Enforced via CiliumNetworkPolicy — port 1194 is invisible to all other IPs
+vpn_allowed_cidrs = ["your.home.network.ip/32"]
+
 # Required environment variable (not in tfvars for security):
 #   export UPCLOUD_TOKEN="your-api-token"
 #
