@@ -38,5 +38,5 @@ control_plane_ip_filter = ["your.public.ip/32"]
 # After `terraform apply`, get the kubeconfig:
 #   terraform output -raw kubeconfig > ~/.kube/config
 #
-# Point your domain's A record to the worker node IP:
-#   terraform output cluster_host
+# Get the worker node's public IP for your DNS A record:
+#   eval $(terraform output -raw worker_node_ip_command)

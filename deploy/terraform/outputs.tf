@@ -58,3 +58,8 @@ output "cluster_name" {
   description = "UKS cluster name"
   value       = upcloud_kubernetes_cluster.main.name
 }
+
+output "worker_node_ip_command" {
+  description = "Run this command to get the worker node's public IP for DNS"
+  value       = "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"ExternalIP\")].address}'"
+}
