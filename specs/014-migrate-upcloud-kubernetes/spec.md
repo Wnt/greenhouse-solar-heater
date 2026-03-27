@@ -148,17 +148,17 @@ As the system operator, I want a clear cost comparison between the current singl
 | Resource               | Plan / Config                          | Est. Cost (EUR) |
 | ---------------------- | -------------------------------------- | --------------- |
 | UKS Control Plane      | Development (free, up to 30 nodes)     | 0               |
-| Worker Node             | 1x General Purpose 2xCPU-2GB          | 15              |
+| Worker Node            | 1x Developer DEV-1xCPU-1GB            | 3-5             |
 | Managed PostgreSQL     | 1x1xCPU-1GB-10GB (unchanged)           | 10-15           |
 | Managed Object Storage | 250 GB minimum (unchanged)             | 2-5             |
-| **Total**              |                                        | **27-35**       |
+| **Total**              |                                        | **15-25**       |
 
-Note: No managed load balancer — HTTPS is handled by an Ingress controller exposed via NodePort on the worker node's public IP. No NAT gateway — worker node has a public IP.
+Note: No managed load balancer — HTTPS is handled by an Ingress controller exposed via NodePort on the worker node's public IP. No NAT gateway — worker node has a public IP. Worker node RAM (1GB) will be tight with Kubernetes system components (kubelet, Cilium CNI); if pods are evicted due to memory pressure, upgrading to a 2GB node is the fallback.
 
 ### Cost Impact Summary
 
-- **Kubernetes setup**: ~1.5-2x increase over current costs (EUR 27-35 vs EUR 15-25/month). The free development control plane, a single worker node, and no load balancer keep costs close to the current baseline.
-- **Primary cost driver**: The worker node (EUR 15/month) replaces the current DEV server (EUR 3-5/month). The 2xCPU-2GB General Purpose plan provides enough resources to run all workloads on a single node.
+- **Kubernetes setup**: Approximately the same cost as current infrastructure (EUR 15-25/month). The free development control plane, cheapest worker node, and no load balancer match the current baseline.
+- **Risk**: The DEV-1xCPU-1GB worker node has limited RAM. Kubernetes system components consume ~300-500MB, leaving limited headroom for application workloads. If memory pressure causes pod evictions, the node plan should be upgraded.
 - **No HA required**: High availability is explicitly out of scope. Single worker node, single database node, development control plane.
 
 ## Clarifications
@@ -167,6 +167,7 @@ Note: No managed load balancer — HTTPS is handled by an Ingress controller exp
 
 - Q: How should the app reach Shelly devices through the VPN in Kubernetes (replacing Docker's network_mode sharing)? → A: Sidecar — OpenVPN runs as a second container in the same pod as the app, sharing the network namespace.
 - Q: How should HTTPS/TLS termination work to minimize cost? → A: Ingress controller (Cilium Gateway or NGINX Ingress) with NodePort on the worker node's public IP. No managed load balancer.
+- Q: Which worker node plan to use? → A: Developer DEV-1xCPU-1GB (~EUR 3-5/month) — cheapest option, matching current server plan. RAM will be tight with K8s system components.
 
 ## Assumptions
 
