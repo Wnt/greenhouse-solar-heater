@@ -1,8 +1,5 @@
-# SSH public key for server access
-ssh_public_key = "ssh-ed25519 AAAA..."
-
-# Allow SSH from this IP address (optional — leave commented out to disable SSH access)
-# ssh_allow_ip = "your.ip.address.here"
+# SSH public key for worker node access (optional — leave commented out to disable)
+# ssh_public_key = "ssh-ed25519 AAAA..."
 
 # Domain name for the monitoring UI
 domain = "greenhouse.madekivi.fi"
@@ -13,17 +10,26 @@ github_repo = "Wnt/greenhouse-solar-heater"
 # Session secret for signed cookies (generate with: openssl rand -hex 32)
 session_secret = "REPLACE_ME"
 
+# Email address for Let's Encrypt certificate notifications
+letsencrypt_email = "you@example.com"
+
 # UpCloud zone (default: fi-hel1 = Helsinki)
 # upcloud_zone = "fi-hel1"
-
-# UpCloud server plan (default: DEV-1xCPU-1GB-10GB, €3/month, limit 2 per account)
-# server_plan = "DEV-1xCPU-1GB-10GB"
 
 # Object Storage region (default: europe-1)
 # objsto_region = "europe-1"
 
-# Enable WireGuard VPN (default: false — enable when ready for on-site device access)
-# enable_vpn = false
+# Kubernetes version (default: 1.32)
+# k8s_version = "1.32"
+
+# Worker node plan (default: DEV-1xCPU-1GB-10GB, ~€3/month)
+# node_plan = "DEV-1xCPU-1GB-10GB"
+
+# Number of worker nodes (default: 1)
+# node_count = 1
+
+# Restrict Kubernetes API access to specific IPs (default: unrestricted)
+# control_plane_ip_filter = ["your.ip.address/32"]
 
 # Required environment variable (not in tfvars for security):
 #   export UPCLOUD_TOKEN="your-api-token"
@@ -31,5 +37,8 @@ session_secret = "REPLACE_ME"
 # Create an API token in UpCloud Control Panel > Account > API Tokens.
 # See: https://upcloud.com/docs/guides/managing-api-tokens/
 #
-# After `terraform apply`, note the server_ip output and create
-# an A record in your DNS pointing your domain to that IP.
+# After `terraform apply`, get the kubeconfig:
+#   terraform output -raw kubeconfig > ~/.kube/config
+#
+# Point your domain's A record to the worker node IP:
+#   terraform output cluster_host
