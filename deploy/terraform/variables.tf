@@ -44,7 +44,7 @@ variable "new_relic_license_key" {
 variable "k8s_version" {
   description = "Kubernetes version for the UKS cluster (check UpCloud docs for versions supported by your plan)"
   type        = string
-  default     = "1.30"
+  default     = "1.34"
 }
 
 variable "node_plan" {
