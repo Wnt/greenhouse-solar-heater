@@ -356,7 +356,7 @@ resource "kubernetes_config_map" "mosquitto_config" {
 
   data = {
     "mosquitto.conf" = <<-EOT
-      listener 1883 127.0.0.1
+      listener 1883 0.0.0.0
       allow_anonymous true
     EOT
   }

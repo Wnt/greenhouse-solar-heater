@@ -32,12 +32,18 @@ spec:
             - -c
             - |
               apk add --no-cache iptables > /dev/null 2>&1
+              # VPN port: allow only whitelisted CIDRs
               IFS=',' ; for cidr in $VPN_ALLOWED_CIDRS; do
                 iptables -A INPUT -p udp --dport 1194 -s "$cidr" -j ACCEPT
                 echo "iptables: ACCEPT udp/1194 from $cidr"
               done
               iptables -A INPUT -p udp --dport 1194 -j DROP
               echo "iptables: DROP udp/1194 from all other sources"
+              # MQTT port: allow localhost (app) and VPN subnet (Shelly devices), drop external
+              iptables -A INPUT -p tcp --dport 1883 -s 127.0.0.0/8 -j ACCEPT
+              iptables -A INPUT -p tcp --dport 1883 -s 192.168.0.0/16 -j ACCEPT
+              iptables -A INPUT -p tcp --dport 1883 -j DROP
+              echo "iptables: ACCEPT tcp/1883 from localhost + 192.168.0.0/16, DROP rest"
               iptables -L INPUT -n -v
           envFrom:
             - configMapRef:
