@@ -207,6 +207,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - N/A — no data model changes (012-secure-rpc-api)
 - JavaScript ES6+ (browser modules), Node.js 20 LTS (CommonJS server), ES5 (Shelly scripts), POSIX shell (deploy scripts) + `ws` (WebSocket), `mqtt` (MQTT client), `pg` (PostgreSQL), `@aws-sdk/client-s3`, `@opentelemetry/*`, `@simplewebauthn/server` — removed `web-push` (013-remove-monitor-app)
 - PostgreSQL/TimescaleDB (sensor history), UpCloud S3-compatible Object Storage (config persistence) (013-remove-monitor-app)
+- HCL (Terraform >= 1.5), YAML (Kubernetes manifests), POSIX shell (CI scripts), Node.js 20 LTS (app, unchanged) + UpCloud Terraform provider ~> 5.0, Kubernetes provider ~> 2.24, Helm provider ~> 2.12, kubectl, cert-manager, NGINX Ingress controller (014-migrate-upcloud-kubernetes)
+- UpCloud Managed PostgreSQL with TimescaleDB (unchanged), UpCloud Managed Object Storage (unchanged) (014-migrate-upcloud-kubernetes)
 
 ## Cloud Deployment Architecture
 
@@ -278,6 +280,6 @@ The deployer picks up the key from S3 within 5 minutes and restarts containers w
 - PostgreSQL health — via nri-postgresql integration
 
 ## Recent Changes
+- 014-migrate-upcloud-kubernetes: Added HCL (Terraform >= 1.5), YAML (Kubernetes manifests), POSIX shell (CI scripts), Node.js 20 LTS (app, unchanged) + UpCloud Terraform provider ~> 5.0, Kubernetes provider ~> 2.24, Helm provider ~> 2.12, kubectl, cert-manager, NGINX Ingress controller
 - 013-remove-monitor-app: Removed monitor web UI, push notifications, PoC Shelly scripts, PWA artifacts. Promoted playground as main app served at `/` behind passkey auth. Added URL hash deep linking for all views. Added device config explanations. Moved server code from `monitor/` to `server/`. Removed `web-push` dependency. Added Shelly script deployment to Docker image.
 - 012-secure-rpc-api: Added JavaScript — Node.js 20 LTS (CommonJS server), ES6+ (browser modules) + Node.js `http` module (server), browser `fetch` API (client). No new dependencies.
-- 011-newrelic-observability: Added Node.js 20 LTS (CommonJS server, ES6+ browser modules) + `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/exporter-metrics-otlp-http`, `@opentelemetry/exporter-logs-otlp-http`
