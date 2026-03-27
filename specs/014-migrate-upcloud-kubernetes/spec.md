@@ -102,7 +102,7 @@ As the system operator, I want a clear cost comparison between the current singl
 - **FR-001**: System MUST provision an UpCloud Managed Kubernetes cluster via Terraform, including the control plane and at least one node group.
 - **FR-002**: System MUST deploy the application (Node.js server), MQTT broker (Mosquitto), and reverse proxy or ingress controller as Kubernetes workloads.
 - **FR-003**: System MUST maintain VPN connectivity to the home LAN Shelly devices via an OpenVPN sidecar container in the same pod as the app (shared network namespace), so that RPC proxy and MQTT bridge continue to function.
-- **FR-004**: System MUST expose the web application via HTTPS with valid TLS certificates on the configured domain.
+- **FR-004**: System MUST expose the web application via HTTPS with valid TLS certificates on the configured domain, using a Kubernetes Ingress controller with NodePort (no managed load balancer).
 - **FR-005**: System MUST manage application secrets (DATABASE_URL, S3 credentials, SESSION_SECRET, New Relic license key) via Kubernetes Secrets.
 - **FR-006**: System MUST manage non-secret application configuration (PORT, AUTH_ENABLED, DOMAIN, RPID, ORIGIN, MQTT_HOST) via Kubernetes ConfigMaps.
 - **FR-007**: System MUST preserve the existing Managed PostgreSQL (TimescaleDB) and Managed Object Storage resources, connecting to them from the Kubernetes cluster over private networking.
@@ -143,47 +143,37 @@ As the system operator, I want a clear cost comparison between the current singl
 | Managed Object Storage | 250 GB minimum        | 2-5             |
 | **Total**              |                       | **15-25**       |
 
-### Kubernetes Infrastructure — Minimal (Monthly)
+### Kubernetes Infrastructure — Minimal Cost (Monthly)
 
-| Resource               | Plan / Config                   | Est. Cost (EUR) |
-| ---------------------- | ------------------------------- | --------------- |
-| UKS Control Plane      | Development (free)              | 0               |
-| Worker Node(s)         | 1-2x General Purpose 2xCPU-2GB | 15-30           |
-| Managed Load Balancer  | Development (1 node)            | 10-20           |
-| Managed PostgreSQL     | 1x1xCPU-1GB-10GB (unchanged)   | 10-15           |
-| Managed Object Storage | 250 GB minimum (unchanged)     | 2-5             |
-| **Total**              |                                 | **37-70**       |
+| Resource               | Plan / Config                          | Est. Cost (EUR) |
+| ---------------------- | -------------------------------------- | --------------- |
+| UKS Control Plane      | Development (free, up to 30 nodes)     | 0               |
+| Worker Node             | 1x General Purpose 2xCPU-2GB          | 15              |
+| Managed PostgreSQL     | 1x1xCPU-1GB-10GB (unchanged)           | 10-15           |
+| Managed Object Storage | 250 GB minimum (unchanged)             | 2-5             |
+| **Total**              |                                        | **27-35**       |
 
-### Kubernetes Infrastructure — Production HA (Monthly)
-
-| Resource               | Plan / Config                  | Est. Cost (EUR) |
-| ---------------------- | ------------------------------ | --------------- |
-| UKS Control Plane      | Production (HA)                | 50-150          |
-| Worker Nodes           | 3x General Purpose 2xCPU-2GB  | 45              |
-| Managed Load Balancer  | Production-S (2 nodes)         | 20-40           |
-| NAT Gateway            | Standard (if private nodes)    | 20-30           |
-| Managed PostgreSQL     | 2x2xCPU-4GB-50GB (HA)         | 80-120          |
-| Managed Object Storage | 250 GB minimum (unchanged)    | 2-5             |
-| **Total**              |                                | **217-390**     |
+Note: No managed load balancer — HTTPS is handled by an Ingress controller exposed via NodePort on the worker node's public IP. No NAT gateway — worker node has a public IP.
 
 ### Cost Impact Summary
 
-- **Minimal Kubernetes setup**: ~2-3x increase over current costs (EUR 37-70 vs EUR 15-25/month). The free development control plane and a single worker node keep costs manageable.
-- **Production HA setup**: ~10-15x increase (EUR 217-390 vs EUR 15-25/month). High availability for both the Kubernetes control plane and database drives the bulk of the increase.
-- **Recommended approach**: Start with the minimal setup (development control plane, 1-2 worker nodes, development load balancer, existing database) to validate the migration at roughly EUR 40-50/month, then scale up if high availability becomes a requirement.
+- **Kubernetes setup**: ~1.5-2x increase over current costs (EUR 27-35 vs EUR 15-25/month). The free development control plane, a single worker node, and no load balancer keep costs close to the current baseline.
+- **Primary cost driver**: The worker node (EUR 15/month) replaces the current DEV server (EUR 3-5/month). The 2xCPU-2GB General Purpose plan provides enough resources to run all workloads on a single node.
+- **No HA required**: High availability is explicitly out of scope. Single worker node, single database node, development control plane.
 
 ## Clarifications
 
 ### Session 2026-03-27
 
 - Q: How should the app reach Shelly devices through the VPN in Kubernetes (replacing Docker's network_mode sharing)? → A: Sidecar — OpenVPN runs as a second container in the same pod as the app, sharing the network namespace.
+- Q: How should HTTPS/TLS termination work to minimize cost? → A: Ingress controller (Cilium Gateway or NGINX Ingress) with NodePort on the worker node's public IP. No managed load balancer.
 
 ## Assumptions
 
 - The UpCloud Managed Kubernetes development plan (free control plane, up to 30 nodes) is sufficient for the initial migration. The production plan can be adopted later if HA is needed.
 - The existing Managed PostgreSQL and Object Storage resources will be reused without changes — only the client connectivity path changes (from cloud server to Kubernetes pods via private network).
 - The VPN connectivity to Shelly devices will be maintained by running OpenVPN as a sidecar container in the app pod (shared network namespace, NET_ADMIN capability, /dev/net/tun access), mirroring the current Docker Compose `network_mode: "service:openvpn"` pattern.
-- The Caddy reverse proxy may be replaced by a Kubernetes-native ingress controller for TLS termination, reducing the number of custom containers.
+- The Caddy reverse proxy is replaced by a Kubernetes Ingress controller (Cilium Gateway or NGINX Ingress) with cert-manager for Let's Encrypt TLS, exposed via NodePort on the worker node's public IP. No managed load balancer is used.
 - Shelly script deployment from CI will be handled by a Kubernetes Job that runs during the CD pipeline, replacing the deployer's VPN-based deployment step.
 - Cost estimates are based on UpCloud's published pricing as of March 2026. Actual costs may vary based on usage patterns and pricing changes.
 - The MQTT broker (Mosquitto) does not require persistent storage — it operates as a stateless message relay with volatile tmpfs storage, matching the current configuration.
