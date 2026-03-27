@@ -10,9 +10,6 @@ github_repo = "Wnt/greenhouse-solar-heater"
 # Session secret for signed cookies (generate with: openssl rand -hex 32)
 session_secret = "REPLACE_ME"
 
-# Email address for Let's Encrypt certificate notifications
-letsencrypt_email = "you@example.com"
-
 # UpCloud zone (default: fi-hel1 = Helsinki)
 # upcloud_zone = "fi-hel1"
 

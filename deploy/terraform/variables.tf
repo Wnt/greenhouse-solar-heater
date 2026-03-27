@@ -70,11 +70,6 @@ variable "ssh_public_key" {
   default     = ""
 }
 
-variable "letsencrypt_email" {
-  description = "Email address for Let's Encrypt certificate notifications"
-  type        = string
-}
-
 variable "openvpn_config" {
   description = "OpenVPN configuration file content. Populate after initial setup or pass from a file."
   type        = string

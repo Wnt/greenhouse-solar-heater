@@ -262,35 +262,9 @@ resource "helm_release" "cert_manager" {
 }
 
 # ── Let's Encrypt ClusterIssuer ──
-# HTTP-01 solver via NGINX Ingress controller.
-
-resource "kubernetes_manifest" "letsencrypt_issuer" {
-  manifest = {
-    apiVersion = "cert-manager.io/v1"
-    kind       = "ClusterIssuer"
-    metadata = {
-      name = "letsencrypt-prod"
-    }
-    spec = {
-      acme = {
-        server = "https://acme-v02.api.letsencrypt.org/directory"
-        email  = var.letsencrypt_email
-        privateKeySecretRef = {
-          name = "letsencrypt-account-key"
-        }
-        solvers = [{
-          http01 = {
-            ingress = {
-              class = "nginx"
-            }
-          }
-        }]
-      }
-    }
-  }
-
-  depends_on = [helm_release.cert_manager]
-}
+# Deployed as a K8s manifest (deploy/k8s/cluster-issuer.yaml) via kubectl
+# after terraform apply, because kubernetes_manifest requires an active
+# cluster connection during plan which fails on first apply.
 
 # ── Kubernetes Secrets ──
 
