@@ -1,0 +1,62 @@
+# Supported PostgreSQL extensions
+
+Managed Database using PostgreSQL® supports the following extensions.
+
+- `address_standardizer`
+- `address_standardizer_data_us`
+- `aiven_extras`
+- `bloom`
+- `btree_gin`
+- `btree_gist`
+- `chkpass`
+- `citext`
+- `cube`
+- `dblink`
+- `dict_int`
+- `earthdistance`
+- `fuzzystrmatch`
+- `hll`
+- `hstore`
+- `intagg`
+- `intarray`
+- `isn`
+- `ltree`
+- `pg_buffercache`
+- `pg_cron`
+- `pg_partman`
+- `pg_prometheus`
+- `pg_repack`
+- `pg_similarity`
+- `pg_stat_statements`
+- `pg_trgm`
+- `pg_buffercache`
+- `pgaudit`
+- `pgcrypto`
+- `pgrouting`
+- `pgrowlocks`
+- `pgstattuple`
+- `plcoffee`
+- `plls`
+- `plperl`
+- `plpgsql`
+- `postgres_fdw`
+- `postgis`
+- `postgis_legacy`
+- `postgis_raster`
+- `postgis_sfcgal`
+- `postgis_tiger_geocoder`
+- `postgis_topology`
+- `promscale`
+- `rum`
+- `sslinfo`
+- `tablefunc`
+- `timescale_analytics`
+- `timescaledb`
+- `tsearch2`
+- `tsm_system_rows`
+- `unaccent`
+- `unit`
+- `uuid-ossp`
+- `vector`
+
+PostgreSQL is a registered trademark of the PostgreSQL Community Association of Canada, and used with their permission.

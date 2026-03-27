@@ -1,0 +1,71 @@
+# Customisable PostgreSQL properties
+
+The following PostgreSQL® database properties can be set by the user via the [UpCloud API](https://developers.upcloud.com/1.3/).
+
+- `admin_password`
+- `admin_username`
+- `automatic_utility_network_ip_filter`
+- `autovacuum_analyze_scale_factor`
+- `autovacuum_analyze_threshold`
+- `autovacuum_freeze_max_age`
+- `autovacuum_max_workers`
+- `autovacuum_naptime`
+- `autovacuum_vacuum_cost_delay`
+- `autovacuum_vacuum_cost_limit`
+- `autovacuum_vacuum_scale_factor`
+- `autovacuum_vacuum_threshold`
+- `backup_hour`
+- `backup_minute`
+- `bgwriter_delay`
+- `bgwriter_flush_after`
+- `bgwriter_lru_maxpages`
+- `bgwriter_lru_multiplier`
+- `deadlock_timeout`
+- `default_toast_compression`
+- `enable_ipv6`
+- `idle_in_transaction_session_timeout`
+- `ip_filter`
+- `jit`
+- `log_autovacuum_min_duration`
+- `log_error_verbosity`
+- `log_line_prefix`
+- `log_min_duration_statement`
+- `max_files_per_process`
+- `max_locks_per_transaction`
+- `max_logical_replication_workers`
+- `max_parallel_workers`
+- `max_parallel_workers_per_gather`
+- `max_pred_locks_per_transaction`
+- `max_prepared_transactions`
+- `max_replication_slots`
+- `max_slot_wal_keep_size`
+- `max_stack_depth`
+- `max_standby_archive_delay`
+- `max_standby_streaming_delay`
+- `max_wal_senders`
+- `max_worker_processes`
+- `migration`
+- `pg_partman_bgw.interval`
+- `pg_partman_bgw.role`
+- `pg_read_replica`
+- `pg_service_to_fork_from`
+- `pg_stat_statements.track`
+- `pgbouncer`
+- `pglookout`
+- `public_access`
+- `shared_buffers_percentage`
+- `synchronous_replication`
+- `temp_file_limit`
+- `timescaledb`
+- `timezone`
+- `track_activity_query_size`
+- `track_commit_timestamp`
+- `track_functions`
+- `track_io_timing`
+- `variant`
+- `version`
+- `wal_sender_timeout`
+- `wal_writer_delay`
+- `work_mem`
+
+PostgreSQL is a registered trademark of the PostgreSQL Community Association of Canada, and used with their permission.

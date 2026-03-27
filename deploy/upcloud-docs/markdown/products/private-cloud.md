@@ -1,0 +1,3 @@
+# Private Cloud
+
+UpCloud's [Private Cloud](https://upcloud.com/products/private-cloud/) service provides dedicated hosts for running [Cloud Servers](https://upcloud.com/products/cloud-servers/), ensuring optimised performance, security, and isolation. Additionally, dedicated storage hosts and networking resources can be included, to further customise the environment. With seamless integration of public cloud tooling, granular visibility down to the host level, and enhanced capacity management, Private Cloud offers everything that's great about UpCloud's public cloud, but with superior control, flexibility, and performance.

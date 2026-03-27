@@ -1,0 +1,12 @@
+# Mirrored HTML site (large, re-downloadable)
+upcloud.com/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/
