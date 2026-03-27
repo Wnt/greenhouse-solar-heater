@@ -1,3 +1,6 @@
+# SSH public key for worker node access (optional — leave commented out to disable)
+# ssh_public_key = "ssh-ed25519 AAAA..."
+
 # Domain name for the monitoring UI
 domain = "greenhouse.madekivi.fi"
 

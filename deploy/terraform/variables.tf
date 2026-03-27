@@ -64,6 +64,11 @@ variable "control_plane_ip_filter" {
   type        = list(string)
 }
 
+variable "ssh_public_key" {
+  description = "SSH public key for worker node access (optional)"
+  type        = string
+  default     = ""
+}
 
 variable "vpn_allowed_cidrs" {
   description = "List of CIDRs allowed to connect to OpenVPN port 1194/UDP (e.g. your home network's public IP). Enforced via CiliumNetworkPolicy."
