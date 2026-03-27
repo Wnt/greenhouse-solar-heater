@@ -28,8 +28,9 @@ letsencrypt_email = "you@example.com"
 # Number of worker nodes (default: 1)
 # node_count = 1
 
-# Restrict Kubernetes API access to specific IPs (default: unrestricted)
-# control_plane_ip_filter = ["your.ip.address/32"]
+# Restrict Kubernetes API access to your IP (REQUIRED — no default, must be set)
+# Find your IP: curl -s ifconfig.me
+control_plane_ip_filter = ["your.public.ip/32"]
 
 # Required environment variable (not in tfvars for security):
 #   export UPCLOUD_TOKEN="your-api-token"

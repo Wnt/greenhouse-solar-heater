@@ -90,33 +90,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy:
-    needs: [build-app, build-openvpn]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: v1.32.0
-
-      # KUBE_CONFIG_DATA: base64-encoded kubeconfig from terraform output -raw kubeconfig | base64
-      # To refresh: terraform output -raw kubeconfig | base64 -w0 | gh secret set KUBE_CONFIG_DATA
-      - name: Configure kubeconfig
-        run: |
-          mkdir -p "$HOME/.kube"
-          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 --decode > "$HOME/.kube/config"
-          chmod 600 "$HOME/.kube/config"
-
-      - name: Lowercase image name
-        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-
-      - name: Deploy to Kubernetes
-        run: |
-          kubectl set image deployment/app \
-            app=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            openvpn=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-openvpn:${{ github.sha }}
-
-      - name: Wait for rollout
-        run: kubectl rollout status deployment/app --timeout=5m
+  # Deployment is done manually via kubectl from a whitelisted IP.
+  # The K8s API is restricted by control_plane_ip_filter in Terraform.
+  #
+  # To deploy after images are built:
+  #   kubectl set image deployment/app \
+  #     app=ghcr.io/wnt/greenhouse-solar-heater:<sha> \
+  #     openvpn=ghcr.io/wnt/greenhouse-solar-heater-openvpn:<sha>
+  #   kubectl rollout status deployment/app --timeout=5m
