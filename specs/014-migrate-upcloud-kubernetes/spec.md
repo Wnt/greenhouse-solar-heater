@@ -101,7 +101,7 @@ As the system operator, I want a clear cost comparison between the current singl
 
 - **FR-001**: System MUST provision an UpCloud Managed Kubernetes cluster via Terraform, including the control plane and at least one node group.
 - **FR-002**: System MUST deploy the application (Node.js server), MQTT broker (Mosquitto), and reverse proxy or ingress controller as Kubernetes workloads.
-- **FR-003**: System MUST maintain VPN connectivity to the home LAN Shelly devices via an OpenVPN pod, so that RPC proxy and MQTT bridge continue to function.
+- **FR-003**: System MUST maintain VPN connectivity to the home LAN Shelly devices via an OpenVPN sidecar container in the same pod as the app (shared network namespace), so that RPC proxy and MQTT bridge continue to function.
 - **FR-004**: System MUST expose the web application via HTTPS with valid TLS certificates on the configured domain.
 - **FR-005**: System MUST manage application secrets (DATABASE_URL, S3 credentials, SESSION_SECRET, New Relic license key) via Kubernetes Secrets.
 - **FR-006**: System MUST manage non-secret application configuration (PORT, AUTH_ENABLED, DOMAIN, RPID, ORIGIN, MQTT_HOST) via Kubernetes ConfigMaps.
@@ -172,11 +172,17 @@ As the system operator, I want a clear cost comparison between the current singl
 - **Production HA setup**: ~10-15x increase (EUR 217-390 vs EUR 15-25/month). High availability for both the Kubernetes control plane and database drives the bulk of the increase.
 - **Recommended approach**: Start with the minimal setup (development control plane, 1-2 worker nodes, development load balancer, existing database) to validate the migration at roughly EUR 40-50/month, then scale up if high availability becomes a requirement.
 
+## Clarifications
+
+### Session 2026-03-27
+
+- Q: How should the app reach Shelly devices through the VPN in Kubernetes (replacing Docker's network_mode sharing)? → A: Sidecar — OpenVPN runs as a second container in the same pod as the app, sharing the network namespace.
+
 ## Assumptions
 
 - The UpCloud Managed Kubernetes development plan (free control plane, up to 30 nodes) is sufficient for the initial migration. The production plan can be adopted later if HA is needed.
 - The existing Managed PostgreSQL and Object Storage resources will be reused without changes — only the client connectivity path changes (from cloud server to Kubernetes pods via private network).
-- The VPN connectivity to Shelly devices will be maintained by running OpenVPN as a Kubernetes pod with NET_ADMIN capability and /dev/net/tun access, similar to the current container setup.
+- The VPN connectivity to Shelly devices will be maintained by running OpenVPN as a sidecar container in the app pod (shared network namespace, NET_ADMIN capability, /dev/net/tun access), mirroring the current Docker Compose `network_mode: "service:openvpn"` pattern.
 - The Caddy reverse proxy may be replaced by a Kubernetes-native ingress controller for TLS termination, reducing the number of custom containers.
 - Shelly script deployment from CI will be handled by a Kubernetes Job that runs during the CD pipeline, replacing the deployer's VPN-based deployment step.
 - Cost estimates are based on UpCloud's published pricing as of March 2026. Actual costs may vary based on usage patterns and pricing changes.
