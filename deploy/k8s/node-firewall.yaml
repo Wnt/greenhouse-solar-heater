@@ -56,13 +56,13 @@ spec:
               iptables -A NODE-FIREWALL -s 10.128.0.0/12 -j RETURN
               iptables -A NODE-FIREWALL -s 172.16.1.0/24 -j RETURN
 
-              # Drop everything else incoming on public-facing ports
-              iptables -A NODE-FIREWALL -p tcp --dport 22 -j DROP
-              iptables -A NODE-FIREWALL -p tcp --dport 111 -j DROP
-              iptables -A NODE-FIREWALL -p udp --dport 111 -j DROP
-              iptables -A NODE-FIREWALL -p tcp --dport 8181 -j DROP
-              iptables -A NODE-FIREWALL -p tcp --dport 8443 -j DROP
-              iptables -A NODE-FIREWALL -p udp --dport 1194 -j DROP
+              # Reject everything else — sends TCP RST so ports appear closed (not filtered) in scans
+              iptables -A NODE-FIREWALL -p tcp --dport 22 -j REJECT --reject-with tcp-reset
+              iptables -A NODE-FIREWALL -p tcp --dport 111 -j REJECT --reject-with tcp-reset
+              iptables -A NODE-FIREWALL -p udp --dport 111 -j REJECT --reject-with icmp-port-unreachable
+              iptables -A NODE-FIREWALL -p tcp --dport 8181 -j REJECT --reject-with tcp-reset
+              iptables -A NODE-FIREWALL -p tcp --dport 8443 -j REJECT --reject-with tcp-reset
+              iptables -A NODE-FIREWALL -p udp --dport 1194 -j REJECT --reject-with icmp-port-unreachable
 
               # Insert into INPUT chain
               iptables -I INPUT 1 -j NODE-FIREWALL
