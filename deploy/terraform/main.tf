@@ -292,13 +292,12 @@ resource "kubernetes_secret" "openvpn_config" {
     name = "openvpn-config"
   }
 
-  # VPN config is managed externally (downloaded from S3).
-  # This secret is populated manually after first terraform apply:
-  #   kubectl create secret generic openvpn-config \
-  #     --from-file=server.conf=openvpn.conf --dry-run=client -o yaml | kubectl apply -f -
-  # Or via: terraform import kubernetes_secret.openvpn_config default/openvpn-config
+  # Download VPN config from S3 first:
+  #   S3_ENDPOINT=... S3_BUCKET=... S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=... \
+  #     node server/lib/vpn-config.js download openvpn.conf
+  # Then set openvpn_config_file = "openvpn.conf" in terraform.tfvars
   data = {
-    "server.conf" = var.openvpn_config
+    "server.conf" = var.openvpn_config_file != "" ? file(var.openvpn_config_file) : ""
   }
 
   depends_on = [upcloud_kubernetes_node_group.default]

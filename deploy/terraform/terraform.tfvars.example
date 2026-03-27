@@ -38,5 +38,8 @@ control_plane_ip_filter = ["your.public.ip/32"]
 # After `terraform apply`, get the kubeconfig:
 #   terraform output -raw kubeconfig > ~/.kube/config
 #
+# OpenVPN config file path (download from S3 first — see one-liner below)
+# openvpn_config_file = "openvpn.conf"
+
 # Get the worker node's public IP for your DNS A record:
 #   eval $(terraform output -raw worker_node_ip_command)

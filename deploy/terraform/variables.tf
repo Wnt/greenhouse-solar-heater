@@ -70,9 +70,8 @@ variable "ssh_public_key" {
   default     = ""
 }
 
-variable "openvpn_config" {
-  description = "OpenVPN configuration file content. Populate after initial setup or pass from a file."
+variable "openvpn_config_file" {
+  description = "Path to OpenVPN configuration file. Download from S3 with: node server/lib/vpn-config.js download openvpn.conf"
   type        = string
-  sensitive   = true
   default     = ""
 }
