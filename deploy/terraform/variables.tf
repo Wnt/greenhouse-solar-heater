@@ -50,7 +50,7 @@ variable "k8s_version" {
 variable "node_plan" {
   description = "UpCloud server plan for Kubernetes worker nodes"
   type        = string
-  default     = "DEV-1xCPU-1GB-10GB"
+  default     = "DEV-1xCPU-1GB"
 }
 
 variable "node_count" {
