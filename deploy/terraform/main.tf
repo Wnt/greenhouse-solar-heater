@@ -165,7 +165,7 @@ resource "upcloud_kubernetes_cluster" "main" {
   name                 = "${replace(var.domain, ".", "-")}-k8s"
   network              = upcloud_network.k8s.id
   zone                 = var.upcloud_zone
-  plan                 = "development"
+  plan                 = "dev-md"
   version              = var.k8s_version
   private_node_groups  = false
   control_plane_ip_filter = var.control_plane_ip_filter
