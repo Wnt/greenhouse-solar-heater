@@ -60,8 +60,9 @@ variable "node_count" {
 }
 
 variable "control_plane_ip_filter" {
-  description = "List of IP addresses/CIDRs allowed to access the Kubernetes API (e.g. [\"1.2.3.4/32\"]). No default — must be set explicitly to avoid accidental public exposure."
+  description = "List of IP addresses/CIDRs allowed to access the Kubernetes API. Defaults to unrestricted. Restrict after cluster is working."
   type        = list(string)
+  default     = ["0.0.0.0/0"]
 }
 
 variable "ssh_public_key" {
