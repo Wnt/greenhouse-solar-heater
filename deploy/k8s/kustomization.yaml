@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - cluster-issuer.yaml
+  - node-firewall.yaml
   - app-deployment.yaml
   - services.yaml
   - ingress.yaml

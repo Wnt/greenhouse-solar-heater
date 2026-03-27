@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-firewall
+  labels:
+    app: node-firewall
+spec:
+  selector:
+    matchLabels:
+      app: node-firewall
+  template:
+    metadata:
+      labels:
+        app: node-firewall
+    spec:
+      hostNetwork: true
+      hostPID: true
+      initContainers:
+        - name: apply-rules
+          image: alpine:3.21
+          command:
+            - sh
+            - -c
+            - |
+              apk add --no-cache iptables > /dev/null 2>&1
+              # Flush any previous node-firewall rules
+              iptables -D INPUT -j NODE-FIREWALL 2>/dev/null || true
+              iptables -F NODE-FIREWALL 2>/dev/null || true
+              iptables -X NODE-FIREWALL 2>/dev/null || true
+
+              # Create custom chain
+              iptables -N NODE-FIREWALL
+
+              # Allow loopback
+              iptables -A NODE-FIREWALL -i lo -j RETURN
+
+              # Allow established connections
+              iptables -A NODE-FIREWALL -m state --state ESTABLISHED,RELATED -j RETURN
+
+              # Allow HTTP/HTTPS (ingress controller)
+              iptables -A NODE-FIREWALL -p tcp --dport 80 -j RETURN
+              iptables -A NODE-FIREWALL -p tcp --dport 443 -j RETURN
+
+              # Allow Kubernetes API traffic (kubelet, CNI)
+              iptables -A NODE-FIREWALL -p tcp --dport 10250 -j RETURN
+              iptables -A NODE-FIREWALL -p tcp --dport 6443 -j RETURN
+
+              # Allow VPN from whitelisted CIDRs only
+              IFS=',' ; for cidr in $VPN_ALLOWED_CIDRS; do
+                iptables -A NODE-FIREWALL -p udp --dport 1194 -s "$cidr" -j RETURN
+                echo "node-firewall: ACCEPT udp/1194 from $cidr"
+              done
+
+              # Allow pod and service network CIDRs
+              iptables -A NODE-FIREWALL -s 192.168.0.0/16 -j RETURN
+              iptables -A NODE-FIREWALL -s 10.128.0.0/12 -j RETURN
+              iptables -A NODE-FIREWALL -s 172.16.1.0/24 -j RETURN
+
+              # Drop everything else incoming on public-facing ports
+              iptables -A NODE-FIREWALL -p tcp --dport 22 -j DROP
+              iptables -A NODE-FIREWALL -p tcp --dport 111 -j DROP
+              iptables -A NODE-FIREWALL -p udp --dport 111 -j DROP
+              iptables -A NODE-FIREWALL -p tcp --dport 8181 -j DROP
+              iptables -A NODE-FIREWALL -p tcp --dport 8443 -j DROP
+              iptables -A NODE-FIREWALL -p udp --dport 1194 -j DROP
+
+              # Insert into INPUT chain
+              iptables -I INPUT 1 -j NODE-FIREWALL
+
+              echo "node-firewall: rules applied"
+              iptables -L NODE-FIREWALL -n -v
+          envFrom:
+            - configMapRef:
+                name: vpn-firewall
+          securityContext:
+            privileged: true
+      containers:
+        # DaemonSet needs a running container — sleep forever
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+          resources:
+            requests:
+              cpu: 1m
+              memory: 4Mi
+            limits:
+              cpu: 1m
+              memory: 4Mi
