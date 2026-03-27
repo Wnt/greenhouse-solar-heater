@@ -177,7 +177,9 @@ resource "upcloud_kubernetes_node_group" "default" {
   node_count = var.node_count
   plan       = var.node_plan
 
-  ssh_keys = var.ssh_public_key != "" ? [var.ssh_public_key] : []
+  # No SSH keys — use kubectl exec/logs for node debugging.
+  # SSH keys can only be set at node group creation time (not updatable).
+  # To add SSH access later, create a new node group with ssh_keys set.
 }
 
 # ── Cluster Credentials ──
