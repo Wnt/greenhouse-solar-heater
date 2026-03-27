@@ -45,13 +45,13 @@ output "database_url" {
 
 output "kubeconfig" {
   description = "Kubeconfig YAML for the UKS cluster — use with: terraform output -raw kubeconfig > ~/.kube/config"
-  value       = upcloud_kubernetes_cluster.main.kubeconfig
+  value       = data.upcloud_kubernetes_cluster.main.kubeconfig
   sensitive   = true
 }
 
 output "cluster_host" {
   description = "Kubernetes API server endpoint"
-  value       = upcloud_kubernetes_cluster.main.host
+  value       = data.upcloud_kubernetes_cluster.main.host
 }
 
 output "cluster_name" {

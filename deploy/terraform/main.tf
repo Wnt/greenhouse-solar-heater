@@ -180,22 +180,29 @@ resource "upcloud_kubernetes_node_group" "default" {
   ssh_keys = var.ssh_public_key != "" ? [var.ssh_public_key] : []
 }
 
+# ── Cluster Credentials ──
+# The resource doesn't export credentials directly; use the data source.
+
+data "upcloud_kubernetes_cluster" "main" {
+  id = upcloud_kubernetes_cluster.main.id
+}
+
 # ── Kubernetes & Helm Providers ──
 # Configured from cluster credentials to manage in-cluster resources.
 
 provider "kubernetes" {
-  host                   = upcloud_kubernetes_cluster.main.host
-  client_certificate     = upcloud_kubernetes_cluster.main.client_certificate
-  client_key             = upcloud_kubernetes_cluster.main.client_key
-  cluster_ca_certificate = upcloud_kubernetes_cluster.main.cluster_ca_certificate
+  host                   = data.upcloud_kubernetes_cluster.main.host
+  client_certificate     = data.upcloud_kubernetes_cluster.main.client_certificate
+  client_key             = data.upcloud_kubernetes_cluster.main.client_key
+  cluster_ca_certificate = data.upcloud_kubernetes_cluster.main.cluster_ca_certificate
 }
 
 provider "helm" {
   kubernetes {
-    host                   = upcloud_kubernetes_cluster.main.host
-    client_certificate     = upcloud_kubernetes_cluster.main.client_certificate
-    client_key             = upcloud_kubernetes_cluster.main.client_key
-    cluster_ca_certificate = upcloud_kubernetes_cluster.main.cluster_ca_certificate
+    host                   = data.upcloud_kubernetes_cluster.main.host
+    client_certificate     = data.upcloud_kubernetes_cluster.main.client_certificate
+    client_key             = data.upcloud_kubernetes_cluster.main.client_key
+    cluster_ca_certificate = data.upcloud_kubernetes_cluster.main.cluster_ca_certificate
   }
 }
 
