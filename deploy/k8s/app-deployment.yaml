@@ -19,6 +19,34 @@ spec:
       labels:
         app: greenhouse
     spec:
+      # ── Init: VPN firewall ──
+      # Sets iptables rules in the pod's network namespace to restrict
+      # UDP 1194 (hostPort) to whitelisted CIDRs only. This is kernel-level
+      # filtering — works regardless of CNI/Cilium host-firewall settings.
+      # CiliumNetworkPolicy does NOT reliably filter hostPort traffic.
+      initContainers:
+        - name: vpn-firewall
+          image: alpine:3.21
+          command:
+            - sh
+            - -c
+            - |
+              apk add --no-cache iptables > /dev/null 2>&1
+              IFS=',' ; for cidr in $VPN_ALLOWED_CIDRS; do
+                iptables -A INPUT -p udp --dport 1194 -s "$cidr" -j ACCEPT
+                echo "iptables: ACCEPT udp/1194 from $cidr"
+              done
+              iptables -A INPUT -p udp --dport 1194 -j DROP
+              echo "iptables: DROP udp/1194 from all other sources"
+              iptables -L INPUT -n -v
+          envFrom:
+            - configMapRef:
+                name: vpn-firewall
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+
       # ── App container ──
       containers:
         - name: app

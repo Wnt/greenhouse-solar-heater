@@ -332,55 +332,21 @@ resource "kubernetes_config_map" "app_config" {
   depends_on = [upcloud_kubernetes_node_group.default]
 }
 
-# ── OpenVPN Network Policy ──
-# CiliumNetworkPolicy restricting UDP 1194 to whitelisted CIDRs only.
-# Uses null_resource + kubectl because kubernetes_manifest CRDs require
-# a live cluster connection during plan (fails on first apply).
+# ── OpenVPN Firewall ──
+# IP whitelist for VPN port enforced via iptables in a pod init container.
+# CiliumNetworkPolicy does NOT reliably filter hostPort traffic (bypasses CNI),
+# so we use kernel-level iptables rules in the pod's network namespace instead.
 
-resource "null_resource" "openvpn_network_policy" {
-  triggers = {
-    cidrs    = jsonencode(var.vpn_allowed_cidrs)
-    kubeconfig = data.upcloud_kubernetes_cluster.main.kubeconfig
+resource "kubernetes_config_map" "vpn_firewall" {
+  metadata {
+    name = "vpn-firewall"
   }
 
-  provisioner "local-exec" {
-    command = <<-EOT
-      TMPKUBE=$(mktemp) && echo "$KUBECONFIG_DATA" > "$TMPKUBE" && \
-      kubectl --kubeconfig="$TMPKUBE" apply -f - <<'YAML'
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: greenhouse-ingress
-spec:
-  endpointSelector:
-    matchLabels:
-      app: greenhouse
-  ingress:
-    - fromCIDR: ${jsonencode(var.vpn_allowed_cidrs)}
-      toPorts:
-        - ports:
-            - port: "1194"
-              protocol: UDP
-    - toPorts:
-        - ports:
-            - port: "3000"
-              protocol: TCP
-    - toPorts:
-        - ports:
-            - port: "1883"
-              protocol: TCP
-YAML
-      rm -f "$TMPKUBE"
-    EOT
-    environment = {
-      KUBECONFIG_DATA = data.upcloud_kubernetes_cluster.main.kubeconfig
-    }
+  data = {
+    VPN_ALLOWED_CIDRS = join(",", var.vpn_allowed_cidrs)
   }
 
-  depends_on = [
-    upcloud_kubernetes_node_group.default,
-    helm_release.ingress_nginx,
-  ]
+  depends_on = [upcloud_kubernetes_node_group.default]
 }
 
 resource "kubernetes_config_map" "mosquitto_config" {
