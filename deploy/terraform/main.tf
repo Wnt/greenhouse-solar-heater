@@ -5,6 +5,14 @@ terraform {
       source  = "UpCloudLtd/upcloud"
       version = "~> 5.0"
     }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.24"
+    }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.12"
+    }
   }
 }
 
@@ -62,44 +70,6 @@ resource "upcloud_managed_object_storage_user_policy" "app_rw" {
   name         = upcloud_managed_object_storage_policy.app_rw.name
 }
 
-# ── Server ──
-
-resource "upcloud_server" "monitor" {
-  hostname = replace(var.domain, ".", "-")
-  zone     = var.upcloud_zone
-  plan     = var.server_plan
-
-  template {
-    storage = "Ubuntu Server 24.04 LTS (Noble Numbat)"
-    size    = 10
-  }
-
-  network_interface {
-    type = "public"
-  }
-
-  network_interface {
-    type = "utility"
-  }
-
-  login {
-    keys = [var.ssh_public_key]
-  }
-
-  firewall = true
-  metadata = true
-
-  user_data = templatefile("${path.module}/cloud-init.yaml", {
-    session_secret   = var.session_secret
-    s3_endpoint      = "https://${[for e in upcloud_managed_object_storage.credentials.endpoint : e.domain_name if e.type == "public"][0]}"
-    s3_bucket        = upcloud_managed_object_storage_bucket.credentials.name
-    s3_access_key_id = upcloud_managed_object_storage_user_access_key.app.access_key_id
-    s3_secret_key    = upcloud_managed_object_storage_user_access_key.app.secret_access_key
-    s3_region        = var.objsto_region
-    github_repo      = lower(var.github_repo)
-  })
-}
-
 # ── Managed PostgreSQL with TimescaleDB ──
 
 resource "upcloud_managed_database_postgresql" "timeseries" {
@@ -133,7 +103,7 @@ resource "null_resource" "store_db_url" {
       curl -sf -H "Authorization: Bearer $UPCLOUD_TOKEN" \
         "https://api.upcloud.com/1.3/database/certificate" \
         | node -e "var d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{var c=JSON.parse(d).certificate;require('fs').writeFileSync('/tmp/db-ca-cert.pem',c)})" \
-      && node monitor/lib/db-config.js store "${upcloud_managed_database_postgresql.timeseries.service_uri}" --ca /tmp/db-ca-cert.pem \
+      && node server/lib/db-config.js store "${upcloud_managed_database_postgresql.timeseries.service_uri}" --ca /tmp/db-ca-cert.pem \
       && rm -f /tmp/db-ca-cert.pem
     EOT
     environment = {
@@ -153,7 +123,6 @@ resource "null_resource" "store_db_url" {
 
 # ── Store New Relic license key in S3 ──
 # Same S3 bootstrap pattern as DATABASE_URL (Constitution principle VII).
-# Runs on operator's machine. Key is fetched by the deployer on each cycle.
 
 resource "null_resource" "store_nr_key" {
   count = var.new_relic_license_key != "" ? 1 : 0
@@ -164,7 +133,7 @@ resource "null_resource" "store_nr_key" {
 
   provisioner "local-exec" {
     working_dir = "${path.module}/../.."
-    command     = "node monitor/lib/nr-config.js store \"${var.new_relic_license_key}\""
+    command     = "node server/lib/nr-config.js store \"${var.new_relic_license_key}\""
     environment = {
       S3_ENDPOINT          = "https://${[for e in upcloud_managed_object_storage.credentials.endpoint : e.domain_name if e.type == "public"][0]}"
       S3_BUCKET            = upcloud_managed_object_storage_bucket.credentials.name
@@ -179,70 +148,221 @@ resource "null_resource" "store_nr_key" {
   ]
 }
 
-# ── Firewall ──
+# ── Kubernetes Cluster ──
 
-resource "upcloud_firewall_rules" "monitor" {
-  server_id = upcloud_server.monitor.id
+resource "upcloud_network" "k8s" {
+  name = "${replace(var.domain, ".", "-")}-k8s"
+  zone = var.upcloud_zone
 
-  firewall_rule {
-    action                 = "accept"
-    direction              = "in"
-    family                 = "IPv4"
-    protocol               = "tcp"
-    destination_port_start = 80
-    destination_port_end   = 80
-    comment                = "HTTP (Caddy redirect to HTTPS)"
+  ip_network {
+    address = "172.16.1.0/24"
+    dhcp    = true
+    family  = "IPv4"
+  }
+}
+
+resource "upcloud_kubernetes_cluster" "main" {
+  name                 = "${replace(var.domain, ".", "-")}-k8s"
+  network              = upcloud_network.k8s.id
+  zone                 = var.upcloud_zone
+  plan                 = "development"
+  version              = var.k8s_version
+  private_node_groups  = false
+  control_plane_ip_filter = var.control_plane_ip_filter
+}
+
+resource "upcloud_kubernetes_node_group" "default" {
+  cluster    = upcloud_kubernetes_cluster.main.id
+  name       = "default"
+  node_count = var.node_count
+  plan       = var.node_plan
+
+  ssh_keys = var.ssh_public_key != "" ? [var.ssh_public_key] : []
+}
+
+# ── Kubernetes & Helm Providers ──
+# Configured from cluster credentials to manage in-cluster resources.
+
+provider "kubernetes" {
+  host                   = upcloud_kubernetes_cluster.main.host
+  client_certificate     = upcloud_kubernetes_cluster.main.client_certificate
+  client_key             = upcloud_kubernetes_cluster.main.client_key
+  cluster_ca_certificate = upcloud_kubernetes_cluster.main.cluster_ca_certificate
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = upcloud_kubernetes_cluster.main.host
+    client_certificate     = upcloud_kubernetes_cluster.main.client_certificate
+    client_key             = upcloud_kubernetes_cluster.main.client_key
+    cluster_ca_certificate = upcloud_kubernetes_cluster.main.cluster_ca_certificate
+  }
+}
+
+# ── Ingress NGINX Controller ──
+# Deployed as DaemonSet with hostNetwork: true so it binds to ports 80/443
+# on the worker node's public IP. No managed load balancer needed.
+
+resource "helm_release" "ingress_nginx" {
+  name       = "ingress-nginx"
+  repository = "https://kubernetes.github.io/ingress-nginx"
+  chart      = "ingress-nginx"
+  namespace  = "ingress-nginx"
+  create_namespace = true
+  version    = "4.12.0"
+
+  set {
+    name  = "controller.kind"
+    value = "DaemonSet"
   }
 
-  firewall_rule {
-    action                 = "accept"
-    direction              = "in"
-    family                 = "IPv4"
-    protocol               = "tcp"
-    destination_port_start = 443
-    destination_port_end   = 443
-    comment                = "HTTPS"
+  set {
+    name  = "controller.hostNetwork"
+    value = "true"
   }
 
-  dynamic "firewall_rule" {
-    for_each = var.ssh_allow_ip != "" ? [1] : []
-    content {
-      action                    = "accept"
-      direction                 = "in"
-      family                    = "IPv4"
-      protocol                  = "tcp"
-      destination_port_start    = 22
-      destination_port_end      = 22
-      source_address_start      = var.ssh_allow_ip
-      source_address_end        = var.ssh_allow_ip
-      comment                   = "SSH (restricted to admin IP)"
+  set {
+    name  = "controller.service.type"
+    value = "ClusterIP"
+  }
+
+  # Use host ports directly (80/443) — no NodePort mapping
+  set {
+    name  = "controller.dnsPolicy"
+    value = "ClusterFirstWithHostNet"
+  }
+
+  depends_on = [upcloud_kubernetes_node_group.default]
+}
+
+# ── cert-manager ──
+# Manages TLS certificates via Let's Encrypt HTTP-01 challenge.
+
+resource "helm_release" "cert_manager" {
+  name       = "cert-manager"
+  repository = "https://charts.jetstack.io"
+  chart      = "cert-manager"
+  namespace  = "cert-manager"
+  create_namespace = true
+  version    = "v1.17.1"
+
+  set {
+    name  = "crds.enabled"
+    value = "true"
+  }
+
+  depends_on = [upcloud_kubernetes_node_group.default]
+}
+
+# ── Let's Encrypt ClusterIssuer ──
+# HTTP-01 solver via NGINX Ingress controller.
+
+resource "kubernetes_manifest" "letsencrypt_issuer" {
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind       = "ClusterIssuer"
+    metadata = {
+      name = "letsencrypt-prod"
+    }
+    spec = {
+      acme = {
+        server = "https://acme-v02.api.letsencrypt.org/directory"
+        email  = var.letsencrypt_email
+        privateKeySecretRef = {
+          name = "letsencrypt-account-key"
+        }
+        solvers = [{
+          http01 = {
+            ingress = {
+              class = "nginx"
+            }
+          }
+        }]
+      }
     }
   }
 
-  dynamic "firewall_rule" {
-    for_each = var.enable_vpn ? [1] : []
-    content {
-      action                 = "accept"
-      direction              = "in"
-      family                 = "IPv4"
-      protocol               = "udp"
-      destination_port_start = 1194
-      destination_port_end   = 1194
-      comment                = "OpenVPN"
-    }
+  depends_on = [helm_release.cert_manager]
+}
+
+# ── Kubernetes Secrets ──
+
+resource "kubernetes_secret" "app_secrets" {
+  metadata {
+    name = "app-secrets"
   }
 
-  firewall_rule {
-    action    = "drop"
-    direction = "in"
-    family    = "IPv4"
-    comment   = "Drop all other inbound IPv4"
+  data = {
+    DATABASE_URL         = upcloud_managed_database_postgresql.timeseries.service_uri
+    SESSION_SECRET       = var.session_secret
+    S3_ENDPOINT          = "https://${[for e in upcloud_managed_object_storage.credentials.endpoint : e.domain_name if e.type == "public"][0]}"
+    S3_BUCKET            = upcloud_managed_object_storage_bucket.credentials.name
+    S3_ACCESS_KEY_ID     = upcloud_managed_object_storage_user_access_key.app.access_key_id
+    S3_SECRET_ACCESS_KEY = upcloud_managed_object_storage_user_access_key.app.secret_access_key
+    S3_REGION            = var.objsto_region
+    NEW_RELIC_LICENSE_KEY = var.new_relic_license_key
   }
 
-  firewall_rule {
-    action    = "drop"
-    direction = "in"
-    family    = "IPv6"
-    comment   = "Drop all inbound IPv6"
+  depends_on = [upcloud_kubernetes_node_group.default]
+}
+
+resource "kubernetes_secret" "openvpn_config" {
+  metadata {
+    name = "openvpn-config"
   }
+
+  # VPN config is managed externally (downloaded from S3).
+  # This secret is populated manually after first terraform apply:
+  #   kubectl create secret generic openvpn-config \
+  #     --from-file=server.conf=openvpn.conf --dry-run=client -o yaml | kubectl apply -f -
+  # Or via: terraform import kubernetes_secret.openvpn_config default/openvpn-config
+  data = {
+    "server.conf" = var.openvpn_config
+  }
+
+  depends_on = [upcloud_kubernetes_node_group.default]
+}
+
+# ── Kubernetes ConfigMaps ──
+
+resource "kubernetes_config_map" "app_config" {
+  metadata {
+    name = "app-config"
+  }
+
+  data = {
+    PORT                        = "3000"
+    AUTH_ENABLED                = "true"
+    RPID                        = var.domain
+    ORIGIN                      = "https://${var.domain}"
+    DOMAIN                      = var.domain
+    GITHUB_REPO                 = lower(var.github_repo)
+    VPN_CHECK_HOST              = "192.168.1.86"
+    VPN_CONFIG_KEY              = "openvpn.conf"
+    SETUP_WINDOW_MINUTES        = "30"
+    NODE_ENV                    = "production"
+    CONTROLLER_IP               = "192.168.1.174"
+    CONTROLLER_SCRIPT_ID        = "1"
+    MQTT_HOST                   = "localhost"
+    CONTROLLER_VPN_IP           = ""
+    OTEL_SERVICE_NAME           = "greenhouse-monitor"
+    OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp.eu01.nr-data.net"
+  }
+
+  depends_on = [upcloud_kubernetes_node_group.default]
+}
+
+resource "kubernetes_config_map" "mosquitto_config" {
+  metadata {
+    name = "mosquitto-config"
+  }
+
+  data = {
+    "mosquitto.conf" = <<-EOT
+      listener 1883 0.0.0.0
+      allow_anonymous true
+    EOT
+  }
+
+  depends_on = [upcloud_kubernetes_node_group.default]
 }

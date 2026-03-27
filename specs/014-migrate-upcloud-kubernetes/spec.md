@@ -2,7 +2,7 @@
 
 **Feature Branch**: `014-migrate-upcloud-kubernetes`
 **Created**: 2026-03-27
-**Status**: Draft
+**Status**: Complete
 **Input**: User description: "reimplement the application infra to run on top of UpCloud Managed Kubernetes. Upcloud docs are mirrored at deploy/upcloud-docs/markdown also do an estimation how the monthly billing will be affected by the change of platform"
 
 ## User Scenarios & Testing *(mandatory)*

@@ -1,0 +1,147 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  labels:
+    app: greenhouse
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: greenhouse
+  template:
+    metadata:
+      labels:
+        app: greenhouse
+    spec:
+      # ── App container ──
+      containers:
+        - name: app
+          image: ghcr.io/wnt/greenhouse-solar-heater:latest
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+
+        # ── OpenVPN sidecar ──
+        - name: openvpn
+          image: ghcr.io/wnt/greenhouse-solar-heater-openvpn:latest
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tun-device
+              mountPath: /dev/net/tun
+            - name: openvpn-config
+              mountPath: /etc/openvpn
+              readOnly: true
+            - name: openvpn-tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          livenessProbe:
+            exec:
+              command: ["pgrep", "openvpn"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+        # ── Mosquitto sidecar ──
+        - name: mosquitto
+          image: eclipse-mosquitto:2-openssl
+          ports:
+            - name: mqtt
+              containerPort: 1883
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1883
+          volumeMounts:
+            - name: mosquitto-config
+              mountPath: /mosquitto/config
+              readOnly: true
+            - name: mosquitto-data
+              mountPath: /mosquitto/data
+            - name: mosquitto-log
+              mountPath: /mosquitto/log
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          livenessProbe:
+            tcpSocket:
+              port: 1883
+            initialDelaySeconds: 5
+            periodSeconds: 30
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: tun-device
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice
+        - name: openvpn-config
+          secret:
+            secretName: openvpn-config
+        - name: openvpn-tmp
+          emptyDir:
+            sizeLimit: 8Mi
+        - name: mosquitto-config
+          configMap:
+            name: mosquitto-config
+        - name: mosquitto-data
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: mosquitto-log
+          emptyDir:
+            sizeLimit: 16Mi

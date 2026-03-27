@@ -19,9 +19,9 @@
 
 **Purpose**: Create directory structure and prepare manifest templates
 
-- [ ] T001 Create Kubernetes manifests directory at `deploy/k8s/`
-- [ ] T002 [P] Create `deploy/k8s/kustomization.yaml` listing all manifest files for kustomize base
-- [ ] T003 [P] Read current Terraform config at `deploy/terraform/main.tf`, `deploy/terraform/variables.tf`, `deploy/terraform/outputs.tf` to understand existing resource definitions
+- [x] T001 Create Kubernetes manifests directory at `deploy/k8s/`
+- [x] T002 [P] Create `deploy/k8s/kustomization.yaml` listing all manifest files for kustomize base
+- [x] T003 [P] Read current Terraform config at `deploy/terraform/main.tf`, `deploy/terraform/variables.tf`, `deploy/terraform/outputs.tf` to understand existing resource definitions
 
 ---
 
@@ -36,24 +36,24 @@
 
 ### Terraform Infrastructure (US2)
 
-- [ ] T004 [US2] Add `upcloud_network` resource for K8s private network (172.16.1.0/24, fi-hel1, DHCP enabled) in `deploy/terraform/main.tf`
-- [ ] T005 [US2] Add `upcloud_kubernetes_cluster` resource (development plan, fi-hel1 zone, references private network, control_plane_ip_filter for API access) in `deploy/terraform/main.tf`
-- [ ] T006 [US2] Add `upcloud_kubernetes_node_group` resource (1x DEV-1xCPU-1GB, node_count=1, references cluster) in `deploy/terraform/main.tf`
-- [ ] T007 [US2] Add `kubernetes` and `helm` provider blocks configured from cluster outputs (host, client_certificate, client_key, cluster_ca_certificate) in `deploy/terraform/main.tf`
-- [ ] T008 [US2] Add `helm_release` for ingress-nginx (hostNetwork: true, DaemonSet, controller.service.type=ClusterIP) in `deploy/terraform/main.tf`
-- [ ] T009 [US2] Add `helm_release` for cert-manager (installCRDs: true) and `kubernetes_manifest` for ClusterIssuer (letsencrypt-prod, HTTP-01 solver, nginx ingress class) in `deploy/terraform/main.tf`
-- [ ] T010 [US2] Remove `upcloud_server`, `upcloud_server_group`, and `upcloud_firewall_rules` resources from `deploy/terraform/main.tf`. Remove `cloud-init.yaml` template reference.
-- [ ] T011 [US2] Update `deploy/terraform/variables.tf`: remove server-related variables (ssh_allow_ip, enable_vpn), add K8s variables (k8s_version, node_plan, node_count, control_plane_ip_filter)
-- [ ] T012 [US2] Update `deploy/terraform/outputs.tf`: remove server IP output, add kubeconfig output (sensitive), worker node public IP output
-- [ ] T013 [US2] Delete `deploy/terraform/cloud-init.yaml` (no longer needed — K8s replaces cloud-init bootstrap)
+- [x] T004 [US2] Add `upcloud_network` resource for K8s private network (172.16.1.0/24, fi-hel1, DHCP enabled) in `deploy/terraform/main.tf`
+- [x] T005 [US2] Add `upcloud_kubernetes_cluster` resource (development plan, fi-hel1 zone, references private network, control_plane_ip_filter for API access) in `deploy/terraform/main.tf`
+- [x] T006 [US2] Add `upcloud_kubernetes_node_group` resource (1x DEV-1xCPU-1GB, node_count=1, references cluster) in `deploy/terraform/main.tf`
+- [x] T007 [US2] Add `kubernetes` and `helm` provider blocks configured from cluster outputs (host, client_certificate, client_key, cluster_ca_certificate) in `deploy/terraform/main.tf`
+- [x] T008 [US2] Add `helm_release` for ingress-nginx (hostNetwork: true, DaemonSet, controller.service.type=ClusterIP) in `deploy/terraform/main.tf`
+- [x] T009 [US2] Add `helm_release` for cert-manager (installCRDs: true) and `kubernetes_manifest` for ClusterIssuer (letsencrypt-prod, HTTP-01 solver, nginx ingress class) in `deploy/terraform/main.tf`
+- [x] T010 [US2] Remove `upcloud_server`, `upcloud_server_group`, and `upcloud_firewall_rules` resources from `deploy/terraform/main.tf`. Remove `cloud-init.yaml` template reference.
+- [x] T011 [US2] Update `deploy/terraform/variables.tf`: remove server-related variables (ssh_allow_ip, enable_vpn), add K8s variables (k8s_version, node_plan, node_count, control_plane_ip_filter)
+- [x] T012 [US2] Update `deploy/terraform/outputs.tf`: remove server IP output, add kubeconfig output (sensitive), worker node public IP output
+- [x] T013 [US2] Delete `deploy/terraform/cloud-init.yaml` (no longer needed — K8s replaces cloud-init bootstrap)
 
 ### Kubernetes Secrets & ConfigMaps (US4)
 
-- [ ] T014 [US4] Add `kubernetes_secret` resource for `app-secrets` (DATABASE_URL from DB resource output, SESSION_SECRET from variable, S3 credentials from object storage outputs, NEW_RELIC_LICENSE_KEY from variable) in `deploy/terraform/main.tf`
-- [ ] T015 [US4] Add `kubernetes_secret` resource for `openvpn-config` (VPN config file fetched from S3 via `local_file` data source or local-exec provisioner) in `deploy/terraform/main.tf`
-- [ ] T016 [US4] Add `kubernetes_config_map` resource for `app-config` (PORT, AUTH_ENABLED, DOMAIN, RPID, ORIGIN, MQTT_HOST=localhost, VPN_CHECK_HOST, CONTROLLER_IP, OTEL_SERVICE_NAME, GITHUB_REPO — values from current `deploy/deployer/config.env`) in `deploy/terraform/main.tf`
-- [ ] T017 [US4] Add `kubernetes_config_map` resource for `mosquitto-config` (listener 1883 0.0.0.0, allow_anonymous true) in `deploy/terraform/main.tf`
-- [ ] T018 [US2] Run `terraform validate` to verify all resource definitions are syntactically correct
+- [x] T014 [US4] Add `kubernetes_secret` resource for `app-secrets` (DATABASE_URL from DB resource output, SESSION_SECRET from variable, S3 credentials from object storage outputs, NEW_RELIC_LICENSE_KEY from variable) in `deploy/terraform/main.tf`
+- [x] T015 [US4] Add `kubernetes_secret` resource for `openvpn-config` (VPN config file fetched from S3 via `local_file` data source or local-exec provisioner) in `deploy/terraform/main.tf`
+- [x] T016 [US4] Add `kubernetes_config_map` resource for `app-config` (PORT, AUTH_ENABLED, DOMAIN, RPID, ORIGIN, MQTT_HOST=localhost, VPN_CHECK_HOST, CONTROLLER_IP, OTEL_SERVICE_NAME, GITHUB_REPO — values from current `deploy/deployer/config.env`) in `deploy/terraform/main.tf`
+- [x] T017 [US4] Add `kubernetes_config_map` resource for `mosquitto-config` (listener 1883 0.0.0.0, allow_anonymous true) in `deploy/terraform/main.tf`
+- [x] T018 [US2] Run `terraform validate` to verify all resource definitions are syntactically correct
 
 **Checkpoint**: `terraform apply` provisions the cluster, node, ingress controller, cert-manager, secrets, and configmaps. `kubectl get nodes` shows the worker node ready. `kubectl get secrets` shows app-secrets and openvpn-config.
 
@@ -67,12 +67,12 @@
 
 ### Implementation for User Story 1
 
-- [ ] T019 [P] [US1] Create `deploy/k8s/app-deployment.yaml`: Deployment with 1 replica, 3 containers (app, openvpn sidecar, mosquitto sidecar). App container: image ghcr.io/wnt/greenhouse-solar-heater:latest, port 3000, envFrom app-config ConfigMap + app-secrets Secret, readOnlyRootFilesystem, runAsUser 1000, tmpfs /tmp 64Mi, liveness/readiness probes on /health. OpenVPN sidecar: image ghcr.io/wnt/greenhouse-solar-heater-openvpn:latest, NET_ADMIN capability, hostPath /dev/net/tun CharDevice, Secret openvpn-config mounted at /etc/openvpn. Mosquitto sidecar: image eclipse-mosquitto:2-openssl, port 1883, ConfigMap mosquitto-config, readOnlyRootFilesystem, runAsUser 1883, emptyDir for data. Rolling update strategy: maxSurge 1, maxUnavailable 0.
-- [ ] T020 [P] [US1] Create `deploy/k8s/services.yaml`: ClusterIP Service named `app` on port 3000, selector app=greenhouse
-- [ ] T021 [P] [US1] Create `deploy/k8s/ingress.yaml`: Ingress resource for greenhouse.madekivi.fi, ingressClassName nginx, TLS with cert-manager annotation (cert-manager.io/cluster-issuer: letsencrypt-prod), secretName app-tls, backend service app port 3000
-- [ ] T022 [US1] Update `deploy/k8s/kustomization.yaml` to list all manifest files (app-deployment.yaml, services.yaml, ingress.yaml)
-- [ ] T023 [US1] Verify `deploy/docker/Dockerfile` does not need changes for K8s (confirm EXPOSE 3000, non-root user, health endpoint compatibility)
-- [ ] T024 [US1] Verify `deploy/openvpn/Dockerfile` does not need changes for K8s (confirm /dev/net/tun support, NET_ADMIN compatibility, config file path matches Secret mount)
+- [x] T019 [P] [US1] Create `deploy/k8s/app-deployment.yaml`: Deployment with 1 replica, 3 containers (app, openvpn sidecar, mosquitto sidecar). App container: image ghcr.io/wnt/greenhouse-solar-heater:latest, port 3000, envFrom app-config ConfigMap + app-secrets Secret, readOnlyRootFilesystem, runAsUser 1000, tmpfs /tmp 64Mi, liveness/readiness probes on /health. OpenVPN sidecar: image ghcr.io/wnt/greenhouse-solar-heater-openvpn:latest, NET_ADMIN capability, hostPath /dev/net/tun CharDevice, Secret openvpn-config mounted at /etc/openvpn. Mosquitto sidecar: image eclipse-mosquitto:2-openssl, port 1883, ConfigMap mosquitto-config, readOnlyRootFilesystem, runAsUser 1883, emptyDir for data. Rolling update strategy: maxSurge 1, maxUnavailable 0.
+- [x] T020 [P] [US1] Create `deploy/k8s/services.yaml`: ClusterIP Service named `app` on port 3000, selector app=greenhouse
+- [x] T021 [P] [US1] Create `deploy/k8s/ingress.yaml`: Ingress resource for greenhouse.madekivi.fi, ingressClassName nginx, TLS with cert-manager annotation (cert-manager.io/cluster-issuer: letsencrypt-prod), secretName app-tls, backend service app port 3000
+- [x] T022 [US1] Update `deploy/k8s/kustomization.yaml` to list all manifest files (app-deployment.yaml, services.yaml, ingress.yaml)
+- [x] T023 [US1] Verify `deploy/docker/Dockerfile` does not need changes for K8s (confirm EXPOSE 3000, non-root user, health endpoint compatibility)
+- [x] T024 [US1] Verify `deploy/openvpn/Dockerfile` does not need changes for K8s (confirm /dev/net/tun support, NET_ADMIN compatibility, config file path matches Secret mount)
 
 **Checkpoint**: `kubectl apply -k deploy/k8s/` deploys the app pod. All 3 containers start, HTTPS works on the domain, passkey auth succeeds, Shelly device communication works through VPN tunnel.
 
@@ -86,9 +86,9 @@
 
 ### Implementation for User Story 3
 
-- [ ] T025 [US3] Update `.github/workflows/deploy.yml`: Remove deployer image build job entirely. Keep test job and app image build job. Keep openvpn image build job (or add if missing). Add deploy job after build: install kubectl, decode KUBE_CONFIG_DATA secret to ~/.kube/config, run `kubectl set image deployment/app app=ghcr.io/wnt/greenhouse-solar-heater:$SHA openvpn=ghcr.io/wnt/greenhouse-solar-heater-openvpn:$SHA`, run `kubectl rollout status deployment/app --timeout=5m`.
-- [ ] T026 [US3] Add `KUBE_CONFIG_DATA` to GitHub Actions secrets documentation (base64-encoded kubeconfig from `terraform output -raw kubeconfig | base64`). Note in deploy workflow comments how to refresh this secret.
-- [ ] T027 [US3] Verify rolling update works: deployment strategy maxSurge=1, maxUnavailable=0 ensures zero-downtime. Old pod continues serving until new pod passes readiness check.
+- [x] T025 [US3] Update `.github/workflows/deploy.yml`: Remove deployer image build job entirely. Keep test job and app image build job. Keep openvpn image build job (or add if missing). Add deploy job after build: install kubectl, decode KUBE_CONFIG_DATA secret to ~/.kube/config, run `kubectl set image deployment/app app=ghcr.io/wnt/greenhouse-solar-heater:$SHA openvpn=ghcr.io/wnt/greenhouse-solar-heater-openvpn:$SHA`, run `kubectl rollout status deployment/app --timeout=5m`.
+- [x] T026 [US3] Add `KUBE_CONFIG_DATA` to GitHub Actions secrets documentation (base64-encoded kubeconfig from `terraform output -raw kubeconfig | base64`). Note in deploy workflow comments how to refresh this secret.
+- [x] T027 [US3] Verify rolling update works: deployment strategy maxSurge=1, maxUnavailable=0 ensures zero-downtime. Old pod continues serving until new pod passes readiness check.
 
 **Checkpoint**: Push to main triggers build → push → deploy → rolling update. `kubectl rollout history deployment/app` shows the new revision.
 
@@ -102,7 +102,7 @@
 
 ### Implementation for User Story 5
 
-- [ ] T028 [US5] Verify cost estimates in `specs/014-migrate-upcloud-kubernetes/spec.md` against actual UpCloud pricing page. Update the Cost Estimation section with verified prices (DEV-1xCPU-1GB node, free dev control plane, existing DB and object storage costs). Include percentage change from current infrastructure.
+- [x] T028 [US5] Verify cost estimates in `specs/014-migrate-upcloud-kubernetes/spec.md` against actual UpCloud pricing page. Update the Cost Estimation section with verified prices (DEV-1xCPU-1GB node, free dev control plane, existing DB and object storage costs). Include percentage change from current infrastructure.
 
 **Checkpoint**: Cost estimation is accurate and includes line-item costs with source references.
 
@@ -112,12 +112,12 @@
 
 **Purpose**: Clean up old deployment artifacts, update documentation
 
-- [ ] T029 [P] Delete `deploy/deployer/` directory entirely (Dockerfile, deploy.sh, docker-compose.yml, Caddyfile, config.env) — replaced by K8s manifests and Terraform
-- [ ] T030 [P] Delete `deploy/terraform/cloud-init.yaml` if not already removed in T013
-- [ ] T031 Update `CLAUDE.md`: update Cloud Deployment Architecture section to reflect Kubernetes (replace Docker Compose description with K8s architecture), update Environment Variable Split section (replace cloud-init/deployer with K8s Secrets/ConfigMaps), update CI/CD workflow descriptions, add `deploy/k8s/` to File Relationships, remove deployer references
-- [ ] T032 Update `specs/014-migrate-upcloud-kubernetes/spec.md` status from Draft to Complete
-- [ ] T033 Run `terraform validate` and `kubectl diff -k deploy/k8s/` to verify all manifests are valid
-- [ ] T034 Run existing test suite (`npm test`) to confirm no regressions from infrastructure changes
+- [x] T029 [P] Delete `deploy/deployer/` directory entirely (Dockerfile, deploy.sh, docker-compose.yml, Caddyfile, config.env) — replaced by K8s manifests and Terraform
+- [x] T030 [P] Delete `deploy/terraform/cloud-init.yaml` if not already removed in T013
+- [x] T031 Update `CLAUDE.md`: update Cloud Deployment Architecture section to reflect Kubernetes (replace Docker Compose description with K8s architecture), update Environment Variable Split section (replace cloud-init/deployer with K8s Secrets/ConfigMaps), update CI/CD workflow descriptions, add `deploy/k8s/` to File Relationships, remove deployer references
+- [x] T032 Update `specs/014-migrate-upcloud-kubernetes/spec.md` status from Draft to Complete
+- [x] T033 Run `terraform validate` and `kubectl diff -k deploy/k8s/` to verify all manifests are valid
+- [x] T034 Run existing test suite (`npm test`) to confirm no regressions from infrastructure changes
 
 ---
 

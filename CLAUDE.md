@@ -38,10 +38,10 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `server/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB)
 - `server/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push)
 - `deploy/` → cloud deployment infrastructure
-- `deploy/terraform/` → UpCloud server, firewall rules, Managed Object Storage (Terraform)
+- `deploy/terraform/` → UpCloud Managed Kubernetes cluster, Managed Object Storage, Managed PostgreSQL, K8s Secrets/ConfigMaps, Helm releases (Terraform)
+- `deploy/k8s/` → Kubernetes manifests: app Deployment (app + openvpn + mosquitto sidecar), Service, Ingress, kustomization.yaml
 - `deploy/docker/` → App Dockerfile only
-- `deploy/deployer/` → Deployer image: Dockerfile, deploy.sh, docker-compose.yml, Caddyfile, config.env
-- `deploy/openvpn/` → OpenVPN server: Dockerfile, config template, setup script
+- `deploy/openvpn/` → OpenVPN sidecar: Dockerfile (Alpine + openvpn)
 - `design/docs/` → prose docs: design.md, bom.md, ideas/, superpowers/
 - `design/diagrams/` → hand-authored SVG with `data-` attributes + Mermaid control logic
 - `design/construction/` → physical build instructions
@@ -170,7 +170,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 ## CI / GitHub Actions
 
 - `.github/workflows/ci.yml` — runs the full test suite (unit, simulation, auth, e2e) on every push. Triggers on `push` only (not `pull_request`) so tests run exactly once — opening a PR from an already-pushed branch does not re-trigger.
-- `.github/workflows/deploy.yml` — CD pipeline: test → build app + deployer images → push to GHCR. Systemd timer on the server pulls deployer, which applies config and updates services. Triggers on push to main/master.
+- `.github/workflows/deploy.yml` — CD pipeline: test → build app + openvpn images → push to GHCR → `kubectl set image` rolling update on UKS cluster. Triggers on push to main/master. Requires `KUBE_CONFIG_DATA` GitHub secret (base64-encoded kubeconfig).
 - `.github/workflows/deploy-pages.yml` — deploys playground to GitHub Pages on push to main/master
 - `.github/workflows/lint-shelly.yml` — runs Shelly linter on push/PR when `shelly/` files change
 
@@ -213,31 +213,30 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 ## Cloud Deployment Architecture
 
 ```
-Internet → Caddy (:443, TLS) → OpenVPN (shared network) → Node.js app (:3000) → S3 Object Storage (credentials)
-                                         ↕ VPN tunnel
-                                    Shelly devices (LAN)
+Internet → Worker Node :80/:443 (hostNetwork)
+  → NGINX Ingress Controller (cert-manager TLS)
+    → K8s Service → Pod: app + openvpn (sidecar) + mosquitto (sidecar)
+                          ↕ VPN tunnel
+                     Shelly devices (LAN)
 ```
 
-- **Infrastructure**: UpCloud DEV-1xCPU-1GB-10GB server (fi-hel1) + Managed Object Storage (europe-1), provisioned via Terraform
-- **Deployer**: Config lives in a deployer container image (`deploy/deployer/`), not cloud-init. Systemd timer pulls and runs the deployer every 5 minutes.
-- **Containers**: Docker Compose with `app` (Node.js, shares openvpn network via `network_mode: "service:openvpn"`) + `caddy` (reverse proxy, auto TLS) + `openvpn` (VPN). Caddy connects to `openvpn:3000` since the app shares the openvpn network namespace.
-- **Container hardening**: App and Caddy containers run with read-only root filesystems and as non-root users. OpenVPN needs NET_ADMIN capability and /dev/net/tun access.
-- **Persistence**: UpCloud Managed Object Storage (S3-compatible, €5/month) — no Docker volumes for app data. Stores WebAuthn credentials (`credentials.json`) and VPN config (`openvpn.conf`).
-- **VPN config persistence**: The deployer downloads `openvpn.conf` from S3 before starting containers (survives server recreation). On first setup, it uploads a locally-placed config to S3 for future rebuilds. Uses the app image as a one-shot S3 helper (`server/lib/vpn-config.js`).
-- **VPN networking**: The app container uses `network_mode: "service:openvpn"` to share the OpenVPN container's network namespace. This gives the app direct access to the VPN tunnel, allowing it to proxy RPC requests to Shelly devices on the home LAN. Firewall rule controlled via `enable_vpn` Terraform variable. OpenVPN uses static key (PSK) mode for compatibility with UniFi site-to-site VPN.
+- **Infrastructure**: UpCloud Managed Kubernetes (UKS) development plan (free control plane) + 1x DEV-1xCPU-1GB worker node (fi-hel1) + Managed Object Storage (europe-1) + Managed PostgreSQL (TimescaleDB), provisioned via Terraform
+- **Pod architecture**: Single Deployment with 3 containers sharing the network namespace: app (Node.js :3000), openvpn (sidecar, VPN tunnel), mosquitto (sidecar, MQTT :1883). The app reaches Mosquitto on `localhost:1883` and has VPN access through the openvpn sidecar.
+- **TLS termination**: NGINX Ingress controller (DaemonSet, `hostNetwork: true`) binds to ports 80/443 on the worker node's public IP. cert-manager with Let's Encrypt HTTP-01 challenge for automatic TLS certificates. No managed load balancer.
+- **Container hardening**: App runs with read-only root filesystem, non-root user (1000). Mosquitto runs as non-root (1883). OpenVPN needs NET_ADMIN capability and /dev/net/tun hostPath access (not privileged mode).
+- **Persistence**: UpCloud Managed Object Storage (S3-compatible) — stores WebAuthn credentials (`credentials.json`) and VPN config (`openvpn.conf`). UpCloud Managed PostgreSQL with TimescaleDB for sensor history.
+- **VPN networking**: The openvpn sidecar container shares the pod's network namespace with the app. This gives the app direct access to the VPN tunnel, allowing it to proxy RPC requests to Shelly devices on the home LAN. OpenVPN uses static key (PSK) mode for compatibility with UniFi site-to-site VPN.
 - **Auth**: WebAuthn passkeys via @simplewebauthn, HMAC-signed session cookies (30-day expiry)
-- **CD**: GitHub Actions → GHCR (app + deployer images) → systemd timer pulls deployer → deployer runs `docker compose up -d`
-- **No SSH exposed**: Firewall blocks port 22. Emergency access via UpCloud web console.
+- **CD**: GitHub Actions → GHCR (app + openvpn images) → `kubectl set image` rolling update on the K8s cluster. Zero-downtime deployments via maxSurge=1, maxUnavailable=0.
 
-### Environment Variable Split
+### Configuration Management
 
-Server environment is split into two sources, merged by the deployer:
+Server environment is delivered via Kubernetes-native mechanisms, managed by Terraform:
 
-- **`.env.secrets`** (cloud-init, immutable) — secrets that require server recreation to change: `SESSION_SECRET`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`
-- **`config.env`** (deployer image, mutable) — service config that deploys via CD without server recreation: `PORT`, `AUTH_ENABLED`, `RPID`, `ORIGIN`, `DOMAIN`, `GITHUB_REPO`, `VPN_CHECK_HOST`, `VPN_CONFIG_KEY`, `SETUP_WINDOW_MINUTES`, `NODE_ENV`, `CONTROLLER_IP`, `CONTROLLER_SCRIPT_ID`, `CONTROLLER_VPN_IP`, `MQTT_HOST`
-- **`.env`** (deployer merge output) — merged file consumed by Docker Compose. Secrets win on duplicate keys.
-
-VPN is always-on (the app uses `network_mode: "service:openvpn"`). Firewall rule controlled via `enable_vpn=true` in Terraform.
+- **`kubernetes_secret/app-secrets`** — sensitive values: `DATABASE_URL`, `SESSION_SECRET`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `NEW_RELIC_LICENSE_KEY`. Populated from Terraform resource outputs and variables.
+- **`kubernetes_config_map/app-config`** — non-secret service config: `PORT`, `AUTH_ENABLED`, `RPID`, `ORIGIN`, `DOMAIN`, `GITHUB_REPO`, `VPN_CHECK_HOST`, `VPN_CONFIG_KEY`, `SETUP_WINDOW_MINUTES`, `NODE_ENV`, `CONTROLLER_IP`, `CONTROLLER_SCRIPT_ID`, `MQTT_HOST`, `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`
+- **`kubernetes_secret/openvpn-config`** — VPN configuration file
+- **`kubernetes_config_map/mosquitto-config`** — Mosquitto listener configuration
 
 ## Observability (New Relic)
 
@@ -250,7 +249,7 @@ cd deploy/terraform
 terraform apply -var="new_relic_license_key=NRAK-..."
 ```
 
-The deployer picks up the key from S3 within 5 minutes and restarts containers with tracing enabled.
+Terraform stores the key in the `app-secrets` Kubernetes Secret. Redeploy to activate.
 
 ### Architecture
 
@@ -258,15 +257,15 @@ The deployer picks up the key from S3 within 5 minutes and restarts containers w
 - **`server/lib/nr-config.js`** — S3 persistence helper for the license key (same pattern as `db-config.js`). S3 key: `newrelic-config.json`.
 - **`server/lib/logger.js`** — Injects `trace.id` and `span.id` into JSON log entries for trace-log correlation.
 - **`server/lib/mqtt-bridge.js`** — Manual MQTT spans (`mqtt.message`, `mqtt.publish`) via `@opentelemetry/api`.
-- **Docker Compose `monitoring` profile** — `newrelic-infra` (host/container metrics) and `nri-postgresql` (database health). Only started when license key is present.
+- **Monitoring agents** — New Relic Infrastructure and nri-postgresql can be deployed as separate K8s workloads when needed.
 
 ### Environment Variables
 
 | Variable | Source | Purpose |
 |----------|--------|---------|
-| `NEW_RELIC_LICENSE_KEY` | S3 (via deployer) | Ingest license key. Empty = telemetry disabled. |
-| `NRIA_LICENSE_KEY` | S3 (via deployer) | Same key, for infra agent container. |
-| `OTEL_SERVICE_NAME` | config.env | Service name in New Relic (default: `greenhouse-monitor`). |
+| `NEW_RELIC_LICENSE_KEY` | K8s Secret (via Terraform) | Ingest license key. Empty = telemetry disabled. |
+| `NRIA_LICENSE_KEY` | K8s Secret (if infra agent deployed) | Same key, for infra agent. |
+| `OTEL_SERVICE_NAME` | K8s ConfigMap (via Terraform) | Service name in New Relic (default: `greenhouse-monitor`). |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | config.env | OTLP endpoint (auto-detected from license key region: EU `https://otlp.eu01.nr-data.net`, US `https://otlp.nr-data.net`). |
 
 ### What Gets Traced

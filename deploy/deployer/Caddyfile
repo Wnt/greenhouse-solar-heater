@@ -1,8 +1,0 @@
-{$DOMAIN} {
-	reverse_proxy openvpn:3000
-
-	log {
-		output stdout
-		format json
-	}
-}

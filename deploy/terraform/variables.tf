@@ -1,35 +1,12 @@
-variable "ssh_public_key" {
-  description = "SSH public key for server access"
-  type        = string
-}
-
-variable "ssh_allow_ip" {
-  description = "IP address allowed to SSH into the server. Leave empty to disable SSH access."
-  type        = string
-  default     = ""
-}
-
 variable "domain" {
   description = "Domain name for the monitoring UI (e.g., greenhouse.madekivi.fi)"
   type        = string
 }
 
 variable "upcloud_zone" {
-  description = "UpCloud zone for server placement"
+  description = "UpCloud zone for resource placement"
   type        = string
   default     = "fi-hel1"
-}
-
-variable "server_plan" {
-  description = "UpCloud server plan (CPU-RAM)"
-  type        = string
-  default     = "DEV-1xCPU-1GB-10GB"
-}
-
-variable "enable_vpn" {
-  description = "Enable OpenVPN container and firewall rule (default: false)"
-  type        = bool
-  default     = false
 }
 
 variable "session_secret" {
@@ -56,7 +33,51 @@ variable "db_plan" {
 }
 
 variable "new_relic_license_key" {
-  description = "New Relic ingest license key (NRAK-...). Leave empty to disable observability. Enable with: terraform apply -var=\"new_relic_license_key=NRAK-...\""
+  description = "New Relic ingest license key (NRAK-...). Leave empty to disable observability."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+# ── Kubernetes variables ──
+
+variable "k8s_version" {
+  description = "Kubernetes version for the UKS cluster"
+  type        = string
+  default     = "1.32"
+}
+
+variable "node_plan" {
+  description = "UpCloud server plan for Kubernetes worker nodes"
+  type        = string
+  default     = "DEV-1xCPU-1GB-10GB"
+}
+
+variable "node_count" {
+  description = "Number of Kubernetes worker nodes"
+  type        = number
+  default     = 1
+}
+
+variable "control_plane_ip_filter" {
+  description = "List of IP addresses/CIDRs allowed to access the Kubernetes API. Use [\"0.0.0.0/0\"] for unrestricted access."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "ssh_public_key" {
+  description = "SSH public key for worker node access (optional)"
+  type        = string
+  default     = ""
+}
+
+variable "letsencrypt_email" {
+  description = "Email address for Let's Encrypt certificate notifications"
+  type        = string
+}
+
+variable "openvpn_config" {
+  description = "OpenVPN configuration file content. Populate after initial setup or pass from a file."
   type        = string
   sensitive   = true
   default     = ""
