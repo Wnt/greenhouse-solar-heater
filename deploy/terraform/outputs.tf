@@ -1,8 +1,3 @@
-output "server_ip" {
-  description = "Public IP address of the UpCloud server — create an A record pointing your domain to this IP"
-  value       = upcloud_server.monitor.network_interface[0].ip_address
-}
-
 output "domain" {
   description = "Domain name for the server"
   value       = var.domain
@@ -41,7 +36,30 @@ output "database_port" {
 }
 
 output "database_url" {
-  description = "Full PostgreSQL connection URL (auto-generated, stored in S3)"
+  description = "Full PostgreSQL connection URL"
   value       = upcloud_managed_database_postgresql.timeseries.service_uri
   sensitive   = true
+}
+
+# ── Kubernetes outputs ──
+
+output "kubeconfig" {
+  description = "Kubeconfig YAML for the UKS cluster — use with: terraform output -raw kubeconfig > ~/.kube/config"
+  value       = data.upcloud_kubernetes_cluster.main.kubeconfig
+  sensitive   = true
+}
+
+output "cluster_host" {
+  description = "Kubernetes API server endpoint"
+  value       = data.upcloud_kubernetes_cluster.main.host
+}
+
+output "cluster_name" {
+  description = "UKS cluster name"
+  value       = upcloud_kubernetes_cluster.main.name
+}
+
+output "worker_node_ip_command" {
+  description = "Run this command to get the worker node's public IP for DNS"
+  value       = "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"ExternalIP\")].address}'"
 }
