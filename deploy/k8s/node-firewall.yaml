@@ -45,10 +45,11 @@ spec:
               iptables -A NODE-FIREWALL -p tcp --dport 10250 -j RETURN
               iptables -A NODE-FIREWALL -p tcp --dport 6443 -j RETURN
 
-              # Allow VPN from whitelisted CIDRs only
+              # Allow VPN and SSH from whitelisted CIDRs only
               IFS=',' ; for cidr in $VPN_ALLOWED_CIDRS; do
                 iptables -A NODE-FIREWALL -p udp --dport 1194 -s "$cidr" -j RETURN
-                echo "node-firewall: ACCEPT udp/1194 from $cidr"
+                iptables -A NODE-FIREWALL -p tcp --dport 22 -s "$cidr" -j RETURN
+                echo "node-firewall: ACCEPT udp/1194 + tcp/22 from $cidr"
               done
 
               # Allow pod and service network CIDRs
