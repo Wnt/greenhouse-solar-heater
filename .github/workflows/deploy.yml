@@ -94,9 +94,6 @@ jobs:
     needs: [build-app, build-openvpn]
     runs-on: ubuntu-latest
     steps:
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
-
       - name: Configure kubeconfig
         run: |
           mkdir -p ~/.kube
