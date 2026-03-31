@@ -10,7 +10,6 @@ const net = require('net');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const crypto = require('crypto');
 const createLogger = require('./lib/logger');
 const valvePoller = require('./lib/valve-poller');
 const mqttBridge = require('./lib/mqtt-bridge');
@@ -207,38 +206,14 @@ function handleHealth(req, res) {
 }
 
 // ── Version endpoint ──
-// Returns a hash of playground JS file stats for client-side change detection.
+// Returns the git commit hash for client-side change detection.
+// GIT_COMMIT is baked into the Docker image at build time (see Dockerfile).
 
-var JS_DIR = path.join(PLAYGROUND_DIR, 'js');
-var versionCache = { hash: '', ts: '', expires: 0 };
-var VERSION_CACHE_TTL = 5000; // 5 seconds
-
-function computeJsHash() {
-  var now = Date.now();
-  if (versionCache.expires > now) {
-    return versionCache;
-  }
-  try {
-    var files = fs.readdirSync(JS_DIR).filter(function (f) {
-      return f.endsWith('.js');
-    }).sort();
-    var parts = [];
-    for (var i = 0; i < files.length; i++) {
-      var stat = fs.statSync(path.join(JS_DIR, files[i]));
-      parts.push(files[i] + ':' + stat.mtimeMs + ':' + stat.size);
-    }
-    var hash = crypto.createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 16);
-    versionCache = { hash: hash, ts: new Date().toISOString(), expires: now + VERSION_CACHE_TTL };
-    return versionCache;
-  } catch (e) {
-    return versionCache.hash ? versionCache : { hash: 'error', ts: new Date().toISOString(), expires: 0 };
-  }
-}
+var APP_VERSION = process.env.GIT_COMMIT || 'unknown';
 
 function handleVersion(req, res) {
-  var v = computeJsHash();
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ hash: v.hash, ts: v.ts }));
+  res.end(JSON.stringify({ hash: APP_VERSION }));
 }
 
 // ── Auth middleware ──
