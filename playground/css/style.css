@@ -190,7 +190,7 @@ a:hover { color: var(--primary-dim); }
 
 /* ── Page header (inside main) ── */
 .view-header {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .view-header h2 {
@@ -324,7 +324,7 @@ a:hover { color: var(--primary-dim); }
 
 .mode-card-inactive {
   background: var(--surface-container);
-  padding: 16px 20px;
+  padding: 16px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -391,7 +391,7 @@ a:hover { color: var(--primary-dim); }
   font-style: italic;
   font-size: 24px;
   color: var(--on-surface);
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .tank-gauge-ring {
@@ -435,7 +435,7 @@ a:hover { color: var(--primary-dim); }
   text-transform: uppercase;
   letter-spacing: 0.2em;
   color: var(--secondary);
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 .tank-gauge-message {
@@ -443,7 +443,7 @@ a:hover { color: var(--primary-dim); }
   font-style: italic;
   font-size: 15px;
   color: var(--on-surface-variant);
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   min-height: 1.5em;
 }
 
@@ -500,7 +500,7 @@ a:hover { color: var(--primary-dim); }
   gap: 4px;
   background: var(--surface-container-lowest);
   border-radius: 9999px;
-  padding: 3px;
+  padding: 4px;
 }
 
 .time-range-pills button {
@@ -510,7 +510,7 @@ a:hover { color: var(--primary-dim); }
   font-family: 'Manrope', sans-serif;
   font-size: 11px;
   font-weight: 700;
-  padding: 5px 12px;
+  padding: 8px 12px;
   border-radius: 9999px;
   cursor: pointer;
   text-transform: uppercase;
@@ -612,7 +612,7 @@ a:hover { color: var(--primary-dim); }
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 8px 12px;
   pointer-events: none;
   min-width: 150px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
@@ -622,7 +622,7 @@ a:hover { color: var(--primary-dim); }
   font-size: 11px;
   font-weight: 700;
   color: var(--on-surface);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   letter-spacing: 0.03em;
 }
 
@@ -675,14 +675,14 @@ a:hover { color: var(--primary-dim); }
 }
 
 .log-item:not(:last-child) {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  /* No-Line rule: use spacing gap instead of border for separation */
 }
 
 .log-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-top: 6px;
+  margin-top: 8px;
   flex-shrink: 0;
 }
 
@@ -757,7 +757,7 @@ a:hover { color: var(--primary-dim); }
 .valve-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 8px;
+  gap: 12px;
 }
 
 .valve-chip {
@@ -885,7 +885,7 @@ select {
   color: var(--on-surface);
   border: none;
   border-radius: 0.5rem;
-  padding: 8px 14px;
+  padding: 8px 16px;
   font-size: 13px;
   font-family: 'Manrope', sans-serif;
 }
@@ -897,7 +897,7 @@ button {
   color: var(--on-surface);
   border: none;
   border-radius: 0.5rem;
-  padding: 10px 20px;
+  padding: 12px 24px;
   font-size: 12px;
   font-family: 'Manrope', sans-serif;
   font-weight: 700;
@@ -918,7 +918,7 @@ button.primary:hover { opacity: 0.9; }
 
 /* ── Scenario Preset Buttons ── */
 .preset-btn {
-  padding: 6px 14px;
+  padding: 8px 12px;
   border-radius: 20px;
   border: 1px solid var(--outline-variant);
   background: transparent;
@@ -1028,7 +1028,7 @@ button.primary:hover { opacity: 0.9; }
   font-family: 'Manrope', sans-serif;
   font-size: 12px;
   color: var(--on-surface-variant);
-  padding: 4px 0;
+  padding: 4px 24px;
 }
 
 .connection-dot {
@@ -1062,6 +1062,70 @@ button.primary:hover { opacity: 0.9; }
 
 .staleness-banner.visible { display: block; }
 
+/* ── Connection Overlay (glassmorphism) ── */
+
+.connection-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(17, 19, 25, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 1.5rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  padding: 24px;
+  text-align: center;
+}
+
+.connection-overlay.visible {
+  display: flex;
+}
+
+.connection-overlay-title {
+  font-family: 'Newsreader', Georgia, serif;
+  font-style: italic;
+  font-size: 24px;
+  color: var(--on-surface);
+  margin-bottom: 8px;
+}
+
+.connection-overlay-subtitle {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+/* ── Device Push Disabled State ── */
+
+button.primary.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+.dc-connection-warning {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  margin-top: 8px;
+}
+
+.dc-try-anyway {
+  font-size: 12px;
+  color: var(--secondary);
+  cursor: pointer;
+  margin-top: 4px;
+  display: inline-block;
+}
+
+.dc-try-anyway:hover {
+  color: var(--primary);
+}
+
 /* ── Mode Toggle ── */
 
 .mode-toggle {
@@ -1071,7 +1135,7 @@ button.primary:hover { opacity: 0.9; }
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   color: var(--on-surface-variant);
-  padding: 8px 0;
+  padding: 8px 24px;
 }
 
 .mode-toggle.visible { display: flex; }
@@ -1117,7 +1181,7 @@ button.primary:hover { opacity: 0.9; }
   gap: 6px;
   font-size: 11px;
   color: var(--on-surface-variant);
-  padding: 2px 0;
+  padding: 2px 24px;
 }
 
 .controls-indicator.visible { display: flex; }
@@ -1128,8 +1192,7 @@ button.primary:hover { opacity: 0.9; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--outline-variant);
+  padding: 12px 0;
 }
 
 .device-config-label {
@@ -1177,7 +1240,7 @@ button.primary:hover { opacity: 0.9; }
   color: var(--on-surface);
   border: 1px solid var(--outline-variant);
   border-radius: 8px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   cursor: pointer;

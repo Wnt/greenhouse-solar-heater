@@ -49,6 +49,7 @@ export class LiveSource extends DataSource {
     this.ws = null;
     this._reconnectTimer = null;
     this._reconnectDelay = 1000;
+    this.hasReceivedData = false;
   }
 
   static defaultWsUrl() {
@@ -70,6 +71,7 @@ export class LiveSource extends DataSource {
       this.ws.close();
       this.ws = null;
     }
+    this.hasReceivedData = false;
     this._emitConnectionChange('disconnected');
   }
 
@@ -126,6 +128,7 @@ export class LiveSource extends DataSource {
   }
 
   _handleState(data) {
+    this.hasReceivedData = true;
     // Map MQTT state snapshot to playground's internal format
     const state = {
       t_collector: data.temps ? data.temps.collector : null,

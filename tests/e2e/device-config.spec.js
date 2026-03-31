@@ -62,6 +62,13 @@ async function setupDeviceView(page, initialConfig) {
   // Wait for form to load
   await expect(page.locator('#device-config-form')).toBeVisible();
 
+  // Enable save button (disabled due to no WebSocket in test env)
+  // Tests verify config format, not connection state
+  await page.evaluate(() => {
+    var btn = document.getElementById('dc-save');
+    if (btn) { btn.classList.remove('disabled'); btn.disabled = false; }
+  });
+
   return { putRequests, getConfig: () => ({ ...savedConfig }) };
 }
 
