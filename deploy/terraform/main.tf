@@ -349,6 +349,99 @@ resource "kubernetes_config_map" "vpn_firewall" {
   depends_on = [upcloud_kubernetes_node_group.default]
 }
 
+# ── CI/CD Deployer RBAC ──
+# Minimal ServiceAccount that can only patch the "app" Deployment.
+# The long-lived token is stored as a GitHub Actions secret (KUBE_TOKEN).
+
+resource "kubernetes_service_account" "deployer" {
+  metadata {
+    name = "deployer"
+    labels = {
+      app = "greenhouse"
+    }
+  }
+
+  depends_on = [upcloud_kubernetes_node_group.default]
+}
+
+resource "kubernetes_role" "deployer" {
+  metadata {
+    name = "deployer"
+    labels = {
+      app = "greenhouse"
+    }
+  }
+
+  # Patch the app deployment (for kubectl set image)
+  rule {
+    api_groups     = ["apps"]
+    resources      = ["deployments"]
+    resource_names = ["app"]
+    verbs          = ["get", "patch"]
+  }
+
+  rule {
+    api_groups     = ["apps"]
+    resources      = ["deployments"]
+    resource_names = ["app"]
+    verbs          = ["list"]
+  }
+
+  # Rollout status needs ReplicaSets and Pods
+  rule {
+    api_groups = ["apps"]
+    resources  = ["replicasets"]
+    verbs      = ["get", "list"]
+  }
+
+  rule {
+    api_groups = [""]
+    resources  = ["pods"]
+    verbs      = ["get", "list"]
+  }
+
+  depends_on = [upcloud_kubernetes_node_group.default]
+}
+
+resource "kubernetes_role_binding" "deployer" {
+  metadata {
+    name = "deployer"
+    labels = {
+      app = "greenhouse"
+    }
+  }
+
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Role"
+    name      = kubernetes_role.deployer.metadata[0].name
+  }
+
+  subject {
+    kind      = "ServiceAccount"
+    name      = kubernetes_service_account.deployer.metadata[0].name
+    namespace = "default"
+  }
+
+  depends_on = [upcloud_kubernetes_node_group.default]
+}
+
+resource "kubernetes_secret" "deployer_token" {
+  metadata {
+    name = "deployer-token"
+    labels = {
+      app = "greenhouse"
+    }
+    annotations = {
+      "kubernetes.io/service-account.name" = kubernetes_service_account.deployer.metadata[0].name
+    }
+  }
+
+  type = "kubernetes.io/service-account-token"
+
+  depends_on = [upcloud_kubernetes_node_group.default]
+}
+
 resource "kubernetes_config_map" "mosquitto_config" {
   metadata {
     name = "mosquitto-config"
