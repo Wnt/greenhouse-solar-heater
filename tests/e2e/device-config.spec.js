@@ -11,11 +11,43 @@ import { test, expect } from './fixtures.js';
 
 const DEFAULT_CONFIG = { ce: false, ea: 0, fm: null, am: null, v: 1 };
 
+/** Mock WebSocket so the app sees a stable live connection with state data. */
+async function mockLiveConnection(page) {
+  await page.addInitScript(() => {
+    var OrigWS = window.WebSocket;
+    // @ts-ignore
+    window.WebSocket = function() {
+      var fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+        close: function() { this.readyState = 3; },
+        send: function() {},
+      };
+      setTimeout(function() {
+        fake.readyState = 1;
+        if (fake.onopen) fake.onopen(new Event('open'));
+        if (fake.onmessage) {
+          fake.onmessage({ data: JSON.stringify({ type: 'connection', status: 'connected' }) });
+          fake.onmessage({ data: JSON.stringify({
+            type: 'state',
+            data: { mode: 'idle', temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
+              valves: {}, actuators: { pump: false, fan: false, space_heater: false }, controls_enabled: true }
+          }) });
+        }
+      }, 50);
+      return fake;
+    };
+    // @ts-ignore
+    window.WebSocket.prototype = OrigWS.prototype;
+  });
+}
+
 /** Set up API mock and navigate to device view. */
 async function setupDeviceView(page, initialConfig) {
   const config = { ...DEFAULT_CONFIG, ...initialConfig };
   let savedConfig = { ...config };
   const putRequests = [];
+
+  // Mock WebSocket so connection is stable and save button stays enabled
+  await mockLiveConnection(page);
 
   // Mock GET /api/device-config
   await page.route('**/api/device-config', async (route) => {
@@ -61,13 +93,6 @@ async function setupDeviceView(page, initialConfig) {
 
   // Wait for form to load
   await expect(page.locator('#device-config-form')).toBeVisible();
-
-  // Enable save button (disabled due to no WebSocket in test env)
-  // Tests verify config format, not connection state
-  await page.evaluate(() => {
-    var btn = document.getElementById('dc-save');
-    if (btn) { btn.classList.remove('disabled'); btn.disabled = false; }
-  });
 
   return { putRequests, getConfig: () => ({ ...savedConfig }) };
 }
