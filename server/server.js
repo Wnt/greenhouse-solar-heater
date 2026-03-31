@@ -205,6 +205,17 @@ function handleHealth(req, res) {
   });
 }
 
+// ── Version endpoint ──
+// Returns the git commit hash for client-side change detection.
+// GIT_COMMIT is baked into the Docker image at build time (see Dockerfile).
+
+var APP_VERSION = process.env.GIT_COMMIT || 'unknown';
+
+function handleVersion(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ hash: APP_VERSION }));
+}
+
 // ── Auth middleware ──
 
 var authMiddleware = null;
@@ -285,6 +296,7 @@ function handleDeviceConfigApi(req, res, urlPath, body) {
 
 function resolveRoute(urlPath, method) {
   if (urlPath === '/health') return '/health';
+  if (urlPath === '/version') return '/version';
   if (urlPath.startsWith('/auth/')) return '/auth/*';
   if (urlPath === '/api/device-config') return '/api/device-config';
   if (urlPath === '/api/history') return '/api/history';
@@ -309,6 +321,12 @@ var server = http.createServer(function (req, res) {
   // Health — always accessible
   if (urlPath === '/health') {
     handleHealth(req, res);
+    return;
+  }
+
+  // Version — always accessible (no sensitive data)
+  if (urlPath === '/version') {
+    handleVersion(req, res);
     return;
   }
 
