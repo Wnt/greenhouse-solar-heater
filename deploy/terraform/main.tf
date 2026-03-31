@@ -159,6 +159,13 @@ resource "upcloud_network" "k8s" {
     dhcp    = true
     family  = "IPv4"
   }
+
+  # UKS automatically attaches a router and network-peering routes to this
+  # network for control-plane ↔ worker communication. Terraform must not
+  # remove these computed attributes on subsequent applies.
+  lifecycle {
+    ignore_changes = [router, effective_routes, ip_network[0].dhcp_effective_routes]
+  }
 }
 
 resource "upcloud_kubernetes_cluster" "main" {
