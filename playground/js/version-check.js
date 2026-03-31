@@ -15,11 +15,12 @@ function createToast() {
   el.className = 'update-toast';
   el.innerHTML =
     '<div class="update-toast-body">' +
-      '<div class="update-toast-headline">A new edition is available</div>' +
-      '<div class="update-toast-text">We\u2019ve made some improvements. Refresh to see the latest.</div>' +
+      '<div class="update-toast-content">' +
+        '<div class="update-toast-headline">A new edition is available</div>' +
+      '</div>' +
       '<div class="update-toast-actions">' +
-        '<button class="update-toast-refresh">Refresh now</button>' +
-        '<button class="update-toast-dismiss">Later</button>' +
+        '<button class="update-toast-refresh">Refresh</button>' +
+        '<button class="update-toast-dismiss">\u00d7</button>' +
       '</div>' +
     '</div>';
   el.querySelector('.update-toast-refresh').addEventListener('click', function () {
