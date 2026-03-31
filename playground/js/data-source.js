@@ -50,6 +50,8 @@ export class LiveSource extends DataSource {
     this._reconnectTimer = null;
     this._reconnectDelay = 1000;
     this.hasReceivedData = false;
+    this.mqttStatus = 'unknown';
+    this._connectedAt = 0;
   }
 
   static defaultWsUrl() {
@@ -72,6 +74,8 @@ export class LiveSource extends DataSource {
       this.ws = null;
     }
     this.hasReceivedData = false;
+    this.mqttStatus = 'unknown';
+    this._connectedAt = 0;
     this._emitConnectionChange('disconnected');
   }
 
@@ -87,6 +91,8 @@ export class LiveSource extends DataSource {
 
     this.ws.onopen = () => {
       this._reconnectDelay = 1000;
+      this.mqttStatus = 'unknown';
+      this._connectedAt = Date.now();
       this._emitConnectionChange('connected');
     };
 
@@ -96,9 +102,11 @@ export class LiveSource extends DataSource {
         if (msg.type === 'state') {
           this._handleState(msg.data);
         } else if (msg.type === 'connection') {
-          // Server's MQTT connection status
-          if (msg.status === 'disconnected') {
-            this._emitConnectionChange('disconnected');
+          // Server's MQTT connection status — track separately from WS
+          this.mqttStatus = msg.status;
+          // Notify listeners to re-evaluate display state (WS status unchanged)
+          for (const cb of this._connectionCallbacks) {
+            cb(this.connected ? 'connected' : 'disconnected');
           }
         }
       } catch (e) {
@@ -108,6 +116,7 @@ export class LiveSource extends DataSource {
 
     this.ws.onclose = () => {
       this.ws = null;
+      this.mqttStatus = 'unknown';
       this._emitConnectionChange('disconnected');
       this._scheduleReconnect();
     };

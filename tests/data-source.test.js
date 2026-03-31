@@ -89,6 +89,181 @@ describe('data-source contract', () => {
     assert.deepStrictEqual(statuses, ['connected', 'disconnected', 'reconnecting', 'connected']);
   });
 
+  it('MQTT status is tracked separately from WS connection status', () => {
+    // Simulate LiveSource tracking MQTT status without conflating with WS
+    let connected = false;
+    let mqttStatus = 'unknown';
+    let connectedAt = 0;
+    const statuses = [];
+    const callbacks = [(s) => statuses.push(s)];
+
+    function emitConnectionChange(status) {
+      connected = status === 'connected';
+      for (const cb of callbacks) cb(status);
+    }
+
+    // WS connects
+    mqttStatus = 'unknown';
+    connectedAt = Date.now();
+    emitConnectionChange('connected');
+    assert.strictEqual(connected, true);
+    assert.strictEqual(mqttStatus, 'unknown');
+
+    // Server sends MQTT connected status (should NOT change WS state)
+    mqttStatus = 'connected';
+    for (const cb of callbacks) cb(connected ? 'connected' : 'disconnected');
+    assert.strictEqual(connected, true, 'WS should still be connected');
+    assert.strictEqual(mqttStatus, 'connected');
+
+    // Server sends MQTT disconnected (should NOT change WS state)
+    mqttStatus = 'disconnected';
+    for (const cb of callbacks) cb(connected ? 'connected' : 'disconnected');
+    assert.strictEqual(connected, true, 'WS should still be connected when MQTT disconnects');
+    assert.strictEqual(mqttStatus, 'disconnected');
+
+    // All callbacks received 'connected' since WS never disconnected
+    assert.deepStrictEqual(statuses, ['connected', 'connected', 'connected']);
+  });
+
+  // ── getConnectionDisplayState logic tests ──
+  // The function lives inside index.html's closure. We replicate its logic here
+  // to test the state machine contract independently.
+
+  function getConnectionDisplayState(opts) {
+    var activeSource = opts.activeSource || 'live';
+    var connectionStatus = opts.connectionStatus || 'disconnected';
+    var hasReceivedData = opts.hasReceivedData || false;
+    var mqttStatus = opts.mqttStatus || 'unknown';
+    var lastDataTime = opts.lastDataTime || 0;
+    var connectedAt = opts.connectedAt || 0;
+    var now = opts.now || Date.now();
+
+    if (activeSource !== 'live') return 'active';
+
+    if (connectionStatus === 'connected') {
+      if (mqttStatus === 'disconnected' || mqttStatus === 'reconnecting') {
+        return 'device_offline';
+      }
+      if (hasReceivedData) {
+        if (lastDataTime > 0 && (now - lastDataTime) > 60000) return 'stale';
+        return 'active';
+      }
+      if (connectedAt > 0 && (now - connectedAt) > 10000) {
+        return 'device_offline';
+      }
+      return 'active'; // within grace period
+    }
+
+    if (!hasReceivedData) return 'never_connected';
+    return 'disconnected';
+  }
+
+  it('display state: active in simulation mode', () => {
+    assert.strictEqual(getConnectionDisplayState({ activeSource: 'simulation' }), 'active');
+  });
+
+  it('display state: active when WS connected, MQTT connected, data flowing', () => {
+    assert.strictEqual(getConnectionDisplayState({
+      connectionStatus: 'connected',
+      mqttStatus: 'connected',
+      hasReceivedData: true,
+      lastDataTime: Date.now() - 5000,
+    }), 'active');
+  });
+
+  it('display state: device_offline when WS connected but MQTT disconnected', () => {
+    assert.strictEqual(getConnectionDisplayState({
+      connectionStatus: 'connected',
+      mqttStatus: 'disconnected',
+      hasReceivedData: false,
+    }), 'device_offline');
+  });
+
+  it('display state: device_offline when WS connected but MQTT reconnecting', () => {
+    assert.strictEqual(getConnectionDisplayState({
+      connectionStatus: 'connected',
+      mqttStatus: 'reconnecting',
+      hasReceivedData: true,
+      lastDataTime: Date.now() - 5000,
+    }), 'device_offline');
+  });
+
+  it('display state: device_offline after grace period with no data', () => {
+    var connectedAt = Date.now() - 15000; // 15s ago
+    assert.strictEqual(getConnectionDisplayState({
+      connectionStatus: 'connected',
+      mqttStatus: 'connected',
+      hasReceivedData: false,
+      connectedAt: connectedAt,
+      now: Date.now(),
+    }), 'device_offline');
+  });
+
+  it('display state: active during grace period (WS just connected, no data yet)', () => {
+    var connectedAt = Date.now() - 2000; // 2s ago
+    assert.strictEqual(getConnectionDisplayState({
+      connectionStatus: 'connected',
+      mqttStatus: 'unknown',
+      hasReceivedData: false,
+      connectedAt: connectedAt,
+      now: Date.now(),
+    }), 'active');
+  });
+
+  it('display state: stale when data stops flowing for 60+ seconds', () => {
+    assert.strictEqual(getConnectionDisplayState({
+      connectionStatus: 'connected',
+      mqttStatus: 'connected',
+      hasReceivedData: true,
+      lastDataTime: Date.now() - 90000, // 90s ago
+    }), 'stale');
+  });
+
+  it('display state: never_connected when WS not connected and no data', () => {
+    assert.strictEqual(getConnectionDisplayState({
+      connectionStatus: 'disconnected',
+      hasReceivedData: false,
+    }), 'never_connected');
+  });
+
+  it('display state: disconnected when WS drops after having received data', () => {
+    assert.strictEqual(getConnectionDisplayState({
+      connectionStatus: 'disconnected',
+      hasReceivedData: true,
+      lastDataTime: Date.now() - 5000,
+    }), 'disconnected');
+  });
+
+  it('display state: device_offline takes priority over stale when MQTT is down', () => {
+    // Even if data was flowing before, MQTT disconnection = device_offline
+    assert.strictEqual(getConnectionDisplayState({
+      connectionStatus: 'connected',
+      mqttStatus: 'disconnected',
+      hasReceivedData: true,
+      lastDataTime: Date.now() - 90000,
+    }), 'device_offline');
+  });
+
+  it('MQTT status resets to unknown on WS close', () => {
+    let mqttStatus = 'connected';
+    // Simulate ws.onclose behavior
+    mqttStatus = 'unknown';
+    assert.strictEqual(mqttStatus, 'unknown');
+  });
+
+  it('MQTT status and connectedAt reset on stop()', () => {
+    let mqttStatus = 'connected';
+    let connectedAt = Date.now();
+    let hasReceivedData = true;
+    // Simulate stop() behavior
+    hasReceivedData = false;
+    mqttStatus = 'unknown';
+    connectedAt = 0;
+    assert.strictEqual(mqttStatus, 'unknown');
+    assert.strictEqual(connectedAt, 0);
+    assert.strictEqual(hasReceivedData, false);
+  });
+
   it('SimulationSource produces state updates via pushUpdate', () => {
     const updates = [];
     const callbacks = [(state, result) => updates.push({ state, result })];

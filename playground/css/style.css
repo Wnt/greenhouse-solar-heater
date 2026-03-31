@@ -1041,6 +1041,7 @@ button.primary:hover { opacity: 0.9; }
 
 .connection-dot.connected { background: #76ff03; box-shadow: 0 0 6px #76ff03; }
 .connection-dot.disconnected { background: #ee7d77; }
+.connection-dot.device-offline { background: #ff9800; animation: pulse-dot 1.5s ease-in-out infinite; }
 .connection-dot.reconnecting { background: #e9c349; animation: pulse-dot 1.5s ease-in-out infinite; }
 
 @keyframes pulse-dot {

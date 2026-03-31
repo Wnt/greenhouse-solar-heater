@@ -411,14 +411,40 @@
 
     function updateConnectionUI(status) {
       connectionStatus = status;
+      refreshConnectionIndicator();
+      updateConnectionOverlays();
+      updateDevicePushState();
+    }
+
+    function refreshConnectionIndicator() {
       const dot = document.getElementById('connection-dot');
       const label = document.getElementById('connection-label');
       if (!dot || !label) return;
-      dot.className = 'connection-dot ' + status;
-      const labels = { connected: 'Live', disconnected: 'Offline', reconnecting: 'Reconnecting...' };
-      label.textContent = labels[status] || status;
-      updateConnectionOverlays();
-      updateDevicePushState();
+
+      if (connectionStatus === 'reconnecting') {
+        dot.className = 'connection-dot reconnecting';
+        label.textContent = 'Reconnecting\u2026';
+        return;
+      }
+
+      var displayState = getConnectionDisplayState();
+      switch (displayState) {
+        case 'active':
+          dot.className = 'connection-dot connected';
+          label.textContent = 'Live';
+          break;
+        case 'device_offline':
+          dot.className = 'connection-dot device-offline';
+          label.textContent = 'Controller offline';
+          break;
+        case 'stale':
+          dot.className = 'connection-dot reconnecting';
+          label.textContent = 'Stale';
+          break;
+        default:
+          dot.className = 'connection-dot disconnected';
+          label.textContent = 'Offline';
+      }
     }
 
     function checkStaleness() {
@@ -428,17 +454,23 @@
         const elapsed = Date.now() - lastDataTime;
         banner.classList.toggle('visible', elapsed > 60000 && lastDataTime > 0);
       }
+      refreshConnectionIndicator();
       updateConnectionOverlays();
+      updateDevicePushState();
     }
 
     var OVERLAY_MESSAGES = {
       never_connected: {
         title: 'Your sanctuary is sleeping.',
-        subtitle: 'No connection to the controller has been established.'
+        subtitle: 'Cannot reach the server.'
+      },
+      device_offline: {
+        title: 'Your sanctuary is sleeping.',
+        subtitle: 'The server is running, but the controller is unreachable.'
       },
       disconnected: {
         title: 'Lost touch with your sanctuary.',
-        subtitle: 'Connection to the controller was lost.'
+        subtitle: 'Connection to the server was lost.'
       },
       stale: {
         title: 'Your sanctuary has gone quiet.',
@@ -449,10 +481,26 @@
     function getConnectionDisplayState() {
       if (activeSource !== 'live') return 'active';
       var hasData = liveSource && liveSource.hasReceivedData;
+      var mqttStatus = liveSource ? liveSource.mqttStatus : 'unknown';
+
       if (connectionStatus === 'connected') {
-        if (lastDataTime > 0 && (Date.now() - lastDataTime) > 60000) return 'stale';
-        return 'active';
+        // WS is open — check MQTT and device data status
+        if (mqttStatus === 'disconnected' || mqttStatus === 'reconnecting') {
+          return 'device_offline';
+        }
+        if (hasData) {
+          if (lastDataTime > 0 && (Date.now() - lastDataTime) > 60000) return 'stale';
+          return 'active';
+        }
+        // No data yet — allow a grace period before declaring device offline
+        var connectedAt = liveSource ? liveSource._connectedAt : 0;
+        if (connectedAt > 0 && (Date.now() - connectedAt) > 10000) {
+          return 'device_offline';
+        }
+        return 'active'; // within grace period
       }
+
+      // WS is not connected (browser offline or server down)
       if (!hasData) return 'never_connected';
       return 'disconnected';
     }
@@ -480,8 +528,9 @@
       var btn = document.getElementById('dc-save');
       var warning = document.getElementById('dc-connection-warning');
       if (!btn || !warning) return;
-      var isConnected = connectionStatus === 'connected';
-      if (isConnected || activeSource !== 'live') {
+      var displayState = getConnectionDisplayState();
+      var canPush = activeSource !== 'live' || displayState === 'active' || displayState === 'stale';
+      if (canPush) {
         btn.classList.remove('disabled');
         btn.disabled = false;
         warning.style.display = 'none';

@@ -39,3 +39,160 @@ test.describe('Live mode toggle', () => {
     expect(text).not.toBe('--');
   });
 });
+
+test.describe('Connection state overlays', () => {
+  test('never_connected: overlay shows when server is unreachable', async ({ page }) => {
+    // Static server has no WS — the app will fail to connect
+    await page.goto('/playground/');
+    // Wait for WS to fail and reconnect attempt to fire
+    await page.waitForTimeout(1500);
+    const overlay = page.locator('#overlay-modes');
+    await expect(overlay).toBeVisible();
+    await expect(page.locator('#overlay-modes-subtitle')).toHaveText('Cannot reach the server.');
+  });
+
+  test('never_connected: connection dot shows disconnected or reconnecting', async ({ page }) => {
+    await page.goto('/playground/');
+    await page.waitForTimeout(1500);
+    const dot = page.locator('#connection-dot');
+    // Dot alternates between disconnected and reconnecting as WS retries
+    const cls = await dot.getAttribute('class');
+    expect(cls).toMatch(/disconnected|reconnecting/);
+  });
+
+  test('never_connected: all three overlay zones are visible', async ({ page }) => {
+    await page.goto('/playground/');
+    await page.waitForTimeout(1500);
+    await expect(page.locator('#overlay-modes')).toBeVisible();
+    await expect(page.locator('#overlay-gauge')).toBeVisible();
+    await expect(page.locator('#overlay-components')).toBeVisible();
+  });
+
+  test('switching to simulation removes all overlays', async ({ page }) => {
+    await page.goto('/playground/');
+    await page.waitForTimeout(1500);
+    // Overlays should be visible in live mode
+    await expect(page.locator('#overlay-modes')).toBeVisible();
+    // Switch to simulation
+    await page.locator('#mode-toggle-switch').click();
+    // Overlays should be hidden
+    await expect(page.locator('#overlay-modes')).not.toBeVisible();
+    await expect(page.locator('#overlay-gauge')).not.toBeVisible();
+    await expect(page.locator('#overlay-components')).not.toBeVisible();
+  });
+
+  test('device_offline: overlay shows when WS connects but MQTT is disconnected', async ({ page }) => {
+    // Mock WebSocket to simulate server connected but MQTT down
+    await page.addInitScript(() => {
+      const OrigWS = window.WebSocket;
+      // @ts-ignore
+      window.WebSocket = function(url) {
+        const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+          close() { this.readyState = 3; },
+          send() {},
+        };
+        setTimeout(() => {
+          fake.readyState = 1;
+          if (fake.onopen) fake.onopen(new Event('open'));
+          // Server sends MQTT disconnected status
+          if (fake.onmessage) {
+            fake.onmessage({ data: JSON.stringify({ type: 'connection', status: 'disconnected' }) });
+          }
+        }, 50);
+        return fake;
+      };
+      // @ts-ignore
+      window.WebSocket.prototype = OrigWS.prototype;
+    });
+    await page.goto('/playground/');
+    // Wait for mock WS to connect and MQTT status to propagate
+    await page.waitForTimeout(500);
+    const overlay = page.locator('#overlay-modes');
+    await expect(overlay).toBeVisible();
+    await expect(page.locator('#overlay-modes-subtitle')).toHaveText(
+      'The server is running, but the controller is unreachable.'
+    );
+  });
+
+  test('device_offline: connection dot shows device-offline class', async ({ page }) => {
+    await page.addInitScript(() => {
+      const OrigWS = window.WebSocket;
+      // @ts-ignore
+      window.WebSocket = function(url) {
+        const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+          close() { this.readyState = 3; },
+          send() {},
+        };
+        setTimeout(() => {
+          fake.readyState = 1;
+          if (fake.onopen) fake.onopen(new Event('open'));
+          if (fake.onmessage) {
+            fake.onmessage({ data: JSON.stringify({ type: 'connection', status: 'disconnected' }) });
+          }
+        }, 50);
+        return fake;
+      };
+      // @ts-ignore
+      window.WebSocket.prototype = OrigWS.prototype;
+    });
+    await page.goto('/playground/');
+    await page.waitForTimeout(500);
+    const dot = page.locator('#connection-dot');
+    await expect(dot).toHaveClass(/device-offline/);
+    await expect(page.locator('#connection-label')).toHaveText('Controller offline');
+  });
+
+  test('device_offline: overlay clears when state data arrives', async ({ page }) => {
+    let sendMessage;
+    await page.addInitScript(() => {
+      const OrigWS = window.WebSocket;
+      // @ts-ignore
+      window.WebSocket = function(url) {
+        const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+          close() { this.readyState = 3; },
+          send() {},
+        };
+        // Store ref for later use
+        // @ts-ignore
+        window.__mockWs = fake;
+        setTimeout(() => {
+          fake.readyState = 1;
+          if (fake.onopen) fake.onopen(new Event('open'));
+          if (fake.onmessage) {
+            fake.onmessage({ data: JSON.stringify({ type: 'connection', status: 'disconnected' }) });
+          }
+        }, 50);
+        return fake;
+      };
+      // @ts-ignore
+      window.WebSocket.prototype = OrigWS.prototype;
+    });
+    await page.goto('/playground/');
+    await page.waitForTimeout(500);
+    // Overlay should be visible
+    await expect(page.locator('#overlay-modes')).toBeVisible();
+    // Simulate state data arriving via MQTT
+    await page.evaluate(() => {
+      // @ts-ignore
+      const ws = window.__mockWs;
+      if (ws && ws.onmessage) {
+        // First send MQTT connected
+        ws.onmessage({ data: JSON.stringify({ type: 'connection', status: 'connected' }) });
+        // Then send state data
+        ws.onmessage({ data: JSON.stringify({
+          type: 'state',
+          data: {
+            mode: 'idle',
+            temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
+            valves: {}, actuators: { pump: false, fan: false, space_heater: false },
+            controls_enabled: true,
+          }
+        }) });
+      }
+    });
+    // Overlay should be removed
+    await expect(page.locator('#overlay-modes')).not.toBeVisible();
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/);
+    await expect(page.locator('#connection-label')).toHaveText('Live');
+  });
+});
