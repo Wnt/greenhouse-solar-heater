@@ -10,6 +10,7 @@ const net = require('net');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const createLogger = require('./lib/logger');
 const valvePoller = require('./lib/valve-poller');
 const mqttBridge = require('./lib/mqtt-bridge');
@@ -205,6 +206,41 @@ function handleHealth(req, res) {
   });
 }
 
+// ── Version endpoint ──
+// Returns a hash of playground JS file stats for client-side change detection.
+
+var JS_DIR = path.join(PLAYGROUND_DIR, 'js');
+var versionCache = { hash: '', ts: '', expires: 0 };
+var VERSION_CACHE_TTL = 5000; // 5 seconds
+
+function computeJsHash() {
+  var now = Date.now();
+  if (versionCache.expires > now) {
+    return versionCache;
+  }
+  try {
+    var files = fs.readdirSync(JS_DIR).filter(function (f) {
+      return f.endsWith('.js');
+    }).sort();
+    var parts = [];
+    for (var i = 0; i < files.length; i++) {
+      var stat = fs.statSync(path.join(JS_DIR, files[i]));
+      parts.push(files[i] + ':' + stat.mtimeMs + ':' + stat.size);
+    }
+    var hash = crypto.createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 16);
+    versionCache = { hash: hash, ts: new Date().toISOString(), expires: now + VERSION_CACHE_TTL };
+    return versionCache;
+  } catch (e) {
+    return versionCache.hash ? versionCache : { hash: 'error', ts: new Date().toISOString(), expires: 0 };
+  }
+}
+
+function handleVersion(req, res) {
+  var v = computeJsHash();
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ hash: v.hash, ts: v.ts }));
+}
+
 // ── Auth middleware ──
 
 var authMiddleware = null;
@@ -285,6 +321,7 @@ function handleDeviceConfigApi(req, res, urlPath, body) {
 
 function resolveRoute(urlPath, method) {
   if (urlPath === '/health') return '/health';
+  if (urlPath === '/version') return '/version';
   if (urlPath.startsWith('/auth/')) return '/auth/*';
   if (urlPath === '/api/device-config') return '/api/device-config';
   if (urlPath === '/api/history') return '/api/history';
@@ -309,6 +346,12 @@ var server = http.createServer(function (req, res) {
   // Health — always accessible
   if (urlPath === '/health') {
     handleHealth(req, res);
+    return;
+  }
+
+  // Version — always accessible (no sensitive data)
+  if (urlPath === '/version') {
+    handleVersion(req, res);
     return;
   }
 

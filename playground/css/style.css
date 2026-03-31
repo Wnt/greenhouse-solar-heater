@@ -1063,6 +1063,97 @@ button.primary:hover { opacity: 0.9; }
 
 .staleness-banner.visible { display: block; }
 
+/* ── Update Toast ── */
+.update-toast {
+  position: fixed;
+  bottom: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 48;
+  transition: bottom 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.update-toast.visible {
+  bottom: 100px;
+  pointer-events: auto;
+}
+
+.update-toast-body {
+  background: var(--primary-container);
+  border: 1px solid rgba(233, 195, 73, 0.2);
+  border-radius: 12px;
+  padding: 16px 20px;
+  text-align: center;
+  min-width: 280px;
+  max-width: 380px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.update-toast-headline {
+  font-family: 'Newsreader', Georgia, serif;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+
+.update-toast-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  margin-bottom: 12px;
+}
+
+.update-toast-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.update-toast-refresh {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--primary);
+  color: var(--surface-container-lowest);
+  border: none;
+  border-radius: 8px;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.update-toast-refresh:hover {
+  transform: scale(1.04);
+  box-shadow: 0 2px 12px rgba(233, 195, 73, 0.3);
+}
+
+.update-toast-dismiss {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.update-toast-dismiss:hover {
+  color: var(--on-surface);
+}
+
+@media (max-width: 768px) {
+  .update-toast.visible {
+    bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+  }
+  .update-toast-body {
+    min-width: 240px;
+  }
+}
+
 /* ── Connection Overlay (glassmorphism) ── */
 
 .connection-overlay {

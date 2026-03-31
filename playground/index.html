@@ -392,6 +392,9 @@
     import { ControlStateMachine, initControlLogic } from './js/control.js';
     import { createSlider, formatTime } from './js/ui.js';
     import { LiveSource, SimulationSource } from './js/data-source.js';
+    import { startVersionCheck, triggerVersionCheck } from './js/version-check.js';
+    // Expose for e2e testing
+    window.__triggerVersionCheck = triggerVersionCheck;
 
     // ── Data Source ──
     // Detect deployment context: GitHub Pages = simulation only, deployed app = live capable
@@ -849,6 +852,9 @@
       // Initialize live/simulation mode toggle
       initModeToggle();
       initDeviceConfig();
+
+      // Start polling for JS source updates
+      startVersionCheck();
     }
 
     function buildFallbackConfig() {

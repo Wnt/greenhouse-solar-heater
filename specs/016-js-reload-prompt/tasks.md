@@ -23,8 +23,8 @@
 
 **Purpose**: The `/version` endpoint must exist before the client can poll it.
 
-- [ ] T001 Add `GET /version` endpoint that computes SHA-256 hash of JS file stats (mtime+size) for all files in `playground/js/` and returns `{ hash, ts }` JSON response in `server/server.js`
-- [ ] T002 Add unit tests for the version hash computation and endpoint response format in `tests/version-check.test.js`
+- [x] T001 Add `GET /version` endpoint that computes SHA-256 hash of JS file stats (mtime+size) for all files in `playground/js/` and returns `{ hash, ts }` JSON response in `server/server.js`
+- [x] T002 Add unit tests for the version hash computation and endpoint response format in `tests/version-check.test.js`
 
 **Checkpoint**: `GET /version` returns a valid hash that changes when JS files are modified.
 
@@ -38,9 +38,9 @@
 
 ### Implementation for User Story 1
 
-- [ ] T003 [P] [US1] Create `playground/js/version-check.js` — ES6 module that fetches `/version` on load (baseline hash), polls every 30s, and creates/shows a toast DOM element when hash differs. Include "Refresh now" button that calls `location.reload()`.
-- [ ] T004 [P] [US1] Add toast banner CSS styles to `playground/css/style.css` — fixed position bottom-center, Stitch design system (gold #e9c349 on dark #574500 container, Newsreader serif heading, Manrope body, 8px border-radius, slide-up animation, z-index between FAB and nav)
-- [ ] T005 [US1] Import and initialize version-check module in `playground/index.html` — add `import` statement in the main `<script type="module">` block
+- [x] T003 [P] [US1] Create `playground/js/version-check.js` — ES6 module that fetches `/version` on load (baseline hash), polls every 30s, and creates/shows a toast DOM element when hash differs. Include "Refresh now" button that calls `location.reload()`.
+- [x] T004 [P] [US1] Add toast banner CSS styles to `playground/css/style.css` — fixed position bottom-center, Stitch design system (gold #e9c349 on dark #574500 container, Newsreader serif heading, Manrope body, 8px border-radius, slide-up animation, z-index between FAB and nav)
+- [x] T005 [US1] Import and initialize version-check module in `playground/index.html` — add `import` statement in the main `<script type="module">` block
 
 **Checkpoint**: Toast appears when server JS files change; clicking "Refresh now" reloads the page.
 
@@ -54,7 +54,7 @@
 
 ### Implementation for User Story 2
 
-- [ ] T006 [US2] Add dismiss ("Later") button to the toast in `playground/js/version-check.js` — clicking sets `isDismissed` flag, hides toast. On next poll cycle, if hash still differs from baseline, clear `isDismissed` and re-show toast.
+- [x] T006 [US2] Add dismiss ("Later") button to the toast in `playground/js/version-check.js` — clicking sets `isDismissed` flag, hides toast. On next poll cycle, if hash still differs from baseline, clear `isDismissed` and re-show toast.
 
 **Checkpoint**: Dismiss works; toast reappears after next interval, not immediately.
 
@@ -68,7 +68,7 @@
 
 ### Implementation for User Story 3
 
-- [ ] T007 [US3] Refine toast copy and typography in `playground/js/version-check.js` — heading: "A new edition is available" (Newsreader serif), body: "We've made some improvements. Refresh to see the latest." (Manrope), actions: "Refresh now" / "Later"
+- [x] T007 [US3] Refine toast copy and typography in `playground/js/version-check.js` — heading: "A new edition is available" (Newsreader serif), body: "We've made some improvements. Refresh to see the latest." (Manrope), actions: "Refresh now" / "Later"
 
 **Checkpoint**: Toast looks and reads like a native part of the Stitch dark editorial theme.
 
@@ -78,10 +78,10 @@
 
 **Purpose**: Validate the full feature end-to-end and handle edge cases.
 
-- [ ] T008 Add Playwright e2e test in `tests/e2e/version-check.spec.js` — verify toast appears when version hash changes (mock `/version` endpoint), verify dismiss behavior, verify refresh action, import from `./fixtures.js`
-- [ ] T009 Verify silent failure: confirm no errors shown when `/version` returns network error or malformed response in `tests/version-check.test.js` (add edge case tests)
-- [ ] T010 Run full test suite (`npm test`) and fix any failures
-- [ ] T011 Update CLAUDE.md if any structural changes affect project documentation
+- [x] T008 Add Playwright e2e test in `tests/e2e/version-check.spec.js` — verify toast appears when version hash changes (mock `/version` endpoint), verify dismiss behavior, verify refresh action, import from `./fixtures.js`
+- [x] T009 Verify silent failure: confirm no errors shown when `/version` returns network error or malformed response in `tests/version-check.test.js` (add edge case tests)
+- [x] T010 Run full test suite (`npm test`) and fix any failures
+- [x] T011 Update CLAUDE.md if any structural changes affect project documentation
 
 ---
 
