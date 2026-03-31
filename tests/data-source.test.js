@@ -136,6 +136,7 @@ describe('data-source contract', () => {
     var mqttStatus = opts.mqttStatus || 'unknown';
     var lastDataTime = opts.lastDataTime || 0;
     var connectedAt = opts.connectedAt || 0;
+    var wsEverFailed = opts.wsEverFailed || false;
     var now = opts.now || Date.now();
 
     if (activeSource !== 'live') return 'active';
@@ -154,7 +155,8 @@ describe('data-source contract', () => {
       return 'active'; // within grace period
     }
 
-    if (!hasReceivedData) return 'never_connected';
+    // WS is not connected or reconnecting
+    if (!hasReceivedData) return wsEverFailed ? 'never_connected' : 'connecting';
     return 'disconnected';
   }
 
@@ -219,10 +221,19 @@ describe('data-source contract', () => {
     }), 'stale');
   });
 
-  it('display state: never_connected when WS not connected and no data', () => {
+  it('display state: connecting when WS not yet connected and never failed', () => {
     assert.strictEqual(getConnectionDisplayState({
       connectionStatus: 'disconnected',
       hasReceivedData: false,
+      wsEverFailed: false,
+    }), 'connecting');
+  });
+
+  it('display state: never_connected when WS failed and no data', () => {
+    assert.strictEqual(getConnectionDisplayState({
+      connectionStatus: 'disconnected',
+      hasReceivedData: false,
+      wsEverFailed: true,
     }), 'never_connected');
   });
 
@@ -249,6 +260,29 @@ describe('data-source contract', () => {
     // Simulate ws.onclose behavior
     mqttStatus = 'unknown';
     assert.strictEqual(mqttStatus, 'unknown');
+  });
+
+  it('_wsEverFailed tracks whether WS has ever failed', () => {
+    let wsEverFailed = false;
+
+    // Simulate initial state — not yet failed
+    assert.strictEqual(getConnectionDisplayState({
+      connectionStatus: 'disconnected',
+      hasReceivedData: false,
+      wsEverFailed: false,
+    }), 'connecting');
+
+    // Simulate ws.onclose — marks failure
+    wsEverFailed = true;
+    assert.strictEqual(getConnectionDisplayState({
+      connectionStatus: 'disconnected',
+      hasReceivedData: false,
+      wsEverFailed: wsEverFailed,
+    }), 'never_connected');
+
+    // Simulate stop() — resets flag
+    wsEverFailed = false;
+    assert.strictEqual(wsEverFailed, false);
   });
 
   it('MQTT status and connectedAt reset on stop()', () => {

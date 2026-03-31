@@ -52,6 +52,7 @@ export class LiveSource extends DataSource {
     this.hasReceivedData = false;
     this.mqttStatus = 'unknown';
     this._connectedAt = 0;
+    this._wsEverFailed = false;
   }
 
   static defaultWsUrl() {
@@ -76,6 +77,7 @@ export class LiveSource extends DataSource {
     this.hasReceivedData = false;
     this.mqttStatus = 'unknown';
     this._connectedAt = 0;
+    this._wsEverFailed = false;
     this._emitConnectionChange('disconnected');
   }
 
@@ -117,6 +119,7 @@ export class LiveSource extends DataSource {
     this.ws.onclose = () => {
       this.ws = null;
       this.mqttStatus = 'unknown';
+      this._wsEverFailed = true;
       this._emitConnectionChange('disconnected');
       this._scheduleReconnect();
     };

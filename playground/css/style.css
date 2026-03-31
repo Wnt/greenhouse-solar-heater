@@ -103,6 +103,21 @@ a:hover { color: var(--primary-dim); }
   letter-spacing: 0.2em;
   color: var(--secondary);
   font-weight: 700;
+  transition: color 0.3s;
+}
+
+.sidebar-brand-text p.subtitle-live {
+  color: #76ff03;
+}
+
+.sidebar-brand-text p.subtitle-offline {
+  color: #ff9800;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.sidebar-brand-text p.subtitle-connecting {
+  color: var(--primary);
+  animation: pulse-dot 1.5s ease-in-out infinite;
 }
 
 .sidebar-nav {
@@ -957,9 +972,8 @@ button.primary:hover { opacity: 0.9; }
   padding: 0;
   box-shadow: 0 4px 20px rgba(233, 195, 73, 0.3);
   transition: transform 0.2s, box-shadow 0.2s;
-  font-size: 12px;
-  text-transform: none;
-  letter-spacing: 0;
+  font-size: 0;
+  line-height: 1;
 }
 
 .fab:hover {

@@ -436,6 +436,10 @@
           dot.className = 'connection-dot connected';
           label.textContent = 'Live';
           break;
+        case 'connecting':
+          dot.className = 'connection-dot reconnecting';
+          label.textContent = 'Connecting\u2026';
+          break;
         case 'device_offline':
           dot.className = 'connection-dot device-offline';
           label.textContent = 'Controller offline';
@@ -460,9 +464,14 @@
       refreshConnectionIndicator();
       updateConnectionOverlays();
       updateDevicePushState();
+      updateSidebarSubtitle();
     }
 
     var OVERLAY_MESSAGES = {
+      connecting: {
+        title: 'Reaching out to your sanctuary.',
+        subtitle: 'Connecting to the server...'
+      },
       never_connected: {
         title: 'Your sanctuary is sleeping.',
         subtitle: 'Cannot reach the server.'
@@ -503,8 +512,9 @@
         return 'active'; // within grace period
       }
 
-      // WS is not connected (browser offline or server down)
-      if (!hasData) return 'never_connected';
+      // WS is not connected or reconnecting
+      var wsEverFailed = liveSource && liveSource._wsEverFailed;
+      if (!hasData) return wsEverFailed ? 'never_connected' : 'connecting';
       return 'disconnected';
     }
 
@@ -571,6 +581,8 @@
       if (label) { label.textContent = 'Live'; label.classList.add('active'); }
       // Hide controls view in live mode
       document.querySelectorAll('[data-view="controls"]').forEach(el => el.style.display = 'none');
+      // Hide FAB in live mode
+      document.getElementById('fab-play').style.display = 'none';
 
       if (!liveSource) {
         liveSource = new LiveSource();
@@ -579,10 +591,14 @@
           if (activeSource === 'live') {
             updateDisplay(state, result);
             updateConnectionOverlays();
+            updateSidebarSubtitle();
           }
         });
         liveSource.onConnectionChange(function (status) {
-          if (activeSource === 'live') updateConnectionUI(status);
+          if (activeSource === 'live') {
+            updateConnectionUI(status);
+            updateSidebarSubtitle();
+          }
         });
       }
       liveSource.start();
@@ -596,8 +612,9 @@
       if (!stalenessTimer) {
         stalenessTimer = setInterval(checkStaleness, 5000);
       }
-      updateConnectionOverlays();
-      updateDevicePushState();
+      // Immediately show connecting/offline state (don't show stale simulation data)
+      updateConnectionUI('disconnected');
+      updateSidebarSubtitle();
     }
 
     function switchToSimulation() {
@@ -606,8 +623,9 @@
       const label = document.getElementById('mode-toggle-label');
       if (sw) sw.classList.remove('active');
       if (label) { label.textContent = 'Simulation'; label.classList.remove('active'); }
-      // Show controls view
+      // Show controls view and FAB
       document.querySelectorAll('[data-view="controls"]').forEach(el => el.style.display = '');
+      document.getElementById('fab-play').style.display = '';
 
       if (liveSource) liveSource.stop();
       updateConnectionUI('disconnected');
@@ -619,6 +637,44 @@
       if (banner) banner.classList.remove('visible');
       updateConnectionOverlays();
       updateDevicePushState();
+      updateSidebarSubtitle();
+    }
+
+    function updateSidebarSubtitle() {
+      var el = document.getElementById('sidebar-subtitle');
+      if (!el) return;
+
+      if (activeSource === 'simulation') {
+        el.textContent = running ? 'Simulating...' : 'Ready';
+        el.className = '';
+        return;
+      }
+
+      // Live mode: reflect connection state
+      var displayState = getConnectionDisplayState();
+      switch (displayState) {
+        case 'active':
+          el.textContent = 'Live';
+          el.className = 'subtitle-live';
+          break;
+        case 'connecting':
+          el.textContent = 'Connecting\u2026';
+          el.className = 'subtitle-connecting';
+          break;
+        case 'device_offline':
+          el.textContent = 'Controller Offline';
+          el.className = 'subtitle-offline';
+          break;
+        case 'stale':
+          el.textContent = 'Stale';
+          el.className = 'subtitle-offline';
+          break;
+        case 'disconnected':
+        case 'never_connected':
+          el.textContent = 'Offline';
+          el.className = 'subtitle-offline';
+          break;
+      }
     }
 
     // ── State ──
@@ -933,11 +989,11 @@
           transitionLog.length = 0;
         }
         document.getElementById('sim-status-text').textContent = 'Running — press pause to stop';
-        document.getElementById('sidebar-subtitle').textContent = 'Simulating...';
+        updateSidebarSubtitle();
         requestAnimationFrame(simLoop);
       } else {
         document.getElementById('sim-status-text').textContent = 'Paused — press play to resume';
-        document.getElementById('sidebar-subtitle').textContent = 'Paused';
+        updateSidebarSubtitle();
       }
     }
 
@@ -1073,7 +1129,7 @@
       simTimeAccum = 0;
       updateFABIcon();
       document.getElementById('sim-status-text').textContent = 'Ready — press play to start';
-      document.getElementById('sidebar-subtitle').textContent = 'Ready';
+      updateSidebarSubtitle();
       document.getElementById('logs-list').innerHTML = '<div style="color:var(--on-surface-variant);font-size:13px;">No transitions yet. Start the simulation.</div>';
       updateDisplay(model.getState(), { mode: 'idle', valves: config.modes.idle.valve_states, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
     }
