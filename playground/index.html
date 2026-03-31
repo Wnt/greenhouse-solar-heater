@@ -504,12 +504,13 @@
           if (lastDataTime > 0 && (Date.now() - lastDataTime) > 60000) return 'stale';
           return 'active';
         }
-        // No data yet — allow a grace period before declaring device offline
+        // WS connected, waiting for MQTT status or data — show connecting overlay
+        // Brief grace period (2s) before declaring device offline
         var connectedAt = liveSource ? liveSource._connectedAt : 0;
-        if (connectedAt > 0 && (Date.now() - connectedAt) > 10000) {
+        if (connectedAt > 0 && (Date.now() - connectedAt) > 2000) {
           return 'device_offline';
         }
-        return 'active'; // within grace period
+        return 'connecting';
       }
 
       // WS is not connected or reconnecting
@@ -590,8 +591,10 @@
           lastDataTime = Date.now();
           if (activeSource === 'live') {
             updateDisplay(state, result);
+            refreshConnectionIndicator();
             updateConnectionOverlays();
             updateSidebarSubtitle();
+            updateDevicePushState();
           }
         });
         liveSource.onConnectionChange(function (status) {
@@ -613,8 +616,30 @@
         stalenessTimer = setInterval(checkStaleness, 5000);
       }
       // Immediately show connecting/offline state (don't show stale simulation data)
+      clearLiveDisplay();
       updateConnectionUI('disconnected');
       updateSidebarSubtitle();
+    }
+
+    function clearLiveDisplay() {
+      // Reset display to placeholder values — never show simulation defaults in live mode
+      document.getElementById('mode-card-title').textContent = '--';
+      document.getElementById('mode-card-status').innerHTML = '';
+      document.getElementById('tank-temp-val').textContent = '--';
+      document.getElementById('tank-temp-status').textContent = '';
+      document.getElementById('tank-temp-message').textContent = '';
+      document.getElementById('tank-stat-energy').textContent = '--';
+      document.getElementById('tank-stat-greenhouse').textContent = '--';
+      document.getElementById('inactive-modes').innerHTML = '';
+      document.getElementById('graph-peak-label').textContent = "Yesterday's High: --";
+      var arc = document.getElementById('tank-gauge-arc');
+      if (arc) arc.setAttribute('stroke-dashoffset', '628');
+      // Clear component statuses
+      var compEls = document.querySelectorAll('.comp-status');
+      compEls.forEach(function(el) { el.textContent = '--'; });
+      // Clear simulation graph data and redraw empty canvas
+      store.reset();
+      drawHistoryGraph();
     }
 
     function switchToSimulation() {

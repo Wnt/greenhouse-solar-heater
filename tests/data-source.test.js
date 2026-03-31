@@ -149,10 +149,10 @@ describe('data-source contract', () => {
         if (lastDataTime > 0 && (now - lastDataTime) > 60000) return 'stale';
         return 'active';
       }
-      if (connectedAt > 0 && (now - connectedAt) > 10000) {
+      if (connectedAt > 0 && (now - connectedAt) > 2000) {
         return 'device_offline';
       }
-      return 'active'; // within grace period
+      return 'connecting'; // waiting for MQTT status
     }
 
     // WS is not connected or reconnecting
@@ -191,7 +191,7 @@ describe('data-source contract', () => {
   });
 
   it('display state: device_offline after grace period with no data', () => {
-    var connectedAt = Date.now() - 15000; // 15s ago
+    var connectedAt = Date.now() - 5000; // 5s ago (> 2s grace)
     assert.strictEqual(getConnectionDisplayState({
       connectionStatus: 'connected',
       mqttStatus: 'connected',
@@ -201,15 +201,15 @@ describe('data-source contract', () => {
     }), 'device_offline');
   });
 
-  it('display state: active during grace period (WS just connected, no data yet)', () => {
-    var connectedAt = Date.now() - 2000; // 2s ago
+  it('display state: connecting during grace period (WS just connected, no data yet)', () => {
+    var connectedAt = Date.now() - 500; // 500ms ago (< 2s grace)
     assert.strictEqual(getConnectionDisplayState({
       connectionStatus: 'connected',
       mqttStatus: 'unknown',
       hasReceivedData: false,
       connectedAt: connectedAt,
       now: Date.now(),
-    }), 'active');
+    }), 'connecting');
   });
 
   it('display state: stale when data stops flowing for 60+ seconds', () => {
