@@ -1063,82 +1063,85 @@ button.primary:hover { opacity: 0.9; }
 
 .staleness-banner.visible { display: block; }
 
-/* ── Update Toast ── */
+/* ── Update Toast (top-right, compact) ── */
 .update-toast {
   position: fixed;
-  bottom: -120px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 16px;
+  right: 16px;
   z-index: 48;
-  transition: bottom 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0;
+  transform: translateY(-12px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
   pointer-events: none;
 }
 
 .update-toast.visible {
-  bottom: 100px;
+  opacity: 1;
+  transform: translateY(0);
   pointer-events: auto;
 }
 
 .update-toast-body {
-  background: var(--primary-container);
-  border: 1px solid rgba(233, 195, 73, 0.2);
-  border-radius: 12px;
-  padding: 16px 20px;
-  text-align: center;
-  min-width: 280px;
-  max-width: 380px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface-container-high);
+  border: 1px solid rgba(233, 195, 73, 0.15);
+  border-radius: 10px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  max-width: 340px;
+}
+
+.update-toast-content {
+  flex: 1;
+  min-width: 0;
 }
 
 .update-toast-headline {
   font-family: 'Newsreader', Georgia, serif;
-  font-size: 16px;
+  font-style: italic;
+  font-size: 14px;
   font-weight: 500;
-  color: var(--primary);
-  margin-bottom: 4px;
-}
-
-.update-toast-text {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  color: var(--on-surface-variant);
-  margin-bottom: 12px;
+  color: var(--on-surface);
+  line-height: 1.3;
 }
 
 .update-toast-actions {
   display: flex;
-  gap: 8px;
-  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .update-toast-refresh {
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   background: var(--primary);
   color: var(--surface-container-lowest);
   border: none;
-  border-radius: 8px;
-  padding: 6px 16px;
+  border-radius: 6px;
+  padding: 5px 12px;
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
+  white-space: nowrap;
 }
 
 .update-toast-refresh:hover {
   transform: scale(1.04);
-  box-shadow: 0 2px 12px rgba(233, 195, 73, 0.3);
+  box-shadow: 0 2px 10px rgba(233, 195, 73, 0.3);
 }
 
 .update-toast-dismiss {
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
+  font-size: 12px;
   background: transparent;
   color: var(--on-surface-variant);
-  border: 1px solid var(--outline-variant);
-  border-radius: 8px;
-  padding: 6px 16px;
+  border: none;
+  padding: 5px 8px;
   cursor: pointer;
   transition: color 0.2s;
+  white-space: nowrap;
 }
 
 .update-toast-dismiss:hover {
@@ -1146,11 +1149,13 @@ button.primary:hover { opacity: 0.9; }
 }
 
 @media (max-width: 768px) {
-  .update-toast.visible {
-    bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+  .update-toast {
+    top: 12px;
+    right: 12px;
+    left: 12px;
   }
   .update-toast-body {
-    min-width: 240px;
+    max-width: none;
   }
 }
 

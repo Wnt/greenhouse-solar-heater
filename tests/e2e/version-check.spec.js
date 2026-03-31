@@ -41,9 +41,8 @@ test.describe('Version check toast', () => {
     await triggerPoll(page);
 
     await expect(page.locator('.update-toast-headline')).toHaveText('A new edition is available');
-    await expect(page.locator('.update-toast-text')).toContainText('improvements');
-    await expect(page.locator('.update-toast-refresh')).toHaveText('Refresh now');
-    await expect(page.locator('.update-toast-dismiss')).toHaveText('Later');
+    await expect(page.locator('.update-toast-refresh')).toHaveText('Refresh');
+    await expect(page.locator('.update-toast-dismiss')).toHaveText('\u00d7');
   });
 
   test('dismiss hides the toast', async ({ page }) => {
