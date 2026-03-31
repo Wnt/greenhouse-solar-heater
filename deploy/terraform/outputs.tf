@@ -63,3 +63,42 @@ output "worker_node_ip_command" {
   description = "Run this command to get the worker node's public IP for DNS"
   value       = "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"ExternalIP\")].address}'"
 }
+
+# ── CI/CD Deployer outputs ──
+
+output "deployer_token" {
+  description = "Long-lived token for the deployer ServiceAccount. Store as KUBE_TOKEN GitHub secret."
+  value       = kubernetes_secret.deployer_token.data["token"]
+  sensitive   = true
+}
+
+output "deployer_kubeconfig" {
+  description = "Minimal kubeconfig for the deployer ServiceAccount. Store base64-encoded as KUBE_CONFIG_DATA GitHub secret."
+  value = yamlencode({
+    apiVersion = "v1"
+    kind       = "Config"
+    clusters = [{
+      name = "uks"
+      cluster = {
+        server                     = data.upcloud_kubernetes_cluster.main.host
+        certificate-authority-data = base64encode(data.upcloud_kubernetes_cluster.main.cluster_ca_certificate)
+      }
+    }]
+    users = [{
+      name = "deployer"
+      user = {
+        token = kubernetes_secret.deployer_token.data["token"]
+      }
+    }]
+    contexts = [{
+      name = "deployer"
+      context = {
+        cluster   = "uks"
+        user      = "deployer"
+        namespace = "default"
+      }
+    }]
+    current-context = "deployer"
+  })
+  sensitive = true
+}

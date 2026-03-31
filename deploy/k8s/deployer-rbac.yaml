@@ -1,0 +1,59 @@
+# Minimal RBAC for CI/CD deployment.
+# The deployer ServiceAccount can ONLY patch the "app" Deployment
+# (to update container images). No read, no delete, no other resources.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployer
+  labels:
+    app: greenhouse
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: deployer
+  labels:
+    app: greenhouse
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["app"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["app"]
+    verbs: ["list"]
+  # Rollout status needs to watch ReplicaSets
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployer
+  labels:
+    app: greenhouse
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: deployer
+subjects:
+  - kind: ServiceAccount
+    name: deployer
+---
+# Long-lived token for the deployer ServiceAccount.
+# Used by GitHub Actions to authenticate to the K8s API.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: deployer-token
+  labels:
+    app: greenhouse
+  annotations:
+    kubernetes.io/service-account.name: deployer
+type: kubernetes.io/service-account-token
