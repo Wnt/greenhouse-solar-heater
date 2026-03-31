@@ -209,6 +209,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - PostgreSQL/TimescaleDB (sensor history), UpCloud S3-compatible Object Storage (config persistence) (013-remove-monitor-app)
 - HCL (Terraform >= 1.5), YAML (Kubernetes manifests), POSIX shell (CI scripts), Node.js 20 LTS (app, unchanged) + UpCloud Terraform provider ~> 5.0, Kubernetes provider ~> 2.24, Helm provider ~> 2.12, kubectl, cert-manager, NGINX Ingress controller (014-migrate-upcloud-kubernetes)
 - UpCloud Managed PostgreSQL with TimescaleDB (unchanged), UpCloud Managed Object Storage (unchanged) (014-migrate-upcloud-kubernetes)
+- JavaScript ES6+ (browser modules), CSS3 + Playwright 1.56.0 (e2e tests), `npx serve` (static server for tests) (015-fix-padding-status-display)
+- N/A (client-side only) (015-fix-padding-status-display)
 
 ## Cloud Deployment Architecture
 
@@ -279,6 +281,6 @@ Terraform stores the key in the `app-secrets` Kubernetes Secret. Redeploy to act
 - PostgreSQL health — via nri-postgresql integration
 
 ## Recent Changes
+- 015-fix-padding-status-display: Added JavaScript ES6+ (browser modules), CSS3 + Playwright 1.56.0 (e2e tests), `npx serve` (static server for tests)
 - 014-migrate-upcloud-kubernetes: Added HCL (Terraform >= 1.5), YAML (Kubernetes manifests), POSIX shell (CI scripts), Node.js 20 LTS (app, unchanged) + UpCloud Terraform provider ~> 5.0, Kubernetes provider ~> 2.24, Helm provider ~> 2.12, kubectl, cert-manager, NGINX Ingress controller
 - 013-remove-monitor-app: Removed monitor web UI, push notifications, PoC Shelly scripts, PWA artifacts. Promoted playground as main app served at `/` behind passkey auth. Added URL hash deep linking for all views. Added device config explanations. Moved server code from `monitor/` to `server/`. Removed `web-push` dependency. Added Shelly script deployment to Docker image.
-- 012-secure-rpc-api: Added JavaScript — Node.js 20 LTS (CommonJS server), ES6+ (browser modules) + Node.js `http` module (server), browser `fetch` API (client). No new dependencies.
