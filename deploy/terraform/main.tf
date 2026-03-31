@@ -384,20 +384,20 @@ resource "kubernetes_role" "deployer" {
     api_groups     = ["apps"]
     resources      = ["deployments"]
     resource_names = ["app"]
-    verbs          = ["list"]
+    verbs          = ["list", "watch"]
   }
 
-  # Rollout status needs ReplicaSets and Pods
+  # Rollout status needs to watch ReplicaSets and Pods
   rule {
     api_groups = ["apps"]
     resources  = ["replicasets"]
-    verbs      = ["get", "list"]
+    verbs      = ["get", "list", "watch"]
   }
 
   rule {
     api_groups = [""]
     resources  = ["pods"]
-    verbs      = ["get", "list"]
+    verbs      = ["get", "list", "watch"]
   }
 
   depends_on = [upcloud_kubernetes_node_group.default]

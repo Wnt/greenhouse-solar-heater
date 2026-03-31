@@ -23,14 +23,14 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     resourceNames: ["app"]
-    verbs: ["list"]
-  # Rollout status needs to watch ReplicaSets
+    verbs: ["list", "watch"]
+  # Rollout status needs to watch ReplicaSets and Pods
   - apiGroups: ["apps"]
     resources: ["replicasets"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
