@@ -528,6 +528,19 @@ function startServer() {
   });
 }
 
+// ── Graceful shutdown ──
+function shutdown(signal) {
+  log.info('shutdown signal received', { signal: signal });
+  server.close(function () {
+    log.info('server closed');
+    process.exit(0);
+  });
+  // Force exit if close hangs
+  setTimeout(function () { process.exit(1); }, 3000);
+}
+process.on('SIGTERM', function () { shutdown('SIGTERM'); });
+process.on('SIGINT', function () { shutdown('SIGINT'); });
+
 if (AUTH_ENABLED) {
   authMiddleware.init(function (err) {
     if (err) log.error('auth init failed, starting with empty credentials', { error: err.message });

@@ -19,6 +19,7 @@ spec:
       labels:
         app: greenhouse
     spec:
+      terminationGracePeriodSeconds: 5
       # ── Init: VPN firewall ──
       # Sets iptables rules in the pod's network namespace to restrict
       # UDP 1194 (hostPort) to whitelisted CIDRs only. This is kernel-level
@@ -91,8 +92,8 @@ spec:
             httpGet:
               path: /health
               port: 3000
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: 2
+            periodSeconds: 5
             timeoutSeconds: 3
 
         # ── OpenVPN sidecar ──
