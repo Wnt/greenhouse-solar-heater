@@ -23,8 +23,8 @@
 
 **Purpose**: The `/version` endpoint must exist before the client can poll it.
 
-- [x] T001 Add `GET /version` endpoint that computes SHA-256 hash of JS file stats (mtime+size) for all files in `playground/js/` and returns `{ hash, ts }` JSON response in `server/server.js`
-- [x] T002 Add unit tests for the version hash computation and endpoint response format in `tests/version-check.test.js`
+- [x] T001 Add `GET /version` endpoint that returns the `GIT_COMMIT` env var as `{ hash }` JSON response in `server/server.js`
+- [x] T002 Add unit tests for the version endpoint (GIT_COMMIT env var handling) in `tests/version-check.test.js`
 
 **Checkpoint**: `GET /version` returns a valid hash that changes when JS files are modified.
 

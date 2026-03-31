@@ -6,16 +6,15 @@
 
 This feature has minimal data modeling needs — no persistent storage is involved.
 
-### Version Hash (transient, server-computed)
+### Version Hash (server environment)
 
-A short string representing the current state of client-side JS files on the server.
+The git commit SHA identifying the deployed version.
 
 | Attribute | Description |
 |-----------|-------------|
-| hash | SHA-256 hex digest (first 16 characters) of concatenated file stats |
-| timestamp | ISO 8601 timestamp of when the hash was computed |
+| hash | `GIT_COMMIT` environment variable (full SHA, or `"unknown"` in local dev) |
 
-**Lifecycle**: Computed on server startup and recomputed on each `/version` request (with short TTL cache). Not persisted anywhere.
+**Lifecycle**: Baked into the Docker image at build time. Constant for the lifetime of the container. Changes only on redeployment.
 
 ### Client Version State (in-memory, browser)
 

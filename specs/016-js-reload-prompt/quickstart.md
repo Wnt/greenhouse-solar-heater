@@ -8,7 +8,7 @@ Detects when the app's JavaScript has been updated on the server and shows a tas
 
 ## How It Works
 
-1. **Server**: A new `GET /version` endpoint computes a hash from the JS source files' metadata (modification time + size). The hash changes whenever files are redeployed.
+1. **Server**: A new `GET /version` endpoint returns the `GIT_COMMIT` environment variable (baked into the Docker image at build time via `github.sha`). The hash changes on each deployment.
 
 2. **Client**: A new `playground/js/version-check.js` module fetches the hash on page load (baseline) and polls every 30 seconds. When the hash changes, it shows a toast banner.
 
@@ -38,9 +38,11 @@ npm run test:e2e
 ```
 
 ### Manual verification
-1. Start the server: `node server/server.js`
+1. Start the server with a commit hash: `GIT_COMMIT=abc123 node server/server.js`
 2. Open the app in a browser
-3. Modify any file in `playground/js/` (e.g., add a comment)
+3. Stop the server, restart with a different hash: `GIT_COMMIT=def456 node server/server.js`
 4. Wait up to 30 seconds — the toast should appear
 5. Click "Refresh now" — page reloads with updated code
 6. Alternatively, click "Later" — toast disappears, reappears after next poll cycle
+
+Note: In local dev without `GIT_COMMIT` set, the hash defaults to `"unknown"` and the toast never triggers (by design).

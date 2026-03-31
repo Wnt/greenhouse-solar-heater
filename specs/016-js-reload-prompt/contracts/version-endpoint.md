@@ -4,7 +4,7 @@
 
 ## GET /version
 
-Returns the current content hash of client-side JS files, enabling clients to detect when a new deployment has changed the application code.
+Returns the git commit hash of the deployed application, enabling clients to detect when a new version has been deployed.
 
 ### Request
 
@@ -12,7 +12,7 @@ Returns the current content hash of client-side JS files, enabling clients to de
 GET /version HTTP/1.1
 ```
 
-No parameters. No authentication required (the hash reveals no sensitive information).
+No parameters. No authentication required (the commit hash reveals no sensitive information).
 
 ### Response
 
@@ -20,28 +20,23 @@ No parameters. No authentication required (the hash reveals no sensitive informa
 
 ```json
 {
-  "hash": "a1b2c3d4e5f67890",
-  "ts": "2026-03-31T12:00:00.000Z"
+  "hash": "fa37f61abc123def456789abcdef01234567890a"
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| hash | string | Hex digest (16 characters) representing the current state of JS source files |
-| ts | string | ISO 8601 timestamp of when the hash was computed |
+| hash | string | Git commit SHA from the `GIT_COMMIT` environment variable. Defaults to `"unknown"` in local development. |
 
 **Content-Type**: `application/json`
 
 ### Behavior
 
-- The hash changes whenever any JS file in the playground's JS directory is modified (content change, replacement, addition, or removal).
-- The hash is deterministic: the same set of files with the same contents always produces the same hash.
-- Response is lightweight (~70 bytes) and fast (<10ms).
+- The hash changes whenever a new Docker image is deployed (each build bakes in `github.sha`).
+- The hash is deterministic: the same deployment always returns the same hash.
+- Response is lightweight (~60 bytes) and instant (single env var read, no I/O).
 - No caching headers are set — the client controls polling frequency.
-
-### Error Cases
-
-- **500**: Server error computing hash (filesystem issue). Client should treat this as "no update" and retry.
+- In local development, returns `"unknown"` — the version check will not trigger false update prompts since the hash never changes.
 
 ### Client Usage Pattern
 

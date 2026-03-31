@@ -5,13 +5,13 @@
 
 ## Summary
 
-Add a background version-check mechanism to the playground app that detects when client-side JS files have changed on the server and presents an editorial-tone toast prompt inviting the user to reload. The server exposes a lightweight version endpoint returning a content hash; the client polls it and compares against the hash captured at page load.
+Add a background version-check mechanism to the playground app that detects when a new version has been deployed and presents an editorial-tone toast prompt inviting the user to reload. The server exposes a lightweight `/version` endpoint returning the git commit hash (baked into the Docker image at build time via `GIT_COMMIT` env var); the client polls it and compares against the hash captured at page load.
 
 ## Technical Context
 
 **Language/Version**: JavaScript ES6+ (browser modules), Node.js 20 LTS (CommonJS server)
 **Primary Dependencies**: None new — uses existing `server/server.js` HTTP handler and browser `fetch` API
-**Storage**: N/A — version hash is computed on-the-fly from file contents
+**Storage**: N/A — version hash comes from GIT_COMMIT env var (baked into Docker image at build time)
 **Testing**: `node:test` (unit), Playwright (e2e)
 **Target Platform**: Browser (ES6 modules) + Node.js server
 **Project Type**: Web application (single-page app + Node.js API server)
@@ -54,7 +54,7 @@ specs/016-js-reload-prompt/
 
 ```text
 server/
-└── server.js            # Add /version endpoint (content hash of playground JS files)
+└── server.js            # Add /version endpoint (returns GIT_COMMIT env var)
 
 playground/
 ├── index.html           # Import new version-check module
@@ -64,7 +64,7 @@ playground/
     └── style.css        # Add toast banner styles (Stitch design system)
 
 tests/
-├── version-check.test.js    # Unit tests for hash computation logic
+├── version-check.test.js    # Unit tests for version endpoint (GIT_COMMIT env var)
 └── e2e/
     └── version-check.spec.js # E2e test for prompt appearance and dismissal
 ```

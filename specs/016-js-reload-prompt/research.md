@@ -4,26 +4,27 @@
 
 ## R1: Version Detection Mechanism
 
-**Decision**: Server-side content hash endpoint (`GET /version`)
+**Decision**: Server-side `GET /version` endpoint returning the `GIT_COMMIT` environment variable.
 
-**Rationale**: The server already serves all static files through `server.js`. Computing a hash of the JS module contents at startup (and recomputing on file change or using filesystem stat) is the simplest approach that requires no build step, no manifest generation, and no new dependencies. The client fetches this hash on page load, stores it, and polls periodically to compare.
-
-**Alternatives considered**:
-- **ETag-based detection** (HEAD requests on individual JS files): Would require multiple requests per check cycle and the server currently sends no ETag headers. Adding ETags would work but polling 7+ files is wasteful.
-- **Service Worker with cache-first strategy**: The app has no service worker; adding one for just version checking introduces unnecessary complexity and caching side effects.
-- **WebSocket push notification**: The app already has WebSocket for live data, but the version check is needed even in simulation mode when WS may not be connected. Polling is simpler and always works.
-- **Build-time manifest with content hashes**: Would require a build step; the project currently has none and serves files directly. Overkill for this use case.
-
-## R2: Hash Computation Strategy
-
-**Decision**: Compute a combined hash from the modification times and sizes of all JS files in `playground/js/` at server startup, and recompute when the endpoint is hit (with short-lived caching to avoid excessive filesystem reads).
-
-**Rationale**: Using `fs.statSync` on the known set of JS modules is fast (<1ms for 7 files) and requires no crypto dependency. A simple string concatenation of `mtime + size` for each file, then a lightweight hash (or even just the concatenated string), is sufficient for change detection. Node.js built-in `crypto.createHash` can produce a short SHA-256 hex digest.
+**Rationale**: The Dockerfile already accepts a `GIT_COMMIT` build arg (line 30-31) and the CD pipeline sets it to `github.sha` at build time. Returning this value from a simple endpoint requires zero filesystem access, no crypto, and no caching — just `process.env.GIT_COMMIT`. The client fetches this hash on page load, stores it, and polls periodically to compare.
 
 **Alternatives considered**:
-- **Full content hashing**: Reading and hashing all file contents on every request is more I/O intensive. Stat-based detection catches all deploys (which always update mtime) and is cheaper.
-- **Package.json version field**: Only changes on manual version bumps — doesn't detect actual file changes from deployments.
-- **Git commit hash**: Requires git to be available in the container and doesn't directly indicate which files changed. The Docker image may not include `.git`.
+- **File-stat hashing** (SHA-256 of mtime+size for playground JS files): Initially implemented, but more complex (filesystem scanning, crypto, TTL caching) for no additional benefit. Replaced with GIT_COMMIT approach.
+- **ETag-based detection** (HEAD requests on individual JS files): Would require multiple requests per check cycle. Wasteful.
+- **Service Worker with cache-first strategy**: The app has no service worker; adding one introduces unnecessary complexity.
+- **WebSocket push notification**: Version check is needed even in simulation mode when WS may not be connected. Polling is simpler.
+- **Build-time manifest with content hashes**: Would require a build step; the project has none. Overkill.
+
+## R2: Hash Source
+
+**Decision**: Use `process.env.GIT_COMMIT` directly — no computation needed.
+
+**Rationale**: The Docker image already has the git commit SHA baked in as an environment variable via `ARG GIT_COMMIT=unknown` / `ENV GIT_COMMIT=$GIT_COMMIT` in the Dockerfile, and the CD pipeline passes `GIT_COMMIT=${{ github.sha }}` at build time. This is the simplest possible approach: a single env var read, deterministic, and tied directly to what was deployed. Defaults to `"unknown"` in local development, which means the version check never triggers false positives locally.
+
+**Alternatives considered**:
+- **File-stat SHA-256 hash**: Initially implemented. More complex (filesystem scanning, crypto, TTL caching) with no benefit over the already-available env var.
+- **Package.json version field**: Only changes on manual bumps — doesn't detect deployments.
+- **Runtime `git rev-parse HEAD`**: Requires `.git` directory in the container, which is not present.
 
 ## R3: Polling Interval
 
