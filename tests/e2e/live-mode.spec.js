@@ -44,11 +44,12 @@ test.describe('Connection state overlays', () => {
   test('never_connected: overlay shows when server is unreachable', async ({ page }) => {
     // Static server has no WS — the app will fail to connect
     await page.goto('/playground/');
-    // Wait for WS to fail and reconnect attempt to fire
-    await page.waitForTimeout(1500);
+    // Overlay should show immediately in live mode (connecting or never_connected)
     const overlay = page.locator('#overlay-modes');
     await expect(overlay).toBeVisible();
-    await expect(page.locator('#overlay-modes-subtitle')).toHaveText('Cannot reach the server.');
+    // Initially shows "Connecting..." then transitions to "Cannot reach the server."
+    // after the WebSocket connection fails
+    await expect(page.locator('#overlay-modes-subtitle')).toHaveText('Cannot reach the server.', { timeout: 5000 });
   });
 
   test('never_connected: connection dot shows disconnected or reconnecting', async ({ page }) => {
@@ -194,5 +195,169 @@ test.describe('Connection state overlays', () => {
     await expect(page.locator('#overlay-modes')).not.toBeVisible();
     await expect(page.locator('#connection-dot')).toHaveClass(/connected/);
     await expect(page.locator('#connection-label')).toHaveText('Live');
+  });
+});
+
+test.describe('FAB visibility', () => {
+  test('FAB is hidden in live mode', async ({ page }) => {
+    await page.goto('/playground/');
+    // On localhost the app starts in live mode
+    const fab = page.locator('#fab-play');
+    await expect(fab).not.toBeVisible();
+  });
+
+  test('FAB becomes visible when switching to simulation', async ({ page }) => {
+    await page.goto('/playground/');
+    // Switch to simulation mode
+    await page.locator('#mode-toggle-switch').click();
+    const fab = page.locator('#fab-play');
+    await expect(fab).toBeVisible();
+  });
+
+  test('FAB is hidden again when switching back to live', async ({ page }) => {
+    await page.goto('/playground/');
+    // Switch to simulation
+    await page.locator('#mode-toggle-switch').click();
+    await expect(page.locator('#fab-play')).toBeVisible();
+    // Switch back to live
+    await page.locator('#mode-toggle-switch').click();
+    await expect(page.locator('#fab-play')).not.toBeVisible();
+  });
+});
+
+test.describe('Sidebar subtitle', () => {
+  test('shows "Connecting..." initially then "Offline" when server is unreachable', async ({ page }) => {
+    await page.goto('/playground/');
+    const subtitle = page.locator('#sidebar-subtitle');
+    // Initially shows Connecting or Offline
+    await expect(subtitle).toHaveText(/Connecting…|Offline/);
+    // After WS fails, shows Offline
+    await expect(subtitle).toHaveText('Offline', { timeout: 5000 });
+  });
+
+  test('shows "Ready" in simulation mode', async ({ page }) => {
+    await page.goto('/playground/');
+    await page.locator('#mode-toggle-switch').click();
+    const subtitle = page.locator('#sidebar-subtitle');
+    await expect(subtitle).toHaveText('Ready');
+  });
+
+  test('shows "Simulating..." when simulation is running', async ({ page }) => {
+    await page.goto('/playground/');
+    await page.locator('#mode-toggle-switch').click();
+    await page.locator('#fab-play').click();
+    const subtitle = page.locator('#sidebar-subtitle');
+    await expect(subtitle).toHaveText('Simulating...');
+  });
+
+  test('shows "Controller Offline" when WS connected but MQTT disconnected', async ({ page }) => {
+    await page.addInitScript(() => {
+      const OrigWS = window.WebSocket;
+      // @ts-ignore
+      window.WebSocket = function(url) {
+        const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+          close() { this.readyState = 3; },
+          send() {},
+        };
+        setTimeout(() => {
+          fake.readyState = 1;
+          if (fake.onopen) fake.onopen(new Event('open'));
+          if (fake.onmessage) {
+            fake.onmessage({ data: JSON.stringify({ type: 'connection', status: 'disconnected' }) });
+          }
+        }, 50);
+        return fake;
+      };
+      // @ts-ignore
+      window.WebSocket.prototype = OrigWS.prototype;
+    });
+    await page.goto('/playground/');
+    await page.waitForTimeout(500);
+    const subtitle = page.locator('#sidebar-subtitle');
+    await expect(subtitle).toHaveText('Controller Offline');
+  });
+
+  test('subtitle has offline pulsating class when controller offline', async ({ page }) => {
+    await page.addInitScript(() => {
+      const OrigWS = window.WebSocket;
+      // @ts-ignore
+      window.WebSocket = function(url) {
+        const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+          close() { this.readyState = 3; },
+          send() {},
+        };
+        setTimeout(() => {
+          fake.readyState = 1;
+          if (fake.onopen) fake.onopen(new Event('open'));
+          if (fake.onmessage) {
+            fake.onmessage({ data: JSON.stringify({ type: 'connection', status: 'disconnected' }) });
+          }
+        }, 50);
+        return fake;
+      };
+      // @ts-ignore
+      window.WebSocket.prototype = OrigWS.prototype;
+    });
+    await page.goto('/playground/');
+    await page.waitForTimeout(500);
+    const subtitle = page.locator('#sidebar-subtitle');
+    await expect(subtitle).toHaveClass('subtitle-offline');
+  });
+
+  test('shows "Live" with live class when data is flowing', async ({ page }) => {
+    await page.addInitScript(() => {
+      const OrigWS = window.WebSocket;
+      // @ts-ignore
+      window.WebSocket = function(url) {
+        const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+          close() { this.readyState = 3; },
+          send() {},
+        };
+        setTimeout(() => {
+          fake.readyState = 1;
+          if (fake.onopen) fake.onopen(new Event('open'));
+          if (fake.onmessage) {
+            fake.onmessage({ data: JSON.stringify({ type: 'connection', status: 'connected' }) });
+            fake.onmessage({ data: JSON.stringify({
+              type: 'state',
+              data: {
+                mode: 'idle',
+                temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
+                valves: {}, actuators: { pump: false, fan: false, space_heater: false },
+                controls_enabled: true,
+              }
+            }) });
+          }
+        }, 50);
+        return fake;
+      };
+      // @ts-ignore
+      window.WebSocket.prototype = OrigWS.prototype;
+    });
+    await page.goto('/playground/');
+    await page.waitForTimeout(500);
+    const subtitle = page.locator('#sidebar-subtitle');
+    await expect(subtitle).toHaveText('Live');
+    await expect(subtitle).toHaveClass('subtitle-live');
+  });
+});
+
+test.describe('Immediate overlay on load', () => {
+  test('overlay appears immediately in live mode, not after delay', async ({ page }) => {
+    await page.goto('/playground/');
+    // Overlay should be visible immediately (connecting state), not showing stale simulation data
+    const overlay = page.locator('#overlay-modes');
+    await expect(overlay).toBeVisible({ timeout: 500 });
+  });
+
+  test('switching to live from simulation immediately shows overlay', async ({ page }) => {
+    await page.goto('/playground/');
+    // Switch to simulation first
+    await page.locator('#mode-toggle-switch').click();
+    await expect(page.locator('#overlay-modes')).not.toBeVisible();
+    // Switch back to live
+    await page.locator('#mode-toggle-switch').click();
+    // Overlay should appear immediately
+    await expect(page.locator('#overlay-modes')).toBeVisible({ timeout: 500 });
   });
 });
