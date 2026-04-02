@@ -62,10 +62,26 @@ function getPool() {
       ? { ca: resolvedCa, rejectUnauthorized: true }
       : url.indexOf('sslmode=') !== -1,
   };
-  pool = new Pool(opts);
-  pool.on('error', function (err) {
+  var rawPool = new Pool(opts);
+  rawPool.on('error', function (err) {
     log.error('unexpected pool error', { error: err.message });
   });
+  // Safe wrapper: pool.query() requires a params array to prevent SQL injection.
+  // Schema/maintenance queries use pool.connect() → client.query() which bypasses this.
+  pool = {
+    query: function safeQuery(sql, params, cb) {
+      if (typeof params === 'function') {
+        throw new Error('pool.query() requires a params array — use [] for no parameters');
+      }
+      if (!Array.isArray(params)) {
+        throw new Error('pool.query() params must be an array, got ' + typeof params);
+      }
+      return rawPool.query(sql, params, cb);
+    },
+    connect: function (cb) { return rawPool.connect(cb); },
+    on: function (ev, fn) { return rawPool.on(ev, fn); },
+    end: function (cb) { return rawPool.end(cb); },
+  };
   return pool;
 }
 
@@ -145,14 +161,14 @@ function runMaintenance(callback) {
   var p = getPool();
   if (!p) { if (callback) callback(); return; }
 
-  p.query('REFRESH MATERIALIZED VIEW CONCURRENTLY sensor_readings_30s', function (err) {
+  p.query('REFRESH MATERIALIZED VIEW CONCURRENTLY sensor_readings_30s', [], function (err) {
     if (err) {
       log.warn('materialized view refresh failed', { error: err.message });
     } else {
       log.info('materialized view refreshed');
     }
 
-    p.query("DELETE FROM sensor_readings WHERE ts < NOW() - INTERVAL '" + RETENTION_INTERVAL + "'", function (err2) {
+    p.query("DELETE FROM sensor_readings WHERE ts < NOW() - INTERVAL '" + RETENTION_INTERVAL + "'", [], function (err2) {
       if (err2) {
         log.warn('retention cleanup failed', { error: err2.message });
       } else {

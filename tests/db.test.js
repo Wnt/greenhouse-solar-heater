@@ -167,4 +167,79 @@ describe('db module', () => {
       done();
     });
   });
+
+  it('pool.query() rejects calls without a params array', () => {
+    process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
+    db._reset();
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
+
+    const pool = db.getPool();
+    assert.throws(
+      () => pool.query('SELECT 1', function () {}),
+      /requires a params array/,
+      'calling pool.query(sql, cb) without params should throw'
+    );
+  });
+});
+
+// Architectural fitness test: scan db.js source for SQL injection patterns.
+// This catches regressions where someone concatenates a variable into a WHERE clause.
+describe('db module architectural constraints', () => {
+  it('no string concatenation of variables into SQL WHERE/AND clauses', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(
+      path.join(__dirname, '..', 'server', 'lib', 'db.js'),
+      'utf8'
+    );
+
+    // Match patterns like: " column = '" + variable + "'"
+    // These indicate SQL string interpolation of a variable into a query.
+    const interpolationPattern = /["']\s*\+\s*\w+\s*\+\s*["']/g;
+    const lines = source.split('\n');
+    const violations = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // Only flag lines that look like SQL (WHERE, AND, OR, =) with interpolation
+      if (/(WHERE|AND|OR)\b/.test(line) && /=\s*'"\s*\+/.test(line)) {
+        violations.push({ line: i + 1, text: line.trim() });
+      }
+    }
+
+    assert.deepStrictEqual(
+      violations,
+      [],
+      'Found SQL string interpolation in WHERE/AND clauses — use parameterized queries ($1, $2, ...) instead:\n' +
+      violations.map(v => '  Line ' + v.line + ': ' + v.text).join('\n')
+    );
+  });
+
+  it('all pool.query() calls pass a params array', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(
+      path.join(__dirname, '..', 'server', 'lib', 'db.js'),
+      'utf8'
+    );
+
+    const lines = source.split('\n');
+    const violations = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // Match p.query(sql, function — missing params array between sql and callback
+      if (/\.query\(\s*sql\s*,\s*function\b/.test(line)) {
+        violations.push({ line: i + 1, text: line.trim() });
+      }
+    }
+
+    assert.deepStrictEqual(
+      violations,
+      [],
+      'Found pool.query() calls without params array — pass [] for no parameters:\n' +
+      violations.map(v => '  Line ' + v.line + ': ' + v.text).join('\n')
+    );
+  });
 });
