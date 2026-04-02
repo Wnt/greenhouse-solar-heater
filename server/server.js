@@ -133,10 +133,10 @@ function handleRpcRequest(req, res) {
       return;
     }
 
-    var host = parsed._host;
+    var host = process.env.CONTROLLER_IP;
     if (!host) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Missing _host parameter' }));
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Controller IP not configured' }));
       return;
     }
 
@@ -542,6 +542,12 @@ process.on('SIGTERM', function () { shutdown('SIGTERM'); });
 process.on('SIGINT', function () { shutdown('SIGINT'); });
 
 if (AUTH_ENABLED) {
+  var session = require('./auth/session');
+  var secretCheck = session.validateSecret();
+  if (!secretCheck.valid) {
+    log.error('FATAL: ' + secretCheck.reason);
+    process.exit(1);
+  }
   authMiddleware.init(function (err) {
     if (err) log.error('auth init failed, starting with empty credentials', { error: err.message });
     startServer();
