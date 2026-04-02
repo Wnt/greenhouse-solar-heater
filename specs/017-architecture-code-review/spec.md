@@ -10,6 +10,7 @@
 ### Session 2026-04-02
 
 - Q: How should the RPC proxy determine the target host? → A: The server MUST look up the target host from its own `CONTROLLER_IP` configuration. The client request MUST NOT supply the target host — this eliminates the SSRF vector entirely.
+- Q: When should the server enforce a session secret? → A: Only when `AUTH_ENABLED=true` (cloud/remote mode). Local dev mode (auth off) MUST work without a session secret. This ensures offline LAN development works seamlessly while remote sessions always require authentication.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -25,7 +26,8 @@ As a system operator, I need the codebase to be free of exploitable security vul
 
 1. **Given** the history API receives a query with special characters in sensor or entity parameters, **When** the query is executed, **Then** the system uses parameterized queries and no raw input reaches the database engine
 2. **Given** the RPC proxy receives a request, **When** the request is processed, **Then** the system uses the server-configured controller IP as the target host and ignores any client-supplied host value
-3. **Given** the server starts in production mode without a session secret configured, **When** startup begins, **Then** the server refuses to start and logs a clear error message
+3. **Given** the server starts with authentication enabled but no session secret configured, **When** startup begins, **Then** the server refuses to start and logs a clear error message
+4. **Given** the server starts with authentication disabled (local dev mode), **When** startup begins, **Then** the server starts successfully without requiring a session secret
 
 ---
 
@@ -101,7 +103,7 @@ As a system operator, I need the server to validate all required configuration a
 
 - **FR-001**: All database queries that include user-provided input MUST use parameterized queries instead of string interpolation
 - **FR-002**: The RPC proxy MUST resolve the target host from the server's own configuration — client requests MUST NOT supply the target host
-- **FR-003**: The server MUST require an explicit session secret in production mode and refuse to start with a default value
+- **FR-003**: The server MUST require an explicit session secret when authentication is enabled and refuse to start with a default value; when authentication is disabled (local dev mode), the server MUST start without requiring a session secret
 - **FR-004**: S3 client configuration MUST be defined in exactly one shared module and imported by all consumers
 - **FR-005**: Valve and actuator identifiers MUST be defined in a single source of truth and referenced by all consuming modules
 - **FR-006**: All server-side asynchronous operations MUST follow a single consistent pattern (either callbacks or promises, not a mix)
