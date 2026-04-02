@@ -2,6 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-04-02
+**Updated**: 2026-04-02 (post-clarification)
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
@@ -31,7 +32,10 @@
 
 ## Notes
 
-- All items pass validation. The spec is focused on the review deliverables (consistency verification, risk identification, findings document) rather than implementation.
-- The spec deliberately avoids naming specific technologies in success criteria — it refers to "system specification", "control logic", "shell script" etc. rather than file-specific names in the requirements section (file names appear only in the user stories for context).
-- Edge cases section identifies 5 scenarios that the review should assess.
-- No [NEEDS CLARIFICATION] markers were needed — the scope of an architectural review is well-defined by the existing system documentation.
+- All items pass validation after clarification session.
+- 5 clarifications integrated: staged commissioning scope, sensor availability, manual testing mechanism, hard safety overrides, progressive mode enablement.
+- Critical finding identified during clarification: current control logic suppresses freeze/overheat drain when controls are disabled. FR-011 requires this to be flagged and fixed.
+- Wood burner scalability story removed per user direction — disregard for now.
+- Edge cases expanded to 7 scenarios including partial hardware install and sensor miswiring.
+- Functional requirements expanded from 10 to 14 to cover hard safety overrides, progressive commissioning, and sensor verification.
+- Success criteria expanded from 5 to 8 to cover safety override verification, commissioning plan, and sensor verification procedure.
