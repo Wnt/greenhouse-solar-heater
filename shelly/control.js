@@ -88,6 +88,8 @@ function setValve(name, open, cb) {
   if (open && !deviceConfig.ce) { if (cb) cb(true); return; }
   if (open && !(deviceConfig.ea & EA_VALVES)) { if (cb) cb(true); return; }
   var v = VALVES[name];
+  // V_air physical actuator is normally-open (de-energized = open) for fail-safe
+  // drain on power loss. Invert the relay command so logical true=open works.
   var cmd = (name === "v_air") ? !open : open;
   var url = "http://" + v.ip + "/rpc/Switch.Set?id=" + v.id +
     "&on=" + (cmd ? "true" : "false");

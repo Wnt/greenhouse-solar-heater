@@ -17,8 +17,8 @@
 
 **Purpose**: No project initialization needed — all files exist. This phase creates the new documentation files.
 
-- [ ] T001 Create findings document skeleton with Critical/Warning/Informational sections in design/docs/findings-017.md
-- [ ] T002 [P] Create commissioning guide skeleton with Stage 1 and Progressive Enablement sections in design/docs/commissioning-guide.md
+- [x] T001 Create findings document skeleton with Critical/Warning/Informational sections in design/docs/findings-017.md
+- [x] T002 [P] Create commissioning guide skeleton with Stage 1 and Progressive Enablement sections in design/docs/commissioning-guide.md
 
 ---
 
@@ -28,8 +28,8 @@
 
 **⚠️ CRITICAL**: IP alignment must be done before safety override testing can be validated on hardware.
 
-- [ ] T003 Align sensor hub IP address: update SENSOR_IP in shelly/control.js:24 to match shelly/devices.conf SENSOR value (or vice versa — confirm correct DHCP reservation with user). Reference finding C-002 in research.md.
-- [ ] T004 [P] Add all Pro 2PM unit IPs (192.168.1.11, .12, .13, .14) as documented entries in shelly/devices.conf. Reference finding W-003.
+- [x] T003 Align sensor hub IP address: update SENSOR_IP in shelly/control.js:24 to match shelly/devices.conf SENSOR value (or vice versa — confirm correct DHCP reservation with user). Reference finding C-002 in research.md.
+- [x] T004 [P] Add all Pro 2PM unit IPs (192.168.1.11, .12, .13, .14) as documented entries in shelly/devices.conf. Reference finding W-003.
 
 **Checkpoint**: IP addresses are consistent across all files.
 
@@ -43,9 +43,9 @@
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] Write Informational findings I-001 through I-004 (valve names, actuator assignments, Pro 2PM mappings, sensor mappings) with cross-reference evidence in design/docs/findings-017.md
-- [ ] T006 [US1] Write Informational findings I-005 through I-007 (flow path validation, safety rule enforcement, deploy script verification) with evidence in design/docs/findings-017.md
-- [ ] T007 [US1] Write Critical finding C-002 (sensor IP mismatch) and Warning finding W-003 (Pro 2PM IPs) with remediation status in design/docs/findings-017.md
+- [x] T005 [US1] Write Informational findings I-001 through I-004 (valve names, actuator assignments, Pro 2PM mappings, sensor mappings) with cross-reference evidence in design/docs/findings-017.md
+- [x] T006 [US1] Write Informational findings I-005 through I-007 (flow path validation, safety rule enforcement, deploy script verification) with evidence in design/docs/findings-017.md
+- [x] T007 [US1] Write Critical finding C-002 (sensor IP mismatch) and Warning finding W-003 (Pro 2PM IPs) with remediation status in design/docs/findings-017.md
 
 **Checkpoint**: Findings document covers FR-001 through FR-009 (consistency verification). All 11 Informational + C-002 + W-003 documented.
 
@@ -61,25 +61,25 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T008 [P] [US2] Add test: freeze drain with ce=false returns ACTIVE_DRAIN, suppressed=false, safetyOverride=true in tests/control-logic.test.js
-- [ ] T009 [P] [US2] Add test: freeze drain with am=["SC"] (excluding AD) still returns ACTIVE_DRAIN in tests/control-logic.test.js
-- [ ] T010 [P] [US2] Add test: overheat drain with ce=false returns ACTIVE_DRAIN, suppressed=false, safetyOverride=true in tests/control-logic.test.js
-- [ ] T011 [P] [US2] Add test: overheat drain with am=["I"] (excluding AD) still returns ACTIVE_DRAIN in tests/control-logic.test.js
-- [ ] T012 [P] [US2] Add test: sensor staleness with ce=false returns IDLE, suppressed=true (safe state, no actuation needed) in tests/control-logic.test.js
-- [ ] T013 [P] [US2] Add test: normal solar charging with ce=false returns SOLAR_CHARGING, suppressed=true (non-safety modes still suppressed) in tests/control-logic.test.js
-- [ ] T014 [P] [US2] Add test: freeze drain with ce=true returns ACTIVE_DRAIN, suppressed=false, safetyOverride=true (safety flag set even when controls enabled) in tests/control-logic.test.js
+- [x] T008 [P] [US2] Add test: freeze drain with ce=false returns ACTIVE_DRAIN, suppressed=false, safetyOverride=true in tests/control-logic.test.js
+- [x] T009 [P] [US2] Add test: freeze drain with am=["SC"] (excluding AD) still returns ACTIVE_DRAIN in tests/control-logic.test.js
+- [x] T010 [P] [US2] Add test: overheat drain with ce=false returns ACTIVE_DRAIN, suppressed=false, safetyOverride=true in tests/control-logic.test.js
+- [x] T011 [P] [US2] Add test: overheat drain with am=["I"] (excluding AD) still returns ACTIVE_DRAIN in tests/control-logic.test.js
+- [x] T012 [P] [US2] Add test: sensor staleness with ce=false returns IDLE, suppressed=true (safe state, no actuation needed) in tests/control-logic.test.js
+- [x] T013 [P] [US2] Add test: normal solar charging with ce=false returns SOLAR_CHARGING, suppressed=true (non-safety modes still suppressed) in tests/control-logic.test.js
+- [x] T014 [P] [US2] Add test: freeze drain with ce=true returns ACTIVE_DRAIN, suppressed=false, safetyOverride=true (safety flag set even when controls enabled) in tests/control-logic.test.js
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Modify makeResult() in shelly/control-logic.js to accept a safetyOverride parameter. When safetyOverride=true: set result.safetyOverride=true, do NOT set suppressed=true, do NOT apply ea/valve bitmask suppression. Per contract in specs/017-review-hardware-architecture/contracts/safety-override-contract.md
-- [ ] T016 [US2] Update freeze drain call at shelly/control-logic.js:198 to pass safetyOverride=true to makeResult(). Update overheat drain call at line 204 similarly.
-- [ ] T017 [US2] Ensure sensor staleness path at shelly/control-logic.js:183 does NOT pass safetyOverride (IDLE is safe — suppression OK). Verify emergency heating is cleared.
-- [ ] T018 [US2] Export safetyOverride-related constants/flags in the module.exports block at shelly/control-logic.js:354-372 so tests can assert on them.
-- [ ] T019 [US2] Update controlLoop() in shelly/control.js:348-354 to check result.safetyOverride: if true, always call transitionTo(result) even when result.suppressed is true. Per contract shell script behavior.
-- [ ] T020 [US2] Add actuator state tracking: add state.fan_on, state.space_heater_on, state.immersion_heater_on variables to shelly/control.js state object. Update setFan(), setSpaceHeater(), setImmersion() to track state. Update buildStateSnapshot() at lines 215-220 to use tracked values instead of hardcoded false. Reference finding W-001.
-- [ ] T021 [US2] Run Shelly linter: `node shelly/lint/bin/shelly-lint.js shelly/control-logic.js shelly/control.js` — ensure all changes are ES5-compliant.
-- [ ] T022 [US2] Run unit tests: `npm run test:unit` — verify all 7 new tests pass plus all existing tests still pass.
-- [ ] T023 [US2] Write Critical finding C-001 (safety override suppression) with before/after code references and remediation status "Fixed" in design/docs/findings-017.md
+- [x] T015 [US2] Modify makeResult() in shelly/control-logic.js to accept a safetyOverride parameter. When safetyOverride=true: set result.safetyOverride=true, do NOT set suppressed=true, do NOT apply ea/valve bitmask suppression. Per contract in specs/017-review-hardware-architecture/contracts/safety-override-contract.md
+- [x] T016 [US2] Update freeze drain call at shelly/control-logic.js:198 to pass safetyOverride=true to makeResult(). Update overheat drain call at line 204 similarly.
+- [x] T017 [US2] Ensure sensor staleness path at shelly/control-logic.js:183 does NOT pass safetyOverride (IDLE is safe — suppression OK). Verify emergency heating is cleared.
+- [x] T018 [US2] Export safetyOverride-related constants/flags in the module.exports block at shelly/control-logic.js:354-372 so tests can assert on them.
+- [x] T019 [US2] Update controlLoop() in shelly/control.js:348-354 to check result.safetyOverride: if true, always call transitionTo(result) even when result.suppressed is true. Per contract shell script behavior.
+- [x] T020 [US2] Add actuator state tracking: add state.fan_on, state.space_heater_on, state.immersion_heater_on variables to shelly/control.js state object. Update setFan(), setSpaceHeater(), setImmersion() to track state. Update buildStateSnapshot() at lines 215-220 to use tracked values instead of hardcoded false. Reference finding W-001.
+- [x] T021 [US2] Run Shelly linter: `node shelly/lint/bin/shelly-lint.js shelly/control-logic.js shelly/control.js` — ensure all changes are ES5-compliant.
+- [x] T022 [US2] Run unit tests: `npm run test:unit` — verify all 7 new tests pass plus all existing tests still pass.
+- [x] T023 [US2] Write Critical finding C-001 (safety override suppression) with before/after code references and remediation status "Fixed" in design/docs/findings-017.md
 
 **Checkpoint**: Safety overrides are unsuppressible. All tests pass. FR-011, FR-012, FR-013 satisfied.
 
@@ -93,10 +93,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T024 [US3] Write sensor identity verification procedure in design/docs/commissioning-guide.md: deploy with ce=false, read sensors in playground UI, warm/cool each sensor to confirm identity, document wire-to-sensor mapping.
-- [ ] T025 [US3] Write Stage 1 configuration section in design/docs/commissioning-guide.md: device config JSON (`ce: true, ea: 3, am: ["SC"]`), expected behavior (solar charging + automatic freeze/overheat drain), manual freeze test via fm="AD".
-- [ ] T026 [US3] Write Progressive Enablement section in design/docs/commissioning-guide.md: add greenhouse heating (sensors + am + ea), add emergency heating (sensors + am + ea), full system (am: null). Per plan.md Staged Commissioning Plan.
-- [ ] T027 [US3] Write Warning finding W-004 (missing safety override tests — now fixed) and Warning finding W-002 (V_air inverted logic undocumented) in design/docs/findings-017.md
+- [x] T024 [US3] Write sensor identity verification procedure in design/docs/commissioning-guide.md: deploy with ce=false, read sensors in playground UI, warm/cool each sensor to confirm identity, document wire-to-sensor mapping.
+- [x] T025 [US3] Write Stage 1 configuration section in design/docs/commissioning-guide.md: device config JSON (`ce: true, ea: 3, am: ["SC"]`), expected behavior (solar charging + automatic freeze/overheat drain), manual freeze test via fm="AD".
+- [x] T026 [US3] Write Progressive Enablement section in design/docs/commissioning-guide.md: add greenhouse heating (sensors + am + ea), add emergency heating (sensors + am + ea), full system (am: null). Per plan.md Staged Commissioning Plan.
+- [x] T027 [US3] Write Warning finding W-004 (missing safety override tests — now fixed) and Warning finding W-002 (V_air inverted logic undocumented) in design/docs/findings-017.md
 
 **Checkpoint**: Commissioning guide complete. FR-013, FR-014, SC-007, SC-008 satisfied.
 
@@ -110,8 +110,8 @@
 
 ### Implementation for User Story 4
 
-- [ ] T028 [US4] Write Informational findings I-008 through I-011 (V_air fail-safe design, reservoir overflow risk, air vent rationale, am mechanism) in design/docs/findings-017.md
-- [ ] T029 [US4] Write communication reliability assessment: HTTP RPC retry logic in control.js setValve(), safe fallback on failure (pump stop + IDLE), sensor hub WiFi vs Ethernet reliability considerations. Add to design/docs/findings-017.md
+- [x] T028 [US4] Write Informational findings I-008 through I-011 (V_air fail-safe design, reservoir overflow risk, air vent rationale, am mechanism) in design/docs/findings-017.md
+- [x] T029 [US4] Write communication reliability assessment: HTTP RPC retry logic in control.js setValve(), safe fallback on failure (pump stop + IDLE), sensor hub WiFi vs Ethernet reliability considerations. Add to design/docs/findings-017.md
 
 **Checkpoint**: All findings documented. FR-005, FR-008 satisfied. SC-004 verified.
 
@@ -121,11 +121,11 @@
 
 **Purpose**: Documentation updates, V_air comment, final validation.
 
-- [ ] T030 [P] Add explanatory comment for V_air inverted relay logic at shelly/control.js:85 explaining the normally-open actuator wiring and fail-safe rationale.
-- [ ] T031 [P] Add V_air physical wiring note to system.yaml valves.collector_top.v_air section: document that the physical actuator is normally-open (de-energized=open) for fail-safe drain on power loss, and that control.js inverts the relay command.
-- [ ] T032 Run full test suite: `npm test` — verify all tests pass (unit + simulation + e2e).
-- [ ] T033 Validate findings-017.md completeness: confirm all 2 Critical, 4 Warning, 11 Informational findings are documented with severity, file references, and remediation status.
-- [ ] T034 Update CLAUDE.md if any project structure, file relationships, or conventions changed.
+- [x] T030 [P] Add explanatory comment for V_air inverted relay logic at shelly/control.js:85 explaining the normally-open actuator wiring and fail-safe rationale.
+- [x] T031 [P] Add V_air physical wiring note to system.yaml valves.collector_top.v_air section: document that the physical actuator is normally-open (de-energized=open) for fail-safe drain on power loss, and that control.js inverts the relay command.
+- [x] T032 Run full test suite: `npm test` — verify all tests pass (unit + simulation + e2e).
+- [x] T033 Validate findings-017.md completeness: confirm all 2 Critical, 4 Warning, 11 Informational findings are documented with severity, file references, and remediation status.
+- [x] T034 Update CLAUDE.md if any project structure, file relationships, or conventions changed.
 
 ---
 
