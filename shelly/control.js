@@ -21,7 +21,7 @@ var VALVES = {
   v_air:   {ip: "192.168.1.14", id: 1},
 };
 
-var SENSOR_IP = "192.168.1.20";
+var SENSOR_IP = "192.168.1.86";
 var SENSOR_IDS = {
   collector: 0, tank_top: 1, tank_bottom: 2, greenhouse: 3, outdoor: 4,
 };
@@ -47,6 +47,9 @@ var state = {
   last_error: null,
   valve_states: {},
   pump_on: false,
+  fan_on: false,
+  space_heater_on: false,
+  immersion_heater_on: false,
   transitioning: false,
   drain_timer: null,
 };
@@ -64,18 +67,21 @@ function setFan(on) {
   if (on && !deviceConfig.ce) return;
   if (on && !(deviceConfig.ea & EA_FAN)) return;
   Shelly.call("Switch.Set", {id: 1, on: on});
+  state.fan_on = on;
 }
 
 function setImmersion(on) {
   if (on && !deviceConfig.ce) return;
   if (on && !(deviceConfig.ea & EA_IMMERSION)) return;
   Shelly.call("Switch.Set", {id: 2, on: on});
+  state.immersion_heater_on = on;
 }
 
 function setSpaceHeater(on) {
   if (on && !deviceConfig.ce) return;
   if (on && !(deviceConfig.ea & EA_SPACE_HEATER)) return;
   Shelly.call("Switch.Set", {id: 3, on: on});
+  state.space_heater_on = on;
 }
 
 function setValve(name, open, cb) {
@@ -214,9 +220,9 @@ function buildStateSnapshot() {
     },
     actuators: {
       pump: state.pump_on,
-      fan: false,
-      space_heater: false,
-      immersion_heater: false,
+      fan: state.fan_on,
+      space_heater: state.space_heater_on,
+      immersion_heater: state.immersion_heater_on,
     },
     flags: {
       collectors_drained: state.collectors_drained,
@@ -346,7 +352,9 @@ function controlLoop() {
     var result = evaluate(evalState, null, deviceConfig);
 
     if (result.nextMode !== state.mode) {
-      if (result.suppressed) {
+      if (result.safetyOverride) {
+        transitionTo(result);
+      } else if (result.suppressed) {
         applyFlags(result.flags);
         emitStateUpdate();
       } else {

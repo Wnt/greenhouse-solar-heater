@@ -123,7 +123,7 @@ function expandModeCode(code) {
   return MODE_CODE[code] || code.toUpperCase();
 }
 
-function makeResult(mode, flags, deviceConfig) {
+function makeResult(mode, flags, deviceConfig, safetyOverride) {
   var valves = {};
   var actuators = {};
   var key;
@@ -140,8 +140,14 @@ function makeResult(mode, flags, deviceConfig) {
     valves: valves,
     actuators: actuators,
     flags: flags,
-    suppressed: false
+    suppressed: false,
+    safetyOverride: !!safetyOverride
   };
+  // Safety overrides (freeze drain, overheat drain) bypass all device config
+  // suppression — they MUST actuate even when controls are disabled.
+  if (safetyOverride) {
+    return result;
+  }
   if (deviceConfig && !deviceConfig.ce) {
     result.suppressed = true;
   } else if (deviceConfig) {
@@ -193,15 +199,17 @@ function evaluate(state, config, deviceConfig) {
   }
 
   // Freeze protection — preempts immediately, ignores min duration
+  // safetyOverride=true: MUST NOT be suppressed by device config
   if (t.outdoor !== null && t.outdoor < cfg.freezeDrainTemp &&
       !state.collectorsDrained) {
-    return makeResult(MODES.ACTIVE_DRAIN, flags, dc);
+    return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true);
   }
 
   // Overheat protection — preempts immediately
+  // safetyOverride=true: MUST NOT be suppressed by device config
   if (t.tank_top !== null && t.tank_top > cfg.overheatDrainTemp &&
       !state.collectorsDrained) {
-    return makeResult(MODES.ACTIVE_DRAIN, flags, dc);
+    return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true);
   }
 
   // Minimum mode duration (not for IDLE or EMERGENCY_HEATING, not for drain above)

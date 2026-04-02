@@ -58,12 +58,13 @@ describe('UI config → Shelly control-logic integration', () => {
       temps: { collector: 20, tank_top: 45, tank_bottom: 35, greenhouse: 8, outdoor: 5 },
     }), null, config);
     assert.strictEqual(result.suppressed, true);
-    // Safety: freeze drain still computed correctly even when suppressed
+    // Safety: freeze drain bypasses device config — never suppressed
     const freezeResult = evaluate(makeState({
       temps: { collector: 5, tank_top: 20, tank_bottom: 15, greenhouse: 3, outdoor: 1 },
     }), null, config);
     assert.strictEqual(freezeResult.nextMode, MODES.ACTIVE_DRAIN);
-    assert.strictEqual(freezeResult.suppressed, true);
+    assert.strictEqual(freezeResult.suppressed, false, 'safety drain must not be suppressed');
+    assert.strictEqual(freezeResult.safetyOverride, true, 'safety override flag set');
   });
 
   it('Scenario: step 4 — force solar charging mode', () => {
