@@ -5,6 +5,12 @@
 **Status**: Draft  
 **Input**: User description: "do an overall architectural code review on the codebase."
 
+## Clarifications
+
+### Session 2026-04-02
+
+- Q: How should the RPC proxy determine the target host? → A: The server MUST look up the target host from its own `CONTROLLER_IP` configuration. The client request MUST NOT supply the target host — this eliminates the SSRF vector entirely.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Fix Security Vulnerabilities (Priority: P1)
@@ -18,7 +24,7 @@ As a system operator, I need the codebase to be free of exploitable security vul
 **Acceptance Scenarios**:
 
 1. **Given** the history API receives a query with special characters in sensor or entity parameters, **When** the query is executed, **Then** the system uses parameterized queries and no raw input reaches the database engine
-2. **Given** the RPC proxy receives a request with a `_host` value not in the allowed list, **When** the request is processed, **Then** the system rejects the request with an appropriate error
+2. **Given** the RPC proxy receives a request, **When** the request is processed, **Then** the system uses the server-configured controller IP as the target host and ignores any client-supplied host value
 3. **Given** the server starts in production mode without a session secret configured, **When** startup begins, **Then** the server refuses to start and logs a clear error message
 
 ---
@@ -94,7 +100,7 @@ As a system operator, I need the server to validate all required configuration a
 ### Functional Requirements
 
 - **FR-001**: All database queries that include user-provided input MUST use parameterized queries instead of string interpolation
-- **FR-002**: The RPC proxy MUST validate the target host against a configurable allowlist before forwarding requests
+- **FR-002**: The RPC proxy MUST resolve the target host from the server's own configuration — client requests MUST NOT supply the target host
 - **FR-003**: The server MUST require an explicit session secret in production mode and refuse to start with a default value
 - **FR-004**: S3 client configuration MUST be defined in exactly one shared module and imported by all consumers
 - **FR-005**: Valve and actuator identifiers MUST be defined in a single source of truth and referenced by all consuming modules
@@ -116,7 +122,7 @@ As a system operator, I need the server to validate all required configuration a
 ### Measurable Outcomes
 
 - **SC-001**: Zero database queries use string interpolation for user-provided input — all use parameterized queries
-- **SC-002**: The RPC proxy rejects 100% of requests targeting hosts outside the configured allowlist
+- **SC-002**: The RPC proxy always uses the server-configured controller IP — zero requests use a client-supplied host
 - **SC-003**: S3 configuration logic exists in exactly one file, with all other modules importing from it
 - **SC-004**: All server modules use a single async pattern — zero mixed callback/promise patterns within any module
 - **SC-005**: The server reports all configuration status (missing required, disabled optional) within 5 seconds of startup
