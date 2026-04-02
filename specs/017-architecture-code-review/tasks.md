@@ -19,7 +19,7 @@
 
 **Purpose**: No project setup needed — this is a refactoring of existing code. Verify baseline.
 
-- [ ] T001 Run existing test suite to establish green baseline: `npm test`
+- [x] T001 Run existing test suite to establish green baseline: `npm test`
 
 ---
 
@@ -39,14 +39,14 @@
 
 ### Tests for US1a
 
-- [ ] T002 [US1a] Add test in tests/db.test.js: verify `getHistory()` with a sensor value containing SQL metacharacters (`'`, `--`, `;`) returns results safely without error or injection
-- [ ] T003 [US1a] Add test in tests/db.test.js: verify `getEvents()` with an entityType containing SQL metacharacters behaves safely
+- [x] T002 [US1a] Add test in tests/db.test.js: verify `getHistory()` with a sensor value containing SQL metacharacters (`'`, `--`, `;`) returns results safely without error or injection
+- [x] T003 [US1a] Add test in tests/db.test.js: verify `getEvents()` with an entityType containing SQL metacharacters behaves safely
 
 ### Implementation for US1a
 
-- [ ] T004 [US1a] In server/lib/db.js `getHistory()`: replace string interpolation of `sensor` parameter at lines 251, 256, 262, 264 with `$N` parameterized placeholders and a params array, following the existing pattern from `insertSensorReadings()`
-- [ ] T005 [US1a] In server/lib/db.js `getEvents()`: replace string interpolation of `entityType` parameter at line 283 with `$N` parameterized placeholder and a params array
-- [ ] T006 [US1a] Run `npm run test:unit` to verify all db tests pass including new parameterized query tests
+- [x] T004 [US1a] In server/lib/db.js `getHistory()`: replace string interpolation of `sensor` parameter at lines 251, 256, 262, 264 with `$N` parameterized placeholders and a params array, following the existing pattern from `insertSensorReadings()`
+- [x] T005 [US1a] In server/lib/db.js `getEvents()`: replace string interpolation of `entityType` parameter at line 283 with `$N` parameterized placeholder and a params array
+- [x] T006 [US1a] Run `npm run test:unit` to verify all db tests pass including new parameterized query tests
 
 **Checkpoint**: SQL injection vulnerability eliminated. All database queries use parameterized queries.
 
@@ -60,15 +60,15 @@
 
 ### Tests for US1b
 
-- [ ] T007 [US1b] Update tests/rpc-proxy.test.js: remove `_host` from all request bodies; set `CONTROLLER_IP` env var in test setup; verify requests are proxied to the configured controller IP
-- [ ] T008 [US1b] Add test in tests/rpc-proxy.test.js: verify that when `CONTROLLER_IP` is not set, the proxy returns 503 with a clear error message
-- [ ] T009 [US1b] Add test in tests/rpc-proxy.test.js: verify that a `_host` field in the request body is ignored (not forwarded as a query parameter to the device)
+- [x] T007 [US1b] Update tests/rpc-proxy.test.js: remove `_host` from all request bodies; set `CONTROLLER_IP` env var in test setup; verify requests are proxied to the configured controller IP
+- [x] T008 [US1b] Add test in tests/rpc-proxy.test.js: verify that when `CONTROLLER_IP` is not set, the proxy returns 503 with a clear error message
+- [x] T009 [US1b] Add test in tests/rpc-proxy.test.js: verify that a `_host` field in the request body is ignored (not forwarded as a query parameter to the device)
 
 ### Implementation for US1b
 
-- [ ] T010 [US1b] In server/server.js RPC handler (~line 128-141): remove `_host` extraction from `parsed` body; instead read `process.env.CONTROLLER_IP`; return 503 `{"error": "Controller IP not configured"}` if env var is missing
-- [ ] T011 [US1b] In server/server.js `proxyRpc()` function (~line 147): update to receive `host` from the caller (server config) instead of from the client request; ensure `_host` key is still excluded from forwarded query parameters
-- [ ] T012 [US1b] Run `npm run test:unit` to verify all rpc-proxy tests pass including updated host resolution tests
+- [x] T010 [US1b] In server/server.js RPC handler (~line 128-141): remove `_host` extraction from `parsed` body; instead read `process.env.CONTROLLER_IP`; return 503 `{"error": "Controller IP not configured"}` if env var is missing
+- [x] T011 [US1b] In server/server.js `proxyRpc()` function (~line 147): update to receive `host` from the caller (server config) instead of from the client request; ensure `_host` key is still excluded from forwarded query parameters
+- [x] T012 [US1b] Run `npm run test:unit` to verify all rpc-proxy tests pass including updated host resolution tests
 
 **Checkpoint**: SSRF vector eliminated. RPC proxy uses server-configured host only.
 
@@ -82,15 +82,15 @@
 
 ### Tests for US1c
 
-- [ ] T013 [US1c] Add test in tests/auth.test.js: verify that `validateSessionSecret()` (or equivalent) throws/returns error when secret is missing and auth is enabled
-- [ ] T014 [US1c] Add test in tests/auth.test.js: verify that `validateSessionSecret()` throws/returns error when secret equals `'dev-secret-change-me'` and auth is enabled
-- [ ] T015 [US1c] Add test in tests/auth.test.js: verify that `validateSessionSecret()` succeeds when auth is disabled regardless of secret value
+- [x] T013 [US1c] Add test in tests/auth.test.js: verify that `validateSessionSecret()` (or equivalent) throws/returns error when secret is missing and auth is enabled
+- [x] T014 [US1c] Add test in tests/auth.test.js: verify that `validateSessionSecret()` throws/returns error when secret equals `'dev-secret-change-me'` and auth is enabled
+- [x] T015 [US1c] Add test in tests/auth.test.js: verify that `validateSessionSecret()` succeeds when auth is disabled regardless of secret value
 
 ### Implementation for US1c
 
-- [ ] T016 [US1c] In server/auth/session.js: export the default secret string as a named constant (e.g., `DEV_SECRET`) so it can be referenced for validation without hardcoding in multiple places
-- [ ] T017 [US1c] In server/server.js startup sequence (~line 544, before `authMiddleware.init()`): add validation that checks `SESSION_SECRET` is set and not equal to `DEV_SECRET` when `AUTH_ENABLED` is true; call `process.exit(1)` with a `log.error()` message on failure
-- [ ] T018 [US1c] Run `npm run test:unit` to verify all auth tests pass including new validation tests
+- [x] T016 [US1c] In server/auth/session.js: export the default secret string as a named constant (e.g., `DEV_SECRET`) so it can be referenced for validation without hardcoding in multiple places
+- [x] T017 [US1c] In server/server.js startup sequence (~line 544, before `authMiddleware.init()`): add validation that checks `SESSION_SECRET` is set and not equal to `DEV_SECRET` when `AUTH_ENABLED` is true; call `process.exit(1)` with a `log.error()` message on failure
+- [x] T018 [US1c] Run `npm run test:unit` to verify all auth tests pass including new validation tests
 
 **Checkpoint**: Session secret enforced in cloud mode. Local dev mode unaffected.
 
@@ -100,9 +100,9 @@
 
 **Purpose**: Final validation across all fixes.
 
-- [ ] T019 Run full test suite: `npm test` (unit + simulation + e2e)
-- [ ] T020 Update CLAUDE.md if any conventions or architecture descriptions changed
-- [ ] T021 Verify all three fixes work together: start server with `AUTH_ENABLED=true`, valid `SESSION_SECRET`, and `CONTROLLER_IP` set; confirm RPC proxy works, history API works, and auth is enforced
+- [x] T019 Run full test suite: `npm test` (unit + simulation + e2e)
+- [x] T020 Update CLAUDE.md if any conventions or architecture descriptions changed
+- [x] T021 Verify all three fixes work together: start server with `AUTH_ENABLED=true`, valid `SESSION_SECRET`, and `CONTROLLER_IP` set; confirm RPC proxy works, history API works, and auth is enforced
 
 ---
 

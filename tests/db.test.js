@@ -113,4 +113,58 @@ describe('db module', () => {
       done();
     });
   });
+
+  it('getHistory uses parameterized query when sensor is provided', (t, done) => {
+    process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
+    db._reset();
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
+
+    db.getHistory('6h', 'collector', function (err) {
+      assert.ifError(err);
+      const historyQ = capturedQueries.find(q => q.sql && q.sql.includes('sensor_readings'));
+      assert.ok(historyQ, 'should have a sensor_readings query');
+      assert.ok(Array.isArray(historyQ.params), 'params should be an array');
+      assert.ok(historyQ.params.includes('collector'), 'params should contain the sensor value');
+      assert.ok(!historyQ.sql.includes("'collector'"), 'SQL should not contain the sensor value as a literal string');
+      assert.ok(historyQ.sql.includes('$1'), 'SQL should use $1 placeholder');
+      done();
+    });
+  });
+
+  it('getEvents uses parameterized query when entityType is provided', (t, done) => {
+    process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
+    db._reset();
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
+
+    db.getEvents('6h', 'mode', function (err) {
+      assert.ifError(err);
+      const eventsQ = capturedQueries.find(q => q.sql && q.sql.includes('state_events'));
+      assert.ok(eventsQ, 'should have a state_events query');
+      assert.ok(Array.isArray(eventsQ.params), 'params should be an array');
+      assert.ok(eventsQ.params.includes('mode'), 'params should contain the entityType value');
+      assert.ok(!eventsQ.sql.includes("'mode'"), 'SQL should not contain the entityType value as a literal string');
+      assert.ok(eventsQ.sql.includes('$1'), 'SQL should use $1 placeholder');
+      done();
+    });
+  });
+
+  it('getHistory with SQL metacharacters in sensor uses parameterized query', (t, done) => {
+    process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
+    db._reset();
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
+
+    const maliciousSensor = "collector' OR '1'='1";
+    db.getHistory('6h', maliciousSensor, function (err) {
+      assert.ifError(err);
+      const historyQ = capturedQueries.find(q => q.sql && q.sql.includes('sensor_readings'));
+      assert.ok(historyQ, 'should have a sensor_readings query');
+      assert.ok(Array.isArray(historyQ.params), 'params should be an array');
+      assert.ok(historyQ.params.includes(maliciousSensor), 'malicious string should be in params, not interpolated into SQL');
+      assert.ok(!historyQ.sql.includes(maliciousSensor), 'SQL should not contain the malicious string');
+      done();
+    });
+  });
 });

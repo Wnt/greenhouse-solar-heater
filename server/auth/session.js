@@ -7,7 +7,8 @@
 const crypto = require('crypto');
 const credStore = require('./credentials');
 
-const SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
+const DEV_SECRET = 'dev-secret-change-me';
+const SECRET = process.env.SESSION_SECRET || DEV_SECRET;
 const COOKIE_NAME = 'session';
 const MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -85,6 +86,17 @@ function clearSessionCookie(res) {
   res.setHeader('Set-Cookie', flags.join('; '));
 }
 
+function validateSecret() {
+  var val = process.env.SESSION_SECRET;
+  if (!val) {
+    return { valid: false, reason: 'SESSION_SECRET environment variable is not set' };
+  }
+  if (val === DEV_SECRET) {
+    return { valid: false, reason: 'SESSION_SECRET must not use the default development value' };
+  }
+  return { valid: true };
+}
+
 module.exports = {
   sign: sign,
   verify: verify,
@@ -93,4 +105,6 @@ module.exports = {
   validateRequest: validateRequest,
   setSessionCookie: setSessionCookie,
   clearSessionCookie: clearSessionCookie,
+  validateSecret: validateSecret,
+  DEV_SECRET: DEV_SECRET,
 };

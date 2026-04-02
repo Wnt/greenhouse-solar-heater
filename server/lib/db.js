@@ -247,27 +247,49 @@ function getHistory(range, sensor, callback) {
   var useAggregate = range === '7d' || range === '30d' || range === '1y' || range === 'all';
   var useBlended = range === '24h' || range === '48h';
 
-  var whereTime = range === 'all' ? '' : " WHERE ts > NOW() - INTERVAL '" + interval + "'";
-  var whereSensor = sensor ? (whereTime ? ' AND' : ' WHERE') + " sensor_id = '" + sensor + "'" : '';
-
+  var params = [];
+  var paramIdx = 1;
   var sql;
+
   if (useAggregate) {
     var aggWhereTime = range === 'all' ? '' : " WHERE bucket > NOW() - INTERVAL '" + interval + "'";
-    var aggWhereSensor = sensor ? (aggWhereTime ? ' AND' : ' WHERE') + " sensor_id = '" + sensor + "'" : '';
+    var aggWhereSensor = '';
+    if (sensor) {
+      aggWhereSensor = (aggWhereTime ? ' AND' : ' WHERE') + ' sensor_id = $' + paramIdx;
+      params.push(sensor);
+      paramIdx++;
+    }
     sql = 'SELECT bucket AS ts, sensor_id, avg_value AS value FROM sensor_readings_30s' +
       aggWhereTime + aggWhereSensor + ' ORDER BY bucket';
   } else if (useBlended) {
-    // Raw for last 6h, aggregate for older
+    // Raw for last 6h, aggregate for older. Sensor param appears in both sub-queries.
+    var rawSensorClause = '';
+    var aggSensorClause = '';
+    if (sensor) {
+      aggSensorClause = ' AND sensor_id = $' + paramIdx;
+      params.push(sensor);
+      paramIdx++;
+      rawSensorClause = ' AND sensor_id = $' + paramIdx;
+      params.push(sensor);
+      paramIdx++;
+    }
     var rawSql = "SELECT ts, sensor_id, value FROM sensor_readings WHERE ts > NOW() - INTERVAL '6 hours'" +
-      (sensor ? " AND sensor_id = '" + sensor + "'" : '');
+      rawSensorClause;
     var aggSql = "SELECT bucket AS ts, sensor_id, avg_value AS value FROM sensor_readings_30s WHERE bucket <= NOW() - INTERVAL '6 hours' AND bucket > NOW() - INTERVAL '" + interval + "'" +
-      (sensor ? " AND sensor_id = '" + sensor + "'" : '');
+      aggSensorClause;
     sql = '(' + aggSql + ') UNION ALL (' + rawSql + ') ORDER BY ts';
   } else {
+    var whereTime = range === 'all' ? '' : " WHERE ts > NOW() - INTERVAL '" + interval + "'";
+    var whereSensor = '';
+    if (sensor) {
+      whereSensor = (whereTime ? ' AND' : ' WHERE') + ' sensor_id = $' + paramIdx;
+      params.push(sensor);
+      paramIdx++;
+    }
     sql = 'SELECT ts, sensor_id, value FROM sensor_readings' + whereTime + whereSensor + ' ORDER BY ts';
   }
 
-  p.query(sql, function (err, result) {
+  p.query(sql, params, function (err, result) {
     if (err) { callback(err); return; }
 
     // Pivot rows into {ts, collector, tank_top, ...} format
@@ -280,10 +302,16 @@ function getEvents(range, entityType, callback) {
   var p = getPool();
   var interval = RANGE_INTERVALS[range];
   var whereTime = (!interval && range !== 'all') ? '' : (range === 'all' ? '' : " WHERE ts > NOW() - INTERVAL '" + interval + "'");
-  var whereType = entityType ? (whereTime ? ' AND' : ' WHERE') + " entity_type = '" + entityType + "'" : '';
+
+  var params = [];
+  var whereType = '';
+  if (entityType) {
+    whereType = (whereTime ? ' AND' : ' WHERE') + ' entity_type = $1';
+    params.push(entityType);
+  }
 
   var sql = 'SELECT ts, entity_type, entity_id, old_value, new_value FROM state_events' + whereTime + whereType + ' ORDER BY ts';
-  p.query(sql, function (err, result) {
+  p.query(sql, params, function (err, result) {
     if (err) { callback(err); return; }
     var events = result.rows.map(function (row) {
       return {

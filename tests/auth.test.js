@@ -307,6 +307,53 @@ describe('invitations', function () {
   });
 });
 
+// ── Session secret validation tests ──
+
+describe('session secret validation', function () {
+  const session = require('../server/auth/session');
+
+  it('validateSecret returns invalid when SESSION_SECRET is not set', function () {
+    var saved = process.env.SESSION_SECRET;
+    delete process.env.SESSION_SECRET;
+    try {
+      var result = session.validateSecret();
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.reason.includes('SESSION_SECRET'), 'reason should mention SESSION_SECRET');
+    } finally {
+      if (saved !== undefined) process.env.SESSION_SECRET = saved;
+    }
+  });
+
+  it('validateSecret returns invalid when SESSION_SECRET equals dev-secret-change-me', function () {
+    var saved = process.env.SESSION_SECRET;
+    process.env.SESSION_SECRET = 'dev-secret-change-me';
+    try {
+      var result = session.validateSecret();
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.reason.length > 0, 'reason should be non-empty');
+    } finally {
+      if (saved !== undefined) process.env.SESSION_SECRET = saved;
+      else delete process.env.SESSION_SECRET;
+    }
+  });
+
+  it('validateSecret returns valid when SESSION_SECRET is set to a real value', function () {
+    var saved = process.env.SESSION_SECRET;
+    process.env.SESSION_SECRET = 'a-strong-production-secret-value';
+    try {
+      var result = session.validateSecret();
+      assert.strictEqual(result.valid, true);
+    } finally {
+      if (saved !== undefined) process.env.SESSION_SECRET = saved;
+      else delete process.env.SESSION_SECRET;
+    }
+  });
+
+  it('DEV_SECRET equals dev-secret-change-me', function () {
+    assert.strictEqual(session.DEV_SECRET, 'dev-secret-change-me');
+  });
+});
+
 // ── Rate limiting tests ──
 
 describe('rate limiting', function () {

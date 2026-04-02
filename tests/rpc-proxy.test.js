@@ -61,6 +61,9 @@ describe('rpc-proxy security', function () {
         shellyServer = shelly;
         shellyPort = sPort;
 
+        // Point CONTROLLER_IP at the mock Shelly backend
+        process.env.CONTROLLER_IP = '127.0.0.1:' + shellyPort;
+
         // Create a minimal server that replicates the proxy logic
         // We import the actual server module indirectly by testing the behavior
         // For unit tests, we replicate the middleware logic inline
@@ -116,14 +119,14 @@ describe('rpc-proxy security', function () {
               return;
             }
 
-            var host = parsed._host;
+            var host = process.env.CONTROLLER_IP;
             if (!host) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: 'Missing _host parameter' }));
+              res.writeHead(503, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Controller IP not configured' }));
               return;
             }
 
-            // Build Shelly URL from body params
+            // Build Shelly URL from body params (exclude _host if present)
             var rpcPath = urlPath.replace(/^\/api/, '');
             var params = new URLSearchParams();
             for (var key in parsed) {
@@ -159,6 +162,7 @@ describe('rpc-proxy security', function () {
   });
 
   afterEach(function () {
+    delete process.env.CONTROLLER_IP;
     return Promise.all([
       new Promise(function (r) { if (proxyServer) proxyServer.close(r); else r(); }),
       new Promise(function (r) { if (shellyServer) shellyServer.close(r); else r(); }),
@@ -170,7 +174,7 @@ describe('rpc-proxy security', function () {
       var res = await request(proxyPort, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ _host: '127.0.0.1:' + shellyPort }),
+        body: JSON.stringify({ id: 1 }),
       });
       assert.equal(res.status, 403);
       var data = JSON.parse(res.body);
@@ -184,7 +188,7 @@ describe('rpc-proxy security', function () {
           'Content-Type': 'application/json',
           'X-Requested-With': 'wrong-value',
         },
-        body: JSON.stringify({ _host: '127.0.0.1:' + shellyPort }),
+        body: JSON.stringify({ id: 1 }),
       });
       assert.equal(res.status, 403);
     });
@@ -196,7 +200,7 @@ describe('rpc-proxy security', function () {
           'Content-Type': 'application/json',
           'X-Requested-With': MARKER_VALUE,
         },
-        body: JSON.stringify({ _host: '127.0.0.1:' + shellyPort }),
+        body: JSON.stringify({ id: 1 }),
       });
       assert.equal(res.status, 200);
       var data = JSON.parse(res.body);
@@ -223,14 +227,15 @@ describe('rpc-proxy security', function () {
           'Content-Type': 'application/json',
           'X-Requested-With': MARKER_VALUE,
         },
-        body: JSON.stringify({ _host: '127.0.0.1:' + shellyPort }),
+        body: JSON.stringify({ id: 1 }),
       });
       assert.equal(res.status, 200);
     });
   });
 
   describe('body parsing', function () {
-    it('rejects missing _host in body with 400', async function () {
+    it('returns 503 when CONTROLLER_IP is not configured', async function () {
+      delete process.env.CONTROLLER_IP;
       var res = await request(proxyPort, {
         method: 'POST',
         headers: {
@@ -239,9 +244,11 @@ describe('rpc-proxy security', function () {
         },
         body: JSON.stringify({ id: 1 }),
       });
-      assert.equal(res.status, 400);
+      assert.equal(res.status, 503);
       var data = JSON.parse(res.body);
-      assert.equal(data.error, 'Missing _host parameter');
+      assert.equal(data.error, 'Controller IP not configured');
+      // Restore for other tests
+      process.env.CONTROLLER_IP = '127.0.0.1:' + shellyPort;
     });
 
     it('forwards body params as query string to Shelly device', async function () {
@@ -251,9 +258,32 @@ describe('rpc-proxy security', function () {
           'Content-Type': 'application/json',
           'X-Requested-With': MARKER_VALUE,
         },
-        body: JSON.stringify({ _host: '127.0.0.1:' + shellyPort, id: 1, code: 'getStatus()' }),
+        body: JSON.stringify({ id: 1, code: 'getStatus()' }),
       });
       assert.equal(res.status, 200);
+    });
+
+    it('ignores _host in the body and does not forward it as a query param', async function () {
+      var capturedUrl;
+      // Replace the mock shelly server handler to record the request URL
+      shellyServer.removeAllListeners('request');
+      shellyServer.on('request', function (req, res) {
+        capturedUrl = req.url;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ id: 1, src: 'mock-shelly' }));
+      });
+
+      var res = await request(proxyPort, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': MARKER_VALUE,
+        },
+        body: JSON.stringify({ _host: '10.0.0.1', id: 1 }),
+      });
+      assert.equal(res.status, 200);
+      assert.ok(capturedUrl, 'mock shelly should have received the request');
+      assert.ok(!capturedUrl.includes('_host'), '_host must not appear in forwarded URL');
     });
   });
 
@@ -304,7 +334,7 @@ describe('rpc-proxy security', function () {
             'Content-Type': 'application/json',
             'X-Requested-With': MARKER_VALUE,
           },
-          body: JSON.stringify({ _host: '127.0.0.1:' + shellyPort }),
+          body: JSON.stringify({ id: 1 }),
         });
         assert.equal(res.status, 200);
         assert.equal(res.headers['access-control-allow-origin'], 'https://greenhouse.madekivi.fi');
