@@ -1,0 +1,60 @@
+stateDiagram-v2
+    direction TB
+
+    [*] --> BoxInstall: Install Control Box
+
+    state "Phase 1: Control Box" as BoxInstall {
+        [*] --> MountPro4PM: Mount Pro 4PM\n+ Ethernet switch\n+ 24V PSU
+        MountPro4PM --> WireSensors: Connect 3 DS18B20\nsensors to Gen3 Add-on
+        WireSensors --> FlashFirmware: Deploy scripts\nvia deploy.sh
+        FlashFirmware --> DisabledBoot: Boot with\nce=false, ea=0
+    }
+
+    DisabledBoot --> SensorVerify: Verify Sensors
+
+    state "Phase 2: Sensor Verification" as SensorVerify {
+        [*] --> OpenUI: Open Playground UI\n→ Status view
+        OpenUI --> WarmColl: Warm collector sensor\n→ confirm reading rises
+        WarmColl --> WarmTank: Warm tank_bottom sensor\n→ confirm reading rises
+        WarmTank --> CoolOutdoor: Cool outdoor sensor\n→ confirm reading drops
+        CoolOutdoor --> AllVerified: All 3 sensors\ncorrectly identified
+        WarmColl --> SensorSwap: Wrong sensor\nchanged? → Fix wiring
+        WarmTank --> SensorSwap
+        CoolOutdoor --> SensorSwap
+        SensorSwap --> OpenUI
+    }
+
+    AllVerified --> Stage1: Enable Stage 1
+
+    state "Phase 3: Solar Loop" as Stage1 {
+        [*] --> SetConfig1: Set device config\nce=true, ea=3\nam=["SC"]
+        SetConfig1 --> TestSolar: Verify solar charging\nactivates when hot
+        TestSolar --> TestFreeze: Test freeze drain\nfm="AD" manual trigger
+        TestFreeze --> VerifyDrain: Verify pump stops\non dry-run detection
+        VerifyDrain --> ClearForce: Clear fm=null\nSystem autonomous
+    }
+
+    ClearForce --> Monitor: Monitor & Validate
+
+    state "Phase 4: Add Loops" as Monitor {
+        [*] --> AddGH: Add greenhouse heating?\nConnect sensors + radiator
+        AddGH --> SetConfig2: am=["SC","GH"]\nea=7 (add fan)
+        SetConfig2 --> TestGH: Test via fm="GH"
+        TestGH --> AddEH: Add emergency heating?\nConnect space heater
+        AddEH --> SetConfig3: am=["SC","GH","EH"]\nea=15 (add heater)
+        SetConfig3 --> FullSystem: Full system\nam=null, ea=31
+    }
+
+    FullSystem --> [*]: System Fully\nAutonomous
+
+    note right of DisabledBoot
+        Safety drains (freeze/overheat)\nare ALWAYS active, even with\nce=false. Cannot be disabled.
+    end note
+
+    note right of AllVerified
+        Sensor identity confirmed.\nSafe to enable automation.
+    end note
+
+    note right of ClearForce
+        Solar charging + freeze\nprotection now autonomous.\nNo other modes can activate.
+    end note
