@@ -42,7 +42,8 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `deploy/k8s/` → Kubernetes manifests: app Deployment (app + openvpn + mosquitto sidecar), Service, Ingress, deployer RBAC, kustomization.yaml
 - `deploy/docker/` → App Dockerfile only
 - `deploy/openvpn/` → OpenVPN sidecar: Dockerfile (Alpine + openvpn)
-- `design/docs/` → prose docs: design.md, bom.md, ideas/, superpowers/
+- `design/docs/` → prose docs: design.md, bom.md, commissioning-guide.md, ideas/, superpowers/
+- `design/docs/pdf/` → PDF generation for commissioning guide (`node design/docs/pdf/generate-pdf.js` or `./generate-pdf.sh`). Uses Playwright to render styled HTML to A4 PDF with Stitch dark theme.
 - `design/diagrams/` → hand-authored SVG with `data-` attributes + Mermaid control logic
 - `design/construction/` → physical build instructions
 - `design/photos/` → reference photos of owned components
