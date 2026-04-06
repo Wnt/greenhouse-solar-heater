@@ -2,8 +2,8 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Install curl for healthcheck, python3 for Shelly script deploy
-RUN apk add --no-cache curl python3
+# Install curl for healthcheck, python3 + bash for Shelly script deploy
+RUN apk add --no-cache curl python3 bash
 
 # Copy package files and install production dependencies
 COPY package.json package-lock.json ./
