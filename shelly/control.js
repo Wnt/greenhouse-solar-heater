@@ -1,6 +1,5 @@
-// Shelly Pro 4PM — Solar Thermal Greenhouse Control (Shell)
-// All decision logic is in control-logic.js (concatenated at deploy time)
-// This file handles: timers, RPC, relays, KVS, sensors, config, events
+// Shelly Pro 4PM — Control Shell (decision logic in control-logic.js)
+// Handles: timers, RPC, relays, KVS, sensors, config, MQTT commands
 
 var SHELL_CFG = {
   POLL_INTERVAL: 30000,
@@ -21,13 +20,9 @@ var VALVES = {
   v_air:   {ip: "192.168.30.14", id: 1},
 };
 
-// Sensor config — loaded from KVS on boot, updated via sensor_config_changed events
-// Compact format: s={role:{h:hostIndex,i:componentId},...}, h=[hostIp,...], v=version
-// If null, sensor polling is skipped (all temps stay null → IDLE mode, safe default)
+// Sensor config from KVS (null = skip polling, safe IDLE default)
 var sensorConfig = null;
-
-// Device config — loaded from KVS on boot, updated via events from telemetry script
-// Compact config: ce=controls_enabled, ea=actuator bitmask, fm=forced_mode, am=allowed_modes, v=version
+// Device config from KVS
 var deviceConfig = { ce: false, ea: 0, fm: null, am: null, v: 0 };
 
 var state = {
@@ -385,157 +380,76 @@ function controlLoop() {
   });
 }
 
-// ── Pending MQTT command queue ──
+// ── MQTT command queue (sensor config apply + discovery) ──
 
-var pendingConfigApply = null;
-var pendingDiscovery = null;
+var pendingApply = null;
+var pendingDisc = null;
 
 function processPendingCommands() {
-  if (pendingConfigApply) {
-    var applyReq = pendingConfigApply;
-    pendingConfigApply = null;
-    executeSensorConfigApply(applyReq);
-  } else if (pendingDiscovery) {
-    var discReq = pendingDiscovery;
-    pendingDiscovery = null;
-    executeDiscoveryScan(discReq);
-  }
+  if (pendingApply) { var r = pendingApply; pendingApply = null; doApply(r); }
+  else if (pendingDisc) { var d = pendingDisc; pendingDisc = null; doDiscover(d); }
 }
 
-// ── Sensor config apply via MQTT ──
-
-function sensorAddonRpc(hostIp, method, params, cb) {
-  var url = "http://" + hostIp + "/rpc";
-  var postData = JSON.stringify({id: 1, method: method, params: params || {}});
-  Shelly.call("HTTP.POST", {url: url, body: postData, content_type: "application/json", timeout: 5}, function(res, err) {
-    if (err || !res || res.code !== 200 || !res.body) {
-      if (cb) cb(err ? "HTTP error" : "bad response", null);
-      return;
-    }
-    try {
-      var parsed = JSON.parse(res.body);
-      if (cb) cb(null, parsed);
-    } catch(e) {
-      if (cb) cb("JSON parse error", null);
-    }
+function addonRpc(ip, method, params, cb) {
+  var body = JSON.stringify({id:1,method:method,params:params||{}});
+  Shelly.call("HTTP.POST",{url:"http://"+ip+"/rpc",body:body,content_type:"application/json",timeout:5},function(r,e){
+    if(e||!r||r.code!==200||!r.body){cb(e?"err":"bad",null);return;}
+    try{cb(null,JSON.parse(r.body));}catch(x){cb("parse",null);}
   });
 }
 
-function executeSensorConfigApply(request) {
-  var config = request.config;
-  if (!config || !config.h || !config.s) {
-    Shelly.emitEvent("sensor_config_apply_result", {id: request.id, success: false, results: []});
-    return;
-  }
-  var targetHost = request.target;
-  var hosts = [];
-  for (var hi = 0; hi < config.h.length; hi++) {
-    if (!targetHost || config.h[hi] === targetHost) {
-      hosts.push(config.h[hi]);
-    }
-  }
-
-  var results = [];
-  function nextApplyHost(idx) {
-    if (idx >= hosts.length) {
-      var allOk = true;
-      for (var ri = 0; ri < results.length; ri++) {
-        if (!results[ri].ok) allOk = false;
-      }
-      Shelly.emitEvent("sensor_config_apply_result", {id: request.id, success: allOk, results: results});
-      return;
-    }
-    var hostIp = hosts[idx];
-    var hostIdx = -1;
-    for (var h = 0; h < config.h.length; h++) {
-      if (config.h[h] === hostIp) { hostIdx = h; break; }
-    }
-    // Get existing peripherals
-    sensorAddonRpc(hostIp, "SensorAddon.GetPeripherals", null, function(err, res) {
-      if (err) {
-        results.push({host: hostIp, ok: false, error: err, peripherals: 0});
-        nextApplyHost(idx + 1);
-        return;
-      }
-      var existing = [];
-      var ds18b20 = (res && res.ds18b20) || (res && res.params && res.params.ds18b20) || {};
-      for (var comp in ds18b20) { existing.push(comp); }
-
-      // Remove existing
-      function removeExisting(ri) {
-        if (ri >= existing.length) { addNew(); return; }
-        sensorAddonRpc(hostIp, "SensorAddon.RemovePeripheral", {component: existing[ri]}, function() {
-          removeExisting(ri + 1);
-        });
-      }
-
-      // Add assigned sensors for this host
-      function addNew() {
-        var toAdd = [];
-        for (var role in config.s) {
-          var s = config.s[role];
-          if (s.h === hostIdx) {
-            // Find the addr from assignments if available
-            toAdd.push({i: s.i, role: role});
-          }
-        }
-        var added = 0;
-        function addNext(ai) {
-          if (ai >= toAdd.length) {
-            results.push({host: hostIp, ok: true, peripherals: added});
-            nextApplyHost(idx + 1);
-            return;
-          }
-          // Note: compact format doesn't include addr — the controller needs full config
-          // For now we add by component ID; the SensorAddon will auto-detect addresses
-          sensorAddonRpc(hostIp, "SensorAddon.AddPeripheral", {
-            type: "ds18b20",
-            attrs: {cid: toAdd[ai].i}
-          }, function(addErr) {
-            if (!addErr) added++;
-            addNext(ai + 1);
-          });
-        }
-        addNext(0);
-      }
-      removeExisting(0);
-    });
-  }
-  nextApplyHost(0);
+function getDs18b20(res) {
+  return (res&&res.ds18b20)||(res&&res.params&&res.params.ds18b20)||{};
 }
 
-// ── Sensor discovery via MQTT ──
-
-function executeDiscoveryScan(request) {
-  var hosts = request.hosts || [];
-  var results = [];
-  function nextDiscoverHost(idx) {
-    if (idx >= hosts.length) {
-      Shelly.emitEvent("discover_sensors_result", {id: request.id, results: results});
-      return;
+function doApply(req) {
+  var cfg=req.config;
+  if(!cfg||!cfg.h||!cfg.s){Shelly.emitEvent("sensor_config_apply_result",{id:req.id,success:false,results:[]});return;}
+  var tgt=req.target,hosts=[];
+  for(var i=0;i<cfg.h.length;i++){if(!tgt||cfg.h[i]===tgt)hosts.push(cfg.h[i]);}
+  var res=[];
+  function next(idx){
+    if(idx>=hosts.length){
+      var ok=true;for(var j=0;j<res.length;j++){if(!res[j].ok)ok=false;}
+      Shelly.emitEvent("sensor_config_apply_result",{id:req.id,success:ok,results:res});return;
     }
-    var hostIp = hosts[idx];
-    sensorAddonRpc(hostIp, "SensorAddon.GetPeripherals", null, function(err, res) {
-      if (err) {
-        results.push({host: hostIp, ok: false, error: err, sensors: []});
-        nextDiscoverHost(idx + 1);
-        return;
+    var ip=hosts[idx],hi=-1;
+    for(var k=0;k<cfg.h.length;k++){if(cfg.h[k]===ip){hi=k;break;}}
+    addonRpc(ip,"SensorAddon.GetPeripherals",null,function(e,r){
+      if(e){res.push({host:ip,ok:false,error:e,peripherals:0});next(idx+1);return;}
+      var ex=[];var d=getDs18b20(r);for(var c in d)ex.push(c);
+      function rm(ri){
+        if(ri>=ex.length){add();return;}
+        addonRpc(ip,"SensorAddon.RemovePeripheral",{component:ex[ri]},function(){rm(ri+1);});
       }
-      var sensors = [];
-      var ds18b20 = (res && res.ds18b20) || (res && res.params && res.params.ds18b20) || {};
-      for (var comp in ds18b20) {
-        var info = ds18b20[comp];
-        sensors.push({
-          addr: info.addr || "",
-          tC: (typeof info.tC === "number") ? info.tC : null,
-          component: comp
-        });
+      function add(){
+        var ta=[];for(var rl in cfg.s){if(cfg.s[rl].h===hi)ta.push({i:cfg.s[rl].i});}
+        var n=0;
+        function an(ai){
+          if(ai>=ta.length){res.push({host:ip,ok:true,peripherals:n});next(idx+1);return;}
+          addonRpc(ip,"SensorAddon.AddPeripheral",{type:"ds18b20",attrs:{cid:ta[ai].i}},function(ae){if(!ae)n++;an(ai+1);});
+        }
+        an(0);
       }
-      results.push({host: hostIp, ok: true, sensors: sensors});
-      nextDiscoverHost(idx + 1);
+      rm(0);
     });
   }
-  nextDiscoverHost(0);
+  next(0);
+}
+
+function doDiscover(req) {
+  var hosts=req.hosts||[],res=[];
+  function next(idx){
+    if(idx>=hosts.length){Shelly.emitEvent("discover_sensors_result",{id:req.id,results:res});return;}
+    var ip=hosts[idx];
+    addonRpc(ip,"SensorAddon.GetPeripherals",null,function(e,r){
+      if(e){res.push({host:ip,ok:false,error:e,sensors:[]});next(idx+1);return;}
+      var sns=[],d=getDs18b20(r);
+      for(var c in d){var inf=d[c];sns.push({addr:inf.addr||"",tC:typeof inf.tC==="number"?inf.tC:null,component:c});}
+      res.push({host:ip,ok:true,sensors:sns});next(idx+1);
+    });
+  }
+  next(0);
 }
 
 // ── Config event handlers ──
@@ -558,12 +472,12 @@ Shelly.addEventHandler(function(ev) {
   } else if (ev.info.event === "sensor_config_apply") {
     var applyData = ev.info.data;
     if (applyData && applyData.request) {
-      pendingConfigApply = applyData.request;
+      pendingApply = applyData.request;
     }
   } else if (ev.info.event === "discover_sensors") {
     var discData = ev.info.data;
     if (discData && discData.request) {
-      pendingDiscovery = discData.request;
+      pendingDisc = discData.request;
     }
   }
 });

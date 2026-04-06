@@ -118,13 +118,13 @@
 
 **Purpose**: Final validation, documentation, and cleanup across all stories.
 
-- [ ] T034 Run full test suite `npm test` — all unit, simulation, and e2e tests must pass
-- [ ] T035 Run Shelly linter `node shelly/lint/bin/shelly-lint.js shelly/control.js shelly/telemetry.js` — verify ES5 compliance of modified Shelly scripts
-- [ ] T036 [P] Verify Shelly script sizes are under 16KB limit — check concatenated `control-logic.js + control.js` and `telemetry.js` file sizes
-- [ ] T037 [P] Update `CLAUDE.md` — remove references to valve-poller.js, RPC proxy, and Script.Eval polling. Update the server description to reflect MQTT-only communication. Update file relationships section.
-- [ ] T038 [P] Update `playground/js/sensors.js` — remove any dead code paths that referenced the old RPC proxy or direct Shelly HTTP calls
-- [ ] T039 Verify e2e tests pass: `npm run test:e2e` — confirm sensor config and discovery UI flows work through the new MQTT path
-- [ ] T040 Run `npm test` one final time to confirm everything passes
+- [x] T034 Run full test suite `npm test` — all unit, simulation, and e2e tests must pass
+- [x] T035 Run Shelly linter `node shelly/lint/bin/shelly-lint.js shelly/control.js shelly/telemetry.js` — verify ES5 compliance of modified Shelly scripts
+- [x] T036 [P] Verify Shelly script sizes are under 16KB limit — check concatenated `control-logic.js + control.js` and `telemetry.js` file sizes
+- [x] T037 [P] Update `CLAUDE.md` — remove references to valve-poller.js, RPC proxy, and Script.Eval polling. Update the server description to reflect MQTT-only communication. Update file relationships section.
+- [x] T038 [P] Update `playground/js/sensors.js` — remove any dead code paths that referenced the old RPC proxy or direct Shelly HTTP calls
+- [x] T039 Verify e2e tests pass: `npm run test:e2e` — confirm sensor config and discovery UI flows work through the new MQTT path
+- [x] T040 Run `npm test` one final time to confirm everything passes
 
 ---
 
