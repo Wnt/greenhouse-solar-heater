@@ -238,6 +238,11 @@ function emitStateUpdate() {
   Shelly.emitEvent("state_updated", buildStateSnapshot());
 }
 
+// Called by server-side valve-poller via Script.Eval?code=getStatus()
+function getStatus() {
+  return JSON.stringify(buildStateSnapshot());
+}
+
 function applyFlags(flags) {
   state.collectors_drained = flags.collectorsDrained;
   state.last_refill_attempt = flags.lastRefillAttempt * 1000;

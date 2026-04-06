@@ -91,6 +91,10 @@ print(' '.join(str(i) for i in ids))
     created_id=$(curl -sf -X POST "http://$device_ip/rpc/Script.Create" \
       -H "Content-Type: application/json" \
       -d '{}' 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('id','?'))" 2>/dev/null) || created_id="?"
+    # Disable auto-start on empty slots to prevent crash-on-boot
+    curl -sf -X POST "http://$device_ip/rpc/Script.SetConfig" \
+      -H "Content-Type: application/json" \
+      -d "{\"id\":$created_id,\"config\":{\"enable\":false}}" > /dev/null 2>&1
     echo "  Created slot $created_id"
   done
 
@@ -158,7 +162,7 @@ upload_script "$CONTROL_SCRIPT_ID" "$LOGIC_JS" "$CONTROL_JS" "$DEVICE"
 
 curl -s -X POST "http://$DEVICE/rpc/Script.SetConfig" \
   -H "Content-Type: application/json" \
-  -d "{\"id\":$CONTROL_SCRIPT_ID,\"config\":{\"enable\":true}}" > /dev/null
+  -d "{\"id\":$CONTROL_SCRIPT_ID,\"config\":{\"name\":\"control\",\"enable\":true}}" > /dev/null
 
 echo "Control script auto-start enabled"
 curl -s "http://$DEVICE/rpc/Script.Start?id=$CONTROL_SCRIPT_ID" > /dev/null
@@ -177,7 +181,7 @@ if [ -f "$TELEMETRY_JS" ]; then
 
   curl -s -X POST "http://$DEVICE/rpc/Script.SetConfig" \
     -H "Content-Type: application/json" \
-    -d "{\"id\":$TELEMETRY_SCRIPT_ID,\"config\":{\"enable\":true}}" > /dev/null
+    -d "{\"id\":$TELEMETRY_SCRIPT_ID,\"config\":{\"name\":\"telemetry\",\"enable\":true}}" > /dev/null
 
   echo "Telemetry script auto-start enabled"
   curl -s "http://$DEVICE/rpc/Script.Start?id=$TELEMETRY_SCRIPT_ID" > /dev/null
