@@ -1,6 +1,6 @@
-# Minimal RBAC for CI/CD deployment.
-# The deployer ServiceAccount can ONLY patch the "app" Deployment
-# (to update container images). No read, no delete, no other resources.
+# RBAC for CI/CD deployment.
+# The deployer ServiceAccount can patch the "app" Deployment (to update
+# container images) and exec into pods (to deploy Shelly scripts).
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -31,6 +31,10 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
+  # kubectl exec into pods (for Shelly script deployment)
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

@@ -98,3 +98,58 @@ jobs:
 
       - name: Wait for rollout
         run: kubectl rollout status deployment/app --timeout=5m
+
+  shelly-deploy:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Wait for VPN connectivity
+        run: |
+          echo "Waiting for VPN tunnel to Shelly device..."
+          kubectl exec deployment/app -c app -- sh -c '
+            elapsed=0
+            delay=1
+            attempt=1
+            while [ $elapsed -lt 60 ]; do
+              if curl -sf --connect-timeout 3 http://192.168.30.10/rpc/Shelly.GetStatus > /dev/null 2>&1; then
+                echo "VPN connected — Shelly device reachable (after ${elapsed}s)"
+                exit 0
+              fi
+              echo "Attempt $attempt — waiting ${delay}s (${elapsed}s elapsed)..."
+              sleep $delay
+              elapsed=$((elapsed + delay))
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+              if [ $((elapsed + delay)) -gt 60 ]; then
+                delay=$((60 - elapsed))
+              fi
+            done
+            echo "VPN not ready after 60s"
+            exit 1
+          '
+        continue-on-error: true
+        id: vpn-check
+
+      - name: Deploy Shelly scripts
+        if: steps.vpn-check.outcome == 'success'
+        run: |
+          echo "Deploying Shelly scripts via kubectl exec..."
+          kubectl exec deployment/app -c app -- sh -c '
+            cd /app/shelly && DEPLOY_VIA_VPN=true bash deploy.sh
+          '
+        continue-on-error: true
+
+      - name: Report Shelly deploy status
+        if: always()
+        run: |
+          if [ "${{ steps.vpn-check.outcome }}" != "success" ]; then
+            echo "::warning::Shelly deploy skipped — VPN not available"
+          else
+            echo "Shelly deploy step completed"
+          fi

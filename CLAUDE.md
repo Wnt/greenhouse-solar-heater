@@ -173,7 +173,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 ## CI / GitHub Actions
 
 - `.github/workflows/ci.yml` — runs the full test suite (unit, simulation, auth, e2e) on every push. Triggers on `push` only (not `pull_request`) so tests run exactly once — opening a PR from an already-pushed branch does not re-trigger.
-- `.github/workflows/deploy.yml` — CD pipeline: test → build app + openvpn images → push to GHCR → `kubectl set image` rolling update on UKS cluster. Triggers on push to main/master. Requires `KUBE_CONFIG_DATA` GitHub secret (base64-encoded deployer kubeconfig from Terraform output). The deployer ServiceAccount has minimal RBAC: can only patch the `app` Deployment.
+- `.github/workflows/deploy.yml` — CD pipeline: test → build app + openvpn images → push to GHCR → `kubectl set image` rolling update on UKS cluster → deploy Shelly scripts via `kubectl exec`. Triggers on push to main/master. Requires `KUBE_CONFIG_DATA` GitHub secret (base64-encoded deployer kubeconfig from Terraform output). The deployer ServiceAccount RBAC: can patch the `app` Deployment and exec into pods (for Shelly script deployment). The Shelly deploy step is non-fatal — failures don't block the pipeline.
 - `.github/workflows/deploy-pages.yml` — deploys playground to GitHub Pages on push to main/master
 - `.github/workflows/lint-shelly.yml` — runs Shelly linter on push/PR when `shelly/` files change
 
@@ -220,6 +220,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - PostgreSQL with TimescaleDB (sensor data), S3-compatible object storage (credentials) (017-architecture-code-review)
 - JavaScript ES5 (Shelly scripts), Node.js 20 LTS (tests) + Shelly scripting runtime, node:test (testing) (017-review-hardware-architecture)
 - Shelly KVS (device config), MQTT (telemetry) (017-review-hardware-architecture)
+- YAML (GitHub Actions), HCL (Terraform), Bash + kubectl, GitHub Actions, Kubernetes RBAC (018-cd-shelly-deploy)
 
 ## Cloud Deployment Architecture
 
@@ -290,7 +291,6 @@ Terraform stores the key in the `app-secrets` Kubernetes Secret. Redeploy to act
 - PostgreSQL health — via nri-postgresql integration
 
 ## Recent Changes
+- 018-cd-shelly-deploy: Added YAML (GitHub Actions), HCL (Terraform), Bash + kubectl, GitHub Actions, Kubernetes RBAC
 - 017-architecture-code-review: Added Node.js 20 LTS (CommonJS) + `pg` (PostgreSQL driver), `@simplewebauthn/server`, native `http`/`crypto`
 - 017-review-hardware-architecture: Added JavaScript ES5 (Shelly scripts), Node.js 20 LTS (tests) + Shelly scripting runtime, node:test (testing)
-- 016-js-reload-prompt: Added JavaScript ES6+ (browser modules), Node.js 20 LTS (CommonJS server) + None new — uses existing `server/server.js` HTTP handler and browser `fetch` API
-- 015-fix-padding-status-display: Added JavaScript ES6+ (browser modules), CSS3 + Playwright 1.56.0 (e2e tests), `npx serve` (static server for tests)

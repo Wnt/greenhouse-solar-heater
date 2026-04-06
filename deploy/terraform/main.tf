@@ -407,6 +407,13 @@ resource "kubernetes_role" "deployer" {
     verbs      = ["get", "list", "watch"]
   }
 
+  # kubectl exec into pods (for Shelly script deployment)
+  rule {
+    api_groups = [""]
+    resources  = ["pods/exec"]
+    verbs      = ["create"]
+  }
+
   depends_on = [upcloud_kubernetes_node_group.default]
 }
 
