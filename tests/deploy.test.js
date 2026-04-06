@@ -46,6 +46,15 @@ function createMockServer(handler) {
     if (url.includes('Script.Stop')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ id: 1, was_running: true }));
+    } else if (url.includes('Script.List')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ scripts: [{ id: 1 }, { id: 3 }] }));
+    } else if (url.includes('Script.Create')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ id: 1 }));
+    } else if (url.includes('Script.Delete')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({}));
     } else if (url.includes('Script.PutCode')) {
       const data = JSON.parse(body);
       const id = data.id || 1;
@@ -231,7 +240,10 @@ describe('deploy.sh error handling', () => {
 
   before(async () => {
     mock = createMockServer((req, res) => {
-      if (req.url.includes('Script.Stop')) {
+      if (req.url.includes('Script.List')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ scripts: [{ id: 1 }, { id: 3 }] }));
+      } else if (req.url.includes('Script.Stop')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ id: 1 }));
       } else if (req.url.includes('Script.PutCode')) {

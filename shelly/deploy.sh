@@ -39,6 +39,72 @@ fi
 CONTROL_SCRIPT_ID="${2:-1}"
 TELEMETRY_SCRIPT_ID="${3:-3}"
 
+# ── Ensure expected script slots exist, remove unexpected ones ──
+ensure_script_slots() {
+  local device_ip="$1"
+  shift
+  local expected_ids=("$@")
+
+  echo "Checking script slots on $device_ip..."
+
+  # Get current scripts
+  local list_json
+  list_json=$(curl -sf "http://$device_ip/rpc/Script.List" 2>/dev/null) || {
+    echo "Warning: Could not list scripts on $device_ip" >&2
+    return 1
+  }
+
+  # Parse existing script IDs and remove unexpected ones
+  local existing_ids
+  existing_ids=$(echo "$list_json" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for s in data.get('scripts', []):
+    print(s['id'])
+" 2>/dev/null) || existing_ids=""
+
+  # Delete scripts not in expected list
+  for id in $existing_ids; do
+    local found=false
+    for eid in "${expected_ids[@]}"; do
+      if [ "$id" = "$eid" ]; then
+        found=true
+        break
+      fi
+    done
+    if [ "$found" = "false" ]; then
+      echo "  Removing unexpected script slot $id"
+      curl -sf "http://$device_ip/rpc/Script.Stop?id=$id" > /dev/null 2>&1 || true
+      curl -sf -X POST "http://$device_ip/rpc/Script.Delete" \
+        -H "Content-Type: application/json" \
+        -d "{\"id\":$id}" > /dev/null 2>&1 || true
+    fi
+  done
+
+  # Create missing expected slots
+  for eid in "${expected_ids[@]}"; do
+    local found=false
+    for id in $existing_ids; do
+      if [ "$id" = "$eid" ]; then
+        found=true
+        break
+      fi
+    done
+    if [ "$found" = "false" ]; then
+      echo "  Creating script slot $eid"
+      curl -sf -X POST "http://$device_ip/rpc/Script.Create" \
+        -H "Content-Type: application/json" \
+        -d "{\"id\":$eid}" > /dev/null 2>&1 || {
+        echo "Warning: Could not create script slot $eid" >&2
+      }
+    fi
+  done
+
+  echo "Script slots verified"
+}
+
+ensure_script_slots "$DEVICE" "$CONTROL_SCRIPT_ID" "$TELEMETRY_SCRIPT_ID"
+
 # ── Helper: upload script files to a Shelly script slot ──
 upload_script() {
   local script_id="$1"
