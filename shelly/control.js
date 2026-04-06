@@ -11,17 +11,17 @@ var SHELL_CFG = {
 };
 
 var VALVES = {
-  vi_btm:  {ip: "192.168.1.11", id: 0},
-  vi_top:  {ip: "192.168.1.11", id: 1},
-  vi_coll: {ip: "192.168.1.12", id: 0},
-  vo_coll: {ip: "192.168.1.12", id: 1},
-  vo_rad:  {ip: "192.168.1.13", id: 0},
-  vo_tank: {ip: "192.168.1.13", id: 1},
-  v_ret:   {ip: "192.168.1.14", id: 0},
-  v_air:   {ip: "192.168.1.14", id: 1},
+  vi_btm:  {ip: "192.168.30.11", id: 0},
+  vi_top:  {ip: "192.168.30.11", id: 1},
+  vi_coll: {ip: "192.168.30.12", id: 0},
+  vo_coll: {ip: "192.168.30.12", id: 1},
+  vo_rad:  {ip: "192.168.30.13", id: 0},
+  vo_tank: {ip: "192.168.30.13", id: 1},
+  v_ret:   {ip: "192.168.30.14", id: 0},
+  v_air:   {ip: "192.168.30.14", id: 1},
 };
 
-var SENSOR_IP = "192.168.1.86";
+var SENSOR_IP = "192.168.30.20";
 var SENSOR_IDS = {
   collector: 0, tank_top: 1, tank_bottom: 2, greenhouse: 3, outdoor: 4,
 };

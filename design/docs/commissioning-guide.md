@@ -46,11 +46,11 @@ Before starting commissioning:
 
 | Component | IP Address | Purpose |
 |-----------|------------|---------|
-| Shelly Pro 4PM | 192.168.1.174 | Controller — runs control logic, drives pump |
-| Shelly Pro 2PM #1 | 192.168.1.11 | Valves VI-btm, VI-top (input manifold) |
-| Shelly Pro 2PM #2 | 192.168.1.12 | Valves VI-coll, VO-coll (collector loop) |
-| Shelly Pro 2PM #4 | 192.168.1.14 | Valves V_ret, V_air (collector top) |
-| Shelly 1 Gen3 + Add-on | 192.168.1.86 | Sensor hub — 3× DS18B20 |
+| Shelly Pro 4PM | 192.168.30.10 | Controller — runs control logic, drives pump |
+| Shelly Pro 2PM #1 | 192.168.30.11 | Valves VI-btm, VI-top (input manifold) |
+| Shelly Pro 2PM #2 | 192.168.30.12 | Valves VI-coll, VO-coll (collector loop) |
+| Shelly Pro 2PM #4 | 192.168.30.14 | Valves V_ret, V_air (collector top) |
+| Shelly 1 Gen3 + Add-on | 192.168.30.20 | Sensor hub — 3× DS18B20 |
 | Zyxel GS-108BV5 | — | 8-port Ethernet switch |
 | Mean Well 24V 15W PSU | — | Powers all valve actuators |
 
@@ -236,7 +236,7 @@ As you install additional hardware (radiator loop, space heater), progressively 
 **When**: Radiator + fan installed in greenhouse, tank top sensor and greenhouse sensor connected.
 
 **New hardware**:
-- Pro 2PM unit 3 (192.168.1.13) — valves VO-rad, VO-tank
+- Pro 2PM unit 3 (192.168.30.13) — valves VO-rad, VO-tank
 - Tank top sensor (sensor ID 1) and greenhouse sensor (sensor ID 3)
 - 230V fan connected to Pro 4PM O2
 
@@ -342,7 +342,7 @@ These fire regardless of `ce`, `ea`, or `am`:
 ### Sensor reading shows "--" or null
 
 - Check physical connection of DS18B20 probe to Add-on
-- Verify sensor hub IP (192.168.1.86) is reachable from Pro 4PM
+- Verify sensor hub IP (192.168.30.20) is reachable from Pro 4PM
 - Check 1-Wire bus wiring (data, VCC, GND)
 
 ### Valve doesn't open

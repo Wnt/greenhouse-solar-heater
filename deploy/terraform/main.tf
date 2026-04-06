@@ -324,11 +324,11 @@ resource "kubernetes_config_map" "app_config" {
     ORIGIN                      = "https://${var.domain}"
     DOMAIN                      = var.domain
     GITHUB_REPO                 = lower(var.github_repo)
-    VPN_CHECK_HOST              = "192.168.1.86"
+    VPN_CHECK_HOST              = "192.168.30.20"
     VPN_CONFIG_KEY              = "openvpn.conf"
     SETUP_WINDOW_MINUTES        = "30"
     NODE_ENV                    = "production"
-    CONTROLLER_IP               = "192.168.1.174"
+    CONTROLLER_IP               = "192.168.30.10"
     CONTROLLER_SCRIPT_ID        = "1"
     MQTT_HOST                   = "localhost"
     CONTROLLER_VPN_IP           = ""
