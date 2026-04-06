@@ -36,74 +36,71 @@ else
   DEVICE="${1:-$PRO4PM}"
 fi
 
-CONTROL_SCRIPT_ID="${2:-1}"
-TELEMETRY_SCRIPT_ID="${3:-3}"
+EXPECTED_SLOT_COUNT=2  # slot 1: control, slot 2: telemetry
 
-# ── Ensure expected script slots exist, remove unexpected ones ──
+# ── Ensure exactly the expected script slots exist ──
+# Shelly Script.Create auto-assigns IDs (1, 2, 3...) — we can't pick IDs.
+# Strategy: if slot count doesn't match, wipe all and recreate in order.
 ensure_script_slots() {
   local device_ip="$1"
-  shift
-  local expected_ids=("$@")
+  local expected_count="$2"
 
   echo "Checking script slots on $device_ip..."
 
-  # Get current scripts
   local list_json
   list_json=$(curl -sf "http://$device_ip/rpc/Script.List" 2>/dev/null) || {
     echo "Warning: Could not list scripts on $device_ip" >&2
     return 1
   }
 
-  # Parse existing script IDs and remove unexpected ones
   local existing_ids
   existing_ids=$(echo "$list_json" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-for s in data.get('scripts', []):
-    print(s['id'])
+ids = sorted(s['id'] for s in data.get('scripts', []))
+print(' '.join(str(i) for i in ids))
 " 2>/dev/null) || existing_ids=""
 
-  # Delete scripts not in expected list
+  # Check if we have exactly the expected sequential slots (1, 2, ...)
+  local expected_seq=""
+  for i in $(seq 1 "$expected_count"); do
+    expected_seq="$expected_seq $i"
+  done
+  expected_seq="${expected_seq# }"
+
+  if [ "$existing_ids" = "$expected_seq" ]; then
+    echo "  Slots OK: $existing_ids"
+    return 0
+  fi
+
+  echo "  Current slots: ${existing_ids:-(none)}"
+  echo "  Expected slots: $expected_seq"
+  echo "  Resetting script slots..."
+
+  # Delete all existing scripts
   for id in $existing_ids; do
-    local found=false
-    for eid in "${expected_ids[@]}"; do
-      if [ "$id" = "$eid" ]; then
-        found=true
-        break
-      fi
-    done
-    if [ "$found" = "false" ]; then
-      echo "  Removing unexpected script slot $id"
-      curl -sf "http://$device_ip/rpc/Script.Stop?id=$id" > /dev/null 2>&1 || true
-      curl -sf -X POST "http://$device_ip/rpc/Script.Delete" \
-        -H "Content-Type: application/json" \
-        -d "{\"id\":$id}" > /dev/null 2>&1 || true
-    fi
+    curl -sf "http://$device_ip/rpc/Script.Stop?id=$id" > /dev/null 2>&1 || true
+    curl -sf -X POST "http://$device_ip/rpc/Script.Delete" \
+      -H "Content-Type: application/json" \
+      -d "{\"id\":$id}" > /dev/null 2>&1 || true
   done
 
-  # Create missing expected slots
-  for eid in "${expected_ids[@]}"; do
-    local found=false
-    for id in $existing_ids; do
-      if [ "$id" = "$eid" ]; then
-        found=true
-        break
-      fi
-    done
-    if [ "$found" = "false" ]; then
-      echo "  Creating script slot $eid"
-      curl -sf -X POST "http://$device_ip/rpc/Script.Create" \
-        -H "Content-Type: application/json" \
-        -d "{\"id\":$eid}" > /dev/null 2>&1 || {
-        echo "Warning: Could not create script slot $eid" >&2
-      }
-    fi
+  # Create slots in order — IDs are auto-assigned sequentially (1, 2, ...)
+  for i in $(seq 1 "$expected_count"); do
+    local created_id
+    created_id=$(curl -sf -X POST "http://$device_ip/rpc/Script.Create" \
+      -H "Content-Type: application/json" \
+      -d '{}' 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('id','?'))" 2>/dev/null) || created_id="?"
+    echo "  Created slot $created_id"
   done
 
   echo "Script slots verified"
 }
 
-ensure_script_slots "$DEVICE" "$CONTROL_SCRIPT_ID" "$TELEMETRY_SCRIPT_ID"
+ensure_script_slots "$DEVICE" "$EXPECTED_SLOT_COUNT"
+
+CONTROL_SCRIPT_ID=1
+TELEMETRY_SCRIPT_ID=2
 
 # ── Helper: upload script files to a Shelly script slot ──
 upload_script() {
@@ -167,7 +164,7 @@ echo "Control script auto-start enabled"
 curl -s "http://$DEVICE/rpc/Script.Start?id=$CONTROL_SCRIPT_ID" > /dev/null
 echo "Control script started on $DEVICE"
 
-# ── Deploy telemetry script (slot 3) ──
+# ── Deploy telemetry script (slot 2) ──
 if [ -f "$TELEMETRY_JS" ]; then
   echo ""
   echo "Deploying telemetry.js to $DEVICE (script $TELEMETRY_SCRIPT_ID)..."

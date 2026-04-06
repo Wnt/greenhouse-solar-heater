@@ -48,7 +48,7 @@ function createMockServer(handler) {
       res.end(JSON.stringify({ id: 1, was_running: true }));
     } else if (url.includes('Script.List')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ scripts: [{ id: 1 }, { id: 3 }] }));
+      res.end(JSON.stringify({ scripts: [{ id: 1 }, { id: 2 }] }));
     } else if (url.includes('Script.Create')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ id: 1 }));
@@ -191,7 +191,7 @@ describe('deploy.sh', () => {
     const putCalls = mock.calls.filter(c => {
       if (!c.url.includes('Script.PutCode')) return false;
       const body = JSON.parse(c.body);
-      return body.id === 3;
+      return body.id === 2;
     });
     assert.ok(putCalls.length > 0, 'should upload telemetry script (id=3)');
   });
@@ -242,7 +242,7 @@ describe('deploy.sh error handling', () => {
     mock = createMockServer((req, res) => {
       if (req.url.includes('Script.List')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ scripts: [{ id: 1 }, { id: 3 }] }));
+        res.end(JSON.stringify({ scripts: [{ id: 1 }, { id: 2 }] }));
       } else if (req.url.includes('Script.Stop')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ id: 1 }));
