@@ -21,10 +21,10 @@ var VALVES = {
   v_air:   {ip: "192.168.30.14", id: 1},
 };
 
-var SENSOR_IP = "192.168.30.20";
-var SENSOR_IDS = {
-  collector: 0, tank_top: 1, tank_bottom: 2, greenhouse: 3, outdoor: 4,
-};
+// Sensor config — loaded from KVS on boot, updated via sensor_config_changed events
+// Compact format: s={role:{h:hostIndex,i:componentId},...}, h=[hostIp,...], v=version
+// If null, sensor polling is skipped (all temps stay null → IDLE mode, safe default)
+var sensorConfig = null;
 
 // Device config — loaded from KVS on boot, updated via events from telemetry script
 // Compact config: ce=controls_enabled, ea=actuator bitmask, fm=forced_mode, am=allowed_modes, v=version
@@ -133,8 +133,8 @@ function closeAllValves(cb) {
   setValves(pairs, 0, cb);
 }
 
-function pollSensor(name, id, cb) {
-  var url = "http://" + SENSOR_IP + "/rpc/Temperature.GetStatus?id=" + id;
+function pollSensor(name, hostIp, componentId, cb) {
+  var url = "http://" + hostIp + "/rpc/Temperature.GetStatus?id=" + componentId;
   Shelly.call("HTTP.GET", {url: url}, function(res, err) {
     if (err || !res || res.code !== 200 || !res.body || res.body.indexOf("tC") < 0) {
       if (cb) cb(name, null);
@@ -146,13 +146,25 @@ function pollSensor(name, id, cb) {
 }
 
 function pollAllSensors(cb) {
-  var names = ["collector","tank_top","tank_bottom","greenhouse","outdoor"];
+  // If no sensor config loaded, skip polling (safe: all temps stay null → IDLE)
+  if (!sensorConfig || !sensorConfig.s || !sensorConfig.h) {
+    if (cb) cb();
+    return;
+  }
+  var names = [];
+  for (var sName in sensorConfig.s) {
+    names.push(sName);
+  }
   function next(i) {
     if (i >= names.length) { if (cb) cb(); return; }
-    pollSensor(names[i], SENSOR_IDS[names[i]], function(name, val) {
+    var name = names[i];
+    var cfg = sensorConfig.s[name];
+    var hostIp = sensorConfig.h[cfg.h];
+    if (!hostIp) { next(i + 1); return; }
+    pollSensor(name, hostIp, cfg.i, function(n, val) {
       if (val !== null) {
-        state.temps[name] = val;
-        state.sensor_last_valid[name] = Date.now();
+        state.temps[n] = val;
+        state.sensor_last_valid[n] = Date.now();
       }
       next(i + 1);
     });
@@ -375,15 +387,22 @@ function controlLoop() {
   });
 }
 
-// ── Config event handler ──
+// ── Config event handlers ──
 
 Shelly.addEventHandler(function(ev) {
-  if (!ev || !ev.info || ev.info.event !== "config_changed") return;
-  var data = ev.info.data;
-  if (data && data.config) {
-    deviceConfig = data.config;
-    if (data.safety_critical) {
-      controlLoop();
+  if (!ev || !ev.info) return;
+  if (ev.info.event === "config_changed") {
+    var data = ev.info.data;
+    if (data && data.config) {
+      deviceConfig = data.config;
+      if (data.safety_critical) {
+        controlLoop();
+      }
+    }
+  } else if (ev.info.event === "sensor_config_changed") {
+    var scData = ev.info.data;
+    if (scData && scData.config) {
+      sensorConfig = scData.config;
     }
   }
 });
@@ -408,13 +427,20 @@ function boot() {
           try { deviceConfig = JSON.parse(cfgRes.value); } catch(e) {}
         }
 
-        Shelly.call("KVS.Get", {key: "drained"}, function(res) {
-          if (res && res.value === "1") state.collectors_drained = true;
+        // Load sensor config from KVS
+        Shelly.call("KVS.Get", {key: "sensor_config"}, function(scRes) {
+          if (scRes && scRes.value) {
+            try { sensorConfig = JSON.parse(scRes.value); } catch(e) {}
+          }
 
-          pollAllSensors(function() {
-            state.mode_start = Date.now();
-            Timer.set(SHELL_CFG.POLL_INTERVAL, true, controlLoop);
-            controlLoop();
+          Shelly.call("KVS.Get", {key: "drained"}, function(res) {
+            if (res && res.value === "1") state.collectors_drained = true;
+
+            pollAllSensors(function() {
+              state.mode_start = Date.now();
+              Timer.set(SHELL_CFG.POLL_INTERVAL, true, controlLoop);
+              controlLoop();
+            });
           });
         });
       });

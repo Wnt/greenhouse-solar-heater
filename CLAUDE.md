@@ -37,6 +37,7 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `server/lib/tracing.js` → OpenTelemetry SDK initialization (loaded via `--require`, no-op when `NEW_RELIC_LICENSE_KEY` not set)
 - `server/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB)
 - `server/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push)
+- `server/lib/sensor-config.js` → Sensor configuration store (S3/local persistence, sensor-to-role assignments, apply to Shelly hosts via SensorAddon RPC, MQTT sensor config push)
 - `deploy/` → cloud deployment infrastructure
 - `deploy/terraform/` → UpCloud Managed Kubernetes cluster, Managed Object Storage, Managed PostgreSQL, K8s Secrets/ConfigMaps, Helm releases, CI/CD deployer RBAC (Terraform)
 - `deploy/k8s/` → Kubernetes manifests: app Deployment (app + openvpn + mosquitto sidecar), Service, Ingress, deployer RBAC, kustomization.yaml
@@ -100,7 +101,7 @@ The `playground/` directory is the main web application — a solar heating moni
 
 - `playground/index.html` — single-page app: Status (default, bento grid dashboard), Components (sensors/valves/actuators), Schematic (SVG system visualization), Controls (sliders, reset), Device (runtime Shelly config with explanations). Floating play/pause FAB.
 - `playground/login.html` — passkey login page (moved from monitor/)
-- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), data-source (LiveSource/SimulationSource abstraction), UI, yaml-loader, login (passkey auth), version-check (polls /version endpoint, shows update toast)
+- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), data-source (LiveSource/SimulationSource abstraction), UI, yaml-loader, login (passkey auth), version-check (polls /version endpoint, shows update toast), sensors (sensor discovery, assignment, apply configuration)
 - `playground/css/style.css` — shared styles
 - `design/Stitch/` — Stitch UI design mockups (desktop + mobile) with DESIGN.md spec and code.html references
 
@@ -150,6 +151,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/tracing.test.js` — unit tests for OpenTelemetry tracing initialization, graceful no-op, MQTT spans, log trace context injection, nr-config S3 helper
 - `tests/mqtt-bridge.test.js` — unit tests for MQTT bridge (state change detection, connection status)
 - `tests/device-config.test.js` — unit tests for device config store (default config, CRUD, persistence)
+- `tests/sensor-config.test.js` — unit tests for sensor config store (validation, compact format, assignments, persistence)
 - `tests/device-config-integration.test.js` — integration tests: UI config format → Shelly control-logic interpretation (staged deployment scenarios)
 - `tests/data-source.test.js` — unit tests for data source abstraction (state mapping, connection transitions)
 - `tests/rpc-proxy.test.js` — unit tests for RPC proxy security (marker header validation, method enforcement, CORS preflight, body parsing)
@@ -158,6 +160,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/e2e/fixtures.js` — shared Playwright fixture: blocks Google Fonts for offline environments. **All e2e tests must import from this file, not from `@playwright/test`.**
 - `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
 - `tests/e2e/device-config.spec.js` — Playwright e2e tests for the Device config UI (toggle switches, dropdowns, checkboxes → compact JSON format)
+- `tests/e2e/sensor-config.spec.js` — Playwright e2e tests for the Sensors config UI (detection, assignment, apply with mocked RPC)
 - `tests/e2e/live-mode.spec.js` — Playwright e2e tests for live mode toggle, WebSocket connection, simulation fallback
 - `tests/e2e/version-check.spec.js` — Playwright e2e tests for JS version check toast (appearance, editorial copy, dismiss, silent failure)
 - `tests/e2e/take-screenshots.spec.js` — Screenshot generator: runs 24h simulation, captures all views (excluded from normal test runs via `testIgnore` in `playwright.config.js`, uses separate `playwright.screenshots.config.js`)
@@ -221,6 +224,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - JavaScript ES5 (Shelly scripts), Node.js 20 LTS (tests) + Shelly scripting runtime, node:test (testing) (017-review-hardware-architecture)
 - Shelly KVS (device config), MQTT (telemetry) (017-review-hardware-architecture)
 - YAML (GitHub Actions), HCL (Terraform), Bash + kubectl, GitHub Actions, Kubernetes RBAC (018-cd-shelly-deploy)
+- JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + Existing — `ws`, `mqtt`, `pg`, `@aws-sdk/client-s3`, `@simplewebauthn/server`. No new dependencies. (018-configure-sensor-connectors)
+- S3-compatible object storage (UpCloud) / local filesystem fallback (sensor-config.json). Shelly KVS for device-side config. (018-configure-sensor-connectors)
 
 ## Cloud Deployment Architecture
 
@@ -291,6 +296,7 @@ Terraform stores the key in the `app-secrets` Kubernetes Secret. Redeploy to act
 - PostgreSQL health — via nri-postgresql integration
 
 ## Recent Changes
+- 018-configure-sensor-connectors: Added JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + Existing — `ws`, `mqtt`, `pg`, `@aws-sdk/client-s3`, `@simplewebauthn/server`. No new dependencies.
 - 018-cd-shelly-deploy: Added YAML (GitHub Actions), HCL (Terraform), Bash + kubectl, GitHub Actions, Kubernetes RBAC
 - 017-architecture-code-review: Added Node.js 20 LTS (CommonJS) + `pg` (PostgreSQL driver), `@simplewebauthn/server`, native `http`/`crypto`
 - 017-review-hardware-architecture: Added JavaScript ES5 (Shelly scripts), Node.js 20 LTS (tests) + Shelly scripting runtime, node:test (testing)

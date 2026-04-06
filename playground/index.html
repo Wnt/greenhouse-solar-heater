@@ -47,6 +47,10 @@
         <span class="material-symbols-outlined">tune</span>
         Controls
       </a>
+      <a data-view="sensors" class="live-only" style="display:none;">
+        <span class="material-symbols-outlined">sensors</span>
+        Sensors
+      </a>
       <a data-view="device" class="live-only" style="display:none;">
         <span class="material-symbols-outlined">settings_remote</span>
         Device
@@ -83,6 +87,10 @@
     <a data-view="controls">
       <span class="material-symbols-outlined">tune</span>
       <span>Controls</span>
+    </a>
+    <a data-view="sensors" class="live-only" style="display:none;">
+      <span class="material-symbols-outlined">sensors</span>
+      <span>Sensors</span>
     </a>
     <a data-view="device" class="live-only" style="display:none;">
       <span class="material-symbols-outlined">settings_remote</span>
@@ -319,6 +327,17 @@
       </div>
     </section>
 
+    <!-- ═══ SENSORS VIEW (live mode only) ═══ -->
+    <section id="view-sensors" class="view">
+      <div class="view-header">
+        <h2>Sensor configuration.</h2>
+        <p>Discover, identify, and assign DS18B20 sensors to system roles. Temperatures refresh every 30 seconds.</p>
+      </div>
+      <div id="sensors-content">
+        <div class="card"><p style="color:var(--on-surface-variant);">Loading sensor configuration...</p></div>
+      </div>
+    </section>
+
     <!-- ═══ DEVICE VIEW (live mode only) ═══ -->
     <section id="view-device" class="view">
       <div class="view-header">
@@ -393,6 +412,7 @@
     import { createSlider, formatTime } from './js/ui.js';
     import { LiveSource, SimulationSource } from './js/data-source.js';
     import { startVersionCheck, triggerVersionCheck } from './js/version-check.js';
+    import { initSensorsView, destroySensorsView } from './js/sensors.js';
     // Expose for e2e testing
     window.__triggerVersionCheck = triggerVersionCheck;
 
@@ -954,17 +974,29 @@
     }
 
     // ── Navigation (hash-based deep linking) ──
-    const VALID_VIEWS = ['status', 'components', 'schematic', 'controls', 'device'];
+    const VALID_VIEWS = ['status', 'components', 'schematic', 'controls', 'sensors', 'device'];
 
     function navigateToView(viewId) {
       if (!VALID_VIEWS.includes(viewId)) viewId = 'status';
-      // Device view requires live mode — fall back to status if not available
+      // Device/Sensors views require live mode — fall back to status if not available
       const deviceNav = document.querySelector('[data-view="device"]');
       if (viewId === 'device' && deviceNav && deviceNav.style.display === 'none') {
         viewId = 'status';
       }
+      const sensorsNav = document.querySelector('[data-view="sensors"]');
+      if (viewId === 'sensors' && sensorsNav && sensorsNav.style.display === 'none') {
+        viewId = 'status';
+      }
+      // Lifecycle: destroy sensors view when leaving, init when entering
+      const currentView = document.querySelector('.view.active');
+      if (currentView && currentView.id === 'view-sensors' && viewId !== 'sensors') {
+        destroySensorsView();
+      }
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       document.getElementById('view-' + viewId).classList.add('active');
+      if (viewId === 'sensors') {
+        initSensorsView();
+      }
       document.querySelectorAll('[data-view]').forEach(l => l.classList.remove('active'));
       document.querySelectorAll(`[data-view="${viewId}"]`).forEach(l => l.classList.add('active'));
     }

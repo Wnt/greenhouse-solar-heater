@@ -1380,3 +1380,65 @@ button.primary.disabled {
   width: 16px;
   height: 16px;
 }
+
+/* ── Sensors View ── */
+
+.sensor-roles { display: flex; flex-direction: column; gap: 12px; }
+
+.sensor-role-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 10px 12px;
+  background: var(--surface-container-low);
+  border-radius: 8px;
+}
+
+.role-info { display: flex; flex-direction: column; gap: 2px; min-width: 160px; }
+.role-info strong { font-size: 14px; color: var(--on-surface); }
+.role-location { font-size: 12px; color: var(--on-surface-variant); }
+
+.role-assignment { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.sensor-select {
+  background: var(--surface-container); color: var(--on-surface);
+  border: 1px solid var(--outline-variant); border-radius: 6px;
+  padding: 6px 8px; font-size: 13px; font-family: var(--font-body);
+  min-width: 240px; max-width: 400px;
+}
+.sensor-select:focus { border-color: var(--primary); outline: none; }
+
+.sensor-temp { font-size: 14px; color: var(--secondary); font-weight: 500; }
+.sensor-warning { font-size: 12px; color: var(--error); }
+
+.host-group { margin-bottom: 16px; }
+.host-group h4 { font-family: var(--font-heading); font-size: 15px; margin-bottom: 8px; }
+.host-ip { font-weight: 400; color: var(--on-surface-variant); font-size: 13px; }
+.host-error { color: var(--error); font-size: 13px; }
+
+.sensor-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sensor-table th { text-align: left; padding: 6px 10px; color: var(--on-surface-variant); border-bottom: 1px solid var(--outline-variant); }
+.sensor-table td { padding: 6px 10px; }
+.sensor-table .addr { font-family: monospace; font-size: 12px; }
+.sensor-table tr.assigned { background: var(--surface-container-low); }
+
+.status-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+}
+.status-badge.assigned { background: var(--secondary); color: var(--on-secondary); }
+.status-badge.available { background: var(--surface-container); color: var(--on-surface-variant); }
+
+.sensor-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+.apply-results-grid { display: flex; flex-direction: column; gap: 6px; }
+.apply-result { padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+.apply-result.success { background: rgba(118, 255, 3, 0.1); color: #76ff03; }
+.apply-result.error { background: rgba(239, 83, 80, 0.1); color: var(--error); }
+.retry-btn {
+  background: var(--surface-container); color: var(--on-surface);
+  border: 1px solid var(--outline-variant); border-radius: 4px;
+  padding: 2px 8px; font-size: 12px; cursor: pointer; margin-left: 8px;
+}
+
+@media (max-width: 767px) {
+  .sensor-role-row { flex-direction: column; align-items: stretch; }
+  .sensor-select { min-width: unset; width: 100%; }
+}

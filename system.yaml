@@ -249,6 +249,10 @@ piping:
 # =============================================================================
 # SENSORS
 # =============================================================================
+# Sensor roles define the measurement points. Physical sensor-to-role assignments
+# (1-Wire hardware addresses, host IPs, component IDs) are managed at runtime via
+# the playground UI (#sensors view) and stored in the sensor-config server store.
+# See: server/lib/sensor-config.js, playground/js/sensors.js
 
 sensors:
   t_collector:

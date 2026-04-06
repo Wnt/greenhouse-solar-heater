@@ -119,10 +119,25 @@ describe('rpc-proxy security', function () {
               return;
             }
 
-            var host = process.env.CONTROLLER_IP;
+            // Determine target host: _host override or CONTROLLER_IP default
+            var host = parsed._host || process.env.CONTROLLER_IP;
             if (!host) {
               res.writeHead(503, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ error: 'Controller IP not configured' }));
+              return;
+            }
+
+            // Validate host against allowlist
+            var allowlist = {};
+            var ctrlIp = process.env.CONTROLLER_IP;
+            if (ctrlIp) allowlist[ctrlIp] = true;
+            var sensorIps = (process.env.SENSOR_HOST_IPS || '').split(',').filter(Boolean);
+            for (var si = 0; si < sensorIps.length; si++) {
+              allowlist[sensorIps[si].trim()] = true;
+            }
+            if (!allowlist[host]) {
+              res.writeHead(403, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Host not in allowlist' }));
               return;
             }
 
@@ -263,9 +278,22 @@ describe('rpc-proxy security', function () {
       assert.equal(res.status, 200);
     });
 
-    it('ignores _host in the body and does not forward it as a query param', async function () {
+    it('rejects _host not in allowlist with 403', async function () {
+      var res = await request(proxyPort, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': MARKER_VALUE,
+        },
+        body: JSON.stringify({ _host: '10.0.0.1', id: 1 }),
+      });
+      assert.equal(res.status, 403);
+      var data = JSON.parse(res.body);
+      assert.equal(data.error, 'Host not in allowlist');
+    });
+
+    it('allows _host that matches CONTROLLER_IP', async function () {
       var capturedUrl;
-      // Replace the mock shelly server handler to record the request URL
       shellyServer.removeAllListeners('request');
       shellyServer.on('request', function (req, res) {
         capturedUrl = req.url;
@@ -279,11 +307,27 @@ describe('rpc-proxy security', function () {
           'Content-Type': 'application/json',
           'X-Requested-With': MARKER_VALUE,
         },
-        body: JSON.stringify({ _host: '10.0.0.1', id: 1 }),
+        body: JSON.stringify({ _host: process.env.CONTROLLER_IP, id: 1 }),
       });
       assert.equal(res.status, 200);
       assert.ok(capturedUrl, 'mock shelly should have received the request');
       assert.ok(!capturedUrl.includes('_host'), '_host must not appear in forwarded URL');
+    });
+
+    it('allows _host that matches SENSOR_HOST_IPS entry', async function () {
+      // Add the mock shelly as a sensor host IP
+      process.env.SENSOR_HOST_IPS = '127.0.0.1:' + shellyPort + ',192.168.30.21';
+
+      var res = await request(proxyPort, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': MARKER_VALUE,
+        },
+        body: JSON.stringify({ _host: '127.0.0.1:' + shellyPort, id: 1 }),
+      });
+      assert.equal(res.status, 200);
+      delete process.env.SENSOR_HOST_IPS;
     });
   });
 
