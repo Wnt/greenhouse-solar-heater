@@ -42,7 +42,8 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `deploy/k8s/` → Kubernetes manifests: app Deployment (app + openvpn + mosquitto sidecar), Service, Ingress, deployer RBAC, kustomization.yaml
 - `deploy/docker/` → App Dockerfile only
 - `deploy/openvpn/` → OpenVPN sidecar: Dockerfile (Alpine + openvpn)
-- `design/docs/` → prose docs: design.md, bom.md, ideas/, superpowers/
+- `design/docs/` → prose docs: design.md, bom.md, commissioning-guide.md, ideas/, superpowers/
+- `design/docs/pdf/` → PDF generation for commissioning guide (`node design/docs/pdf/generate-pdf.js` or `./generate-pdf.sh`). Uses Playwright to render styled HTML to A4 PDF with Stitch dark theme.
 - `design/diagrams/` → hand-authored SVG with `data-` attributes + Mermaid control logic
 - `design/construction/` → physical build instructions
 - `design/photos/` → reference photos of owned components
@@ -217,6 +218,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - N/A — version hash is computed on-the-fly from file contents (016-js-reload-prompt)
 - Node.js 20 LTS (CommonJS) + `pg` (PostgreSQL driver), `@simplewebauthn/server`, native `http`/`crypto` (017-architecture-code-review)
 - PostgreSQL with TimescaleDB (sensor data), S3-compatible object storage (credentials) (017-architecture-code-review)
+- JavaScript ES5 (Shelly scripts), Node.js 20 LTS (tests) + Shelly scripting runtime, node:test (testing) (017-review-hardware-architecture)
+- Shelly KVS (device config), MQTT (telemetry) (017-review-hardware-architecture)
 
 ## Cloud Deployment Architecture
 
@@ -288,5 +291,6 @@ Terraform stores the key in the `app-secrets` Kubernetes Secret. Redeploy to act
 
 ## Recent Changes
 - 017-architecture-code-review: Added Node.js 20 LTS (CommonJS) + `pg` (PostgreSQL driver), `@simplewebauthn/server`, native `http`/`crypto`
+- 017-review-hardware-architecture: Added JavaScript ES5 (Shelly scripts), Node.js 20 LTS (tests) + Shelly scripting runtime, node:test (testing)
 - 016-js-reload-prompt: Added JavaScript ES6+ (browser modules), Node.js 20 LTS (CommonJS server) + None new — uses existing `server/server.js` HTTP handler and browser `fetch` API
 - 015-fix-padding-status-display: Added JavaScript ES6+ (browser modules), CSS3 + Playwright 1.56.0 (e2e tests), `npx serve` (static server for tests)

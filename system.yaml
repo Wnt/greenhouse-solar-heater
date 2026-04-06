@@ -208,6 +208,9 @@ valves:
       type: motorized on/off ball valve
       size: DN15
       actuator: 9-24V DC (A83 2-wire, auto-return close)
+      physical_wiring: normally-open (de-energized = valve open, energized = valve closed)
+      relay_logic: inverted in control.js — relay ON closes valve, relay OFF opens valve
+      fail_safe: power loss opens V_air, enabling gravity-assisted collector drain
       path: collector top → open air
       purpose: air intake for drain mode
 

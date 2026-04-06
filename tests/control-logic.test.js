@@ -878,3 +878,70 @@ describe('config-gated actuator behavior', () => {
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
   });
 });
+
+// ── Hard safety override tests (017-review-hardware-architecture) ──
+
+describe('hard safety overrides bypass device config', () => {
+  const disabledConfig = { ce: false, ea: 0, v: 1 };
+  const allEnabled = { ce: true, ea: 31, v: 1 };
+
+  it('freeze drain with ce=false returns ACTIVE_DRAIN, not suppressed, safetyOverride=true', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
+    }), null, disabledConfig);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+    assert.strictEqual(result.suppressed, false);
+    assert.strictEqual(result.safetyOverride, true);
+  });
+
+  it('freeze drain with am=["SC"] (excluding AD) still returns ACTIVE_DRAIN', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
+    }), null, { ...allEnabled, am: ['SC'] });
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+    assert.strictEqual(result.safetyOverride, true);
+  });
+
+  it('overheat drain with ce=false returns ACTIVE_DRAIN, not suppressed, safetyOverride=true', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 90, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, disabledConfig);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+    assert.strictEqual(result.suppressed, false);
+    assert.strictEqual(result.safetyOverride, true);
+  });
+
+  it('overheat drain with am=["I"] (excluding AD) still returns ACTIVE_DRAIN', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 90, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, { ...allEnabled, am: ['I'] });
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+    assert.strictEqual(result.safetyOverride, true);
+  });
+
+  it('sensor staleness with ce=false returns IDLE, suppressed=true (safe state)', () => {
+    const result = evaluate(makeState({
+      sensorAge: { collector: 0, tank_top: 0, tank_bottom: 0, greenhouse: 0, outdoor: 200 },
+    }), null, disabledConfig);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+    assert.strictEqual(result.suppressed, true);
+  });
+
+  it('normal solar charging with ce=false is still suppressed', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, disabledConfig);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.suppressed, true);
+    assert.ok(!result.safetyOverride);
+  });
+
+  it('freeze drain with ce=true also sets safetyOverride=true', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
+    }), null, allEnabled);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+    assert.strictEqual(result.suppressed, false);
+    assert.strictEqual(result.safetyOverride, true);
+  });
+});
