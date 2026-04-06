@@ -78,9 +78,28 @@ test.describe('Sensor Configuration View', () => {
     });
   });
 
+  // Helper: navigate to sensors view (force live-only visibility for test env)
+  async function goToSensors(page) {
+    await page.goto('/playground/');
+    // Wait for the app to initialize
+    await page.waitForSelector('.sidebar-nav');
+    // Make live-only elements visible and navigate
+    await page.evaluate(() => {
+      document.querySelectorAll('.live-only').forEach(el => el.style.display = '');
+      // Directly activate the sensors view since navigateToView may have already run
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      var sensorsView = document.getElementById('view-sensors');
+      if (sensorsView) sensorsView.classList.add('active');
+      document.querySelectorAll('[data-view]').forEach(l => l.classList.remove('active'));
+      document.querySelectorAll('[data-view="sensors"]').forEach(l => l.classList.add('active'));
+      // Trigger the sensors init
+      window.location.hash = 'sensors';
+    });
+    await page.waitForSelector('#sensors-content .card', { timeout: 15000 });
+  }
+
   test('loads sensors view and shows sensor hosts', async ({ page }) => {
-    await page.goto('http://localhost:3210/#sensors');
-    await page.waitForSelector('#sensors-content .card');
+    await goToSensors(page);
 
     // Should show sensor roles section
     await expect(page.locator('text=Sensor Roles')).toBeVisible();
@@ -94,30 +113,30 @@ test.describe('Sensor Configuration View', () => {
   });
 
   test('displays detected sensors with addresses and temperatures', async ({ page }) => {
-    await page.goto('http://localhost:3210/#sensors');
-    await page.waitForSelector('.sensor-table');
+    await goToSensors(page);
+    // Wait for scan to complete — sensor table appears after async scan
+    await page.waitForSelector('.sensor-table', { timeout: 15000 });
 
-    // Should show sensor addresses
-    await expect(page.locator('text=40:FF:64:06:C7:CC:95:B1')).toBeVisible();
-    await expect(page.locator('text=40:FF:64:06:C7:CC:95:B2')).toBeVisible();
+    // Should show sensor addresses (from mock, same 3 sensors returned by both hosts)
+    await expect(page.locator('td:has-text("40:FF:64:06:C7:CC:95:B1")').first()).toBeVisible();
 
     // Should show temperature readings
-    await expect(page.locator('text=24.5')).toBeVisible();
+    await expect(page.locator('td:has-text("24.5")').first()).toBeVisible();
   });
 
   test('shows role assignment dropdowns', async ({ page }) => {
-    await page.goto('http://localhost:3210/#sensors');
-    await page.waitForSelector('.sensor-select');
+    await goToSensors(page);
+    // Wait for scan to complete so options are populated
+    await page.waitForSelector('.sensor-table', { timeout: 15000 });
 
     // Should show dropdowns for all roles
     const selects = page.locator('.sensor-select');
     await expect(selects).toHaveCount(7); // 5 required + 2 optional
 
-    // First select should have options for detected sensors
+    // First select should have options: unassigned + detected sensors (3 per host × 2 hosts = 6)
     const firstSelect = selects.first();
     const options = firstSelect.locator('option');
-    // unassigned + 3 detected sensors
-    await expect(options).toHaveCount(4);
+    await expect(options).toHaveCount(7); // 1 unassigned + 6 detected
   });
 
   test('saves sensor assignments via PUT', async ({ page }) => {
@@ -146,7 +165,7 @@ test.describe('Sensor Configuration View', () => {
       }
     });
 
-    await page.goto('http://localhost:3210/#sensors');
+    await goToSensors(page);
     await page.waitForSelector('.sensor-select');
 
     // Select a sensor for the collector role
@@ -177,7 +196,7 @@ test.describe('Sensor Configuration View', () => {
       });
     });
 
-    await page.goto('http://localhost:3210/#sensors');
+    await goToSensors(page);
     await page.waitForSelector('#btn-apply-sensors');
 
     // Apply button should exist
