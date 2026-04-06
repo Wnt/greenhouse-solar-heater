@@ -6,8 +6,10 @@ on:
   workflow_call:
 
 jobs:
-  test-unit:
+  test:
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.0-noble
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -16,30 +18,17 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Run unit & simulation tests
-        run: npm run test:unit
-
-  test-e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
-        with:
-          node-version: 22
-          cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-      - name: Install Playwright system deps only
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
-      - name: Run e2e tests
-        run: npm run test:e2e
+      - name: Run unit & e2e tests in parallel
+        run: |
+          npm run test:unit &
+          UNIT_PID=$!
+          npx playwright test
+          E2E_EXIT=$?
+          wait $UNIT_PID
+          UNIT_EXIT=$?
+          if [ $UNIT_EXIT -ne 0 ] || [ $E2E_EXIT -ne 0 ]; then
+            echo "Unit exit: $UNIT_EXIT, E2E exit: $E2E_EXIT"
+            exit 1
+          fi
+        env:
+          HOME: /root
