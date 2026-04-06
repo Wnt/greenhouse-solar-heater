@@ -17,12 +17,26 @@ const deviceConfig = require('./lib/device-config');
 
 const otelApi = require('@opentelemetry/api');
 
+const sensorConfig = require('./lib/sensor-config');
+
 const log = createLogger('server');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
 const PLAYGROUND_DIR = path.join(__dirname, '..', 'playground');
 const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
 const VPN_CHECK_HOST = process.env.VPN_CHECK_HOST || '';
 const MQTT_HOST = process.env.MQTT_HOST || '';
+
+// Build RPC host allowlist from CONTROLLER_IP + SENSOR_HOST_IPS
+function buildHostAllowlist() {
+  var hosts = {};
+  var controller = process.env.CONTROLLER_IP;
+  if (controller) hosts[controller] = true;
+  var sensorIps = (process.env.SENSOR_HOST_IPS || '').split(',').filter(Boolean);
+  for (var i = 0; i < sensorIps.length; i++) {
+    hosts[sensorIps[i].trim()] = true;
+  }
+  return hosts;
+}
 
 const MIME = {
   '.html': 'text/html',
@@ -133,10 +147,19 @@ function handleRpcRequest(req, res) {
       return;
     }
 
-    var host = process.env.CONTROLLER_IP;
+    // Determine target host: _host override or CONTROLLER_IP default
+    var host = parsed._host || process.env.CONTROLLER_IP;
     if (!host) {
       res.writeHead(503, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Controller IP not configured' }));
+      return;
+    }
+
+    // Validate host against allowlist
+    var allowlist = buildHostAllowlist();
+    if (!allowlist[host]) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Host not in allowlist' }));
       return;
     }
 
@@ -299,6 +322,8 @@ function resolveRoute(urlPath, method) {
   if (urlPath === '/version') return '/version';
   if (urlPath.startsWith('/auth/')) return '/auth/*';
   if (urlPath === '/api/device-config') return '/api/device-config';
+  if (urlPath === '/api/sensor-config') return '/api/sensor-config';
+  if (urlPath.startsWith('/api/sensor-config/')) return '/api/sensor-config/*';
   if (urlPath === '/api/history') return '/api/history';
   if (urlPath.startsWith('/api/rpc/')) return '/api/rpc/*';
   if (urlPath === '/ws') return '/ws';
@@ -350,6 +375,12 @@ var server = http.createServer(function (req, res) {
     return;
   }
 
+  // Sensor config GET — unauthenticated (same rationale as device config)
+  if (urlPath === '/api/sensor-config' && req.method === 'GET') {
+    sensorConfig.handleGet(req, res);
+    return;
+  }
+
   // Auth gate for all other routes
   if (AUTH_ENABLED) {
     var session = authMiddleware.validateRequest(req);
@@ -369,6 +400,27 @@ var server = http.createServer(function (req, res) {
     readBody(req, function (body) {
       handleDeviceConfigApi(req, res, urlPath, body);
     });
+  } else if (urlPath === '/api/sensor-config') {
+    readBody(req, function (body) {
+      if (req.method === 'PUT') {
+        sensorConfig.handlePut(req, res, body);
+      } else {
+        jsonResponse(res, 405, { error: 'Method not allowed' });
+      }
+    });
+  } else if (urlPath === '/api/sensor-config/apply') {
+    if (req.method === 'POST') {
+      sensorConfig.handleApply(req, res, mqttBridge);
+    } else {
+      jsonResponse(res, 405, { error: 'Method not allowed' });
+    }
+  } else if (urlPath.startsWith('/api/sensor-config/apply/')) {
+    if (req.method === 'POST') {
+      var targetId = urlPath.split('/').pop();
+      sensorConfig.handleApplyTarget(req, res, targetId, mqttBridge);
+    } else {
+      jsonResponse(res, 405, { error: 'Method not allowed' });
+    }
   } else if (urlPath === '/api/history') {
     handleHistoryApi(req, res);
   } else if (req.url.startsWith('/api/rpc/')) {
@@ -513,16 +565,19 @@ function startMqttBridge() {
 }
 
 function startServer() {
-  // Load device config
+  // Load device and sensor config
   deviceConfig.load(function (err) {
     if (err) log.error('device config load failed', { error: err.message });
+    sensorConfig.load(function (err) {
+      if (err) log.error('sensor config load failed', { error: err.message });
 
-    initServices(function () {
-      server.listen(PORT, '0.0.0.0', function () {
-        printBanner(PORT, getNetworkAddress());
-        log.info('server started', { port: PORT, auth: AUTH_ENABLED, mqtt: !!MQTT_HOST, db: !!db });
-        startMqttBridge();
-        startValvePoller();
+      initServices(function () {
+        server.listen(PORT, '0.0.0.0', function () {
+          printBanner(PORT, getNetworkAddress());
+          log.info('server started', { port: PORT, auth: AUTH_ENABLED, mqtt: !!MQTT_HOST, db: !!db });
+          startMqttBridge();
+          startValvePoller();
+        });
       });
     });
   });

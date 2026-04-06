@@ -332,6 +332,7 @@ resource "kubernetes_config_map" "app_config" {
     CONTROLLER_SCRIPT_ID        = "1"
     MQTT_HOST                   = "localhost"
     CONTROLLER_VPN_IP           = ""
+    SENSOR_HOST_IPS             = "192.168.30.20,192.168.30.21"
     OTEL_SERVICE_NAME           = "greenhouse-monitor"
     OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp.eu01.nr-data.net"
   }

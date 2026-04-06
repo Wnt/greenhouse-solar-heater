@@ -178,6 +178,17 @@ function publishConfig(config) {
   return true;
 }
 
+function publishSensorConfig(config) {
+  if (!mqttClient || !mqttClient.connected) {
+    log.warn('cannot publish sensor config: MQTT not connected');
+    return false;
+  }
+  var span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': 'greenhouse/sensor-config' } });
+  mqttClient.publish('greenhouse/sensor-config', JSON.stringify(config), { qos: 1, retain: true });
+  span.end();
+  return true;
+}
+
 function stop(callback) {
   if (!mqttClient) { if (callback) callback(); return; }
   mqttClient.end(false, {}, function () {
@@ -193,6 +204,7 @@ module.exports = {
   stop: stop,
   getConnectionStatus: getConnectionStatus,
   publishConfig: publishConfig,
+  publishSensorConfig: publishSensorConfig,
   handleStateMessage: handleStateMessage,
   detectStateChanges: detectStateChanges,
   _reset: function () {
