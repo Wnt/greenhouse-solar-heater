@@ -141,7 +141,7 @@ jobs:
         run: |
           echo "Deploying Shelly scripts via kubectl exec..."
           kubectl exec deployment/app -c app -- sh -c '
-            cd /app/shelly && DEPLOY_VIA_VPN=true bash deploy.sh
+            cd /app/shelly && DEPLOY_VIA_VPN=true sh deploy.sh
           '
         continue-on-error: true
 
