@@ -11,6 +11,7 @@
 
 - Q: Should the system fully own and manage all sensor configuration on the Shelly host devices, including cleanup of stale entries? → A: Yes. The system has total ownership of Shelly sensor host configuration. When applying, the system replaces the full sensor configuration on each host — any sensor address not assigned by this system is removed. When a sensor moves between hosts, its address is removed from the old host and added to the new one, ensuring a 1-Wire address never appears on two hosts simultaneously.
 - Q: Should applying the sensor configuration also update the control system's sensor polling config (host + index per role)? → A: Yes, in scope. The apply step updates both the sensor host devices and the control system's sensor routing, so the control system knows which host and index to poll for each sensor role. This makes the feature end-to-end complete.
+- Q: When applying config to multiple targets (two hosts + control system), what happens if one is unreachable? → A: Best-effort — apply to reachable targets, warn about failures, allow retry for failed targets later.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -86,6 +87,7 @@ After assigning sensors to roles, the operator applies the configuration. This p
 - What happens when more sensors are detected than there are defined roles? Extra sensors are shown as "unassigned" with no role — the operator can ignore them or assign them to optional roles.
 - What happens when a sensor is detected but returns an error (e.g., wiring fault)? The UI shows the sensor with an error indicator instead of a temperature reading.
 - What happens when the same hardware address appears on two different hosts? This should not happen physically; if detected, the UI warns about the duplicate.
+- What happens when one sensor host is unreachable during apply? The system applies to reachable targets, shows per-target success/failure status, and allows retry for failed targets without re-pushing to already-configured targets.
 
 ## Requirements *(mandatory)*
 
@@ -104,6 +106,7 @@ After assigning sensors to roles, the operator applies the configuration. This p
 - **FR-009b**: When a sensor is moved between hosts, the system MUST remove its 1-Wire address from the previous host's configuration and add it to the new host, ensuring a hardware address never appears on two hosts simultaneously.
 - **FR-009c**: When applying configuration, the system MUST also update the control system's sensor polling configuration so it knows which host address and sensor index to query for each sensor role.
 - **FR-010**: System MUST show clear error states when a sensor host is unreachable, a sensor returns an error, or a previously assigned sensor is no longer detected.
+- **FR-010a**: When applying configuration, the system MUST use a best-effort approach: apply to all reachable targets, clearly report which targets succeeded and which failed, and allow the operator to retry failed targets without re-applying to already-succeeded targets.
 - **FR-011**: System MUST warn the operator if required (non-optional) sensor roles remain unassigned when attempting to apply the configuration.
 - **FR-012**: System MUST be usable both during initial commissioning and for later reconfiguration or sensor replacement without requiring manual file editing.
 
