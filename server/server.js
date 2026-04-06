@@ -11,7 +11,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const createLogger = require('./lib/logger');
-const valvePoller = require('./lib/valve-poller');
 const mqttBridge = require('./lib/mqtt-bridge');
 const deviceConfig = require('./lib/device-config');
 
@@ -25,18 +24,6 @@ const PLAYGROUND_DIR = path.join(__dirname, '..', 'playground');
 const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
 const VPN_CHECK_HOST = process.env.VPN_CHECK_HOST || '';
 const MQTT_HOST = process.env.MQTT_HOST || '';
-
-// Build RPC host allowlist from CONTROLLER_IP + SENSOR_HOST_IPS
-function buildHostAllowlist() {
-  var hosts = {};
-  var controller = process.env.CONTROLLER_IP;
-  if (controller) hosts[controller] = true;
-  var sensorIps = (process.env.SENSOR_HOST_IPS || '').split(',').filter(Boolean);
-  for (var i = 0; i < sensorIps.length; i++) {
-    hosts[sensorIps[i].trim()] = true;
-  }
-  return hosts;
-}
 
 const MIME = {
   '.html': 'text/html',
@@ -93,112 +80,6 @@ function serveFile(filePath, urlPath, res) {
     var contentType = MIME[ext] || 'application/octet-stream';
     res.writeHead(200, { 'Content-Type': contentType });
     res.end(data);
-  });
-}
-
-// ── RPC proxy security ──
-
-var RPC_MARKER_HEADER = 'x-requested-with';
-var RPC_MARKER_VALUE = 'greenhouse-monitor';
-
-function getCorsOrigin(req) {
-  var origin = process.env.ORIGIN || '';
-  return origin || (req.headers.origin || '*');
-}
-
-function handleRpcRequest(req, res) {
-  var urlPath = new URL(req.url, 'http://localhost').pathname;
-
-  // CORS preflight
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': getCorsOrigin(req),
-      'Access-Control-Allow-Methods': 'POST',
-      'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With',
-      'Access-Control-Max-Age': '86400',
-    });
-    res.end();
-    return;
-  }
-
-  // Method enforcement — only POST allowed
-  if (req.method !== 'POST') {
-    res.writeHead(405, {
-      'Allow': 'POST, OPTIONS',
-      'Content-Type': 'application/json',
-    });
-    res.end(JSON.stringify({ error: 'Method not allowed' }));
-    return;
-  }
-
-  // Marker header validation
-  if (req.headers[RPC_MARKER_HEADER] !== RPC_MARKER_VALUE) {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Forbidden' }));
-    return;
-  }
-
-  // Parse JSON body and proxy to Shelly device
-  readBody(req, function (rawBody) {
-    var parsed;
-    try { parsed = JSON.parse(rawBody); } catch (e) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Invalid JSON body' }));
-      return;
-    }
-
-    // Determine target host: _host override or CONTROLLER_IP default
-    var host = parsed._host || process.env.CONTROLLER_IP;
-    if (!host) {
-      res.writeHead(503, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Controller IP not configured' }));
-      return;
-    }
-
-    // Validate host against allowlist
-    var allowlist = buildHostAllowlist();
-    if (!allowlist[host]) {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Host not in allowlist' }));
-      return;
-    }
-
-    proxyRpc(req, res, urlPath, host, parsed);
-  });
-}
-
-function proxyRpc(req, res, urlPath, host, params) {
-  var rpcPath = urlPath.replace(/^\/api/, '');
-  var searchParams = new URLSearchParams();
-  for (var key in params) {
-    if (key !== '_host') searchParams.set(key, params[key]);
-  }
-  var query = searchParams.toString();
-  var shellyUrl = 'http://' + host + rpcPath + (query ? '?' + query : '');
-  var corsOrigin = getCorsOrigin(req);
-
-  http.get(shellyUrl, { timeout: 5000 }, function (shellyRes) {
-    var body = '';
-    shellyRes.on('data', function (chunk) { body += chunk; });
-    shellyRes.on('end', function () {
-      res.writeHead(shellyRes.statusCode, {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': corsOrigin,
-      });
-      res.end(body);
-    });
-  }).on('error', function (err) {
-    var isTimeout = err.code === 'ETIMEDOUT' || err.code === 'ECONNABORTED';
-    var isUnreachable = err.code === 'ECONNREFUSED' || err.code === 'EHOSTUNREACH' || err.code === 'ENETUNREACH';
-    var statusCode = isUnreachable ? 503 : 502;
-    var message = isTimeout
-      ? 'Device unreachable: request timed out after 5s'
-      : isUnreachable
-        ? 'Device unreachable: ' + err.message + ' (check VPN connectivity)'
-        : 'Device unreachable: ' + err.message;
-    log.warn('proxy error', { host: host, code: err.code, message: err.message });
-    res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: message }));
   });
 }
 
@@ -325,7 +206,6 @@ function resolveRoute(urlPath, method) {
   if (urlPath === '/api/sensor-config') return '/api/sensor-config';
   if (urlPath.startsWith('/api/sensor-config/')) return '/api/sensor-config/*';
   if (urlPath === '/api/history') return '/api/history';
-  if (urlPath.startsWith('/api/rpc/')) return '/api/rpc/*';
   if (urlPath === '/ws') return '/ws';
   return urlPath;
 }
@@ -423,8 +303,6 @@ var server = http.createServer(function (req, res) {
     }
   } else if (urlPath === '/api/history') {
     handleHistoryApi(req, res);
-  } else if (req.url.startsWith('/api/rpc/')) {
-    handleRpcRequest(req, res);
   } else {
     serveStatic(req, res);
   }
@@ -506,24 +384,6 @@ function printBanner(port, networkIp) {
   console.log('');
 }
 
-// ── Valve poller ──
-
-function startValvePoller() {
-  var started = valvePoller.start(
-    function onChange(change) {
-      log.info('valve state changed', change);
-    },
-    function onError(err) {
-      log.warn('valve poll error', { error: err.message });
-    }
-  );
-  if (started) {
-    log.info('valve poller started', { host: process.env.CONTROLLER_IP });
-  } else {
-    log.info('valve poller not started (CONTROLLER_IP not set)');
-  }
-}
-
 function initServices(callback) {
   // Resolve DATABASE_URL from env or S3
   var dbModule = require('./lib/db');
@@ -576,7 +436,6 @@ function startServer() {
           printBanner(PORT, getNetworkAddress());
           log.info('server started', { port: PORT, auth: AUTH_ENABLED, mqtt: !!MQTT_HOST, db: !!db });
           startMqttBridge();
-          startValvePoller();
         });
       });
     });

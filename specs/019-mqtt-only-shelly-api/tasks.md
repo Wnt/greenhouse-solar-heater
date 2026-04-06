@@ -19,8 +19,8 @@
 
 **Purpose**: Prepare the branch and understand current state before making changes.
 
-- [ ] T001 Verify all existing tests pass by running `npm test` from repository root
-- [ ] T002 Read current source files to understand baseline: `shelly/control.js`, `shelly/telemetry.js`, `server/server.js`, `server/lib/valve-poller.js`, `server/lib/mqtt-bridge.js`, `server/lib/sensor-config.js`, `playground/js/sensors.js`
+- [x] T001 Verify all existing tests pass by running `npm test` from repository root
+- [x] T002 Read current source files to understand baseline: `shelly/control.js`, `shelly/telemetry.js`, `server/server.js`, `server/lib/valve-poller.js`, `server/lib/mqtt-bridge.js`, `server/lib/sensor-config.js`, `playground/js/sensors.js`
 
 ---
 
@@ -30,13 +30,13 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T003 Remove `server/lib/valve-poller.js` — delete the file entirely
-- [ ] T004 Remove valve poller imports and startup from `server/server.js` — remove `require('./lib/valve-poller')`, `startValvePoller()` call, and related configuration (CONTROLLER_IP for polling, CONTROLLER_SCRIPT_ID)
-- [ ] T005 Remove or update `tests/valve-poller.test.js` — delete the test file since the module no longer exists
-- [ ] T006 Remove the RPC proxy endpoint (`/api/rpc/*`) from `server/server.js` — delete `handleRpcRequest()`, `proxyRpc()`, and the route handler. Remove the `X-Shelly-Proxy` marker header validation, method allowlist, and CORS preflight handling for this path.
-- [ ] T007 Remove or update `tests/rpc-proxy.test.js` — delete the test file since the RPC proxy endpoint no longer exists
-- [ ] T008 Update `playground/js/sensors.js` — remove any direct RPC calls via `/api/rpc/*` proxy. Sensor discovery and config apply will be re-implemented in US2/US3 phases via new API endpoints.
-- [ ] T009 Run `npm test` to verify all remaining tests pass after removals
+- [x] T003 Remove `server/lib/valve-poller.js` — delete the file entirely
+- [x] T004 Remove valve poller imports and startup from `server/server.js` — remove `require('./lib/valve-poller')`, `startValvePoller()` call, and related configuration (CONTROLLER_IP for polling, CONTROLLER_SCRIPT_ID)
+- [x] T005 Remove or update `tests/valve-poller.test.js` — delete the test file since the module no longer exists
+- [x] T006 Remove the RPC proxy endpoint (`/api/rpc/*`) from `server/server.js` — delete `handleRpcRequest()`, `proxyRpc()`, and the route handler. Remove the `X-Shelly-Proxy` marker header validation, method allowlist, and CORS preflight handling for this path.
+- [x] T007 Remove or update `tests/rpc-proxy.test.js` — delete the test file since the RPC proxy endpoint no longer exists
+- [x] T008 Update `playground/js/sensors.js` — remove any direct RPC calls via `/api/rpc/*` proxy. Sensor discovery and config apply will be re-implemented in US2/US3 phases via new API endpoints.
+- [x] T009 Run `npm test` to verify all remaining tests pass after removals
 
 **Checkpoint**: Server no longer makes any direct HTTP calls to Shelly devices. MQTT bridge still delivers state to WebSocket clients.
 
