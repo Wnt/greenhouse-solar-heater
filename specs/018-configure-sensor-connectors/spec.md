@@ -10,6 +10,7 @@
 ### Session 2026-04-06
 
 - Q: Should the system fully own and manage all sensor configuration on the Shelly host devices, including cleanup of stale entries? → A: Yes. The system has total ownership of Shelly sensor host configuration. When applying, the system replaces the full sensor configuration on each host — any sensor address not assigned by this system is removed. When a sensor moves between hosts, its address is removed from the old host and added to the new one, ensuring a 1-Wire address never appears on two hosts simultaneously.
+- Q: Should applying the sensor configuration also update the control system's sensor polling config (host + index per role)? → A: Yes, in scope. The apply step updates both the sensor host devices and the control system's sensor routing, so the control system knows which host and index to poll for each sensor role. This makes the feature end-to-end complete.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -61,19 +62,20 @@ The operator needs to replace a faulty sensor or reorganize the wiring. They unp
 
 ---
 
-### User Story 4 - Write Sensor Configuration to Sensor Host (Priority: P2)
+### User Story 4 - Apply Full Sensor Configuration (Priority: P2)
 
-After assigning sensors to roles, the operator needs the sensor host devices to be configured with the correct hardware addresses so the control system polls the right index for each sensor. The UI provides a way to push the sensor mapping to the sensor host configuration. This ensures the control system's sensor ID-to-index mapping matches the physical wiring.
+After assigning sensors to roles, the operator applies the configuration. This performs two things: (1) configures each sensor host device with the correct 1-Wire address-to-index mapping, and (2) updates the control system's sensor polling configuration so it knows which host and index to query for each sensor role. This makes the system end-to-end operational — the sensor hosts report the right temperatures at the right indices, and the control system polls the right hosts.
 
-**Why this priority**: The sensor host must know which 1-Wire address maps to which temperature index. Without pushing the configuration, the control system may read wrong temperatures for each role.
+**Why this priority**: Without applying the configuration to both the sensor hosts and the control system, the system cannot operate correctly. This is the culmination of the commissioning workflow.
 
-**Independent Test**: Can be tested by completing sensor assignments and pushing the config, then verifying the sensor host returns correct temperature readings at the expected indices.
+**Independent Test**: Can be tested by completing sensor assignments, applying, then verifying both that the sensor hosts return correct readings at expected indices and that the control system polls the correct host for each role.
 
 **Acceptance Scenarios**:
 
-1. **Given** all required sensor roles are assigned, **When** the operator triggers "apply configuration", **Then** the sensor host device is configured so each sensor index corresponds to the correct hardware address.
-2. **Given** the operator changes an assignment, **When** they apply the configuration again, **Then** the sensor host updates to reflect the new mapping.
-3. **Given** sensors span two hosts, **When** the operator applies, **Then** both hosts are configured with their respective sensor mappings.
+1. **Given** all required sensor roles are assigned, **When** the operator triggers "apply configuration", **Then** each sensor host device is configured so each sensor index corresponds to the correct hardware address.
+2. **Given** sensors span two hosts, **When** the operator applies, **Then** the control system's sensor polling configuration is updated to query the correct host and index for each sensor role.
+3. **Given** the operator changes an assignment, **When** they apply the configuration again, **Then** both the sensor hosts and the control system update to reflect the new mapping.
+4. **Given** a sensor is moved from one host to another, **When** the operator applies, **Then** the old host's configuration no longer contains that sensor's address.
 
 ---
 
@@ -100,6 +102,7 @@ After assigning sensors to roles, the operator needs the sensor host devices to 
 - **FR-009**: System MUST allow the operator to push the finalized sensor mapping to the sensor host devices so that sensor indices align with the control system's expectations.
 - **FR-009a**: When applying configuration, the system MUST fully replace each sensor host's sensor configuration — removing any sensor addresses not assigned by this system. The system has total ownership of sensor host configuration.
 - **FR-009b**: When a sensor is moved between hosts, the system MUST remove its 1-Wire address from the previous host's configuration and add it to the new host, ensuring a hardware address never appears on two hosts simultaneously.
+- **FR-009c**: When applying configuration, the system MUST also update the control system's sensor polling configuration so it knows which host address and sensor index to query for each sensor role.
 - **FR-010**: System MUST show clear error states when a sensor host is unreachable, a sensor returns an error, or a previously assigned sensor is no longer detected.
 - **FR-011**: System MUST warn the operator if required (non-optional) sensor roles remain unassigned when attempting to apply the configuration.
 - **FR-012**: System MUST be usable both during initial commissioning and for later reconfiguration or sensor replacement without requiring manual file editing.
@@ -129,4 +132,5 @@ After assigning sensors to roles, the operator needs the sensor host devices to 
 - The sensor host IP addresses are known and configured (currently in `shelly/devices.conf`).
 - The operator has physical access to the sensors and can identify them by touching/warming them while watching the UI.
 - The system configuration (sensor-to-role mapping) can be persisted via the existing device configuration mechanism or a similar server-side store.
-- The sensor host can be reconfigured via RPC to set the 1-Wire address-to-index mapping, ensuring the control system's `SENSOR_IDS` map works correctly after commissioning.
+- The sensor host can be reconfigured via RPC to set the 1-Wire address-to-index mapping.
+- The control system's sensor polling configuration (which host and index per role) can be updated at apply time — either via the existing device config mechanism or a dedicated sensor config store.
