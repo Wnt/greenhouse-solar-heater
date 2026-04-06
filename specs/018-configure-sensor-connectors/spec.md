@@ -5,6 +5,12 @@
 **Status**: Draft  
 **Input**: User description: "When I start to take the system into use and I plugin one sensor at a time to the shelly sensor hosts, I need to make sure I plugin the right sensor into the correct connector in my wiring harness. I think I also need to configure the shelly sensor host config with the HW address of the just plugged-in sensor. add a feature into the UI that can help me with this. The system should be pretty flexible and usable to also when re-configuring the system or swapping sensors. it should be able to detect plugged-in sensors from both sensor hosts and write to the system config where each sensor is installed an at which index."
 
+## Clarifications
+
+### Session 2026-04-06
+
+- Q: Should the system fully own and manage all sensor configuration on the Shelly host devices, including cleanup of stale entries? → A: Yes. The system has total ownership of Shelly sensor host configuration. When applying, the system replaces the full sensor configuration on each host — any sensor address not assigned by this system is removed. When a sensor moves between hosts, its address is removed from the old host and added to the new one, ensuring a 1-Wire address never appears on two hosts simultaneously.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Detect and Identify a Newly Plugged-In Sensor (Priority: P1)
@@ -92,6 +98,8 @@ After assigning sensors to roles, the operator needs the sensor host devices to 
 - **FR-007**: System MUST support querying multiple sensor hosts (currently two: 192.168.30.20 and 192.168.30.21) and clearly distinguish which sensors belong to which host.
 - **FR-008**: System MUST provide live or near-live temperature readings for detected sensors to help the operator physically identify them.
 - **FR-009**: System MUST allow the operator to push the finalized sensor mapping to the sensor host devices so that sensor indices align with the control system's expectations.
+- **FR-009a**: When applying configuration, the system MUST fully replace each sensor host's sensor configuration — removing any sensor addresses not assigned by this system. The system has total ownership of sensor host configuration.
+- **FR-009b**: When a sensor is moved between hosts, the system MUST remove its 1-Wire address from the previous host's configuration and add it to the new host, ensuring a hardware address never appears on two hosts simultaneously.
 - **FR-010**: System MUST show clear error states when a sensor host is unreachable, a sensor returns an error, or a previously assigned sensor is no longer detected.
 - **FR-011**: System MUST warn the operator if required (non-optional) sensor roles remain unassigned when attempting to apply the configuration.
 - **FR-012**: System MUST be usable both during initial commissioning and for later reconfiguration or sensor replacement without requiring manual file editing.
