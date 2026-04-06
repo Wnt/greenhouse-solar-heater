@@ -4,11 +4,14 @@
 // ES5 compatible — no const/let, no arrow functions
 
 var CONFIG_TOPIC = "greenhouse/config";
+var SENSOR_CONFIG_TOPIC = "greenhouse/sensor-config";
 var STATE_TOPIC = "greenhouse/state";
 var CONFIG_KVS_KEY = "config";
+var SENSOR_CONFIG_KVS_KEY = "sensor_config";
 var CONFIG_URL = "";  // Set via KVS "config_url" or default
 
 var currentVersion = 0;
+var currentSensorVersion = 0;
 
 // ── Config management ──
 
@@ -72,6 +75,35 @@ function bootstrapConfig() {
   });
 }
 
+// ── Sensor config management ──
+
+function loadSensorConfig(cb) {
+  Shelly.call("KVS.Get", {key: SENSOR_CONFIG_KVS_KEY}, function(res) {
+    if (res && res.value) {
+      try {
+        var cfg = JSON.parse(res.value);
+        currentSensorVersion = cfg.v || 0;
+        if (cb) cb(cfg);
+        return;
+      } catch(e) {}
+    }
+    if (cb) cb(null);
+  });
+}
+
+function saveSensorConfig(cfg) {
+  currentSensorVersion = cfg.v || 0;
+  Shelly.call("KVS.Set", {key: SENSOR_CONFIG_KVS_KEY, value: JSON.stringify(cfg)});
+}
+
+function applySensorConfig(newCfg) {
+  if (newCfg.v === currentSensorVersion) return;
+  saveSensorConfig(newCfg);
+  Shelly.emitEvent("sensor_config_changed", {
+    config: newCfg,
+  });
+}
+
 // ── MQTT config subscription ──
 
 function setupMqttSubscription() {
@@ -84,6 +116,15 @@ function setupMqttSubscription() {
         loadConfig(function(oldCfg) {
           applyConfig(newCfg, oldCfg);
         });
+      }
+    } catch(e) {}
+  });
+  MQTT.subscribe(SENSOR_CONFIG_TOPIC, function(topic, message) {
+    if (topic !== SENSOR_CONFIG_TOPIC) return;
+    try {
+      var newCfg = JSON.parse(message);
+      if (newCfg.v && newCfg.v !== currentSensorVersion) {
+        applySensorConfig(newCfg);
       }
     } catch(e) {}
   });
