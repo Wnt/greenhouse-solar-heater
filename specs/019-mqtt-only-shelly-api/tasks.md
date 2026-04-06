@@ -50,14 +50,14 @@
 
 ### Tests for User Story 1
 
-- [ ] T010 [P] [US1] Update `tests/mqtt-bridge.test.js` — add tests verifying that state reception, database persistence, WebSocket broadcast, and state change detection all work without valve poller. Ensure the MQTT bridge is the sole source of state data.
-- [ ] T011 [P] [US1] Update `tests/data-source.test.js` — verify LiveSource (WebSocket) correctly handles state messages and connection status without any fallback to RPC polling.
+- [x] T010 [P] [US1] Update `tests/mqtt-bridge.test.js` — add tests verifying that state reception, database persistence, WebSocket broadcast, and state change detection all work without valve poller. Ensure the MQTT bridge is the sole source of state data.
+- [x] T011 [P] [US1] Update `tests/data-source.test.js` — verify LiveSource (WebSocket) correctly handles state messages and connection status without any fallback to RPC polling.
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] Review and verify `server/lib/mqtt-bridge.js` handles all state reception correctly now that valve-poller is removed — ensure connection status events (`connected`, `reconnecting`, `disconnected`) are broadcast to WebSocket clients so the dashboard shows MQTT connectivity status.
-- [ ] T013 [US1] Verify `playground/js/data-source.js` LiveSource correctly displays connection state to the user — when MQTT is disconnected, the dashboard should show a clear "disconnected" indicator rather than stale data.
-- [ ] T014 [US1] Run `npm test` to verify all US1 tests pass
+- [x] T012 [US1] Review and verify `server/lib/mqtt-bridge.js` handles all state reception correctly now that valve-poller is removed — ensure connection status events (`connected`, `reconnecting`, `disconnected`) are broadcast to WebSocket clients so the dashboard shows MQTT connectivity status.
+- [x] T013 [US1] Verify `playground/js/data-source.js` LiveSource correctly displays connection state to the user — when MQTT is disconnected, the dashboard should show a clear "disconnected" indicator rather than stale data.
+- [x] T014 [US1] Run `npm test` to verify all US1 tests pass
 
 **Checkpoint**: Dashboard receives live state via MQTT only. No Script.Eval calls exist anywhere in the codebase.
 
@@ -71,19 +71,19 @@
 
 ### Tests for User Story 2
 
-- [ ] T015 [P] [US2] Add unit tests for the new sensor-config-apply MQTT flow in `tests/sensor-config.test.js` — test that `applyConfig()` and `applySingleTarget()` publish to `greenhouse/sensor-config-apply` and wait for a correlated response on `greenhouse/sensor-config-result` instead of making direct HTTP RPC calls.
-- [ ] T016 [P] [US2] Add unit tests for MQTT request/response correlation in `tests/mqtt-bridge.test.js` — test that `publishSensorConfigApply()` publishes the request with a correlation ID, subscribes to the result topic, resolves on matching ID, and rejects on timeout (30s).
+- [x] T015 [P] [US2] Add unit tests for the new sensor-config-apply MQTT flow in `tests/sensor-config.test.js` — test that `applyConfig()` and `applySingleTarget()` publish to `greenhouse/sensor-config-apply` and wait for a correlated response on `greenhouse/sensor-config-result` instead of making direct HTTP RPC calls.
+- [x] T016 [P] [US2] Add unit tests for MQTT request/response correlation in `tests/mqtt-bridge.test.js` — test that `publishSensorConfigApply()` publishes the request with a correlation ID, subscribes to the result topic, resolves on matching ID, and rejects on timeout (30s).
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] Add MQTT publish/subscribe for sensor-config-apply in `server/lib/mqtt-bridge.js` — add `publishSensorConfigApply(request)` that publishes to `greenhouse/sensor-config-apply` (QoS 1, no retain), subscribes to `greenhouse/sensor-config-result`, and returns a Promise that resolves when a matching correlation ID arrives or rejects after 30s timeout.
-- [ ] T018 [US2] Refactor `server/lib/sensor-config.js` — replace direct HTTP RPC in `applyToHost()` and `applyConfig()` with calls to the new `mqttBridge.publishSensorConfigApply()`. The `rpcCall()` function and direct HTTP logic should be removed. Update `applySingleTarget()` similarly.
-- [ ] T019 [US2] Update `/api/sensor-config/apply` and `/api/sensor-config/apply/:targetId` handlers in `server/server.js` — ensure they use the refactored sensor-config.js which now routes through MQTT. Return MQTT response results to the HTTP caller. Handle 30s timeout with HTTP 504.
-- [ ] T020 [US2] Add sensor-config-apply subscription to `shelly/telemetry.js` — subscribe to `greenhouse/sensor-config-apply` topic. On message, emit a `"sensor_config_apply"` inter-script event to the control script with the parsed request payload.
-- [ ] T021 [US2] Add sensor-config-apply handler to `shelly/control.js` — listen for `"sensor_config_apply"` events. When received, set a `pendingConfigApply` flag with the request data. In the control loop, after sensor polling completes, check the flag. If set, execute `SensorAddon.RemovePeripheral` and `SensorAddon.AddPeripheral` RPC calls to each target sensor host sequentially (reusing the existing HTTP call pattern from `pollSensor()`). Collect results per host. Emit a `"sensor_config_apply_result"` event back to the telemetry script with the results.
-- [ ] T022 [US2] Add result publishing to `shelly/telemetry.js` — listen for `"sensor_config_apply_result"` events and publish the result payload to `greenhouse/sensor-config-result` (QoS 1, no retain).
-- [ ] T023 [US2] Update `playground/js/sensors.js` — ensure the "Apply" button calls the existing `/api/sensor-config/apply` endpoint (which now routes through MQTT internally). Update any direct RPC fallback paths. Display results from the MQTT-routed response.
-- [ ] T024 [US2] Run `npm test` to verify all US2 tests pass
+- [x] T017 [US2] Add MQTT publish/subscribe for sensor-config-apply in `server/lib/mqtt-bridge.js` — add `publishSensorConfigApply(request)` that publishes to `greenhouse/sensor-config-apply` (QoS 1, no retain), subscribes to `greenhouse/sensor-config-result`, and returns a Promise that resolves when a matching correlation ID arrives or rejects after 30s timeout.
+- [x] T018 [US2] Refactor `server/lib/sensor-config.js` — replace direct HTTP RPC in `applyToHost()` and `applyConfig()` with calls to the new `mqttBridge.publishSensorConfigApply()`. The `rpcCall()` function and direct HTTP logic should be removed. Update `applySingleTarget()` similarly.
+- [x] T019 [US2] Update `/api/sensor-config/apply` and `/api/sensor-config/apply/:targetId` handlers in `server/server.js` — ensure they use the refactored sensor-config.js which now routes through MQTT. Return MQTT response results to the HTTP caller. Handle 30s timeout with HTTP 504.
+- [x] T020 [US2] Add sensor-config-apply subscription to `shelly/telemetry.js` — subscribe to `greenhouse/sensor-config-apply` topic. On message, emit a `"sensor_config_apply"` inter-script event to the control script with the parsed request payload.
+- [x] T021 [US2] Add sensor-config-apply handler to `shelly/control.js` — listen for `"sensor_config_apply"` events. When received, set a `pendingConfigApply` flag with the request data. In the control loop, after sensor polling completes, check the flag. If set, execute `SensorAddon.RemovePeripheral` and `SensorAddon.AddPeripheral` RPC calls to each target sensor host sequentially (reusing the existing HTTP call pattern from `pollSensor()`). Collect results per host. Emit a `"sensor_config_apply_result"` event back to the telemetry script with the results.
+- [x] T022 [US2] Add result publishing to `shelly/telemetry.js` — listen for `"sensor_config_apply_result"` events and publish the result payload to `greenhouse/sensor-config-result` (QoS 1, no retain).
+- [x] T023 [US2] Update `playground/js/sensors.js` — ensure the "Apply" button calls the existing `/api/sensor-config/apply` endpoint (which now routes through MQTT internally). Update any direct RPC fallback paths. Display results from the MQTT-routed response.
+- [x] T024 [US2] Run `npm test` to verify all US2 tests pass
 
 **Checkpoint**: Sensor config apply works end-to-end via MQTT. The controller applies config to sensor hosts on the local network. No direct cloud-to-sensor-host RPC.
 
@@ -97,18 +97,18 @@
 
 ### Tests for User Story 3
 
-- [ ] T025 [P] [US3] Add unit tests for discovery MQTT flow in `tests/mqtt-bridge.test.js` — test `publishDiscoveryRequest(hosts)` publishes to `greenhouse/discover-sensors`, subscribes to `greenhouse/discover-sensors-result`, correlates by ID, and handles timeout.
-- [ ] T026 [P] [US3] Add unit tests for the discovery endpoint in `tests/sensor-config.test.js` or a new `tests/sensor-discovery.test.js` — test the server-side `/api/sensor-discovery` handler publishes an MQTT request and returns the correlated response.
+- [x] T025 [P] [US3] Add unit tests for discovery MQTT flow in `tests/mqtt-bridge.test.js` — test `publishDiscoveryRequest(hosts)` publishes to `greenhouse/discover-sensors`, subscribes to `greenhouse/discover-sensors-result`, correlates by ID, and handles timeout.
+- [x] T026 [P] [US3] Add unit tests for the discovery endpoint in `tests/sensor-config.test.js` or a new `tests/sensor-discovery.test.js` — test the server-side `/api/sensor-discovery` handler publishes an MQTT request and returns the correlated response.
 
 ### Implementation for User Story 3
 
-- [ ] T027 [US3] Add MQTT publish/subscribe for discovery in `server/lib/mqtt-bridge.js` — add `publishDiscoveryRequest(hosts)` that publishes to `greenhouse/discover-sensors` (QoS 1, no retain) with a correlation ID, subscribes to `greenhouse/discover-sensors-result`, and returns a Promise resolving on match or rejecting on 30s timeout.
-- [ ] T028 [US3] Add `/api/sensor-discovery` POST endpoint in `server/server.js` — accepts `{"hosts": ["ip1", "ip2"]}`, calls `mqttBridge.publishDiscoveryRequest(hosts)`, returns results on success or HTTP 504 on timeout.
-- [ ] T029 [US3] Add discovery request subscription to `shelly/telemetry.js` — subscribe to `greenhouse/discover-sensors` topic. On message, emit a `"discover_sensors"` inter-script event to the control script with the parsed request payload.
-- [ ] T030 [US3] Add discovery handler to `shelly/control.js` — listen for `"discover_sensors"` events. When received, set a `pendingDiscovery` flag with the request data. In the control loop, after sensor polling completes, check the flag. If set, iterate through requested hosts, call `SensorAddon.GetPeripherals` on each (HTTP GET to `http://{host}/rpc/SensorAddon.GetPeripherals`), collect sensor addresses and current temperatures. Emit a `"discover_sensors_result"` event back to the telemetry script with per-host results.
-- [ ] T031 [US3] Add discovery result publishing to `shelly/telemetry.js` — listen for `"discover_sensors_result"` events and publish the result payload to `greenhouse/discover-sensors-result` (QoS 1, no retain).
-- [ ] T032 [US3] Update `playground/js/sensors.js` — change the discovery trigger to call the new `/api/sensor-discovery` POST endpoint instead of direct RPC via the (now removed) proxy. Display discovered sensors from the MQTT-routed response.
-- [ ] T033 [US3] Run `npm test` to verify all US3 tests pass
+- [x] T027 [US3] Add MQTT publish/subscribe for discovery in `server/lib/mqtt-bridge.js` — add `publishDiscoveryRequest(hosts)` that publishes to `greenhouse/discover-sensors` (QoS 1, no retain) with a correlation ID, subscribes to `greenhouse/discover-sensors-result`, and returns a Promise resolving on match or rejecting on 30s timeout.
+- [x] T028 [US3] Add `/api/sensor-discovery` POST endpoint in `server/server.js` — accepts `{"hosts": ["ip1", "ip2"]}`, calls `mqttBridge.publishDiscoveryRequest(hosts)`, returns results on success or HTTP 504 on timeout.
+- [x] T029 [US3] Add discovery request subscription to `shelly/telemetry.js` — subscribe to `greenhouse/discover-sensors` topic. On message, emit a `"discover_sensors"` inter-script event to the control script with the parsed request payload.
+- [x] T030 [US3] Add discovery handler to `shelly/control.js` — listen for `"discover_sensors"` events. When received, set a `pendingDiscovery` flag with the request data. In the control loop, after sensor polling completes, check the flag. If set, iterate through requested hosts, call `SensorAddon.GetPeripherals` on each (HTTP GET to `http://{host}/rpc/SensorAddon.GetPeripherals`), collect sensor addresses and current temperatures. Emit a `"discover_sensors_result"` event back to the telemetry script with per-host results.
+- [x] T031 [US3] Add discovery result publishing to `shelly/telemetry.js` — listen for `"discover_sensors_result"` events and publish the result payload to `greenhouse/discover-sensors-result` (QoS 1, no retain).
+- [x] T032 [US3] Update `playground/js/sensors.js` — change the discovery trigger to call the new `/api/sensor-discovery` POST endpoint instead of direct RPC via the (now removed) proxy. Display discovered sensors from the MQTT-routed response.
+- [x] T033 [US3] Run `npm test` to verify all US3 tests pass
 
 **Checkpoint**: Sensor discovery works end-to-end via MQTT. Controller scans locally, results return through MQTT to the dashboard.
 

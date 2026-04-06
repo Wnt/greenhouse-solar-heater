@@ -196,6 +196,26 @@ function handleDeviceConfigApi(req, res, urlPath, body) {
   jsonResponse(res, 405, { error: 'Method not allowed' });
 }
 
+// ── Sensor Discovery API ──
+
+function handleSensorDiscovery(req, res, body) {
+  var parsed;
+  try { parsed = JSON.parse(body); } catch (e) {
+    jsonResponse(res, 400, { error: 'Invalid JSON body' });
+    return;
+  }
+  if (!parsed.hosts || !Array.isArray(parsed.hosts)) {
+    jsonResponse(res, 400, { error: 'Missing hosts array' });
+    return;
+  }
+  mqttBridge.publishDiscoveryRequest(parsed.hosts).then(function (result) {
+    jsonResponse(res, 200, result);
+  }).catch(function (err) {
+    var statusCode = err.message === 'Request timed out' ? 504 : 500;
+    jsonResponse(res, statusCode, { error: err.message === 'Request timed out' ? 'Discovery timed out' : err.message });
+  });
+}
+
 // ── HTTP route detection (for OTel span naming) ──
 
 function resolveRoute(urlPath, method) {
@@ -205,6 +225,7 @@ function resolveRoute(urlPath, method) {
   if (urlPath === '/api/device-config') return '/api/device-config';
   if (urlPath === '/api/sensor-config') return '/api/sensor-config';
   if (urlPath.startsWith('/api/sensor-config/')) return '/api/sensor-config/*';
+  if (urlPath === '/api/sensor-discovery') return '/api/sensor-discovery';
   if (urlPath === '/api/history') return '/api/history';
   if (urlPath === '/ws') return '/ws';
   return urlPath;
@@ -298,6 +319,14 @@ var server = http.createServer(function (req, res) {
     if (req.method === 'POST') {
       var targetId = urlPath.split('/').pop();
       sensorConfig.handleApplyTarget(req, res, targetId, mqttBridge);
+    } else {
+      jsonResponse(res, 405, { error: 'Method not allowed' });
+    }
+  } else if (urlPath === '/api/sensor-discovery') {
+    if (req.method === 'POST') {
+      readBody(req, function (body) {
+        handleSensorDiscovery(req, res, body);
+      });
     } else {
       jsonResponse(res, 405, { error: 'Method not allowed' });
     }

@@ -37,6 +37,7 @@ function start(options) {
     mqttClient.subscribe('greenhouse/state', { qos: 1 }, function (err) {
       if (err) log.error('subscribe failed', { error: err.message });
     });
+    subscribeResponseTopics();
     broadcastConnection('connected');
   });
 
@@ -62,6 +63,10 @@ function start(options) {
   });
 
   mqttClient.on('message', function (topic, message) {
+    if (topic === 'greenhouse/sensor-config-result' || topic === 'greenhouse/discover-sensors-result') {
+      handleResponseMessage(topic, message);
+      return;
+    }
     if (topic !== 'greenhouse/state') return;
 
     var span = tracer.startSpan('mqtt.message', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': topic } });
@@ -189,6 +194,61 @@ function publishSensorConfig(config) {
   return true;
 }
 
+// ── MQTT request/response helpers ──
+
+var pendingRequests = {};
+
+function handleResponseMessage(topic, message) {
+  var payload;
+  try {
+    payload = JSON.parse(message.toString());
+  } catch (e) {
+    log.warn('invalid JSON on response topic', { topic: topic, error: e.message });
+    return;
+  }
+  if (!payload || !payload.id) return;
+  var pending = pendingRequests[payload.id];
+  if (pending) {
+    clearTimeout(pending.timer);
+    delete pendingRequests[payload.id];
+    pending.resolve(payload);
+  }
+}
+
+function subscribeResponseTopics() {
+  if (!mqttClient) return;
+  mqttClient.subscribe('greenhouse/sensor-config-result', { qos: 1 });
+  mqttClient.subscribe('greenhouse/discover-sensors-result', { qos: 1 });
+}
+
+function mqttRequest(requestTopic, responseTopic, payload, timeoutMs) {
+  if (!mqttClient || !mqttClient.connected) {
+    return Promise.reject(new Error('MQTT not connected'));
+  }
+  var id = payload.id;
+  var span = tracer.startSpan('mqtt.request', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': requestTopic } });
+
+  return new Promise(function (resolve, reject) {
+    var timer = setTimeout(function () {
+      delete pendingRequests[id];
+      span.end();
+      reject(new Error('Request timed out'));
+    }, timeoutMs || 30000);
+
+    pendingRequests[id] = { resolve: function (result) { span.end(); resolve(result); }, timer: timer };
+    mqttClient.publish(requestTopic, JSON.stringify(payload), { qos: 1, retain: false });
+  });
+}
+
+function publishSensorConfigApply(request) {
+  return mqttRequest('greenhouse/sensor-config-apply', 'greenhouse/sensor-config-result', request, 30000);
+}
+
+function publishDiscoveryRequest(hosts) {
+  var id = 'disc-' + Date.now();
+  return mqttRequest('greenhouse/discover-sensors', 'greenhouse/discover-sensors-result', { id: id, hosts: hosts }, 30000);
+}
+
 function stop(callback) {
   if (!mqttClient) { if (callback) callback(); return; }
   mqttClient.end(false, {}, function () {
@@ -205,6 +265,8 @@ module.exports = {
   getConnectionStatus: getConnectionStatus,
   publishConfig: publishConfig,
   publishSensorConfig: publishSensorConfig,
+  publishSensorConfigApply: publishSensorConfigApply,
+  publishDiscoveryRequest: publishDiscoveryRequest,
   handleStateMessage: handleStateMessage,
   detectStateChanges: detectStateChanges,
   _reset: function () {
@@ -213,5 +275,10 @@ module.exports = {
     db = null;
     previousState = null;
     connectionStatus = 'disconnected';
+    // Clear any pending requests
+    for (var id in pendingRequests) {
+      clearTimeout(pendingRequests[id].timer);
+    }
+    pendingRequests = {};
   },
 };
