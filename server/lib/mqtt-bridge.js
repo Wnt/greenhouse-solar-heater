@@ -246,7 +246,9 @@ function publishSensorConfigApply(request) {
 
 function publishDiscoveryRequest(hosts) {
   var id = 'disc-' + Date.now();
-  return mqttRequest('greenhouse/discover-sensors', 'greenhouse/discover-sensors-result', { id: id, hosts: hosts }, 30000);
+  // Each host may take up to 5s (HTTP timeout) + sensor polling time; allow 15s per host
+  var timeoutMs = Math.max(30000, (hosts ? hosts.length : 1) * 15000);
+  return mqttRequest('greenhouse/discover-sensors', 'greenhouse/discover-sensors-result', { id: id, hosts: hosts }, timeoutMs);
 }
 
 function stop(callback) {

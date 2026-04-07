@@ -398,8 +398,8 @@ function processPendingCommands() {
 function addonRpc(ip, method, params, cb) {
   var body = JSON.stringify({id:1,method:method,params:params||{}});
   Shelly.call("HTTP.POST",{url:"http://"+ip+"/rpc",body:body,content_type:"application/json",timeout:5},function(r,e){
-    if(e||!r||r.code!==200||!r.body){cb(e?"err":"bad",null);return;}
-    try{cb(null,JSON.parse(r.body));}catch(x){cb("parse",null);}
+    if(e||!r||r.code!==200||!r.body){cb(e?"RPC error: "+JSON.stringify(e):(r?"HTTP "+r.code:"No response from "+ip),null);return;}
+    try{cb(null,JSON.parse(r.body));}catch(x){cb("Invalid JSON response",null);}
   });
 }
 

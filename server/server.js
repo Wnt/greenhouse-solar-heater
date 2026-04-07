@@ -211,8 +211,9 @@ function handleSensorDiscovery(req, res, body) {
   mqttBridge.publishDiscoveryRequest(parsed.hosts).then(function (result) {
     jsonResponse(res, 200, result);
   }).catch(function (err) {
-    var statusCode = err.message === 'Request timed out' ? 504 : 500;
-    jsonResponse(res, statusCode, { error: err.message === 'Request timed out' ? 'Discovery timed out' : err.message });
+    var msg = err.message || String(err);
+    var statusCode = msg === 'Request timed out' ? 504 : msg === 'MQTT not connected' ? 503 : 500;
+    jsonResponse(res, statusCode, { error: msg });
   });
 }
 
