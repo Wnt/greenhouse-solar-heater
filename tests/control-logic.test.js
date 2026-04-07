@@ -945,3 +945,53 @@ describe('hard safety overrides bypass device config', () => {
     assert.strictEqual(result.safetyOverride, true);
   });
 });
+
+// ── Manual override guard behavior (022-relay-toggle-ui) ──
+// The override guard lives in control.js (I/O layer). These tests verify that
+// evaluate() still produces correct safety signals that the guard relies on,
+// and that device config with mo field doesn't break evaluate().
+
+describe('manual override safety interaction', () => {
+  const overrideConfig = { ce: true, ea: 31, v: 1, mo: { a: true, ex: 9999999999, ss: false } };
+  const overrideSuppressedConfig = { ce: true, ea: 31, v: 1, mo: { a: true, ex: 9999999999, ss: true } };
+
+  it('evaluate() still returns safetyOverride=true during freeze even with mo set', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
+    }), null, overrideConfig);
+    assert.strictEqual(result.safetyOverride, true);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+
+  it('evaluate() still returns safetyOverride=true during overheat even with mo set', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 90, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, overrideConfig);
+    assert.strictEqual(result.safetyOverride, true);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+
+  it('evaluate() works normally with mo field in config (mo is I/O concern)', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, overrideConfig);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.suppressed, false);
+  });
+
+  it('evaluate() works with mo.ss=true (suppressed safety config)', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
+    }), null, overrideSuppressedConfig);
+    // evaluate() still returns safetyOverride — the I/O layer decides whether to act on it
+    assert.strictEqual(result.safetyOverride, true);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+
+  it('ce=false with mo set still returns suppressed (controls gate takes priority)', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+    }), null, { ce: false, ea: 0, v: 1, mo: { a: true, ex: 9999999999, ss: false } });
+    assert.strictEqual(result.suppressed, true);
+  });
+});

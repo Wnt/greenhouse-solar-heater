@@ -12,6 +12,7 @@ var tracer = trace.getTracer('mqtt-bridge');
 var mqttClient = null;
 var wsServer = null;
 var db = null;
+var deviceConfigRef = null;
 var previousState = null;
 var connectionStatus = 'disconnected';
 
@@ -19,6 +20,7 @@ function start(options) {
   var mqtt = require('mqtt');
   db = options.db || null;
   wsServer = options.wsServer || null;
+  deviceConfigRef = options.deviceConfig || null;
 
   var host = options.mqttHost || process.env.MQTT_HOST || '127.0.0.1';
   var port = options.mqttPort || process.env.MQTT_PORT || 1883;
@@ -150,7 +152,19 @@ function detectStateChanges(ts, prev, curr, _db) {
 
 function broadcastState(payload) {
   if (!wsServer) return;
-  var msg = JSON.stringify({ type: 'state', data: payload });
+  // Enrich state with manual override info from device config
+  var enriched = payload;
+  if (deviceConfigRef) {
+    var cfg = deviceConfigRef.getConfig();
+    if (cfg && cfg.mo && cfg.mo.a) {
+      enriched = Object.assign({}, payload, {
+        manual_override: { active: true, expiresAt: cfg.mo.ex, suppressSafety: cfg.mo.ss },
+      });
+    } else {
+      enriched = Object.assign({}, payload, { manual_override: null });
+    }
+  }
+  var msg = JSON.stringify({ type: 'state', data: enriched });
   wsServer.clients.forEach(function (client) {
     if (client.readyState === 1) { // WebSocket.OPEN
       client.send(msg);
@@ -190,6 +204,17 @@ function publishSensorConfig(config) {
   }
   var span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': 'greenhouse/sensor-config' } });
   mqttClient.publish('greenhouse/sensor-config', JSON.stringify(config), { qos: 1, retain: true });
+  span.end();
+  return true;
+}
+
+function publishRelayCommand(relay, on) {
+  if (!mqttClient || !mqttClient.connected) {
+    log.warn('cannot publish relay command: MQTT not connected');
+    return false;
+  }
+  var span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': 'greenhouse/relay-command' } });
+  mqttClient.publish('greenhouse/relay-command', JSON.stringify({ relay: relay, on: on }), { qos: 1, retain: false });
   span.end();
   return true;
 }
@@ -271,6 +296,7 @@ module.exports = {
   getConnectionStatus: getConnectionStatus,
   publishConfig: publishConfig,
   publishSensorConfig: publishSensorConfig,
+  publishRelayCommand: publishRelayCommand,
   publishSensorConfigApply: publishSensorConfigApply,
   publishDiscoveryRequest: publishDiscoveryRequest,
   handleStateMessage: handleStateMessage,
@@ -279,6 +305,7 @@ module.exports = {
     mqttClient = null;
     wsServer = null;
     db = null;
+    deviceConfigRef = null;
     previousState = null;
     connectionStatus = 'disconnected';
     // Clear any pending requests

@@ -9,6 +9,7 @@ var SENSOR_CONFIG_APPLY_TOPIC = "greenhouse/sensor-config-apply";
 var SENSOR_CONFIG_RESULT_TOPIC = "greenhouse/sensor-config-result";
 var DISCOVER_TOPIC = "greenhouse/discover-sensors";
 var DISCOVER_RESULT_TOPIC = "greenhouse/discover-sensors-result";
+var RELAY_COMMAND_TOPIC = "greenhouse/relay-command";
 var STATE_TOPIC = "greenhouse/state";
 var CONFIG_KVS_KEY = "config";
 var SENSOR_CONFIG_KVS_KEY = "sensor_config";
@@ -151,6 +152,15 @@ function setupMqttSubscription() {
       var req = JSON.parse(message);
       if (req && req.id) {
         Shelly.emitEvent("discover_sensors", {request: req});
+      }
+    } catch(e) {}
+  });
+  MQTT.subscribe(RELAY_COMMAND_TOPIC, function(topic, message) {
+    if (topic !== RELAY_COMMAND_TOPIC) return;
+    try {
+      var cmd = JSON.parse(message);
+      if (cmd && typeof cmd.relay === "string" && typeof cmd.on === "boolean") {
+        Shelly.emitEvent("relay_command", {relay: cmd.relay, on: cmd.on});
       }
     } catch(e) {}
   });

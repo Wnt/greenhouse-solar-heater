@@ -242,6 +242,11 @@ function buildStateSnapshot() {
       emergency_heating_active: state.emergency_heating_active,
     },
     controls_enabled: deviceConfig.ce,
+    manual_override: (deviceConfig.mo && deviceConfig.mo.a) ? {
+      active: true,
+      expiresAt: deviceConfig.mo.ex,
+      suppressSafety: deviceConfig.mo.ss,
+    } : null,
   };
 }
 
@@ -353,6 +358,33 @@ function stopDrain(reason) {
   });
 }
 
+// ── Manual override helpers ──
+
+function isManualOverrideActive() {
+  if (!deviceConfig.mo || !deviceConfig.mo.a) return false;
+  var now = Shelly.getComponentStatus("sys").unixtime || 0;
+  if (now >= deviceConfig.mo.ex) {
+    // TTL expired — clear override and persist
+    deviceConfig.mo = null;
+    Shelly.call("KVS.Set", {key: "config", value: JSON.stringify(deviceConfig)});
+    return false;
+  }
+  return true;
+}
+
+function handleRelayCommand(relay, on) {
+  if (!isManualOverrideActive()) return;
+  if (relay === "pump") { setPump(on); }
+  else if (relay === "fan") { setFan(on); }
+  else if (VALVES[relay]) {
+    setValve(relay, on, function() {
+      emitStateUpdate();
+    });
+    return; // setValve is async — emitStateUpdate called in callback
+  }
+  emitStateUpdate();
+}
+
 // ── Control loop ──
 
 function controlLoop() {
@@ -360,6 +392,26 @@ function controlLoop() {
   pollAllSensors(function() {
     updateDisplay(function() {
       if (state.transitioning) return;
+
+      // Manual override guard: skip evaluate() when override is active
+      if (isManualOverrideActive()) {
+        if (!deviceConfig.mo.ss) {
+          // Safety not suppressed — check for safety overrides only
+          var evalState = buildEvalState();
+          var result = evaluate(evalState, null, deviceConfig);
+          if (result.safetyOverride) {
+            // Safety takes precedence — end override and transition
+            deviceConfig.mo = null;
+            Shelly.call("KVS.Set", {key: "config", value: JSON.stringify(deviceConfig)});
+            transitionTo(result);
+            return;
+          }
+        }
+        // Override active, no safety intervention — just emit state
+        emitStateUpdate();
+        processPendingCommands();
+        return;
+      }
 
       var evalState = buildEvalState();
       var result = evaluate(evalState, null, deviceConfig);
@@ -513,6 +565,11 @@ Shelly.addEventHandler(function(ev) {
     var discData = ev.info.data;
     if (discData && discData.request) {
       pendingDisc = discData.request;
+    }
+  } else if (ev.info.event === "relay_command") {
+    var relayData = ev.info.data;
+    if (relayData && typeof relayData.relay === "string" && typeof relayData.on === "boolean") {
+      handleRelayCommand(relayData.relay, relayData.on);
     }
   }
 });

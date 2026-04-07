@@ -103,6 +103,10 @@ export class LiveSource extends DataSource {
         const msg = JSON.parse(event.data);
         if (msg.type === 'state') {
           this._handleState(msg.data);
+        } else if (msg.type === 'override-ack' || msg.type === 'override-error') {
+          if (this._commandCallbacks) {
+            for (const cb of this._commandCallbacks) cb(msg);
+          }
         } else if (msg.type === 'connection') {
           // Server's MQTT connection status — track separately from WS
           this.mqttStatus = msg.status;
@@ -139,6 +143,17 @@ export class LiveSource extends DataSource {
     }, this._reconnectDelay);
   }
 
+  sendCommand(command) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify(command));
+    return true;
+  }
+
+  onCommandResponse(callback) {
+    this._commandCallbacks = this._commandCallbacks || [];
+    this._commandCallbacks.push(callback);
+  }
+
   _handleState(data) {
     this.hasReceivedData = true;
     // Map MQTT state snapshot to playground's internal format
@@ -159,6 +174,7 @@ export class LiveSource extends DataSource {
       transitioning: data.transitioning || false,
       transition_step: data.transition_step || null,
       controls_enabled: data.controls_enabled,
+      manual_override: data.manual_override || null,
     };
 
     this._emitUpdate(state, result);
