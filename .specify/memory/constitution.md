@@ -81,7 +81,14 @@ levels:
 - **Unit tests**: Pure control logic assertions (`node:test`)
 - **Simulation tests**: Scenario-driven thermal/control model
   validation
-- **E2E tests**: Playwright browser tests for playground and PoC UI
+- **E2E tests**: Playwright browser tests for playground UI
+
+Playwright and Chromium are available in the development environment.
+E2E tests MUST NOT be skipped or deferred — they are a required
+deliverable for any feature that modifies playground UI behavior.
+See `CLAUDE.md` "Testing Policy" and "Test Setup Notes" sections
+for Playwright version requirements, shared fixtures, static server
+configuration, and test conventions.
 
 Tests MUST pass locally before pushing to CI to maintain a short
 feedback loop. The goal is not 100% coverage but proportional

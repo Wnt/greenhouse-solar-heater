@@ -97,6 +97,365 @@ async function setupDeviceView(page, initialConfig) {
   return { putRequests, getConfig: () => ({ ...savedConfig }) };
 }
 
+// ── Relay Toggle Board helpers ──
+
+/**
+ * Mock WebSocket with send capture and dynamic message injection.
+ * Stores sent messages in window.__wsSent and allows injecting responses
+ * via window.__wsInject(msg).
+ */
+async function mockLiveConnectionWithRelay(page, stateOverrides) {
+  await page.addInitScript((overrides) => {
+    var OrigWS = window.WebSocket;
+    window.__wsSent = [];
+    // @ts-ignore
+    window.WebSocket = function() {
+      var fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+        close: function() { this.readyState = 3; },
+        send: function(data) { try { window.__wsSent.push(JSON.parse(data)); } catch(e) {} },
+      };
+      window.__mockWs = fake;
+      window.__wsInject = function(msg) {
+        if (fake.onmessage) fake.onmessage({ data: JSON.stringify(msg) });
+      };
+      var stateData = Object.assign({
+        mode: 'idle',
+        temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
+        valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_ret: false, v_air: false },
+        actuators: { pump: false, fan: false, space_heater: false },
+        controls_enabled: true,
+        manual_override: null,
+      }, overrides || {});
+      setTimeout(function() {
+        fake.readyState = 1;
+        if (fake.onopen) fake.onopen(new Event('open'));
+        if (fake.onmessage) {
+          fake.onmessage({ data: JSON.stringify({ type: 'connection', status: 'connected' }) });
+          fake.onmessage({ data: JSON.stringify({ type: 'state', data: stateData }) });
+        }
+      }, 50);
+      return fake;
+    };
+    // @ts-ignore
+    window.WebSocket.prototype = OrigWS.prototype;
+    window.WebSocket.OPEN = 1;
+    window.WebSocket.CLOSED = 3;
+  }, stateOverrides);
+}
+
+/** Set up relay override tests: mock WS, mock APIs, navigate to device view. */
+async function setupRelayView(page, stateOverrides) {
+  await mockLiveConnectionWithRelay(page, stateOverrides);
+
+  await page.route('**/api/device-config', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ ce: true, ea: 31, fm: null, am: null, v: 1 }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+  await page.route('**/api/history**', route => route.fulfill({
+    status: 200, contentType: 'application/json', body: '[]',
+  }));
+
+  await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#mode-toggle')).toBeVisible();
+  // Wait for live connection to be established (state data received)
+  await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+  await page.locator('.sidebar-nav [data-view="device"]').click();
+  await expect(page.locator('#device-config-form')).toBeVisible();
+}
+
+test.describe('Relay toggle board', () => {
+
+  test('override button visible and enabled when controls enabled', async ({ page }) => {
+    await setupRelayView(page);
+
+    const btn = page.locator('#override-enter-btn');
+    await expect(btn).toBeVisible();
+    await expect(btn).toBeEnabled();
+  });
+
+  test('override button disabled when controls not enabled', async ({ page }) => {
+    await setupRelayView(page, { controls_enabled: false });
+
+    const btn = page.locator('#override-enter-btn');
+    await expect(btn).toBeVisible();
+    await expect(btn).toBeDisabled();
+
+    // Gate message visible
+    await expect(page.locator('#override-gate-msg')).toBeVisible();
+    await expect(page.locator('#override-gate-msg')).toContainText('Controls Enabled');
+  });
+
+  test('clicking enter override sends WebSocket command', async ({ page }) => {
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+
+    await page.locator('#override-enter-btn').click();
+    await expect(page.locator('#override-enter-btn')).toContainText('Connecting');
+
+    const sent = await page.evaluate(() => window.__wsSent);
+    const enterCmd = sent.find(m => m.type === 'override-enter');
+    expect(enterCmd).toBeTruthy();
+    expect(enterCmd.ttl).toBe(300);
+    expect(enterCmd.suppressSafety).toBe(false);
+  });
+
+  test('toggle board appears on override-ack', async ({ page }) => {
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+
+    await page.locator('#override-enter-btn').click();
+
+    // Simulate server ack
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+    });
+
+    // Board and relay buttons visible
+    await expect(page.locator('#relay-board')).toBeVisible();
+    const buttons = page.locator('.relay-btn');
+    await expect(buttons).toHaveCount(10);
+
+    // All buttons enabled
+    for (const btn of await buttons.all()) {
+      await expect(btn).toBeEnabled();
+    }
+  });
+
+  test('relay buttons show correct labels', async ({ page }) => {
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+    await page.locator('#override-enter-btn').click();
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+    });
+    await expect(page.locator('#relay-board')).toBeVisible();
+
+    // Check a few labels
+    await expect(page.locator('.relay-btn[data-relay="pump"] .relay-label')).toHaveText('Pump');
+    await expect(page.locator('.relay-btn[data-relay="vi_btm"] .relay-label')).toHaveText('Tank Btm In');
+    await expect(page.locator('.relay-btn[data-relay="v_air"] .relay-label')).toHaveText('Air Intake');
+
+    // Check technical IDs
+    await expect(page.locator('.relay-btn[data-relay="pump"] .relay-id')).toHaveText('pump');
+    await expect(page.locator('.relay-btn[data-relay="vo_rad"] .relay-id')).toHaveText('vo_rad');
+  });
+
+  test('clicking relay button sends command and applies optimistic state', async ({ page }) => {
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+    await page.locator('#override-enter-btn').click();
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+    });
+    await expect(page.locator('#relay-board')).toBeVisible();
+
+    const pumpBtn = page.locator('.relay-btn[data-relay="pump"]');
+    await expect(pumpBtn).not.toHaveClass(/\bon\b/);
+
+    // Click pump
+    await pumpBtn.click();
+
+    // Optimistic: button should show ON + pending
+    await expect(pumpBtn).toHaveClass(/\bon\b/);
+    await expect(pumpBtn).toHaveClass(/relay-btn--pending/);
+
+    // Verify WS command sent
+    const sent = await page.evaluate(() => window.__wsSent);
+    const relayCmd = sent.find(m => m.type === 'relay-command');
+    expect(relayCmd).toBeTruthy();
+    expect(relayCmd.relay).toBe('pump');
+    expect(relayCmd.on).toBe(true);
+  });
+
+  test('state broadcast confirms relay toggle and clears pending', async ({ page }) => {
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+    await page.locator('#override-enter-btn').click();
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+    });
+    await expect(page.locator('#relay-board')).toBeVisible();
+
+    const pumpBtn = page.locator('.relay-btn[data-relay="pump"]');
+    await pumpBtn.click();
+    await expect(pumpBtn).toHaveClass(/relay-btn--pending/);
+
+    // Simulate state broadcast confirming pump is on
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'state', data: {
+        mode: 'idle', temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
+        valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_ret: false, v_air: false },
+        actuators: { pump: true, fan: false, space_heater: false },
+        controls_enabled: true,
+        manual_override: { active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false },
+      }});
+    });
+
+    // Pending cleared, still ON
+    await expect(pumpBtn).toHaveClass(/\bon\b/);
+    await expect(pumpBtn).not.toHaveClass(/relay-btn--pending/);
+  });
+
+  test('state broadcast contradiction triggers shake animation', async ({ page }) => {
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+    await page.locator('#override-enter-btn').click();
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+    });
+    await expect(page.locator('#relay-board')).toBeVisible();
+
+    const fanBtn = page.locator('.relay-btn[data-relay="fan"]');
+    await fanBtn.click();
+    await expect(fanBtn).toHaveClass(/\bon\b/);
+
+    // State broadcast says fan is still OFF (command failed)
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'state', data: {
+        mode: 'idle', temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
+        valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_ret: false, v_air: false },
+        actuators: { pump: false, fan: false, space_heater: false },
+        controls_enabled: true,
+        manual_override: { active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false },
+      }});
+    });
+
+    // Button reverted to OFF with error animation
+    await expect(fanBtn).not.toHaveClass(/\bon\b/);
+    await expect(fanBtn).toHaveClass(/relay-btn--error/);
+
+    // Error class removed after animation
+    await expect(fanBtn).not.toHaveClass(/relay-btn--error/, { timeout: 1000 });
+  });
+
+  test('countdown timer visible during override', async ({ page }) => {
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+    await page.locator('#override-enter-btn').click();
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+    });
+
+    const countdown = page.locator('#override-countdown');
+    await expect(countdown).toBeVisible();
+    // Should show ~5:00 or 4:59
+    await expect(countdown).toContainText(/[45]:\d\d/);
+  });
+
+  test('TTL buttons visible and send override-update', async ({ page }) => {
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+    await page.locator('#override-enter-btn').click();
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+    });
+
+    const ttlBtns = page.locator('.ttl-btn');
+    await expect(ttlBtns).toHaveCount(5);
+
+    // Click 15 min button
+    await page.locator('.ttl-btn[data-ttl="900"]').click();
+
+    const sent = await page.evaluate(() => window.__wsSent);
+    const updateCmd = sent.find(m => m.type === 'override-update');
+    expect(updateCmd).toBeTruthy();
+    expect(updateCmd.ttl).toBe(900);
+  });
+
+  test('exit button sends override-exit and deactivates board', async ({ page }) => {
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+    await page.locator('#override-enter-btn').click();
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+    });
+    await expect(page.locator('#relay-board')).toBeVisible();
+
+    // Click exit
+    await page.locator('#override-exit-btn').click();
+
+    const sent = await page.evaluate(() => window.__wsSent);
+    const exitCmd = sent.find(m => m.type === 'override-exit');
+    expect(exitCmd).toBeTruthy();
+
+    // Simulate ack
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: false });
+    });
+
+    // Board hidden, entry controls visible
+    await expect(page.locator('#relay-board')).not.toBeVisible();
+    await expect(page.locator('#override-entry')).toBeVisible();
+  });
+
+  test('suppress safety toggle sends correct flag', async ({ page }) => {
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+
+    // Enable suppress safety
+    await page.locator('#override-suppress-safety').click();
+    await expect(page.locator('#override-suppress-safety')).toHaveClass(/active/);
+
+    await page.locator('#override-enter-btn').click();
+    await expect(page.locator('#override-enter-btn')).toContainText('Connecting');
+
+    const sent = await page.evaluate(() => window.__wsSent);
+    const enterCmd = sent.find(m => m.type === 'override-enter');
+    expect(enterCmd).toBeTruthy();
+    expect(enterCmd.suppressSafety).toBe(true);
+  });
+
+  test('board deactivates when override ends externally via state broadcast', async ({ page }) => {
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+    await page.locator('#override-enter-btn').click();
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+    });
+    await expect(page.locator('#relay-board')).toBeVisible();
+
+    // State broadcast with manual_override: null (override ended externally)
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'state', data: {
+        mode: 'idle', temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
+        valves: {}, actuators: { pump: false, fan: false, space_heater: false },
+        controls_enabled: true, manual_override: null,
+      }});
+    });
+
+    await expect(page.locator('#relay-board')).not.toBeVisible();
+    await expect(page.locator('#override-entry')).toBeVisible();
+  });
+
+  test('controls disabled during override forces deactivation', async ({ page }) => {
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+    await page.locator('#override-enter-btn').click();
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+    });
+    await expect(page.locator('#relay-board')).toBeVisible();
+
+    // State broadcast with controls_enabled: false
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'state', data: {
+        mode: 'idle', temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
+        valves: {}, actuators: { pump: false, fan: false, space_heater: false },
+        controls_enabled: false, manual_override: null,
+      }});
+    });
+
+    await expect(page.locator('#relay-board')).not.toBeVisible();
+    await expect(page.locator('#override-enter-btn')).toBeDisabled();
+  });
+
+});
+
 test.describe('Device config UI', () => {
 
   test('loads and displays default config', async ({ page }) => {
