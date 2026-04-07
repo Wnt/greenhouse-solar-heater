@@ -404,7 +404,21 @@ function addonRpc(ip, method, params, cb) {
 }
 
 function getDs18b20(res) {
-  return (res&&res.ds18b20)||(res&&res.params&&res.params.ds18b20)||{};
+  if (!res) return {};
+  // JSON-RPC response: {id, result: {ds18b20: {...}}}
+  if (res.result && res.result.ds18b20) return res.result.ds18b20;
+  // Direct response: {ds18b20: {...}}
+  if (res.ds18b20) return res.ds18b20;
+  return {};
+}
+
+function getOneWireDevices(res) {
+  if (!res) return [];
+  // JSON-RPC response: {id, result: {devices: [...]}}
+  if (res.result && res.result.devices) return res.result.devices;
+  // Direct response: {devices: [...]}
+  if (res.devices) return res.devices;
+  return [];
 }
 
 function doApply(req) {
@@ -447,10 +461,13 @@ function doDiscover(req) {
   function next(idx){
     if(idx>=hosts.length){Shelly.emitEvent("discover_sensors_result",{id:req.id,results:res});return;}
     var ip=hosts[idx];
-    addonRpc(ip,"SensorAddon.GetPeripherals",null,function(e,r){
+    addonRpc(ip,"SensorAddon.OneWireScan",null,function(e,r){
       if(e){res.push({host:ip,ok:false,error:e,sensors:[]});next(idx+1);return;}
-      var sns=[],d=getDs18b20(r);
-      for(var c in d){var inf=d[c];sns.push({addr:inf.addr||"",tC:typeof inf.tC==="number"?inf.tC:null,component:c});}
+      var devs=getOneWireDevices(r);
+      var sns=[];
+      for(var i=0;i<devs.length;i++){
+        sns.push({addr:devs[i].addr||"",component:devs[i].component||null,tC:null});
+      }
       res.push({host:ip,ok:true,sensors:sns});next(idx+1);
     });
   }
