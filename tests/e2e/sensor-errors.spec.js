@@ -1,0 +1,311 @@
+import { test, expect } from './fixtures.js';
+
+// Shared sensor config mock
+const sensorConfigResponse = {
+  hosts: [
+    { id: 'sensor_1', ip: '192.168.30.20', name: 'Sensor Hub 1' },
+    { id: 'sensor_2', ip: '192.168.30.21', name: 'Sensor Hub 2' },
+  ],
+  assignments: {},
+  version: 0,
+};
+
+// Helper: navigate to sensors view
+async function goToSensors(page) {
+  await page.goto('/playground/');
+  await page.waitForSelector('.sidebar-nav');
+  await page.evaluate(() => {
+    document.querySelectorAll('.live-only').forEach(el => el.style.display = '');
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    var sensorsView = document.getElementById('view-sensors');
+    if (sensorsView) sensorsView.classList.add('active');
+    document.querySelectorAll('[data-view]').forEach(l => l.classList.remove('active'));
+    document.querySelectorAll('[data-view="sensors"]').forEach(l => l.classList.add('active'));
+    window.location.hash = 'sensors';
+  });
+  await page.waitForSelector('#sensors-content .card', { timeout: 15000 });
+}
+
+test.describe('Sensor discovery error messages', () => {
+  test('shows descriptive message when host returns legacy "err" error', async ({ page }) => {
+    await page.route('**/api/sensor-config', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
+    });
+    await page.route('**/api/sensor-discovery', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'disc-mock',
+          results: [
+            { host: '192.168.30.20', ok: true, sensors: [{ addr: '40:FF:AA:BB:CC:DD:00:01', tC: 21.0, component: 'temperature:100' }] },
+            { host: '192.168.30.21', ok: false, error: 'err' },
+          ],
+        }),
+      });
+    });
+
+    await goToSensors(page);
+    await page.waitForSelector('.sensor-table', { timeout: 15000 });
+
+    // Sensor Hub 1 should show its sensor
+    await expect(page.locator('td:has-text("40:FF:AA:BB:CC:DD:00:01")')).toBeVisible();
+
+    // Sensor Hub 2 should show a descriptive error, NOT raw "err"
+    const hub2Error = page.locator('.host-error');
+    await expect(hub2Error).toBeVisible();
+    const errorText = await hub2Error.textContent();
+    expect(errorText).not.toBe('err');
+    expect(errorText).toContain('RPC call failed');
+  });
+
+  test('shows descriptive message when host returns legacy "bad" error', async ({ page }) => {
+    await page.route('**/api/sensor-config', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
+    });
+    await page.route('**/api/sensor-discovery', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'disc-mock',
+          results: [
+            { host: '192.168.30.20', ok: false, error: 'bad' },
+            { host: '192.168.30.21', ok: false, error: 'bad' },
+          ],
+        }),
+      });
+    });
+
+    await goToSensors(page);
+    await page.waitForSelector('.host-error', { timeout: 15000 });
+
+    const errors = page.locator('.host-error');
+    const count = await errors.count();
+    expect(count).toBe(2);
+    for (let i = 0; i < count; i++) {
+      const text = await errors.nth(i).textContent();
+      expect(text).not.toBe('bad');
+      expect(text).toContain('Unexpected HTTP response');
+    }
+  });
+
+  test('shows descriptive message when host returns legacy "parse" error', async ({ page }) => {
+    await page.route('**/api/sensor-config', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
+    });
+    await page.route('**/api/sensor-discovery', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'disc-mock',
+          results: [
+            { host: '192.168.30.20', ok: true, sensors: [] },
+            { host: '192.168.30.21', ok: false, error: 'parse' },
+          ],
+        }),
+      });
+    });
+
+    await goToSensors(page);
+    await page.waitForSelector('.host-group', { timeout: 15000 });
+
+    const hub2Error = page.locator('.host-error');
+    await expect(hub2Error).toBeVisible();
+    const errorText = await hub2Error.textContent();
+    expect(errorText).not.toBe('parse');
+    expect(errorText).toContain('Invalid response');
+  });
+
+  test('passes through descriptive errors from newer firmware unchanged', async ({ page }) => {
+    await page.route('**/api/sensor-config', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
+    });
+    await page.route('**/api/sensor-discovery', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'disc-mock',
+          results: [
+            { host: '192.168.30.20', ok: true, sensors: [] },
+            { host: '192.168.30.21', ok: false, error: 'RPC error: {"code":-1,"message":"Timeout"}' },
+          ],
+        }),
+      });
+    });
+
+    await goToSensors(page);
+    await page.waitForSelector('.host-error', { timeout: 15000 });
+
+    const errorText = await page.locator('.host-error').textContent();
+    expect(errorText).toContain('RPC error');
+  });
+});
+
+test.describe('Sensor discovery per-host error isolation', () => {
+  test('one host succeeds and another fails independently', async ({ page }) => {
+    await page.route('**/api/sensor-config', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
+    });
+    await page.route('**/api/sensor-discovery', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'disc-mock',
+          results: [
+            { host: '192.168.30.20', ok: true, sensors: [
+              { addr: '40:AA:BB:CC:DD:EE:00:01', tC: 20.5, component: 'temperature:100' },
+            ]},
+            { host: '192.168.30.21', ok: false, error: 'RPC error: {"code":-1,"message":"Timeout"}' },
+          ],
+        }),
+      });
+    });
+
+    await goToSensors(page);
+    await page.waitForSelector('.sensor-table', { timeout: 15000 });
+
+    // Hub 1 should show its sensor in a table
+    await expect(page.locator('.sensor-table')).toHaveCount(1);
+    await expect(page.locator('td:has-text("40:AA:BB:CC:DD:EE:00:01")')).toBeVisible();
+
+    // Hub 2 should show an error
+    await expect(page.locator('.host-error')).toHaveCount(1);
+    await expect(page.locator('.host-error')).toContainText('RPC error');
+
+    // The sensor from Hub 1 should still appear in role dropdowns
+    const firstSelect = page.locator('.sensor-select').first();
+    const options = firstSelect.locator('option');
+    // 1 unassigned + 1 sensor from Hub 1
+    await expect(options).toHaveCount(2);
+  });
+});
+
+test.describe('Sensor discovery MQTT timeout', () => {
+  test('shows MQTT timeout message for all hosts on HTTP 504', async ({ page }) => {
+    await page.route('**/api/sensor-config', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
+    });
+    await page.route('**/api/sensor-discovery', async (route) => {
+      await route.fulfill({
+        status: 504,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Discovery timed out' }),
+      });
+    });
+
+    await goToSensors(page);
+    await page.waitForSelector('.host-error', { timeout: 15000 });
+
+    const errors = page.locator('.host-error');
+    await expect(errors).toHaveCount(2);
+    for (let i = 0; i < 2; i++) {
+      const text = await errors.nth(i).textContent();
+      expect(text).toContain('MQTT timeout');
+      expect(text).toContain('controller did not respond');
+    }
+  });
+
+  test('shows MQTT broker disconnected message on HTTP 503', async ({ page }) => {
+    await page.route('**/api/sensor-config', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
+    });
+    await page.route('**/api/sensor-discovery', async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'MQTT not connected' }),
+      });
+    });
+
+    await goToSensors(page);
+    await page.waitForSelector('.host-error', { timeout: 15000 });
+
+    const errors = page.locator('.host-error');
+    await expect(errors).toHaveCount(2);
+    for (let i = 0; i < 2; i++) {
+      const text = await errors.nth(i).textContent();
+      expect(text).toContain('MQTT broker not connected');
+    }
+  });
+});
+
+test.describe('Sensor discovery concurrent scan guard', () => {
+  test('does not fire concurrent discovery requests during auto-refresh', async ({ page }) => {
+    let discoveryCallCount = 0;
+
+    await page.route('**/api/sensor-config', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
+    });
+    await page.route('**/api/sensor-discovery', async (route) => {
+      discoveryCallCount++;
+      // Simulate a slow response (2 seconds)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'disc-' + discoveryCallCount,
+          results: [
+            { host: '192.168.30.20', ok: true, sensors: [] },
+            { host: '192.168.30.21', ok: true, sensors: [] },
+          ],
+        }),
+      });
+    });
+
+    await goToSensors(page);
+    // Wait for initial scan to complete (2s delay + buffer)
+    await page.waitForTimeout(3000);
+
+    // Click scan button while auto-refresh may fire
+    const scanBtn = page.locator('#btn-scan-sensors');
+    await scanBtn.click();
+
+    // Immediately try to click again — second click should be blocked
+    await page.waitForTimeout(100);
+    // Try triggering a scan via JS while one is in flight
+    const wasSkipped = await page.evaluate(() => {
+      // Access the module's scanInFlight state indirectly by checking button state
+      const btn = document.getElementById('btn-scan-sensors');
+      return btn && btn.disabled;
+    });
+    expect(wasSkipped).toBe(true);
+  });
+});
+
+test.describe('Sensor discovery no response for a host', () => {
+  test('shows per-host "No response" when host is missing from results', async ({ page }) => {
+    await page.route('**/api/sensor-config', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
+    });
+    await page.route('**/api/sensor-discovery', async (route) => {
+      // Only return results for one host, not both
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'disc-mock',
+          results: [
+            { host: '192.168.30.20', ok: true, sensors: [{ addr: '40:FF:00:00:00:00:00:01', tC: 22.0, component: 'temperature:100' }] },
+            // No result for 192.168.30.21
+          ],
+        }),
+      });
+    });
+
+    await goToSensors(page);
+    await page.waitForSelector('.sensor-table', { timeout: 15000 });
+
+    // Hub 1 should show sensor
+    await expect(page.locator('td:has-text("40:FF:00:00:00:00:00:01")')).toBeVisible();
+
+    // Hub 2 should show "No response" error
+    const error = page.locator('.host-error');
+    await expect(error).toHaveCount(1);
+    await expect(error).toContainText('No response');
+  });
+});

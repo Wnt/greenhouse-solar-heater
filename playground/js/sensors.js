@@ -19,11 +19,23 @@ let sensorConfig = null;
 let detectedSensors = {};  // hostId -> [{addr, component, tC, error}]
 let refreshTimer = null;
 let scanning = false;
+let scanInFlight = false;  // guards against concurrent scan requests
 
 // ── Sensor discovery via MQTT (routed through server API) ──
 
+/** Map terse Shelly error strings to user-friendly messages */
+function friendlyError(err) {
+  if (!err) return 'Unknown error';
+  if (err === 'err') return 'RPC call failed — device may be unreachable';
+  if (err === 'bad') return 'Unexpected HTTP response from sensor addon';
+  if (err === 'parse') return 'Invalid response from sensor addon';
+  return err;
+}
+
 async function scanAllHosts() {
   if (!sensorConfig || !sensorConfig.hosts) return;
+  if (scanInFlight) return;  // skip if a scan is already running
+  scanInFlight = true;
   detectedSensors = {};
   const hostIps = sensorConfig.hosts.map(h => h.ip);
   try {
@@ -34,11 +46,23 @@ async function scanAllHosts() {
     });
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      const errMsg = res.status === 504
-        ? 'MQTT timeout — device may be offline or MQTT not connected'
-        : errData.error || 'Server error (' + res.status + ')';
-      for (const host of sensorConfig.hosts) {
-        detectedSensors[host.id] = { sensors: [], error: errMsg };
+      if (res.status === 504) {
+        // MQTT timeout: the controller didn't respond in time
+        for (const host of sensorConfig.hosts) {
+          // Preserve any partial results that may have arrived before timeout
+          if (!detectedSensors[host.id]) {
+            detectedSensors[host.id] = { sensors: [], error: 'MQTT timeout — controller did not respond. Device may be offline or MQTT not connected.' };
+          }
+        }
+      } else if (res.status === 503 || (errData.error && errData.error.indexOf('MQTT not connected') !== -1)) {
+        for (const host of sensorConfig.hosts) {
+          detectedSensors[host.id] = { sensors: [], error: 'Server MQTT broker not connected' };
+        }
+      } else {
+        const errMsg = errData.error || 'Server error (' + res.status + ')';
+        for (const host of sensorConfig.hosts) {
+          detectedSensors[host.id] = { sensors: [], error: errMsg };
+        }
       }
       return;
     }
@@ -47,9 +71,9 @@ async function scanAllHosts() {
     for (const host of sensorConfig.hosts) {
       const hostResult = results.find(r => r.host === host.ip);
       if (!hostResult) {
-        detectedSensors[host.id] = { sensors: [], error: 'No response — host may be offline' };
+        detectedSensors[host.id] = { sensors: [], error: 'No response from this host' };
       } else if (!hostResult.ok) {
-        detectedSensors[host.id] = { sensors: [], error: hostResult.error || 'Scan failed' };
+        detectedSensors[host.id] = { sensors: [], error: friendlyError(hostResult.error) };
       } else {
         const sensors = (hostResult.sensors || []).map(s => ({
           addr: s.addr,
@@ -62,8 +86,10 @@ async function scanAllHosts() {
     }
   } catch (e) {
     for (const host of sensorConfig.hosts) {
-      detectedSensors[host.id] = { sensors: [], error: e.message };
+      detectedSensors[host.id] = { sensors: [], error: 'Network error: ' + e.message };
     }
+  } finally {
+    scanInFlight = false;
   }
 }
 
@@ -433,6 +459,8 @@ export function destroySensorsView() {
 function startAutoRefresh() {
   stopAutoRefresh();
   refreshTimer = setInterval(async () => {
+    if (scanInFlight) return;  // skip if scan already running
+    if (document.hidden) return;  // skip when tab is backgrounded
     await scanAllHosts();
     renderSensorsView();
   }, 30000);
