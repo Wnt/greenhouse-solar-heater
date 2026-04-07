@@ -630,6 +630,11 @@
 
       // Show live-only time range pills
       document.querySelectorAll('.live-only').forEach(el => el.style.display = '');
+      // Re-navigate to current hash now that live-only views are visible
+      const hashView = window.location.hash.replace('#', '');
+      if (hashView && hashView !== document.querySelector('.view.active')?.id?.replace('view-', '')) {
+        navigateToView(hashView);
+      }
       fetchLiveHistory(graphRange);
 
       if (!stalenessTimer) {
@@ -677,6 +682,11 @@
       liveHistoryData = null;
       // Hide live-only time range pills
       document.querySelectorAll('.live-only').forEach(el => el.style.display = 'none');
+      // Redirect away from live-only views
+      const currentView = window.location.hash.replace('#', '');
+      if (currentView === 'sensors' || currentView === 'device') {
+        window.location.hash = 'status';
+      }
       if (stalenessTimer) { clearInterval(stalenessTimer); stalenessTimer = null; }
       const banner = document.getElementById('staleness-banner');
       if (banner) banner.classList.remove('visible');

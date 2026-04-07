@@ -405,9 +405,17 @@ async function handleApply() {
 export async function initSensorsView() {
   try {
     await loadSensorConfig();
+    // Mark all hosts as scanning and show indicator before first scan
+    scanning = true;
+    if (sensorConfig && sensorConfig.hosts) {
+      for (const host of sensorConfig.hosts) {
+        detectedSensors[host.id] = null;
+      }
+    }
     renderSensorsView();
     // Start auto-refresh
     await scanAllHosts();
+    scanning = false;
     renderSensorsView();
     startAutoRefresh();
   } catch (e) {
