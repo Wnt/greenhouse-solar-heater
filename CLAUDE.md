@@ -121,9 +121,9 @@ All third-party libraries are vendored locally in `playground/vendor/` to avoid 
 
 ## Server
 
-The `server/` directory contains the Node.js API server that serves the playground app, proxies Shelly RPC, bridges MQTT to WebSocket, and provides authentication, device config, and history APIs.
+The `server/` directory contains the Node.js API server that serves the playground app, bridges MQTT to WebSocket, and provides authentication, device config, sensor config, sensor discovery, and history APIs. All device communication flows through MQTT — no direct HTTP RPC to Shelly devices.
 
-- `server/server.js` — HTTP server: serves playground at `/`, auth middleware (when `AUTH_ENABLED=true`), RPC proxy, WebSocket, device-config API, history API, health endpoint, valve state poller
+- `server/server.js` — HTTP server: serves playground at `/`, auth middleware (when `AUTH_ENABLED=true`), WebSocket, device-config API, sensor-config API, sensor-discovery API, history API, health endpoint
 - `server/auth/` — WebAuthn passkey auth: `credentials.js` (S3-backed store), `session.js` (HMAC cookies), `webauthn.js` (handlers), `invitations.js` (registration invitations)
 - `server/lib/` — Shared libraries: logger, S3 storage adapter, database module, MQTT bridge, device config, sensor config, tracing, config CLIs (vpn-config, db-config, nr-config)
 
@@ -251,7 +251,7 @@ Internet → Worker Node :80/:443 (hostNetwork)
 Server environment is delivered via Kubernetes-native mechanisms, managed by Terraform:
 
 - **`kubernetes_secret/app-secrets`** — sensitive values: `DATABASE_URL`, `SESSION_SECRET`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `NEW_RELIC_LICENSE_KEY`. Populated from Terraform resource outputs and variables.
-- **`kubernetes_config_map/app-config`** — non-secret service config: `PORT`, `AUTH_ENABLED`, `RPID`, `ORIGIN`, `DOMAIN`, `GITHUB_REPO`, `VPN_CHECK_HOST`, `VPN_CONFIG_KEY`, `SETUP_WINDOW_MINUTES`, `NODE_ENV`, `CONTROLLER_IP`, `CONTROLLER_SCRIPT_ID`, `MQTT_HOST`, `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`
+- **`kubernetes_config_map/app-config`** — non-secret service config: `PORT`, `AUTH_ENABLED`, `RPID`, `ORIGIN`, `DOMAIN`, `GITHUB_REPO`, `VPN_CHECK_HOST`, `VPN_CONFIG_KEY`, `SETUP_WINDOW_MINUTES`, `NODE_ENV`, `MQTT_HOST`, `SENSOR_HOST_IPS`, `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`
 - **`kubernetes_secret/openvpn-config`** — VPN configuration file
 - **`kubernetes_config_map/mosquitto-config`** — Mosquitto listener configuration
 
