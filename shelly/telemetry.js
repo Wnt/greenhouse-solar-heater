@@ -110,8 +110,12 @@ function applySensorConfig(newCfg) {
 
 // ── MQTT config subscription ──
 
+var mqttSubscribed = false;
+
 function setupMqttSubscription() {
   if (!MQTT.isConnected()) return;
+  if (mqttSubscribed) return;
+  mqttSubscribed = true;
   MQTT.subscribe(CONFIG_TOPIC, function(topic, message) {
     if (topic !== CONFIG_TOPIC) return;
     try {
@@ -175,6 +179,7 @@ Shelly.addEventHandler(function(ev) {
 // ── MQTT connection handler ──
 
 MQTT.setConnectHandler(function() {
+  mqttSubscribed = false;  // re-subscribe after reconnect
   setupMqttSubscription();
 });
 
