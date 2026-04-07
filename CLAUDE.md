@@ -240,6 +240,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - PostgreSQL/TimescaleDB (sensor history, state events), S3-compatible object storage (config persistence), Shelly KVS (device-side config, 256-byte limit per key) (019-mqtt-only-shelly-api)
 - JavaScript ES6+ (browser modules), HTML5, CSS3 + None new — vanilla ES modules only. Existing vendored: js-yaml 4.1.0 (021-reactive-state-ui)
 - N/A (client-side only; server APIs unchanged) (021-reactive-state-ui)
+- JavaScript ES5 (Shelly device scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `ws` (WebSocket), `mqtt` (MQTT client), `pg` (PostgreSQL) — all existing (022-relay-toggle-ui)
+- Device config in S3/local JSON (existing), override state transient in device config `mo` field (022-relay-toggle-ui)
 
 ## Cloud Deployment Architecture
 
@@ -310,6 +312,7 @@ Terraform stores the key in the `app-secrets` Kubernetes Secret. Redeploy to act
 - PostgreSQL health — via nri-postgresql integration
 
 ## Recent Changes
+- 022-relay-toggle-ui: Added JavaScript ES5 (Shelly device scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `ws` (WebSocket), `mqtt` (MQTT client), `pg` (PostgreSQL) — all existing
 - 021-reactive-state-ui: Added JavaScript ES6+ (browser modules), HTML5, CSS3 + None new — vanilla ES modules only. Existing vendored: js-yaml 4.1.0
 - 019-mqtt-only-shelly-api: Added JavaScript ES5 (Shelly device scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `mqtt` (MQTT client), `ws` (WebSocket server), `pg` (PostgreSQL), `@aws-sdk/client-s3`, Mosquitto 2.x (sidecar broker)
 - 018-configure-sensor-connectors: Added JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + Existing — `ws`, `mqtt`, `pg`, `@aws-sdk/client-s3`, `@simplewebauthn/server`. No new dependencies.
