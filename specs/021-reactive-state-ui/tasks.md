@@ -24,11 +24,11 @@
 
 **Purpose**: Create the reactive store module and app state — the foundation all other work depends on.
 
-- [ ] T001 Create reactive state store module implementing createStore(), get(), set(), update(), subscribe(), subscribeAll(), snapshot() per contracts/store.md in `playground/js/store.js`
-- [ ] T002 Create unit tests for the store module verifying: synchronous notification, no spurious notifications on same-value set, atomic batch update, subscription cleanup, re-entrant set() in `tests/store.test.js`
-- [ ] T003 Create app state instance with initial state shape (phase, currentView, wsStatus, mqttStatus, lastDataTime, hasReceivedData, wsConnectedAt, running, graphRange, sensorConfig, detectedSensors, sensorScanPending, deviceConfig, baselineHash, serverHash, versionDismissed) and derived getters (scanning, availableViews, connectionDisplay, missingRoles, updateAvailable) per data-model.md in `playground/js/app-state.js`
-- [ ] T004 Create unit tests for derived state getters verifying: scanning derived from detectedSensors/sensorScanPending, availableViews changes with phase, connectionDisplay state machine, missingRoles from sensorConfig, updateAvailable from hash comparison in `tests/app-state.test.js`
-- [ ] T005 Add `playground/js/store.js` and `playground/js/app-state.js` to the importmap in `playground/index.html` and import them in the inline script module block (coexist with existing code, no behavior changes yet)
+- [x] T001 Create reactive state store module implementing createStore(), get(), set(), update(), subscribe(), subscribeAll(), snapshot() per contracts/store.md in `playground/js/store.js`
+- [x] T002 Create unit tests for the store module verifying: synchronous notification, no spurious notifications on same-value set, atomic batch update, subscription cleanup, re-entrant set() in `tests/store.test.js`
+- [x] T003 Create app state instance with initial state shape (phase, currentView, wsStatus, mqttStatus, lastDataTime, hasReceivedData, wsConnectedAt, running, graphRange, sensorConfig, detectedSensors, sensorScanPending, deviceConfig, baselineHash, serverHash, versionDismissed) and derived getters (scanning, availableViews, connectionDisplay, missingRoles, updateAvailable) per data-model.md in `playground/js/app-state.js`
+- [x] T004 Create unit tests for derived state getters verifying: scanning derived from detectedSensors/sensorScanPending, availableViews changes with phase, connectionDisplay state machine, missingRoles from sensorConfig, updateAvailable from hash comparison in `tests/app-state.test.js`
+- [x] T005 Add `playground/js/store.js` and `playground/js/app-state.js` to the importmap in `playground/index.html` and import them in the inline script module block (coexist with existing code, no behavior changes yet)
 
 **Checkpoint**: Store infrastructure is in place and tested. No UI changes yet — existing behavior unchanged.
 
@@ -40,12 +40,12 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T006 Create global subscriptions module that wires store changes to DOM: nav link visibility (subscribe to `phase` → show/hide nav items), nav link active state (subscribe to `currentView` → toggle active class), view container active state (subscribe to `currentView` → toggle view visibility), and calls view mount/unmount lifecycle on `currentView` change, in `playground/js/subscriptions.js`
-- [ ] T007 Create navigation action module with initNavigation(store) that binds the hashchange listener and sets initial currentView from URL hash, and navigateTo(store, viewId) that validates against derived availableViews and sets currentView in store, in `playground/js/actions/navigation.js`
-- [ ] T008 Create connection action module with switchToLive(store), switchToSimulation(store), startStalenessCheck(store), stopStalenessCheck() that update phase, manage LiveSource start/stop, and manage the staleness timer, in `playground/js/actions/connection.js`
-- [ ] T009 Modify LiveSource in `playground/js/data-source.js` to accept an optional store parameter and write wsStatus, mqttStatus, hasReceivedData, lastDataTime, wsConnectedAt to the store on connection/message events (while keeping existing callback API for backward compatibility during migration)
-- [ ] T010 Wire the store, subscriptions, and actions into the init() function in `playground/index.html`: replace setupNavigation() with initNavigation(store), replace switchToLive/switchToSimulation with connection actions, replace manual nav visibility toggles with store subscriptions. Remove the old setupNavigation(), switchToLive(), switchToSimulation() functions and their ~120 lines of inline code
-- [ ] T011 Run the full e2e test suite (`npm run test:e2e`) to verify navigation, mode switching, and view routing work correctly after the migration. Fix any regressions.
+- [x] T006 Create global subscriptions module that wires store changes to DOM: nav link visibility (subscribe to `phase` → show/hide nav items), nav link active state (subscribe to `currentView` → toggle active class), view container active state (subscribe to `currentView` → toggle view visibility), and calls view mount/unmount lifecycle on `currentView` change, in `playground/js/subscriptions.js`
+- [x] T007 Create navigation action module with initNavigation(store) that binds the hashchange listener and sets initial currentView from URL hash, and navigateTo(store, viewId) that validates against derived availableViews and sets currentView in store, in `playground/js/actions/navigation.js`
+- [x] T008 Create connection action module with switchToLive(store), switchToSimulation(store), startStalenessCheck(store), stopStalenessCheck() that update phase, manage LiveSource start/stop, and manage the staleness timer, in `playground/js/actions/connection.js`
+- [x] T009 Modify LiveSource in `playground/js/data-source.js` to accept an optional store parameter and write wsStatus, mqttStatus, hasReceivedData, lastDataTime, wsConnectedAt to the store on connection/message events (while keeping existing callback API for backward compatibility during migration)
+- [x] T010 Wire the store, subscriptions, and actions into the init() function in `playground/index.html`: replace setupNavigation() with initNavigation(store), replace switchToLive/switchToSimulation with connection actions, replace manual nav visibility toggles with store subscriptions. Remove the old setupNavigation(), switchToLive(), switchToSimulation() functions and their ~120 lines of inline code
+- [x] T011 Run the full e2e test suite (`npm run test:e2e`) to verify navigation, mode switching, and view routing work correctly after the migration. Fix any regressions.
 
 **Checkpoint**: Navigation and mode switching are fully store-driven. The refresh bug (US1) and mode-switch redirect (US1) are structurally fixed. Existing e2e tests pass.
 
@@ -63,10 +63,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Verify the derived `availableViews` getter in `playground/js/app-state.js` is used by the navigation subscription in `playground/js/subscriptions.js` — confirm that navigating to a live-only view before phase='live' queues the view and resolves it when phase changes
-- [ ] T014 [US1] Verify that the `phase` subscription in `playground/js/subscriptions.js` re-evaluates `currentView` against `availableViews` when phase changes, redirecting to 'status' if the current view is no longer available
-- [ ] T015 [US1] Remove the old `navigateToView()` function and `.live-only` style.display toggle logic from the inline script in `playground/index.html` — confirm all navigation now flows through the store
-- [ ] T016 [US1] Run `npm run test:e2e` to confirm all existing e2e tests plus new navigation tests pass
+- [x] T013 [US1] Verify the derived `availableViews` getter in `playground/js/app-state.js` is used by the navigation subscription in `playground/js/subscriptions.js` — confirm that navigating to a live-only view before phase='live' queues the view and resolves it when phase changes
+- [x] T014 [US1] Verify that the `phase` subscription in `playground/js/subscriptions.js` re-evaluates `currentView` against `availableViews` when phase changes, redirecting to 'status' if the current view is no longer available
+- [x] T015 [US1] Remove the old `navigateToView()` function and `.live-only` style.display toggle logic from the inline script in `playground/index.html` — confirm all navigation now flows through the store
+- [x] T016 [US1] Run `npm run test:e2e` to confirm all existing e2e tests plus new navigation tests pass
 
 **Checkpoint**: User Story 1 is complete. Bookmarked views survive refresh. Mode switches redirect correctly.
 
