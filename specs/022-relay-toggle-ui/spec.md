@@ -5,6 +5,12 @@
 **Status**: Draft  
 **Input**: User description: "Add a feature to the device view in playground UI where I can manually toggle state of relays. I want to be able to test each valve actuation, fan and pump. The communication should happen via MQTT and have as low latency as possible. There should be a sound board style view where I can toggle all relays on / off. Entering this mode would disable automated operations of the system. The manual override mode should default to e.g. 5 minutes and then switch back to automation mode if the user doesn't set another TTL for manual overrides. And of course if the device was not in controls enabled mode, the system should not switch it on. Tapping buttons in the toggle board should have nice visual feedback and use mobile phone vibration API to make toggling the valves feel more physical."
 
+## Clarifications
+
+### Session 2026-04-07
+
+- Q: Should safety overrides (freeze drain, overheat drain) always take precedence during manual override, or should the user be able to suppress them? → A: User-selectable option when entering manual override. "Suppress Safety Overrides" defaults to OFF (safe default). When ON, safety overrides are suspended for the TTL duration, allowing unrestricted actuator testing.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Enter Manual Override and Toggle Individual Relays (Priority: P1)
@@ -75,7 +81,7 @@ As a system operator, I want to exit manual override before the TTL expires, so 
 
 - What happens when the WebSocket connection drops during manual override? The override TTL continues on the server/device side regardless of UI connectivity. When reconnected, the UI reflects the current state.
 - What happens if another user saves a device config change during manual override? The manual override takes precedence until TTL expires. Config changes that disable controls (`ce=false`) immediately end the override and disable all relays (safety takes priority).
-- What happens if a safety condition (freeze drain, overheat drain) triggers during manual override? Safety overrides always take precedence — the system executes the safety mode, manual override is suspended, and the user is notified.
+- What happens if a safety condition (freeze drain, overheat drain) triggers during manual override? If "Suppress Safety Overrides" is OFF (default), safety overrides take precedence — the system executes the safety mode, manual override is suspended, and the user is notified. If "Suppress Safety Overrides" is ON, the safety condition is ignored for the duration of the override TTL, allowing unrestricted testing.
 - What happens when the browser tab is closed during manual override? The override TTL continues server/device-side. Relays remain in their manual state until TTL expires, then automation resumes.
 
 ## Requirements *(mandatory)*
@@ -95,12 +101,13 @@ As a system operator, I want to exit manual override before the TTL expires, so 
 - **FR-011**: Users MUST be able to voluntarily exit manual override before TTL expiration.
 - **FR-012**: Manual override mode MUST NOT be available when the device's controls-enabled setting is off. The UI MUST clearly indicate why the feature is unavailable.
 - **FR-013**: If controls are disabled externally while manual override is active, the override MUST end immediately and all relays MUST be disabled.
-- **FR-014**: Safety-critical operations (freeze drain, overheat drain) MUST take precedence over manual override at all times.
+- **FR-014**: When entering manual override, the user MUST be presented with a "Suppress Safety Overrides" option that defaults to OFF (safe default: safety overrides active). When the option is OFF, safety-critical operations (freeze drain, overheat drain) take precedence and can interrupt manual override. When the option is ON, safety overrides are also suspended for the duration of the manual override TTL, allowing unrestricted actuator testing.
+- **FR-016**: The "Suppress Safety Overrides" setting MUST revert to its safe default (OFF) when the manual override session ends (whether by TTL expiry, voluntary exit, or controls being disabled externally).
 - **FR-015**: The relay toggle board MUST display human-readable labels for each actuator alongside technical identifiers so operators can identify which physical component each button controls.
 
 ### Key Entities
 
-- **Manual Override Session**: Represents an active override period with a start time, TTL duration, and the set of relay states being manually controlled. Exists only while override is active.
+- **Manual Override Session**: Represents an active override period with a start time, TTL duration, safety-override-suppression flag, and the set of relay states being manually controlled. Exists only while override is active.
 - **Relay Command**: A request to change a specific relay's state (on/off), including the target actuator identifier and desired state. Transmitted with minimal latency.
 - **Override TTL**: The configurable duration for which manual override remains active before auto-reverting to automation. Adjustable during an active session.
 
@@ -113,7 +120,7 @@ As a system operator, I want to exit manual override before the TTL expires, so 
 - **SC-003**: 100% of relay toggle taps on supported mobile devices produce haptic vibration feedback.
 - **SC-004**: The toggle board displays all 10 controllable actuators (8 valves + pump + fan) in a grid layout that is usable on both mobile and desktop screens.
 - **SC-005**: Users can complete a full commissioning test (enter override, toggle each actuator on then off, exit override) in under 3 minutes.
-- **SC-006**: No automated relay changes occur during an active manual override session (except safety overrides).
+- **SC-006**: No automated relay changes occur during an active manual override session. When safety override suppression is OFF (default), safety conditions can still interrupt the session. When suppression is ON, no automated changes occur at all.
 
 ## Assumptions
 
