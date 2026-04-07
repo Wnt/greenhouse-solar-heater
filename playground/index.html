@@ -403,7 +403,7 @@
       </div>
 
       <!-- Manual Override / Relay Toggle Board -->
-      <div class="card" id="relay-override-card">
+      <div class="card" id="relay-override-card" style="margin-top:20px;">
         <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);margin:0 0 8px;">Manual relay testing.</h3>
         <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 16px;">Toggle individual relays for commissioning and diagnostics. Automation is suspended while active.</p>
 
@@ -415,7 +415,7 @@
             Suppress Safety
           </label>
         </div>
-        <p id="override-gate-msg" style="font-size:12px;color:var(--error);margin:4px 0 0;display:none;">Enable controls above to use manual override.</p>
+        <p id="override-gate-msg" style="font-size:12px;color:var(--on-surface-variant);margin:4px 0 0;">Requires Controls Enabled to be switched on above.</p>
 
         <!-- Active override header -->
         <div id="override-active-header" style="display:none;">
@@ -1881,8 +1881,8 @@
     let deviceConfigData = null;
 
     function initDeviceConfig() {
-      // Toggle buttons
-      document.querySelectorAll('.device-toggle').forEach(el => {
+      // Toggle buttons (exclude relay override toggles — they have their own handlers)
+      document.querySelectorAll('.device-toggle:not(#override-suppress-safety)').forEach(el => {
         el.addEventListener('click', () => el.classList.toggle('active'));
       });
 
@@ -2179,7 +2179,7 @@
       var gateMsg = document.getElementById('override-gate-msg');
       if (!overrideActive) {
         enterBtn.disabled = !ceEnabled;
-        gateMsg.style.display = ceEnabled ? 'none' : '';
+        gateMsg.style.display = ceEnabled ? 'none' : 'block';
       }
 
       // ce=false during active override → force deactivate
