@@ -311,6 +311,15 @@ function showApplyResults(data) {
 // ── Event handlers ──
 
 async function handleScan() {
+  showStatus('Loading sensor config...');
+  try {
+    // Always re-fetch config before scanning (hosts may have changed)
+    await loadSensorConfig();
+  } catch (e) {
+    showStatus('Failed to load config: ' + e.message, true);
+    return;
+  }
+
   // Mark all hosts as scanning before the request
   if (sensorConfig && sensorConfig.hosts) {
     for (const host of sensorConfig.hosts) {
@@ -334,7 +343,7 @@ async function handleScan() {
 }
 
 function buildScanSummary() {
-  if (!sensorConfig || !sensorConfig.hosts) return { message: 'No hosts configured.', isError: true };
+  if (!sensorConfig || !sensorConfig.hosts || sensorConfig.hosts.length === 0) return { message: 'No sensor hosts configured. Check SENSOR_HOST_IPS.', isError: true };
   let totalSensors = 0;
   let hostsOk = 0;
   let hostsError = 0;
