@@ -105,6 +105,81 @@ describe('device-config', () => {
       });
     });
   });
+
+  // ── Manual override (mo) field tests ──
+
+  it('mo field accepted and persisted', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      const mo = { a: true, ex: 1712505600, ss: false };
+      deviceConfig.updateConfig({ mo: mo }, function (err2, config) {
+        assert.ifError(err2);
+        assert.deepStrictEqual(config.mo, mo);
+        // Verify persisted to disk
+        const saved = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.deepStrictEqual(saved.mo, mo);
+        done();
+      });
+    });
+  });
+
+  it('mo: null clears override', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: true } }, function (err2) {
+        assert.ifError(err2);
+        deviceConfig.updateConfig({ mo: null }, function (err3, config) {
+          assert.ifError(err3);
+          assert.strictEqual(config.mo, null);
+          done();
+        });
+      });
+    });
+  });
+
+  it('mo rejected when invalid structure', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ mo: { a: 'yes' } }, function (err2) {
+        assert.ok(err2, 'should reject invalid mo');
+        assert.ok(err2.message.includes('Invalid mo'));
+        done();
+      });
+    });
+  });
+
+  it('mo preserved through unrelated config updates', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      const mo = { a: true, ex: 1712505600, ss: false };
+      deviceConfig.updateConfig({ mo: mo }, function (err2) {
+        assert.ifError(err2);
+        // Update ce without touching mo
+        deviceConfig.updateConfig({ ce: true }, function (err3, config) {
+          assert.ifError(err3);
+          assert.deepStrictEqual(config.mo, mo);
+          assert.strictEqual(config.ce, true);
+          done();
+        });
+      });
+    });
+  });
+
+  it('config with mo fits within 256 bytes', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      // Max-size config with mo
+      deviceConfig.updateConfig({
+        ce: true, ea: 31, fm: 'EH', am: ['I', 'SC', 'GH', 'AD'],
+        mo: { a: true, ex: 9999999999, ss: true },
+      }, function (err2, config) {
+        assert.ifError(err2);
+        const size = JSON.stringify(config).length;
+        assert.ok(size <= 256, 'Config size ' + size + ' exceeds 256 bytes');
+        done();
+      });
+    });
+  });
 });
 
 function mockResponse() {

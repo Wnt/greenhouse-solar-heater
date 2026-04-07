@@ -163,6 +163,20 @@ function updateConfig(newConfig, callback) {
       config.am = am;
     }
   }
+  // Manual override session
+  if (newConfig.mo !== undefined) {
+    if (newConfig.mo === null) {
+      config.mo = null;
+    } else if (typeof newConfig.mo === 'object' && newConfig.mo !== null) {
+      var mo = newConfig.mo;
+      if (typeof mo.a !== 'boolean' || typeof mo.ex !== 'number' || typeof mo.ss !== 'boolean') {
+        callback(new Error('Invalid mo: requires {a: bool, ex: int, ss: bool}'));
+        return;
+      }
+      config.mo = { a: mo.a, ex: Math.floor(mo.ex), ss: mo.ss };
+    }
+  }
+
   config.v = (config.v || 0) + 1;
   save(config, function (err) {
     if (err) { callback(err); return; }

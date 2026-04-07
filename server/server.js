@@ -340,6 +340,137 @@ var server = http.createServer(function (req, res) {
   }
 });
 
+// ── WebSocket command handling ──
+
+var VALID_RELAYS = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_ret', 'v_air', 'pump', 'fan'];
+var overrideTtlTimer = null;
+
+function wsSend(ws, msg) {
+  if (ws.readyState === 1) ws.send(JSON.stringify(msg));
+}
+
+function handleWsCommand(ws, data) {
+  var msg;
+  try {
+    msg = JSON.parse(data.toString());
+  } catch (e) {
+    return;
+  }
+  if (!msg || !msg.type) return;
+
+  if (msg.type === 'override-enter') {
+    handleOverrideEnter(ws, msg);
+  } else if (msg.type === 'override-exit') {
+    handleOverrideExit(ws);
+  } else if (msg.type === 'override-update') {
+    handleOverrideUpdate(ws, msg);
+  } else if (msg.type === 'relay-command') {
+    handleRelayCommand(ws, msg);
+  }
+}
+
+function handleOverrideEnter(ws, msg) {
+  var cfg = deviceConfig.getConfig();
+  if (!cfg.ce) {
+    wsSend(ws, { type: 'override-error', message: 'Controls not enabled' });
+    return;
+  }
+
+  var ttl = Math.max(60, Math.min(3600, parseInt(msg.ttl, 10) || 300));
+  var ss = !!msg.suppressSafety;
+  var ex = Math.floor(Date.now() / 1000) + ttl;
+
+  deviceConfig.updateConfig({ mo: { a: true, ex: ex, ss: ss } }, function (err, updated) {
+    if (err) {
+      wsSend(ws, { type: 'override-error', message: err.message });
+      return;
+    }
+    mqttBridge.publishConfig(updated);
+    wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, suppressSafety: ss });
+
+    // Secondary server-side TTL tracking
+    clearOverrideTtlTimer();
+    overrideTtlTimer = setTimeout(function () {
+      overrideTtlTimer = null;
+      var current = deviceConfig.getConfig();
+      if (current.mo && current.mo.a) {
+        deviceConfig.updateConfig({ mo: null }, function (err2, cleared) {
+          if (!err2) mqttBridge.publishConfig(cleared);
+        });
+      }
+    }, ttl * 1000);
+  });
+}
+
+function handleOverrideExit(ws) {
+  clearOverrideTtlTimer();
+  deviceConfig.updateConfig({ mo: null }, function (err, updated) {
+    if (err) {
+      wsSend(ws, { type: 'override-error', message: err.message });
+      return;
+    }
+    mqttBridge.publishConfig(updated);
+    wsSend(ws, { type: 'override-ack', active: false });
+  });
+}
+
+function handleOverrideUpdate(ws, msg) {
+  var cfg = deviceConfig.getConfig();
+  if (!cfg.mo || !cfg.mo.a) {
+    wsSend(ws, { type: 'override-error', message: 'Override not active' });
+    return;
+  }
+
+  var ttl = Math.max(60, Math.min(3600, parseInt(msg.ttl, 10) || 300));
+  var ex = Math.floor(Date.now() / 1000) + ttl;
+
+  deviceConfig.updateConfig({ mo: { a: cfg.mo.a, ex: ex, ss: cfg.mo.ss } }, function (err, updated) {
+    if (err) {
+      wsSend(ws, { type: 'override-error', message: err.message });
+      return;
+    }
+    mqttBridge.publishConfig(updated);
+    wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, suppressSafety: cfg.mo.ss });
+
+    // Reset secondary TTL timer
+    clearOverrideTtlTimer();
+    overrideTtlTimer = setTimeout(function () {
+      overrideTtlTimer = null;
+      var current = deviceConfig.getConfig();
+      if (current.mo && current.mo.a) {
+        deviceConfig.updateConfig({ mo: null }, function (err2, cleared) {
+          if (!err2) mqttBridge.publishConfig(cleared);
+        });
+      }
+    }, ttl * 1000);
+  });
+}
+
+function handleRelayCommand(ws, msg) {
+  var cfg = deviceConfig.getConfig();
+  if (!cfg.mo || !cfg.mo.a) {
+    wsSend(ws, { type: 'override-error', message: 'Override not active' });
+    return;
+  }
+  var now = Math.floor(Date.now() / 1000);
+  if (cfg.mo.ex <= now) {
+    wsSend(ws, { type: 'override-error', message: 'Override expired' });
+    return;
+  }
+  if (VALID_RELAYS.indexOf(msg.relay) < 0) {
+    wsSend(ws, { type: 'override-error', message: 'Unknown relay: ' + msg.relay });
+    return;
+  }
+  mqttBridge.publishRelayCommand(msg.relay, !!msg.on);
+}
+
+function clearOverrideTtlTimer() {
+  if (overrideTtlTimer) {
+    clearTimeout(overrideTtlTimer);
+    overrideTtlTimer = null;
+  }
+}
+
 // ── WebSocket server ──
 
 var wsServer = null;
@@ -372,6 +503,10 @@ function initWebSocket() {
         type: 'connection',
         status: mqttBridge.getConnectionStatus(),
       }));
+      // Handle incoming commands from clients
+      ws.on('message', function (data) {
+        handleWsCommand(ws, data);
+      });
     });
   });
 
@@ -451,6 +586,7 @@ function startMqttBridge() {
     mqttHost: MQTT_HOST,
     wsServer: ws,
     db: db,
+    deviceConfig: deviceConfig,
   });
 
   log.info('MQTT bridge started', { host: MQTT_HOST });
