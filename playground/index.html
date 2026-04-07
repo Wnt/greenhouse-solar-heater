@@ -413,7 +413,7 @@
     import { LiveSource, SimulationSource } from './js/data-source.js';
     import { startVersionCheck, triggerVersionCheck } from './js/version-check.js';
     import { initSensorsView, destroySensorsView } from './js/sensors.js';
-    import { store as appStore, derived } from './js/app-state.js';
+    import { store, derived } from './js/app-state.js';
     import { initSubscriptions, setViewLifecycle } from './js/subscriptions.js';
     import { initNavigation } from './js/actions/navigation.js';
     // connection.js actions will be used in later phases — import deferred to avoid name collisions
@@ -427,9 +427,9 @@
     const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     const forceSimulation = new URLSearchParams(location.search).get('mode') === 'sim';
     const isLiveCapable = !isGitHubPages && !forceSimulation;
-    appStore.set('isLiveCapable', isLiveCapable);
+    store.set('isLiveCapable', isLiveCapable);
 
-    let activeSource = 'simulation'; // 'simulation' or 'live'
+    // activeSource is eliminated — use store.get('phase') instead
     let liveSource = null;
     let simSource = new SimulationSource();
 
@@ -481,7 +481,7 @@
     }
 
     function checkStaleness() {
-      if (activeSource !== 'live') return;
+      if (store.get('phase') !== 'live') return;
       const banner = document.getElementById('staleness-banner');
       if (banner) {
         const elapsed = Date.now() - lastDataTime;
@@ -517,7 +517,7 @@
     };
 
     function getConnectionDisplayState() {
-      if (activeSource !== 'live') return 'active';
+      if (store.get('phase') !== 'live') return 'active';
       var hasData = liveSource && liveSource.hasReceivedData;
       var mqttStatus = liveSource ? liveSource.mqttStatus : 'unknown';
 
@@ -569,7 +569,7 @@
       var warning = document.getElementById('dc-connection-warning');
       if (!btn || !warning) return;
       var displayState = getConnectionDisplayState();
-      var canPush = activeSource !== 'live' || displayState === 'active' || displayState === 'stale';
+      var canPush = store.get('phase') !== 'live' || displayState === 'active' || displayState === 'stale';
       if (canPush) {
         btn.classList.remove('disabled');
         btn.disabled = false;
@@ -586,7 +586,7 @@
       const sw = document.getElementById('mode-toggle-switch');
       const label = document.getElementById('mode-toggle-label');
       if (!toggle || !isLiveCapable) {
-        appStore.set('phase', 'simulation');
+        store.set('phase', 'simulation');
         return;
       }
 
@@ -595,7 +595,7 @@
       switchToLive();
 
       sw.addEventListener('click', function () {
-        if (activeSource === 'live') {
+        if (store.get('phase') === 'live') {
           switchToSimulation();
         } else {
           switchToLive();
@@ -603,20 +603,24 @@
       });
     }
 
-    function switchToLive() {
-      activeSource = 'live';
-      appStore.set('phase', 'live');
+    function updateModeToggleUI(isLive) {
       const sw = document.getElementById('mode-toggle-switch');
       const label = document.getElementById('mode-toggle-label');
-      if (sw) sw.classList.add('active');
-      if (label) { label.textContent = 'Live'; label.classList.add('active'); }
-      // Controls/FAB/live-only visibility handled by store phase subscription
+      if (isLive) {
+        if (sw) sw.classList.add('active');
+        if (label) { label.textContent = 'Live'; label.classList.add('active'); }
+      } else {
+        if (sw) sw.classList.remove('active');
+        if (label) { label.textContent = 'Simulation'; label.classList.remove('active'); }
+      }
+    }
 
+    function ensureLiveSource() {
       if (!liveSource) {
         liveSource = new LiveSource();
         liveSource.onUpdate(function (state, result) {
           lastDataTime = Date.now();
-          if (activeSource === 'live') {
+          if (store.get('phase') === 'live') {
             updateDisplay(state, result);
             refreshConnectionIndicator();
             updateConnectionOverlays();
@@ -625,23 +629,32 @@
           }
         });
         liveSource.onConnectionChange(function (status) {
-          if (activeSource === 'live') {
+          if (store.get('phase') === 'live') {
             updateConnectionUI(status);
             updateSidebarSubtitle();
           }
         });
       }
       liveSource.start();
-      // Pause simulation
-      running = false;
+    }
 
-      // live-only nav visibility is now handled by store phase subscription
-      fetchLiveHistory(graphRange);
-
+    function startStalenessTimer() {
       if (!stalenessTimer) {
         stalenessTimer = setInterval(checkStaleness, 5000);
       }
-      // Immediately show connecting/offline state (don't show stale simulation data)
+    }
+
+    function stopStalenessTimer() {
+      if (stalenessTimer) { clearInterval(stalenessTimer); stalenessTimer = null; }
+    }
+
+    function switchToLive() {
+      store.set('phase', 'live');
+      updateModeToggleUI(true);
+      ensureLiveSource();
+      running = false;
+      fetchLiveHistory(graphRange);
+      startStalenessTimer();
       clearLiveDisplay();
       updateConnectionUI('disconnected');
       updateSidebarSubtitle();
@@ -664,24 +677,17 @@
       var compEls = document.querySelectorAll('.comp-status');
       compEls.forEach(function(el) { el.textContent = '--'; });
       // Clear simulation graph data and redraw empty canvas
-      store.reset();
+      timeSeriesStore.reset();
       drawHistoryGraph();
     }
 
     function switchToSimulation() {
-      activeSource = 'simulation';
-      appStore.set('phase', 'simulation');
-      const sw = document.getElementById('mode-toggle-switch');
-      const label = document.getElementById('mode-toggle-label');
-      if (sw) sw.classList.remove('active');
-      if (label) { label.textContent = 'Simulation'; label.classList.remove('active'); }
-      // Controls/FAB/live-only visibility handled by store phase subscription
-
+      store.set('phase', 'simulation');
+      updateModeToggleUI(false);
       if (liveSource) liveSource.stop();
       updateConnectionUI('disconnected');
       liveHistoryData = null;
-      // live-only nav visibility and view redirect handled by store phase subscription
-      if (stalenessTimer) { clearInterval(stalenessTimer); stalenessTimer = null; }
+      stopStalenessTimer();
       const banner = document.getElementById('staleness-banner');
       if (banner) banner.classList.remove('visible');
       updateConnectionOverlays();
@@ -693,7 +699,7 @@
       var el = document.getElementById('sidebar-subtitle');
       if (!el) return;
 
-      if (activeSource === 'simulation') {
+      if (store.get('phase') === 'simulation') {
         el.textContent = running ? 'Simulating...' : 'Ready';
         el.className = '';
         return;
@@ -778,12 +784,12 @@
       }
 
       function updateInspectorData(x) {
-        if (store.times.length < 2) return;
+        if (timeSeriesStore.times.length < 2) return;
         const dw = canvas.offsetWidth;
         const pad = { top: 16, right: 16, bottom: 24, left: 8 };
         const pw = dw - pad.left - pad.right;
 
-        const latestTime = store.times[store.times.length - 1];
+        const latestTime = timeSeriesStore.times[timeSeriesStore.times.length - 1];
         const tMax = Math.max(graphRange, latestTime);
         const tMin = tMax - graphRange;
 
@@ -794,13 +800,13 @@
 
         // Find nearest data point
         let bestIdx = 0, bestDist = Infinity;
-        for (let i = 0; i < store.times.length; i++) {
-          const d = Math.abs(store.times[i] - simTime);
+        for (let i = 0; i < timeSeriesStore.times.length; i++) {
+          const d = Math.abs(timeSeriesStore.times[i] - simTime);
           if (d < bestDist) { bestDist = d; bestIdx = i; }
         }
 
-        const v = store.values[bestIdx];
-        const t = store.times[bestIdx];
+        const v = timeSeriesStore.values[bestIdx];
+        const t = timeSeriesStore.times[bestIdx];
 
         // Time of day
         const todH = Math.floor((SIM_START_HOUR + t / 3600) % 24);
@@ -819,13 +825,13 @@
         const hrStart = hr * hourSeconds;
         const hrEnd = (hr + 1) * hourSeconds;
         let chargingSec = 0, heatingSec = 0, emergencySec = 0, totalSec = 0;
-        for (let j = 0; j < store.times.length; j++) {
-          const st = store.times[j];
+        for (let j = 0; j < timeSeriesStore.times.length; j++) {
+          const st = timeSeriesStore.times[j];
           if (st >= hrStart && st < hrEnd) {
             totalSec += 5;
-            if (store.modes[j] === 'solar_charging') chargingSec += 5;
-            if (store.modes[j] === 'greenhouse_heating') heatingSec += 5;
-            if (store.modes[j] === 'emergency_heating') emergencySec += 5;
+            if (timeSeriesStore.modes[j] === 'solar_charging') chargingSec += 5;
+            if (timeSeriesStore.modes[j] === 'greenhouse_heating') heatingSec += 5;
+            if (timeSeriesStore.modes[j] === 'emergency_heating') emergencySec += 5;
           }
         }
         const chPct = totalSec > 0 ? Math.round(100 * chargingSec / totalSec) : 0;
@@ -883,7 +889,7 @@
     }
 
     // ── Time Series Store (extended with mode tracking) ──
-    const store = {
+    const timeSeriesStore = {
       maxPoints: 20000,
       times: [],
       values: [],  // { t_tank_top, t_tank_bottom, t_collector, t_greenhouse, t_outdoor }
@@ -956,10 +962,10 @@
       });
 
       // Initialize store subscriptions (nav, overlays, indicators)
-      initSubscriptions(appStore);
+      initSubscriptions(store);
 
       // Initialize hash-based navigation via store
-      initNavigation(appStore);
+      initNavigation(store);
 
       setupControls();
       setupTimeRangePills();
@@ -1014,7 +1020,7 @@
             irradiance: params.irradiance,
           });
           controller.reset();
-          store.reset();
+          timeSeriesStore.reset();
           transitionLog.length = 0;
         }
         document.getElementById('sim-status-text').textContent = 'Running — press pause to stop';
@@ -1038,7 +1044,7 @@
     let liveHistoryData = null;
 
     function fetchLiveHistory(rangeSeconds) {
-      if (activeSource !== 'live') return;
+      if (store.get('phase') !== 'live') return;
       const rangeKey = RANGE_MAP[rangeSeconds] || '6h';
       fetch('/api/history?range=' + rangeKey)
         .then(r => r.json())
@@ -1056,7 +1062,7 @@
         graphRange = parseInt(btn.dataset.range);
         document.querySelectorAll('#time-range-pills button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        if (activeSource === 'live') {
+        if (store.get('phase') === 'live') {
           fetchLiveHistory(graphRange);
         } else {
           drawHistoryGraph();
@@ -1148,7 +1154,7 @@
         irradiance: params.irradiance,
       });
       controller.reset();
-      store.reset();
+      timeSeriesStore.reset();
       transitionLog.length = 0;
       yesterdayHigh = 0;
       confirmedYesterdayHigh = 0;
@@ -1244,7 +1250,7 @@
 
         // Record every ~5 seconds of sim time
         if (Math.floor(model.state.simTime) % 5 === 0) {
-          store.addPoint(model.state.simTime, {
+          timeSeriesStore.addPoint(model.state.simTime, {
             t_tank_top: model.state.t_tank_top,
             t_tank_bottom: model.state.t_tank_bottom,
             t_collector: model.state.t_collector,
@@ -1309,17 +1315,17 @@
       const grossKwh = TANK_MASS * SPECIFIC_HEAT * Math.max(0, avgTankTemp - BASE_TEMP) / 3600;
       // Estimate 24h heat loss from stored data
       let lossKwh = 0;
-      if (store.times.length > 1) {
-        const now = store.times[store.times.length - 1];
+      if (timeSeriesStore.times.length > 1) {
+        const now = timeSeriesStore.times[timeSeriesStore.times.length - 1];
         const dayAgo = now - 86400;
         // Sum temperature drops during idle periods (no active heating/charging)
-        for (let i = 1; i < store.times.length; i++) {
-          if (store.times[i] < dayAgo) continue;
-          const dt = store.times[i] - store.times[i - 1];
-          const mode = store.modes[i];
+        for (let i = 1; i < timeSeriesStore.times.length; i++) {
+          if (timeSeriesStore.times[i] < dayAgo) continue;
+          const dt = timeSeriesStore.times[i] - timeSeriesStore.times[i - 1];
+          const mode = timeSeriesStore.modes[i];
           if (mode === 'idle' || mode === 'greenhouse_heating') {
-            const prevAvg = (store.values[i - 1].t_tank_top + store.values[i - 1].t_tank_bottom) / 2;
-            const currAvg = (store.values[i].t_tank_top + store.values[i].t_tank_bottom) / 2;
+            const prevAvg = (timeSeriesStore.values[i - 1].t_tank_top + timeSeriesStore.values[i - 1].t_tank_bottom) / 2;
+            const currAvg = (timeSeriesStore.values[i].t_tank_top + timeSeriesStore.values[i].t_tank_bottom) / 2;
             const drop = prevAvg - currAvg;
             if (drop > 0) lossKwh += TANK_MASS * SPECIFIC_HEAT * drop / 3600;
           }
@@ -1353,17 +1359,17 @@
       const ROC_THRESHOLD = 1 / 12; // 1°C/hr expressed as °C per 5 min
       let rateStatus = 'STABLE';
       let rateColor = '#43aea4';
-      if (store.times.length >= 2) {
-        const now = store.times[store.times.length - 1];
+      if (timeSeriesStore.times.length >= 2) {
+        const now = timeSeriesStore.times[timeSeriesStore.times.length - 1];
         const windowStart = now - ROC_WINDOW;
         // Find the earliest point within the window
-        let startIdx = store.times.length - 1;
-        for (let i = store.times.length - 2; i >= 0; i--) {
-          if (store.times[i] < windowStart) break;
+        let startIdx = timeSeriesStore.times.length - 1;
+        for (let i = timeSeriesStore.times.length - 2; i >= 0; i--) {
+          if (timeSeriesStore.times[i] < windowStart) break;
           startIdx = i;
         }
-        if (startIdx < store.times.length - 1) {
-          const tempChange = store.values[store.values.length - 1].t_tank_bottom - store.values[startIdx].t_tank_bottom;
+        if (startIdx < timeSeriesStore.times.length - 1) {
+          const tempChange = timeSeriesStore.values[timeSeriesStore.values.length - 1].t_tank_bottom - timeSeriesStore.values[startIdx].t_tank_bottom;
           if (tempChange >= ROC_THRESHOLD) { rateStatus = 'RISING'; rateColor = '#e9c349'; }
           else if (tempChange <= -ROC_THRESHOLD) { rateStatus = 'FALLING'; rateColor = '#ee7d77'; }
         }
@@ -1508,7 +1514,7 @@
       const ph = dh - pad.top - pad.bottom;
 
       // Sliding window: right edge = latest sim time (or graphRange if sim hasn't run that long)
-      const latestTime = store.times.length > 0 ? store.times[store.times.length - 1] : 0;
+      const latestTime = timeSeriesStore.times.length > 0 ? timeSeriesStore.times[timeSeriesStore.times.length - 1] : 0;
       const tMax = Math.max(graphRange, latestTime);
       const tMin = tMax - graphRange;
 
@@ -1547,7 +1553,7 @@
         ctx.fillText(label, x, dh - 4);
       }
 
-      if (store.times.length < 2) return;
+      if (timeSeriesStore.times.length < 2) return;
 
       // ── Duty cycle bars ──
       const barAreaH = ph * 0.3;
@@ -1566,13 +1572,13 @@
         if (hrEnd <= tMin || hrStart >= tMax) continue;
 
         let chargingSec = 0, heatingSec = 0, emergencySec = 0, totalSec = 0;
-        for (let j = 0; j < store.times.length; j++) {
-          const t = store.times[j];
+        for (let j = 0; j < timeSeriesStore.times.length; j++) {
+          const t = timeSeriesStore.times[j];
           if (t >= hrStart && t < hrEnd) {
             totalSec += 5;
-            if (store.modes[j] === 'solar_charging') chargingSec += 5;
-            if (store.modes[j] === 'greenhouse_heating') heatingSec += 5;
-            if (store.modes[j] === 'emergency_heating') emergencySec += 5;
+            if (timeSeriesStore.modes[j] === 'solar_charging') chargingSec += 5;
+            if (timeSeriesStore.modes[j] === 'greenhouse_heating') heatingSec += 5;
+            if (timeSeriesStore.modes[j] === 'emergency_heating') emergencySec += 5;
           }
         }
 
@@ -1612,12 +1618,12 @@
 
       // ── Temperature line (gold, matching Stitch design) ──
       const pts = [];
-      for (let i = 0; i < store.times.length; i++) {
-        const t = store.times[i];
+      for (let i = 0; i < timeSeriesStore.times.length; i++) {
+        const t = timeSeriesStore.times[i];
         if (t < tMin) continue;
         if (t > tMax) break;
         const x = pad.left + ((t - tMin) / graphRange) * pw;
-        const y = pad.top + ph - ((store.values[i].t_tank_top - yMin) / (yMax - yMin)) * ph;
+        const y = pad.top + ph - ((timeSeriesStore.values[i].t_tank_top - yMin) / (yMax - yMin)) * ph;
         pts.push({ x, y });
       }
 
@@ -1655,20 +1661,20 @@
       }
 
       // ── Greenhouse line (green) ──
-      drawTempLine(ctx, store, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_greenhouse', '#69d0c5', 1);
+      drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_greenhouse', '#69d0c5', 1);
 
       // ── Outside line (blue) ──
-      drawTempLine(ctx, store, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_outdoor', '#42a5f5', 1);
+      drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_outdoor', '#42a5f5', 1);
     }
 
-    function drawTempLine(ctx, store, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, key, color, lineWidth) {
+    function drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, key, color, lineWidth) {
       const pts = [];
-      for (let i = 0; i < store.times.length; i++) {
-        const t = store.times[i];
+      for (let i = 0; i < timeSeriesStore.times.length; i++) {
+        const t = timeSeriesStore.times[i];
         if (t < tMin) continue;
         if (t > tMax) break;
         const x = pad.left + ((t - tMin) / graphRange) * pw;
-        const y = pad.top + ph - ((store.values[i][key] - yMin) / (yMax - yMin)) * ph;
+        const y = pad.top + ph - ((timeSeriesStore.values[i][key] - yMin) / (yMax - yMin)) * ph;
         pts.push({ x, y });
       }
       if (pts.length < 2) return;
