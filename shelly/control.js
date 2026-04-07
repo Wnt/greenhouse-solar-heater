@@ -1,6 +1,5 @@
-// Shelly Pro 4PM — Solar Thermal Greenhouse Control (Shell)
-// All decision logic is in control-logic.js (concatenated at deploy time)
-// This file handles: timers, RPC, relays, KVS, sensors, config, events
+// Shelly Pro 4PM — Control Shell (decision logic in control-logic.js)
+// Handles: timers, RPC, relays, KVS, sensors, config, MQTT commands
 
 var SHELL_CFG = {
   POLL_INTERVAL: 30000,
@@ -21,13 +20,9 @@ var VALVES = {
   v_air:   {ip: "192.168.30.14", id: 1},
 };
 
-// Sensor config — loaded from KVS on boot, updated via sensor_config_changed events
-// Compact format: s={role:{h:hostIndex,i:componentId},...}, h=[hostIp,...], v=version
-// If null, sensor polling is skipped (all temps stay null → IDLE mode, safe default)
+// Sensor config from KVS (null = skip polling, safe IDLE default)
 var sensorConfig = null;
-
-// Device config — loaded from KVS on boot, updated via events from telemetry script
-// Compact config: ce=controls_enabled, ea=actuator bitmask, fm=forced_mode, am=allowed_modes, v=version
+// Device config from KVS
 var deviceConfig = { ce: false, ea: 0, fm: null, am: null, v: 0 };
 
 var state = {
@@ -250,11 +245,6 @@ function emitStateUpdate() {
   Shelly.emitEvent("state_updated", buildStateSnapshot());
 }
 
-// Called by server-side valve-poller via Script.Eval?code=getStatus()
-function getStatus() {
-  return JSON.stringify(buildStateSnapshot());
-}
-
 function applyFlags(flags) {
   state.collectors_drained = flags.collectorsDrained;
   state.last_refill_attempt = flags.lastRefillAttempt * 1000;
@@ -384,7 +374,82 @@ function controlLoop() {
       setSpaceHeater(!!result.actuators.space_heater);
       emitStateUpdate();
     }
+
+    // Process pending MQTT commands after control cycle completes
+    processPendingCommands();
   });
+}
+
+// ── MQTT command queue (sensor config apply + discovery) ──
+
+var pendingApply = null;
+var pendingDisc = null;
+
+function processPendingCommands() {
+  if (pendingApply) { var r = pendingApply; pendingApply = null; doApply(r); }
+  else if (pendingDisc) { var d = pendingDisc; pendingDisc = null; doDiscover(d); }
+}
+
+function addonRpc(ip, method, params, cb) {
+  var body = JSON.stringify({id:1,method:method,params:params||{}});
+  Shelly.call("HTTP.POST",{url:"http://"+ip+"/rpc",body:body,content_type:"application/json",timeout:5},function(r,e){
+    if(e||!r||r.code!==200||!r.body){cb(e?"err":"bad",null);return;}
+    try{cb(null,JSON.parse(r.body));}catch(x){cb("parse",null);}
+  });
+}
+
+function getDs18b20(res) {
+  return (res&&res.ds18b20)||(res&&res.params&&res.params.ds18b20)||{};
+}
+
+function doApply(req) {
+  var cfg=req.config;
+  if(!cfg||!cfg.h||!cfg.s){Shelly.emitEvent("sensor_config_apply_result",{id:req.id,success:false,results:[]});return;}
+  var tgt=req.target,hosts=[];
+  for(var i=0;i<cfg.h.length;i++){if(!tgt||cfg.h[i]===tgt)hosts.push(cfg.h[i]);}
+  var res=[];
+  function next(idx){
+    if(idx>=hosts.length){
+      var ok=true;for(var j=0;j<res.length;j++){if(!res[j].ok)ok=false;}
+      Shelly.emitEvent("sensor_config_apply_result",{id:req.id,success:ok,results:res});return;
+    }
+    var ip=hosts[idx],hi=-1;
+    for(var k=0;k<cfg.h.length;k++){if(cfg.h[k]===ip){hi=k;break;}}
+    addonRpc(ip,"SensorAddon.GetPeripherals",null,function(e,r){
+      if(e){res.push({host:ip,ok:false,error:e,peripherals:0});next(idx+1);return;}
+      var ex=[];var d=getDs18b20(r);for(var c in d)ex.push(c);
+      function rm(ri){
+        if(ri>=ex.length){add();return;}
+        addonRpc(ip,"SensorAddon.RemovePeripheral",{component:ex[ri]},function(){rm(ri+1);});
+      }
+      function add(){
+        var ta=[];for(var rl in cfg.s){if(cfg.s[rl].h===hi)ta.push({i:cfg.s[rl].i});}
+        var n=0;
+        function an(ai){
+          if(ai>=ta.length){res.push({host:ip,ok:true,peripherals:n});next(idx+1);return;}
+          addonRpc(ip,"SensorAddon.AddPeripheral",{type:"ds18b20",attrs:{cid:ta[ai].i}},function(ae){if(!ae)n++;an(ai+1);});
+        }
+        an(0);
+      }
+      rm(0);
+    });
+  }
+  next(0);
+}
+
+function doDiscover(req) {
+  var hosts=req.hosts||[],res=[];
+  function next(idx){
+    if(idx>=hosts.length){Shelly.emitEvent("discover_sensors_result",{id:req.id,results:res});return;}
+    var ip=hosts[idx];
+    addonRpc(ip,"SensorAddon.GetPeripherals",null,function(e,r){
+      if(e){res.push({host:ip,ok:false,error:e,sensors:[]});next(idx+1);return;}
+      var sns=[],d=getDs18b20(r);
+      for(var c in d){var inf=d[c];sns.push({addr:inf.addr||"",tC:typeof inf.tC==="number"?inf.tC:null,component:c});}
+      res.push({host:ip,ok:true,sensors:sns});next(idx+1);
+    });
+  }
+  next(0);
 }
 
 // ── Config event handlers ──
@@ -403,6 +468,16 @@ Shelly.addEventHandler(function(ev) {
     var scData = ev.info.data;
     if (scData && scData.config) {
       sensorConfig = scData.config;
+    }
+  } else if (ev.info.event === "sensor_config_apply") {
+    var applyData = ev.info.data;
+    if (applyData && applyData.request) {
+      pendingApply = applyData.request;
+    }
+  } else if (ev.info.event === "discover_sensors") {
+    var discData = ev.info.data;
+    if (discData && discData.request) {
+      pendingDisc = discData.request;
     }
   }
 });

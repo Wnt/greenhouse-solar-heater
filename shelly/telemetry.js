@@ -5,6 +5,10 @@
 
 var CONFIG_TOPIC = "greenhouse/config";
 var SENSOR_CONFIG_TOPIC = "greenhouse/sensor-config";
+var SENSOR_CONFIG_APPLY_TOPIC = "greenhouse/sensor-config-apply";
+var SENSOR_CONFIG_RESULT_TOPIC = "greenhouse/sensor-config-result";
+var DISCOVER_TOPIC = "greenhouse/discover-sensors";
+var DISCOVER_RESULT_TOPIC = "greenhouse/discover-sensors-result";
 var STATE_TOPIC = "greenhouse/state";
 var CONFIG_KVS_KEY = "config";
 var SENSOR_CONFIG_KVS_KEY = "sensor_config";
@@ -128,16 +132,44 @@ function setupMqttSubscription() {
       }
     } catch(e) {}
   });
+  MQTT.subscribe(SENSOR_CONFIG_APPLY_TOPIC, function(topic, message) {
+    if (topic !== SENSOR_CONFIG_APPLY_TOPIC) return;
+    try {
+      var req = JSON.parse(message);
+      if (req && req.id) {
+        Shelly.emitEvent("sensor_config_apply", {request: req});
+      }
+    } catch(e) {}
+  });
+  MQTT.subscribe(DISCOVER_TOPIC, function(topic, message) {
+    if (topic !== DISCOVER_TOPIC) return;
+    try {
+      var req = JSON.parse(message);
+      if (req && req.id) {
+        Shelly.emitEvent("discover_sensors", {request: req});
+      }
+    } catch(e) {}
+  });
 }
 
 // ── MQTT state publishing ──
 
 Shelly.addEventHandler(function(ev) {
-  if (!ev || !ev.info || ev.info.event !== "state_updated") return;
-  var snapshot = ev.info.data;
-  if (!snapshot) return;
-  if (!MQTT.isConnected()) return;
-  MQTT.publish(STATE_TOPIC, JSON.stringify(snapshot), 1, true);
+  if (!ev || !ev.info) return;
+  if (ev.info.event === "state_updated") {
+    var snapshot = ev.info.data;
+    if (!snapshot) return;
+    if (!MQTT.isConnected()) return;
+    MQTT.publish(STATE_TOPIC, JSON.stringify(snapshot), 1, true);
+  } else if (ev.info.event === "sensor_config_apply_result") {
+    var applyResult = ev.info.data;
+    if (!applyResult || !MQTT.isConnected()) return;
+    MQTT.publish(SENSOR_CONFIG_RESULT_TOPIC, JSON.stringify(applyResult), 1, false);
+  } else if (ev.info.event === "discover_sensors_result") {
+    var discResult = ev.info.data;
+    if (!discResult || !MQTT.isConnected()) return;
+    MQTT.publish(DISCOVER_RESULT_TOPIC, JSON.stringify(discResult), 1, false);
+  }
 });
 
 // ── MQTT connection handler ──

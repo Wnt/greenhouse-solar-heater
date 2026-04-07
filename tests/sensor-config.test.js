@@ -205,6 +205,102 @@ describe('sensor-config', () => {
     });
   });
 
+  describe('MQTT-based apply', () => {
+    it('applyConfig uses mqttBridge.publishSensorConfigApply', (t, done) => {
+      sensorConfig.load(function (err) {
+        assert.ifError(err);
+        const mockBridge = {
+          publishSensorConfigApply: function (request) {
+            assert.ok(request.id.startsWith('apply-'));
+            assert.equal(request.target, null);
+            assert.ok(request.config.h);
+            assert.ok(request.config.s !== undefined);
+            return Promise.resolve({
+              id: request.id,
+              success: true,
+              results: [
+                { host: '192.168.30.20', ok: true, peripherals: 2 },
+                { host: '192.168.30.21', ok: true, peripherals: 1 },
+              ],
+            });
+          },
+          publishSensorConfig: function () { return true; },
+        };
+        sensorConfig.applyConfig(mockBridge, function (err, results) {
+          assert.ifError(err);
+          assert.equal(results.sensor_1.status, 'success');
+          assert.equal(results.sensor_2.status, 'success');
+          assert.equal(results.control.status, 'success');
+          done();
+        });
+      });
+    });
+
+    it('applyConfig returns error when MQTT bridge not available', (t, done) => {
+      sensorConfig.load(function (err) {
+        assert.ifError(err);
+        sensorConfig.applyConfig(null, function (err) {
+          assert.ok(err);
+          assert.ok(err.message.includes('MQTT bridge not available'));
+          done();
+        });
+      });
+    });
+
+    it('applyConfig returns error on MQTT timeout', (t, done) => {
+      sensorConfig.load(function (err) {
+        assert.ifError(err);
+        const mockBridge = {
+          publishSensorConfigApply: function () {
+            return Promise.reject(new Error('Request timed out'));
+          },
+        };
+        sensorConfig.applyConfig(mockBridge, function (err) {
+          assert.ok(err);
+          assert.equal(err.message, 'Request timed out');
+          done();
+        });
+      });
+    });
+
+    it('applySingleTarget routes control target via publishSensorConfig', (t, done) => {
+      sensorConfig.load(function (err) {
+        assert.ifError(err);
+        let published = false;
+        const mockBridge = {
+          publishSensorConfig: function () { published = true; return true; },
+        };
+        sensorConfig.applySingleTarget('control', mockBridge, function (err, results) {
+          assert.ifError(err);
+          assert.equal(results.control.status, 'success');
+          assert.ok(published);
+          done();
+        });
+      });
+    });
+
+    it('applySingleTarget routes host target via MQTT', (t, done) => {
+      sensorConfig.load(function (err) {
+        assert.ifError(err);
+        const mockBridge = {
+          publishSensorConfigApply: function (request) {
+            assert.equal(request.target, '192.168.30.20');
+            return Promise.resolve({
+              id: request.id,
+              success: true,
+              results: [{ host: '192.168.30.20', ok: true, peripherals: 3 }],
+            });
+          },
+        };
+        sensorConfig.applySingleTarget('sensor_1', mockBridge, function (err, results) {
+          assert.ifError(err);
+          assert.equal(results.sensor_1.status, 'success');
+          done();
+        });
+      });
+    });
+  });
+
   describe('HTTP handlers', () => {
     it('GET returns current config', (t, done) => {
       sensorConfig.load(function (err) {

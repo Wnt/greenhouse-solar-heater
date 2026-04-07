@@ -26,7 +26,7 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `playground/js/login.js` → passkey auth client-side logic
 - `playground/vendor/simplewebauthn-browser.mjs` → vendored @simplewebauthn/browser 13.3.0
 - `playground/vendor/qrcode-generator.mjs` → vendored qrcode-generator 2.0.4 (invitation QR codes)
-- `server/` → Node.js API server (serves playground, proxies Shelly RPC, WebSocket, auth, device config, history)
+- `server/` → Node.js API server (serves playground, WebSocket, MQTT bridge, auth, device config, sensor config, history). All device communication flows through MQTT — no direct HTTP RPC to Shelly devices.
 - `server/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers, invitation-based registration)
 - `server/lib/logger.js` → structured JSON logger (used by server and auth modules)
 - `server/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
@@ -35,9 +35,9 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `server/lib/db-config.js` → Database URL S3 persistence CLI (store/load DATABASE_URL in object storage)
 - `server/lib/nr-config.js` → New Relic license key S3 persistence CLI (store/load license key in object storage)
 - `server/lib/tracing.js` → OpenTelemetry SDK initialization (loaded via `--require`, no-op when `NEW_RELIC_LICENSE_KEY` not set)
-- `server/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB)
+- `server/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB, publishes config/discovery/apply requests, correlates MQTT responses)
 - `server/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push)
-- `server/lib/sensor-config.js` → Sensor configuration store (S3/local persistence, sensor-to-role assignments, apply to Shelly hosts via SensorAddon RPC, MQTT sensor config push)
+- `server/lib/sensor-config.js` → Sensor configuration store (S3/local persistence, sensor-to-role assignments, MQTT-based apply via controller, MQTT sensor config push)
 - `deploy/` → cloud deployment infrastructure
 - `deploy/terraform/` → UpCloud Managed Kubernetes cluster, Managed Object Storage, Managed PostgreSQL, K8s Secrets/ConfigMaps, Helm releases, CI/CD deployer RBAC (Terraform)
 - `deploy/k8s/` → Kubernetes manifests: app Deployment (app + openvpn + mosquitto sidecar), Service, Ingress, deployer RBAC, kustomization.yaml
@@ -71,8 +71,8 @@ When making changes, **update system.yaml first**, then propagate to affected do
 The `shelly/` directory contains the actual device scripts deployed to Shelly hardware:
 
 - `shelly/control-logic.js` — Pure decision logic (ES5-compatible). Exports an `evaluate(state, config, deviceConfig)` function with no side effects and no Shelly API calls. This is the testable core. The `deviceConfig` parameter enables actuator suppression when controls are disabled.
-- `shelly/control.js` — Shelly shell script that handles timers, RPC, relays, KVS, sensors, config guards, and state event emission. Imports `control-logic.js` (concatenated at deploy time). Reads device config from KVS and listens for `config_changed` events from the telemetry script.
-- `shelly/telemetry.js` — Separate Shelly script for MQTT publish/subscribe, config bootstrap (HTTP GET on boot), KVS config persistence, and inter-script events. Publishes state snapshots to `greenhouse/state` and subscribes to `greenhouse/config` for push-based config updates.
+- `shelly/control.js` — Shelly shell script that handles timers, RPC, relays, KVS, sensors, config guards, state event emission, and MQTT command execution (sensor config apply, sensor discovery). Imports `control-logic.js` (concatenated at deploy time). Reads device config from KVS. Processes pending MQTT commands (discovery, config apply) after each control cycle, executing SensorAddon RPC on the local network.
+- `shelly/telemetry.js` — Separate Shelly script for MQTT publish/subscribe, config bootstrap (HTTP GET on boot), KVS config persistence, and inter-script events. Publishes state snapshots to `greenhouse/state`, subscribes to `greenhouse/config`, `greenhouse/sensor-config`, `greenhouse/sensor-config-apply`, and `greenhouse/discover-sensors`. Forwards MQTT commands to the control script and publishes results back.
 - `shelly/deploy.sh` — Deploys scripts to the Shelly Pro 4PM via HTTP RPC. Deploys both control script (slot 1) and telemetry script (slot 3). Supports `DEPLOY_VIA_VPN=true` for VPN deployment. Can configure MQTT on the device via `MQTT_BROKER_HOST`.
 - `shelly/devices.conf` — DHCP-reserved IP addresses for all Shelly devices. Includes `PRO4PM_VPN` for VPN-routable access.
 
@@ -121,11 +121,11 @@ All third-party libraries are vendored locally in `playground/vendor/` to avoid 
 
 ## Server
 
-The `server/` directory contains the Node.js API server that serves the playground app, proxies Shelly RPC, bridges MQTT to WebSocket, and provides authentication, device config, and history APIs.
+The `server/` directory contains the Node.js API server that serves the playground app, bridges MQTT to WebSocket, and provides authentication, device config, sensor config, sensor discovery, and history APIs. All device communication flows through MQTT — no direct HTTP RPC to Shelly devices.
 
-- `server/server.js` — HTTP server: serves playground at `/`, auth middleware (when `AUTH_ENABLED=true`), RPC proxy, WebSocket, device-config API, history API, health endpoint, valve state poller
+- `server/server.js` — HTTP server: serves playground at `/`, auth middleware (when `AUTH_ENABLED=true`), WebSocket, device-config API, sensor-config API, sensor-discovery API, history API, health endpoint
 - `server/auth/` — WebAuthn passkey auth: `credentials.js` (S3-backed store), `session.js` (HMAC cookies), `webauthn.js` (handlers), `invitations.js` (registration invitations)
-- `server/lib/` — Shared libraries: logger, S3 storage adapter, database module, MQTT bridge, device config, tracing, valve poller, config CLIs (vpn-config, db-config, nr-config)
+- `server/lib/` — Shared libraries: logger, S3 storage adapter, database module, MQTT bridge, device config, sensor config, tracing, config CLIs (vpn-config, db-config, nr-config)
 
 **Local mode**: `node server/server.js` — no auth, direct LAN access to Shelly devices.
 **Cloud mode**: `AUTH_ENABLED=true RPID=domain ORIGIN=https://domain node server/server.js` — passkey auth required, VPN tunnel to reach devices.
@@ -146,7 +146,6 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/auth.test.js` — unit tests for auth modules (session signing, credential store)
 - `tests/s3-storage.test.js` — unit tests for S3 storage adapter (local fallback mode, S3 detection)
 - `tests/vpn-config.test.js` — unit tests for VPN config S3 persistence helper
-- `tests/valve-poller.test.js` — unit tests for valve state change detection (pure functions, poller behavior)
 - `tests/db.test.js` — unit tests for PostgreSQL/TimescaleDB module (schema init, inserts, queries)
 - `tests/tracing.test.js` — unit tests for OpenTelemetry tracing initialization, graceful no-op, MQTT spans, log trace context injection, nr-config S3 helper
 - `tests/mqtt-bridge.test.js` — unit tests for MQTT bridge (state change detection, connection status)
@@ -154,7 +153,6 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/sensor-config.test.js` — unit tests for sensor config store (validation, compact format, assignments, persistence)
 - `tests/device-config-integration.test.js` — integration tests: UI config format → Shelly control-logic interpretation (staged deployment scenarios)
 - `tests/data-source.test.js` — unit tests for data source abstraction (state mapping, connection transitions)
-- `tests/rpc-proxy.test.js` — unit tests for RPC proxy security (marker header validation, method enforcement, CORS preflight, body parsing)
 - `tests/version-check.test.js` — unit tests for /version endpoint hash computation (determinism, change detection)
 - `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
 - `tests/e2e/fixtures.js` — shared Playwright fixture: blocks Google Fonts for offline environments. **All e2e tests must import from this file, not from `@playwright/test`.**
@@ -226,6 +224,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - YAML (GitHub Actions), HCL (Terraform), Bash + kubectl, GitHub Actions, Kubernetes RBAC (018-cd-shelly-deploy)
 - JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + Existing — `ws`, `mqtt`, `pg`, `@aws-sdk/client-s3`, `@simplewebauthn/server`. No new dependencies. (018-configure-sensor-connectors)
 - S3-compatible object storage (UpCloud) / local filesystem fallback (sensor-config.json). Shelly KVS for device-side config. (018-configure-sensor-connectors)
+- JavaScript ES5 (Shelly device scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `mqtt` (MQTT client), `ws` (WebSocket server), `pg` (PostgreSQL), `@aws-sdk/client-s3`, Mosquitto 2.x (sidecar broker) (019-mqtt-only-shelly-api)
+- PostgreSQL/TimescaleDB (sensor history, state events), S3-compatible object storage (config persistence), Shelly KVS (device-side config, 256-byte limit per key) (019-mqtt-only-shelly-api)
 
 ## Cloud Deployment Architecture
 
@@ -251,7 +251,7 @@ Internet → Worker Node :80/:443 (hostNetwork)
 Server environment is delivered via Kubernetes-native mechanisms, managed by Terraform:
 
 - **`kubernetes_secret/app-secrets`** — sensitive values: `DATABASE_URL`, `SESSION_SECRET`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `NEW_RELIC_LICENSE_KEY`. Populated from Terraform resource outputs and variables.
-- **`kubernetes_config_map/app-config`** — non-secret service config: `PORT`, `AUTH_ENABLED`, `RPID`, `ORIGIN`, `DOMAIN`, `GITHUB_REPO`, `VPN_CHECK_HOST`, `VPN_CONFIG_KEY`, `SETUP_WINDOW_MINUTES`, `NODE_ENV`, `CONTROLLER_IP`, `CONTROLLER_SCRIPT_ID`, `MQTT_HOST`, `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`
+- **`kubernetes_config_map/app-config`** — non-secret service config: `PORT`, `AUTH_ENABLED`, `RPID`, `ORIGIN`, `DOMAIN`, `GITHUB_REPO`, `VPN_CHECK_HOST`, `VPN_CONFIG_KEY`, `SETUP_WINDOW_MINUTES`, `NODE_ENV`, `MQTT_HOST`, `SENSOR_HOST_IPS`, `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`
 - **`kubernetes_secret/openvpn-config`** — VPN configuration file
 - **`kubernetes_config_map/mosquitto-config`** — Mosquitto listener configuration
 
@@ -296,7 +296,6 @@ Terraform stores the key in the `app-secrets` Kubernetes Secret. Redeploy to act
 - PostgreSQL health — via nri-postgresql integration
 
 ## Recent Changes
+- 019-mqtt-only-shelly-api: Added JavaScript ES5 (Shelly device scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `mqtt` (MQTT client), `ws` (WebSocket server), `pg` (PostgreSQL), `@aws-sdk/client-s3`, Mosquitto 2.x (sidecar broker)
 - 018-configure-sensor-connectors: Added JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + Existing — `ws`, `mqtt`, `pg`, `@aws-sdk/client-s3`, `@simplewebauthn/server`. No new dependencies.
 - 018-cd-shelly-deploy: Added YAML (GitHub Actions), HCL (Terraform), Bash + kubectl, GitHub Actions, Kubernetes RBAC
-- 017-architecture-code-review: Added Node.js 20 LTS (CommonJS) + `pg` (PostgreSQL driver), `@simplewebauthn/server`, native `http`/`crypto`
-- 017-review-hardware-architecture: Added JavaScript ES5 (Shelly scripts), Node.js 20 LTS (tests) + Shelly scripting runtime, node:test (testing)

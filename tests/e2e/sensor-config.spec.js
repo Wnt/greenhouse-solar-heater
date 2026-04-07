@@ -34,47 +34,35 @@ test.describe('Sensor Configuration View', () => {
       }
     });
 
-    // Mock sensor discovery RPC calls
-    await page.route('**/api/rpc/**', async (route) => {
-      const body = route.request().postData();
-      const url = route.request().url();
-
-      if (url.includes('SensorAddon.OneWireScan')) {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            devices: [
-              { type: 'ds18b20', addr: '40:FF:64:06:C7:CC:95:B1', component: 'temperature:100' },
-              { type: 'ds18b20', addr: '40:FF:64:06:C7:CC:95:B2', component: 'temperature:101' },
-              { type: 'ds18b20', addr: '40:FF:64:06:C7:CC:95:B3', component: null },
-            ],
-          }),
-        });
-      } else if (url.includes('SensorAddon.GetPeripherals')) {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            ds18b20: {
-              'temperature:100': { addr: '40:FF:64:06:C7:CC:95:B1' },
-              'temperature:101': { addr: '40:FF:64:06:C7:CC:95:B2' },
+    // Mock sensor discovery via MQTT (POST /api/sensor-discovery)
+    await page.route('**/api/sensor-discovery', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'disc-mock',
+          results: [
+            {
+              host: '192.168.30.20',
+              ok: true,
+              sensors: [
+                { addr: '40:FF:64:06:C7:CC:95:B1', tC: 24.5, component: 'temperature:100' },
+                { addr: '40:FF:64:06:C7:CC:95:B2', tC: 22.3, component: 'temperature:101' },
+                { addr: '40:FF:64:06:C7:CC:95:B3', tC: null, component: null },
+              ],
             },
-          }),
-        });
-      } else if (url.includes('Temperature.GetStatus')) {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ id: 100, tC: 24.5, tF: 76.1 }),
-        });
-      } else {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ id: 1, src: 'mock' }),
-        });
-      }
+            {
+              host: '192.168.30.21',
+              ok: true,
+              sensors: [
+                { addr: '40:FF:64:06:C7:CC:95:B1', tC: 24.5, component: 'temperature:100' },
+                { addr: '40:FF:64:06:C7:CC:95:B2', tC: 22.3, component: 'temperature:101' },
+                { addr: '40:FF:64:06:C7:CC:95:B3', tC: null, component: null },
+              ],
+            },
+          ],
+        }),
+      });
     });
   });
 

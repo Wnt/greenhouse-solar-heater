@@ -15,76 +15,51 @@ const SENSOR_ROLES = [
   { name: 'radiator_out', label: 'Radiator Outlet', location: 'Radiator outlet', optional: true },
 ];
 
-const RPC_HEADERS = {
-  'Content-Type': 'application/json',
-  'X-Requested-With': 'greenhouse-monitor',
-};
-
 let sensorConfig = null;
 let detectedSensors = {};  // hostId -> [{addr, component, tC, error}]
 let refreshTimer = null;
 
-// ── RPC helpers ──
-
-async function rpc(method, params, hostIp) {
-  const body = Object.assign({}, params || {});
-  if (hostIp) body._host = hostIp;
-  const res = await fetch('/api/rpc/' + method, {
-    method: 'POST',
-    headers: RPC_HEADERS,
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error('RPC ' + method + ' failed: ' + res.status);
-  return res.json();
-}
-
-// ── Sensor discovery ──
-
-async function scanHost(host) {
-  try {
-    // Scan 1-Wire bus for all connected sensors
-    const scanResult = await rpc('SensorAddon.OneWireScan', null, host.ip);
-    const devices = (scanResult && scanResult.devices) || [];
-
-    // Get current bindings
-    const peripherals = await rpc('SensorAddon.GetPeripherals', null, host.ip);
-    const ds18b20 = (peripherals && peripherals.ds18b20) || {};
-
-    // Build address-to-component map from peripherals
-    const addrToComp = {};
-    for (const comp in ds18b20) {
-      const info = ds18b20[comp];
-      if (info && info.addr) addrToComp[info.addr] = comp;
-    }
-
-    // Get temperatures for bound sensors
-    const sensors = [];
-    for (const dev of devices) {
-      const sensor = { addr: dev.addr, component: dev.component || addrToComp[dev.addr] || null, tC: null, error: null };
-      if (sensor.component) {
-        const compId = parseInt(sensor.component.replace('temperature:', ''), 10);
-        try {
-          const status = await rpc('Temperature.GetStatus', { id: compId }, host.ip);
-          sensor.tC = status.tC !== undefined ? status.tC : null;
-          if (status.errors && status.errors.length) sensor.error = status.errors.join(', ');
-        } catch (e) {
-          sensor.error = e.message;
-        }
-      }
-      sensors.push(sensor);
-    }
-    return { sensors, error: null };
-  } catch (e) {
-    return { sensors: [], error: e.message };
-  }
-}
+// ── Sensor discovery via MQTT (routed through server API) ──
 
 async function scanAllHosts() {
   if (!sensorConfig || !sensorConfig.hosts) return;
   detectedSensors = {};
-  for (const host of sensorConfig.hosts) {
-    const result = await scanHost(host);
-    detectedSensors[host.id] = result;
+  const hostIps = sensorConfig.hosts.map(h => h.ip);
+  try {
+    const res = await fetch('/api/sensor-discovery', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hosts: hostIps }),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ error: 'Discovery failed: ' + res.status }));
+      for (const host of sensorConfig.hosts) {
+        detectedSensors[host.id] = { sensors: [], error: errData.error || 'Discovery failed' };
+      }
+      return;
+    }
+    const data = await res.json();
+    const results = data.results || [];
+    for (const host of sensorConfig.hosts) {
+      const hostResult = results.find(r => r.host === host.ip);
+      if (!hostResult) {
+        detectedSensors[host.id] = { sensors: [], error: 'No response for host' };
+      } else if (!hostResult.ok) {
+        detectedSensors[host.id] = { sensors: [], error: hostResult.error || 'Scan failed' };
+      } else {
+        const sensors = (hostResult.sensors || []).map(s => ({
+          addr: s.addr,
+          component: s.component || null,
+          tC: s.tC !== undefined ? s.tC : null,
+          error: null,
+        }));
+        detectedSensors[host.id] = { sensors, error: null };
+      }
+    }
+  } catch (e) {
+    for (const host of sensorConfig.hosts) {
+      detectedSensors[host.id] = { sensors: [], error: e.message };
+    }
   }
 }
 

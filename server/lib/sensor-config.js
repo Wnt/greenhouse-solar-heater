@@ -7,7 +7,6 @@
 
 var fs = require('fs');
 var path = require('path');
-var http = require('http');
 var createLogger = require('./logger');
 var log = createLogger('sensor-config');
 
@@ -236,139 +235,43 @@ function toCompactFormat(config) {
   return compact;
 }
 
-// ── Apply to sensor hosts ──
-
-function rpcCall(host, method, params, callback) {
-  var postData = JSON.stringify(Object.assign({ id: 1, method: method }, params ? { params: params } : {}));
-  var req = http.request({
-    hostname: host,
-    port: 80,
-    path: '/rpc',
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) },
-    timeout: 5000,
-  }, function (res) {
-    var body = '';
-    res.on('data', function (chunk) { body += chunk; });
-    res.on('end', function () {
-      try {
-        var parsed = JSON.parse(body);
-        callback(null, parsed);
-      } catch (e) {
-        callback(new Error('Invalid JSON response from ' + host));
-      }
-    });
-  });
-  req.on('error', function (err) { callback(err); });
-  req.on('timeout', function () { req.destroy(); callback(new Error('Timeout connecting to ' + host)); });
-  req.end(postData);
-}
-
-function applyToHost(hostInfo, assignments, callback) {
-  // Step 1: Get existing peripherals
-  rpcCall(hostInfo.ip, 'SensorAddon.GetPeripherals', null, function (err, result) {
-    if (err) { callback(err); return; }
-
-    var existing = [];
-    var ds18b20 = (result && result.params && result.params.ds18b20) || (result && result.ds18b20) || {};
-    for (var comp in ds18b20) {
-      existing.push(comp);
-    }
-
-    // Step 2: Remove all existing DS18B20 peripherals
-    var removeIdx = 0;
-    function removeNext() {
-      if (removeIdx >= existing.length) {
-        addSensors();
-        return;
-      }
-      rpcCall(hostInfo.ip, 'SensorAddon.RemovePeripheral', { component: existing[removeIdx] }, function (err) {
-        if (err) log.warn('failed to remove peripheral', { host: hostInfo.ip, component: existing[removeIdx], error: err.message });
-        removeIdx++;
-        removeNext();
-      });
-    }
-
-    // Step 3: Add sensors assigned to this host
-    function addSensors() {
-      var toAdd = [];
-      for (var role in assignments) {
-        var a = assignments[role];
-        if (a && a.addr) {
-          toAdd.push(a);
-        }
-      }
-      var addIdx = 0;
-      var added = 0;
-      function addNext() {
-        if (addIdx >= toAdd.length) {
-          callback(null, added + ' sensors configured');
-          return;
-        }
-        var sensor = toAdd[addIdx];
-        rpcCall(hostInfo.ip, 'SensorAddon.AddPeripheral', {
-          type: 'ds18b20',
-          attrs: { cid: sensor.componentId, addr: sensor.addr },
-        }, function (err) {
-          if (err) {
-            log.warn('failed to add peripheral', { host: hostInfo.ip, addr: sensor.addr, error: err.message });
-          } else {
-            added++;
-          }
-          addIdx++;
-          addNext();
-        });
-      }
-      addNext();
-    }
-
-    removeNext();
-  });
-}
+// ── Apply to sensor hosts via MQTT (routed through Shelly controller) ──
 
 function applyConfig(mqttBridge, callback) {
   var config = getConfig();
-  var results = {};
-  var hosts = config.hosts;
-
-  // Group assignments by host index
-  var byHost = {};
-  for (var i = 0; i < hosts.length; i++) {
-    byHost[i] = {};
-  }
-  for (var role in config.assignments) {
-    var a = config.assignments[role];
-    if (a && a.addr && byHost[a.hostIndex] !== undefined) {
-      byHost[a.hostIndex][role] = a;
-    }
+  if (!mqttBridge) {
+    callback(new Error('MQTT bridge not available'));
+    return;
   }
 
-  // Apply to each host sequentially
-  var hostIdx = 0;
-  function nextHost() {
-    if (hostIdx >= hosts.length) {
-      // Publish to MQTT
-      if (mqttBridge) {
-        var ok = mqttBridge.publishSensorConfig(toCompactFormat(config));
-        results.control = ok
-          ? { status: 'success', message: 'Sensor routing published' }
-          : { status: 'error', message: 'MQTT not connected' };
-      } else {
-        results.control = { status: 'error', message: 'MQTT bridge not available' };
+  var compact = toCompactFormat(config);
+  var request = {
+    id: 'apply-' + Date.now(),
+    target: null,
+    config: compact,
+  };
+
+  mqttBridge.publishSensorConfigApply(request).then(function (result) {
+    // Also publish the sensor routing config for the controller's own use
+    mqttBridge.publishSensorConfig(compact);
+
+    // Convert MQTT response to the existing results format
+    var results = {};
+    if (result.results) {
+      for (var i = 0; i < result.results.length; i++) {
+        var r = result.results[i];
+        var hostInfo = config.hosts.find(function (h) { return h.ip === r.host; });
+        var hostId = hostInfo ? hostInfo.id : r.host;
+        results[hostId] = r.ok
+          ? { status: 'success', message: r.peripherals + ' sensors configured' }
+          : { status: 'error', message: r.error || 'Failed' };
       }
-      callback(null, results);
-      return;
     }
-    var host = hosts[hostIdx];
-    applyToHost(host, byHost[hostIdx], function (err, msg) {
-      results[host.id] = err
-        ? { status: 'error', message: err.message }
-        : { status: 'success', message: msg };
-      hostIdx++;
-      nextHost();
-    });
-  }
-  nextHost();
+    results.control = { status: 'success', message: 'Sensor routing published' };
+    callback(null, results);
+  }).catch(function (err) {
+    callback(err);
+  });
 }
 
 function applySingleTarget(targetId, mqttBridge, callback) {
@@ -386,13 +289,16 @@ function applySingleTarget(targetId, mqttBridge, callback) {
     return;
   }
 
+  if (!mqttBridge) {
+    callback(new Error('MQTT bridge not available'));
+    return;
+  }
+
   // Find host by id
   var host = null;
-  var hostIndex = -1;
   for (var i = 0; i < config.hosts.length; i++) {
     if (config.hosts[i].id === targetId) {
       host = config.hosts[i];
-      hostIndex = i;
       break;
     }
   }
@@ -401,20 +307,26 @@ function applySingleTarget(targetId, mqttBridge, callback) {
     return;
   }
 
-  var hostAssignments = {};
-  for (var role in config.assignments) {
-    var a = config.assignments[role];
-    if (a && a.addr && a.hostIndex === hostIndex) {
-      hostAssignments[role] = a;
-    }
-  }
+  var compact = toCompactFormat(config);
+  var request = {
+    id: 'apply-' + Date.now(),
+    target: host.ip,
+    config: compact,
+  };
 
-  applyToHost(host, hostAssignments, function (err, msg) {
-    var result = {};
-    result[host.id] = err
-      ? { status: 'error', message: err.message }
-      : { status: 'success', message: msg };
-    callback(null, result);
+  mqttBridge.publishSensorConfigApply(request).then(function (result) {
+    var results = {};
+    if (result.results) {
+      for (var j = 0; j < result.results.length; j++) {
+        var r = result.results[j];
+        results[host.id] = r.ok
+          ? { status: 'success', message: r.peripherals + ' sensors configured' }
+          : { status: 'error', message: r.error || 'Failed' };
+      }
+    }
+    callback(null, results);
+  }).catch(function (err) {
+    callback(err);
   });
 }
 
@@ -460,8 +372,9 @@ function handlePut(req, res, body, onUpdate) {
 function handleApply(req, res, mqttBridge) {
   applyConfig(mqttBridge, function (err, results) {
     if (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: err.message }));
+      var statusCode = err.message === 'Request timed out' ? 504 : 500;
+      res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message === 'Request timed out' ? 'Config apply timed out' : err.message }));
       return;
     }
     log.info('sensor config applied', { results: results });
@@ -473,8 +386,9 @@ function handleApply(req, res, mqttBridge) {
 function handleApplyTarget(req, res, targetId, mqttBridge) {
   applySingleTarget(targetId, mqttBridge, function (err, results) {
     if (err) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: err.message }));
+      var statusCode = err.message === 'Request timed out' ? 504 : 400;
+      res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message === 'Request timed out' ? 'Config apply timed out' : err.message }));
       return;
     }
     log.info('sensor config applied to target', { target: targetId, results: results });
