@@ -130,6 +130,10 @@ The `server/` directory contains the Node.js API server that serves the playgrou
 **Local mode**: `node server/server.js` — no auth, direct LAN access to Shelly devices.
 **Cloud mode**: `AUTH_ENABLED=true RPID=domain ORIGIN=https://domain node server/server.js` — passkey auth required, VPN tunnel to reach devices.
 
+## Testing Policy
+
+**Every bug fix and behavior change must include tests.** When fixing a bug, add a test that would have failed before the fix and passes after. When changing behavior (e.g. removing auto-polling, changing error messages), update existing tests and add new ones that verify the new behavior. Do not commit fixes without accompanying test additions — treat missing tests as an incomplete fix.
+
 ## Running Tests
 
 ```bash
