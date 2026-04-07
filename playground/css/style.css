@@ -1428,6 +1428,14 @@ button.primary.disabled {
 
 .sensor-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 
+.scan-spinner {
+  display: inline-block; width: 14px; height: 14px; margin-right: 6px;
+  border: 2px solid var(--on-surface-variant); border-top-color: transparent;
+  border-radius: 50%; animation: scan-spin 0.8s linear infinite; vertical-align: middle;
+}
+button.scanning { opacity: 0.7; cursor: wait; }
+@keyframes scan-spin { to { transform: rotate(360deg); } }
+
 .apply-results-grid { display: flex; flex-direction: column; gap: 6px; }
 .apply-result { padding: 6px 10px; border-radius: 6px; font-size: 13px; }
 .apply-result.success { background: rgba(118, 255, 3, 0.1); color: #76ff03; }

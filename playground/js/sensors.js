@@ -18,6 +18,7 @@ const SENSOR_ROLES = [
 let sensorConfig = null;
 let detectedSensors = {};  // hostId -> [{addr, component, tC, error}]
 let refreshTimer = null;
+let scanning = false;
 
 // ── Sensor discovery via MQTT (routed through server API) ──
 
@@ -220,7 +221,7 @@ function renderSensorsView() {
   const missing = getMissingRequiredRoles();
   html += '<div class="card" style="margin-top:16px;"><h3>Actions</h3>';
   html += '<div class="sensor-actions">';
-  html += '<button class="secondary" id="btn-scan-sensors">Scan Sensors</button>';
+  html += '<button class="secondary' + (scanning ? ' scanning' : '') + '" id="btn-scan-sensors"' + (scanning ? ' disabled' : '') + '>' + (scanning ? '<span class="scan-spinner"></span>Scanning\u2026' : 'Scan Sensors') + '</button>';
   html += '<button class="primary" id="btn-save-sensors">Save Assignments</button>';
   html += '<button class="primary" id="btn-apply-sensors"' + (missing.length > 0 ? ' disabled' : '') + '>Apply Configuration</button>';
   if (missing.length > 0) {
@@ -321,6 +322,7 @@ async function handleScan() {
   }
 
   // Mark all hosts as scanning before the request
+  scanning = true;
   if (sensorConfig && sensorConfig.hosts) {
     for (const host of sensorConfig.hosts) {
       detectedSensors[host.id] = null; // triggers "Scanning..." in UI
@@ -331,12 +333,14 @@ async function handleScan() {
 
   try {
     await scanAllHosts();
+    scanning = false;
     renderSensorsView();
 
     // Build informative status message
     const summary = buildScanSummary();
     showStatus(summary.message, summary.isError);
   } catch (e) {
+    scanning = false;
     renderSensorsView();
     showStatus('Scan failed: ' + e.message, true);
   }

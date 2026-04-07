@@ -468,7 +468,18 @@ function doDiscover(req) {
       for(var i=0;i<devs.length;i++){
         sns.push({addr:devs[i].addr||"",component:devs[i].component||null,tC:null});
       }
-      res.push({host:ip,ok:true,sensors:sns});next(idx+1);
+      // Poll temperature for each sensor that has a component
+      function pollTemp(si){
+        if(si>=sns.length){res.push({host:ip,ok:true,sensors:sns});next(idx+1);return;}
+        var comp=sns[si].component;
+        if(!comp||comp.indexOf("temperature:")!==0){pollTemp(si+1);return;}
+        var cid=comp.replace("temperature:","");
+        pollSensor("_disc",ip,cid,function(_n,val){
+          if(val!==null)sns[si].tC=val;
+          pollTemp(si+1);
+        });
+      }
+      pollTemp(0);
     });
   }
   next(0);
