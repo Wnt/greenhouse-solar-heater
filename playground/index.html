@@ -401,6 +401,85 @@
           </div>
         </div>
       </div>
+
+      <!-- Manual Override / Relay Toggle Board -->
+      <div class="card" id="relay-override-card">
+        <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);margin:0 0 8px;">Manual relay testing.</h3>
+        <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 16px;">Toggle individual relays for commissioning and diagnostics. Automation is suspended while active.</p>
+
+        <!-- Entry controls -->
+        <div id="override-entry" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">
+          <button class="primary" id="override-enter-btn" disabled>Enter Manual Override</button>
+          <label style="font-size:13px;color:var(--on-surface-variant);display:flex;align-items:center;gap:6px;">
+            <div class="device-toggle" id="override-suppress-safety" style="transform:scale(0.85);"></div>
+            Suppress Safety
+          </label>
+        </div>
+        <p id="override-gate-msg" style="font-size:12px;color:var(--error);margin:4px 0 0;display:none;">Enable controls above to use manual override.</p>
+
+        <!-- Active override header -->
+        <div id="override-active-header" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div>
+              <span style="font-size:14px;font-weight:600;color:var(--primary);">Manual Override Active</span>
+              <span id="override-countdown" style="font-size:14px;color:var(--on-surface-variant);margin-left:8px;">5:00</span>
+            </div>
+            <button class="primary" id="override-exit-btn" style="background:var(--error);font-size:12px;padding:6px 14px;">Exit Override</button>
+          </div>
+          <div id="override-ttl-btns" style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+            <button class="ttl-btn" data-ttl="60">1 min</button>
+            <button class="ttl-btn active" data-ttl="300">5 min</button>
+            <button class="ttl-btn" data-ttl="900">15 min</button>
+            <button class="ttl-btn" data-ttl="1800">30 min</button>
+            <button class="ttl-btn" data-ttl="3600">1 hr</button>
+          </div>
+        </div>
+
+        <!-- Relay soundboard grid -->
+        <div id="relay-board" class="relay-board" style="display:none;">
+          <button class="relay-btn" data-relay="pump" disabled>
+            <span class="relay-label">Pump</span>
+            <span class="relay-id">pump</span>
+          </button>
+          <button class="relay-btn" data-relay="fan" disabled>
+            <span class="relay-label">Fan</span>
+            <span class="relay-id">fan</span>
+          </button>
+          <button class="relay-btn" data-relay="vi_btm" disabled>
+            <span class="relay-label">Tank Btm In</span>
+            <span class="relay-id">vi_btm</span>
+          </button>
+          <button class="relay-btn" data-relay="vi_top" disabled>
+            <span class="relay-label">Reservoir In</span>
+            <span class="relay-id">vi_top</span>
+          </button>
+          <button class="relay-btn" data-relay="vi_coll" disabled>
+            <span class="relay-label">Collector In</span>
+            <span class="relay-id">vi_coll</span>
+          </button>
+          <button class="relay-btn" data-relay="vo_coll" disabled>
+            <span class="relay-label">To Collector</span>
+            <span class="relay-id">vo_coll</span>
+          </button>
+          <button class="relay-btn" data-relay="vo_rad" disabled>
+            <span class="relay-label">To Radiator</span>
+            <span class="relay-id">vo_rad</span>
+          </button>
+          <button class="relay-btn" data-relay="vo_tank" disabled>
+            <span class="relay-label">To Tank</span>
+            <span class="relay-id">vo_tank</span>
+          </button>
+          <button class="relay-btn" data-relay="v_ret" disabled>
+            <span class="relay-label">Return</span>
+            <span class="relay-id">v_ret</span>
+          </button>
+          <button class="relay-btn" data-relay="v_air" disabled>
+            <span class="relay-label">Air Intake</span>
+            <span class="relay-id">v_air</span>
+          </button>
+        </div>
+        <div id="override-expired-msg" style="display:none;font-size:13px;color:var(--on-surface-variant);margin-top:8px;"></div>
+      </div>
     </section>
 
   </main>
@@ -618,6 +697,7 @@
     function ensureLiveSource() {
       if (!liveSource) {
         liveSource = new LiveSource();
+        liveSource.onCommandResponse(handleOverrideResponse);
         liveSource.onUpdate(function (state, result) {
           lastDataTime = Date.now();
           if (store.get('phase') === 'live') {
@@ -626,6 +706,7 @@
             updateConnectionOverlays();
             updateSidebarSubtitle();
             updateDevicePushState();
+            updateRelayBoard(result);
           }
         });
         liveSource.onConnectionChange(function (status) {
@@ -978,6 +1059,7 @@
       // Initialize live/simulation mode toggle
       initModeToggle();
       initDeviceConfig();
+      initRelayBoard();
 
       // Start polling for JS source updates
       startVersionCheck();
@@ -1917,6 +1999,226 @@
           status.textContent = 'Error: ' + err.message;
           status.style.color = 'var(--error)';
         });
+    }
+
+    // ── Relay Toggle Board ──
+    let overrideActive = false;
+    let overrideExpiresAt = 0;
+    let overrideCountdownTimer = null;
+    let relayPendingState = {}; // relay → expected state (for reconciliation)
+    let relayPendingTimers = {}; // relay → timeout ID
+
+    function initRelayBoard() {
+      // Enter override
+      document.getElementById('override-enter-btn').addEventListener('click', enterOverride);
+
+      // Exit override
+      document.getElementById('override-exit-btn').addEventListener('click', exitOverride);
+
+      // Suppress safety toggle
+      document.getElementById('override-suppress-safety').addEventListener('click', function () {
+        this.classList.toggle('active');
+      });
+
+      // TTL buttons
+      document.querySelectorAll('.ttl-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+          document.querySelectorAll('.ttl-btn').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          if (overrideActive) updateOverrideTtl(parseInt(this.dataset.ttl, 10));
+        });
+      });
+
+      // Relay buttons
+      document.querySelectorAll('.relay-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+          if (this.disabled || !overrideActive) return;
+          toggleRelay(this);
+        });
+      });
+
+      // Command response handler
+      if (liveSource) {
+        liveSource.onCommandResponse(handleOverrideResponse);
+      }
+    }
+
+    function enterOverride() {
+      if (!liveSource) return;
+      var ss = document.getElementById('override-suppress-safety').classList.contains('active');
+      var activeTtlBtn = document.querySelector('.ttl-btn.active');
+      var ttl = activeTtlBtn ? parseInt(activeTtlBtn.dataset.ttl, 10) : 300;
+      liveSource.sendCommand({ type: 'override-enter', ttl: ttl, suppressSafety: ss });
+    }
+
+    function exitOverride() {
+      if (!liveSource) return;
+      liveSource.sendCommand({ type: 'override-exit' });
+    }
+
+    function updateOverrideTtl(ttl) {
+      if (!liveSource || !overrideActive) return;
+      liveSource.sendCommand({ type: 'override-update', ttl: ttl });
+    }
+
+    function handleOverrideResponse(msg) {
+      if (msg.type === 'override-ack') {
+        if (msg.active) {
+          activateOverrideUI(msg.expiresAt, msg.suppressSafety);
+        } else {
+          deactivateOverrideUI();
+        }
+      } else if (msg.type === 'override-error') {
+        var expMsg = document.getElementById('override-expired-msg');
+        expMsg.textContent = msg.message;
+        expMsg.style.display = '';
+        expMsg.style.color = 'var(--error)';
+        setTimeout(() => { expMsg.style.display = 'none'; }, 4000);
+      }
+    }
+
+    function activateOverrideUI(expiresAt, suppressSafety) {
+      overrideActive = true;
+      overrideExpiresAt = expiresAt;
+      document.getElementById('override-entry').style.display = 'none';
+      document.getElementById('override-active-header').style.display = '';
+      document.getElementById('relay-board').style.display = '';
+      document.getElementById('override-expired-msg').style.display = 'none';
+      document.querySelectorAll('.relay-btn').forEach(btn => { btn.disabled = false; });
+      startCountdown();
+    }
+
+    function deactivateOverrideUI(msg) {
+      overrideActive = false;
+      overrideExpiresAt = 0;
+      clearCountdown();
+      document.getElementById('override-entry').style.display = '';
+      document.getElementById('override-active-header').style.display = 'none';
+      document.getElementById('relay-board').style.display = 'none';
+      document.querySelectorAll('.relay-btn').forEach(btn => {
+        btn.disabled = true;
+        btn.classList.remove('on', 'relay-btn--pending', 'relay-btn--error');
+      });
+      relayPendingState = {};
+      for (var k in relayPendingTimers) clearTimeout(relayPendingTimers[k]);
+      relayPendingTimers = {};
+      if (msg) {
+        var expEl = document.getElementById('override-expired-msg');
+        expEl.textContent = msg;
+        expEl.style.display = '';
+        expEl.style.color = 'var(--on-surface-variant)';
+        setTimeout(() => { expEl.style.display = 'none'; }, 5000);
+      }
+    }
+
+    function startCountdown() {
+      clearCountdown();
+      updateCountdownDisplay();
+      overrideCountdownTimer = setInterval(updateCountdownDisplay, 1000);
+    }
+
+    function clearCountdown() {
+      if (overrideCountdownTimer) { clearInterval(overrideCountdownTimer); overrideCountdownTimer = null; }
+    }
+
+    function updateCountdownDisplay() {
+      var remaining = Math.max(0, overrideExpiresAt - Math.floor(Date.now() / 1000));
+      var min = Math.floor(remaining / 60);
+      var sec = remaining % 60;
+      document.getElementById('override-countdown').textContent = min + ':' + (sec < 10 ? '0' : '') + sec;
+      if (remaining <= 0 && overrideActive) {
+        deactivateOverrideUI('Override expired — automation resumed.');
+      }
+    }
+
+    function toggleRelay(btn) {
+      var relay = btn.dataset.relay;
+      var currentlyOn = btn.classList.contains('on');
+      var newState = !currentlyOn;
+
+      // Optimistic UI + haptic feedback
+      btn.classList.toggle('on', newState);
+      btn.classList.add('relay-btn--pending');
+      try { if (navigator.vibrate) navigator.vibrate(50); } catch (e) {}
+
+      // Send command
+      if (liveSource) liveSource.sendCommand({ type: 'relay-command', relay: relay, on: newState });
+
+      // Track pending state for reconciliation
+      relayPendingState[relay] = newState;
+      if (relayPendingTimers[relay]) clearTimeout(relayPendingTimers[relay]);
+      relayPendingTimers[relay] = setTimeout(function () {
+        // Reconciliation timeout — if state hasn't been confirmed, revert
+        delete relayPendingState[relay];
+        delete relayPendingTimers[relay];
+        btn.classList.remove('relay-btn--pending');
+        // Don't revert — next state broadcast will reconcile
+      }, 2000);
+    }
+
+    function updateRelayBoard(result) {
+      if (!result) return;
+      var mo = result.manual_override;
+
+      // Handle override state from server
+      if (mo && mo.active && !overrideActive) {
+        // Override started externally or on reconnect
+        activateOverrideUI(mo.expiresAt, mo.suppressSafety);
+      } else if ((!mo || !mo.active) && overrideActive) {
+        // Override ended externally
+        deactivateOverrideUI('Override ended — automation resumed.');
+        return;
+      } else if (mo && mo.active && overrideActive) {
+        // Update expiry (may have been adjusted)
+        overrideExpiresAt = mo.expiresAt;
+      }
+
+      // Update controls-enabled gate
+      var ceEnabled = result.controls_enabled;
+      var enterBtn = document.getElementById('override-enter-btn');
+      var gateMsg = document.getElementById('override-gate-msg');
+      if (!overrideActive) {
+        enterBtn.disabled = !ceEnabled;
+        gateMsg.style.display = ceEnabled ? 'none' : '';
+      }
+
+      // ce=false during active override → force deactivate
+      if (overrideActive && !ceEnabled) {
+        deactivateOverrideUI('Controls disabled — override ended.');
+        return;
+      }
+
+      if (!overrideActive) return;
+
+      // Update relay button states from actual hardware state
+      var valves = result.valves || {};
+      var actuators = result.actuators || {};
+      document.querySelectorAll('.relay-btn').forEach(btn => {
+        var relay = btn.dataset.relay;
+        var actual = (relay === 'pump' || relay === 'fan')
+          ? !!actuators[relay]
+          : !!valves[relay];
+
+        // Reconcile with pending state
+        if (relay in relayPendingState) {
+          if (relayPendingState[relay] === actual) {
+            // Confirmed — clear pending
+            delete relayPendingState[relay];
+            if (relayPendingTimers[relay]) { clearTimeout(relayPendingTimers[relay]); delete relayPendingTimers[relay]; }
+            btn.classList.remove('relay-btn--pending');
+          } else {
+            // State doesn't match — command may have failed
+            // Revert optimistic update
+            delete relayPendingState[relay];
+            if (relayPendingTimers[relay]) { clearTimeout(relayPendingTimers[relay]); delete relayPendingTimers[relay]; }
+            btn.classList.remove('relay-btn--pending');
+            btn.classList.add('relay-btn--error');
+            setTimeout(() => btn.classList.remove('relay-btn--error'), 400);
+          }
+        }
+
+        btn.classList.toggle('on', actual);
+      });
     }
 
     init();
