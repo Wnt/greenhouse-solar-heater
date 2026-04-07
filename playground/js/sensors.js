@@ -32,9 +32,12 @@ async function scanAllHosts() {
       body: JSON.stringify({ hosts: hostIps }),
     });
     if (!res.ok) {
-      const errData = await res.json().catch(() => ({ error: 'Discovery failed: ' + res.status }));
+      const errData = await res.json().catch(() => ({}));
+      const errMsg = res.status === 504
+        ? 'MQTT timeout — device may be offline or MQTT not connected'
+        : errData.error || 'Server error (' + res.status + ')';
       for (const host of sensorConfig.hosts) {
-        detectedSensors[host.id] = { sensors: [], error: errData.error || 'Discovery failed' };
+        detectedSensors[host.id] = { sensors: [], error: errMsg };
       }
       return;
     }
@@ -43,7 +46,7 @@ async function scanAllHosts() {
     for (const host of sensorConfig.hosts) {
       const hostResult = results.find(r => r.host === host.ip);
       if (!hostResult) {
-        detectedSensors[host.id] = { sensors: [], error: 'No response for host' };
+        detectedSensors[host.id] = { sensors: [], error: 'No response — host may be offline' };
       } else if (!hostResult.ok) {
         detectedSensors[host.id] = { sensors: [], error: hostResult.error || 'Scan failed' };
       } else {
@@ -191,9 +194,9 @@ function renderSensorsView() {
       if (!result) {
         html += '<p style="color:var(--on-surface-variant);">Scanning...</p>';
       } else if (result.error) {
-        html += '<p class="host-error">Unreachable: ' + result.error + '</p>';
+        html += '<p class="host-error">' + result.error + '</p>';
       } else if (result.sensors.length === 0) {
-        html += '<p style="color:var(--on-surface-variant);">No sensors detected.</p>';
+        html += '<p style="color:var(--on-surface-variant);">No sensors detected. Verify DS18B20 probes are connected to the Sensor Add-on.</p>';
       } else {
         html += '<table class="sensor-table"><thead><tr><th>Address</th><th>Temp</th><th>Status</th></tr></thead><tbody>';
         for (const s of result.sensors) {
@@ -308,14 +311,57 @@ function showApplyResults(data) {
 // ── Event handlers ──
 
 async function handleScan() {
-  showStatus('Scanning sensor hosts...');
+  // Mark all hosts as scanning before the request
+  if (sensorConfig && sensorConfig.hosts) {
+    for (const host of sensorConfig.hosts) {
+      detectedSensors[host.id] = null; // triggers "Scanning..." in UI
+    }
+  }
+  renderSensorsView();
+  showStatus('Waiting for device response via MQTT...');
+
   try {
     await scanAllHosts();
     renderSensorsView();
-    showStatus('Scan complete.');
+
+    // Build informative status message
+    const summary = buildScanSummary();
+    showStatus(summary.message, summary.isError);
   } catch (e) {
+    renderSensorsView();
     showStatus('Scan failed: ' + e.message, true);
   }
+}
+
+function buildScanSummary() {
+  if (!sensorConfig || !sensorConfig.hosts) return { message: 'No hosts configured.', isError: true };
+  let totalSensors = 0;
+  let hostsOk = 0;
+  let hostsError = 0;
+  const errors = [];
+  for (const host of sensorConfig.hosts) {
+    const result = detectedSensors[host.id];
+    if (!result) {
+      hostsError++;
+      errors.push(host.name + ': no response');
+    } else if (result.error) {
+      hostsError++;
+      errors.push(host.name + ': ' + result.error);
+    } else {
+      hostsOk++;
+      totalSensors += result.sensors.length;
+    }
+  }
+  if (hostsError > 0 && hostsOk === 0) {
+    return { message: 'All hosts unreachable. ' + errors.join('; '), isError: true };
+  }
+  if (hostsError > 0) {
+    return { message: totalSensors + ' sensor(s) found on ' + hostsOk + ' host(s). Errors: ' + errors.join('; '), isError: true };
+  }
+  if (totalSensors === 0) {
+    return { message: 'Scan complete. No sensors detected on ' + hostsOk + ' host(s). Check physical connections.', isError: false };
+  }
+  return { message: 'Found ' + totalSensors + ' sensor(s) on ' + hostsOk + ' host(s).', isError: false };
 }
 
 async function handleSave() {
