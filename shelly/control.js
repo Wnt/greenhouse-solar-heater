@@ -458,6 +458,7 @@ function doApply(req) {
 
 function doDiscover(req) {
   var hosts=req.hosts||[],res=[];
+  var wantTemp=!req.skipTemp;
   function next(idx){
     if(idx>=hosts.length){Shelly.emitEvent("discover_sensors_result",{id:req.id,results:res});return;}
     var ip=hosts[idx];
@@ -468,6 +469,7 @@ function doDiscover(req) {
       for(var i=0;i<devs.length;i++){
         sns.push({addr:devs[i].addr||"",component:devs[i].component||null,tC:null});
       }
+      if(!wantTemp){res.push({host:ip,ok:true,sensors:sns});next(idx+1);return;}
       // Poll temperature for each sensor that has a component
       function pollTemp(si){
         if(si>=sns.length){res.push({host:ip,ok:true,sensors:sns});next(idx+1);return;}

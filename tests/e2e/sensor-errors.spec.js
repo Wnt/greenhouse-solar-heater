@@ -26,6 +26,60 @@ async function goToSensors(page) {
   await page.waitForSelector('#sensors-content .card', { timeout: 15000 });
 }
 
+// Helper: navigate to sensors view and click Scan Sensors
+async function goToSensorsAndScan(page) {
+  await goToSensors(page);
+  await page.click('#btn-scan-sensors');
+}
+
+test.describe('Sensor view does not auto-scan', () => {
+  test('opening the view does not call sensor-discovery', async ({ page }) => {
+    let discoveryCallCount = 0;
+    await page.route('**/api/sensor-config', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
+    });
+    await page.route('**/api/sensor-discovery', async (route) => {
+      discoveryCallCount++;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'disc-mock', results: [] }),
+      });
+    });
+
+    await goToSensors(page);
+    // Wait a bit to ensure no background scan fires
+    await page.waitForTimeout(2000);
+    expect(discoveryCallCount).toBe(0);
+  });
+
+  test('no periodic polling happens while view is open', async ({ page }) => {
+    let discoveryCallCount = 0;
+    await page.route('**/api/sensor-config', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
+    });
+    await page.route('**/api/sensor-discovery', async (route) => {
+      discoveryCallCount++;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'disc-mock', results: [] }),
+      });
+    });
+
+    await goToSensors(page);
+    // Click scan once
+    await page.click('#btn-scan-sensors');
+    await page.waitForTimeout(1000);
+    expect(discoveryCallCount).toBe(1);
+
+    // Wait well past old auto-refresh interval (was 30s, use shorter wait to prove no timer)
+    // If there was a setInterval, we'd see extra calls
+    await page.waitForTimeout(3000);
+    expect(discoveryCallCount).toBe(1);
+  });
+});
+
 test.describe('Sensor discovery error messages', () => {
   test('shows descriptive message when host returns legacy "err" error', async ({ page }) => {
     await page.route('**/api/sensor-config', async (route) => {
@@ -45,7 +99,7 @@ test.describe('Sensor discovery error messages', () => {
       });
     });
 
-    await goToSensors(page);
+    await goToSensorsAndScan(page);
     await page.waitForSelector('.sensor-table', { timeout: 15000 });
 
     // Sensor Hub 1 should show its sensor
@@ -77,7 +131,7 @@ test.describe('Sensor discovery error messages', () => {
       });
     });
 
-    await goToSensors(page);
+    await goToSensorsAndScan(page);
     await page.waitForSelector('.host-error', { timeout: 15000 });
 
     const errors = page.locator('.host-error');
@@ -108,7 +162,7 @@ test.describe('Sensor discovery error messages', () => {
       });
     });
 
-    await goToSensors(page);
+    await goToSensorsAndScan(page);
     await page.waitForSelector('.host-group', { timeout: 15000 });
 
     const hub2Error = page.locator('.host-error');
@@ -136,7 +190,7 @@ test.describe('Sensor discovery error messages', () => {
       });
     });
 
-    await goToSensors(page);
+    await goToSensorsAndScan(page);
     await page.waitForSelector('.host-error', { timeout: 15000 });
 
     const errorText = await page.locator('.host-error').textContent();
@@ -165,7 +219,7 @@ test.describe('Sensor discovery per-host error isolation', () => {
       });
     });
 
-    await goToSensors(page);
+    await goToSensorsAndScan(page);
     await page.waitForSelector('.sensor-table', { timeout: 15000 });
 
     // Hub 1 should show its sensor in a table
@@ -197,7 +251,7 @@ test.describe('Sensor discovery MQTT timeout', () => {
       });
     });
 
-    await goToSensors(page);
+    await goToSensorsAndScan(page);
     await page.waitForSelector('.host-error', { timeout: 15000 });
 
     const errors = page.locator('.host-error');
@@ -221,7 +275,7 @@ test.describe('Sensor discovery MQTT timeout', () => {
       });
     });
 
-    await goToSensors(page);
+    await goToSensorsAndScan(page);
     await page.waitForSelector('.host-error', { timeout: 15000 });
 
     const errors = page.locator('.host-error');
@@ -234,21 +288,18 @@ test.describe('Sensor discovery MQTT timeout', () => {
 });
 
 test.describe('Sensor discovery concurrent scan guard', () => {
-  test('does not fire concurrent discovery requests during auto-refresh', async ({ page }) => {
-    let discoveryCallCount = 0;
-
+  test('scan button is disabled while scan is in flight', async ({ page }) => {
     await page.route('**/api/sensor-config', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
     });
     await page.route('**/api/sensor-discovery', async (route) => {
-      discoveryCallCount++;
       // Simulate a slow response (2 seconds)
       await new Promise(resolve => setTimeout(resolve, 2000));
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          id: 'disc-' + discoveryCallCount,
+          id: 'disc-1',
           results: [
             { host: '192.168.30.20', ok: true, sensors: [] },
             { host: '192.168.30.21', ok: true, sensors: [] },
@@ -258,22 +309,16 @@ test.describe('Sensor discovery concurrent scan guard', () => {
     });
 
     await goToSensors(page);
-    // Wait for initial scan to complete (2s delay + buffer)
-    await page.waitForTimeout(3000);
-
-    // Click scan button while auto-refresh may fire
-    const scanBtn = page.locator('#btn-scan-sensors');
-    await scanBtn.click();
-
-    // Immediately try to click again — second click should be blocked
+    // Click scan
+    await page.click('#btn-scan-sensors');
     await page.waitForTimeout(100);
-    // Try triggering a scan via JS while one is in flight
-    const wasSkipped = await page.evaluate(() => {
-      // Access the module's scanInFlight state indirectly by checking button state
+
+    // Button should be disabled while scan is in flight
+    const isDisabled = await page.evaluate(() => {
       const btn = document.getElementById('btn-scan-sensors');
       return btn && btn.disabled;
     });
-    expect(wasSkipped).toBe(true);
+    expect(isDisabled).toBe(true);
   });
 });
 
@@ -297,7 +342,7 @@ test.describe('Sensor discovery no response for a host', () => {
       });
     });
 
-    await goToSensors(page);
+    await goToSensorsAndScan(page);
     await page.waitForSelector('.sensor-table', { timeout: 15000 });
 
     // Hub 1 should show sensor

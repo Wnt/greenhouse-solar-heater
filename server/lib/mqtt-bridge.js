@@ -244,11 +244,15 @@ function publishSensorConfigApply(request) {
   return mqttRequest('greenhouse/sensor-config-apply', 'greenhouse/sensor-config-result', request, 30000);
 }
 
-function publishDiscoveryRequest(hosts) {
+function publishDiscoveryRequest(hosts, options) {
   var id = 'disc-' + Date.now();
-  // Each host may take up to 5s (HTTP timeout) + sensor polling time; allow 15s per host
-  var timeoutMs = Math.max(30000, (hosts ? hosts.length : 1) * 15000);
-  return mqttRequest('greenhouse/discover-sensors', 'greenhouse/discover-sensors-result', { id: id, hosts: hosts }, timeoutMs);
+  var skipTemp = options && options.skipTemp;
+  // Without temp polling: ~5s per host (OneWireScan only). With: ~15s per host.
+  var perHost = skipTemp ? 8000 : 15000;
+  var timeoutMs = Math.max(30000, (hosts ? hosts.length : 1) * perHost);
+  var payload = { id: id, hosts: hosts };
+  if (skipTemp) payload.skipTemp = true;
+  return mqttRequest('greenhouse/discover-sensors', 'greenhouse/discover-sensors-result', payload, timeoutMs);
 }
 
 function stop(callback) {
