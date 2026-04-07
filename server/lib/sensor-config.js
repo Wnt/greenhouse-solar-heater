@@ -75,6 +75,14 @@ function getLocalPath() {
   return process.env.SENSOR_CONFIG_PATH || path.join(__dirname, '..', 'sensor-config.json');
 }
 
+// Ensure persisted config has up-to-date hosts from SENSOR_HOST_IPS env var.
+// Assignments and version are preserved; hosts are always derived from env.
+function reconcileHosts(config) {
+  var defaults = buildDefaultConfig();
+  config.hosts = defaults.hosts;
+  return config;
+}
+
 function load(callback) {
   if (isS3Enabled()) {
     var config = getS3Config();
@@ -85,7 +93,7 @@ function load(callback) {
       return response.Body.transformToString();
     }).then(function (bodyStr) {
       try {
-        currentConfig = JSON.parse(bodyStr);
+        currentConfig = reconcileHosts(JSON.parse(bodyStr));
         callback(null, currentConfig);
       } catch (e) {
         callback(new Error('Failed to parse sensor config JSON'));
@@ -102,7 +110,7 @@ function load(callback) {
     var filePath = getLocalPath();
     try {
       var data = fs.readFileSync(filePath, 'utf8');
-      currentConfig = JSON.parse(data);
+      currentConfig = reconcileHosts(JSON.parse(data));
       callback(null, currentConfig);
     } catch (err) {
       if (err.code === 'ENOENT') {
