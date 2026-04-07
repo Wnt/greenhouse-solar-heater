@@ -35,8 +35,8 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `server/lib/db-config.js` → Database URL S3 persistence CLI (store/load DATABASE_URL in object storage)
 - `server/lib/nr-config.js` → New Relic license key S3 persistence CLI (store/load license key in object storage)
 - `server/lib/tracing.js` → OpenTelemetry SDK initialization (loaded via `--require`, no-op when `NEW_RELIC_LICENSE_KEY` not set)
-- `server/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB, publishes config/discovery/apply requests, correlates MQTT responses)
-- `server/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push)
+- `server/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB, publishes config/discovery/apply/relay-command requests, correlates MQTT responses). Also enriches state broadcasts with `manual_override` field from device config.
+- `server/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push). Config includes `mo` field for manual override sessions (`{a: bool, ex: int, ss: bool}`).
 - `server/lib/sensor-config.js` → Sensor configuration store (S3/local persistence, sensor-to-role assignments, MQTT-based apply via controller, MQTT sensor config push)
 - `deploy/` → cloud deployment infrastructure
 - `deploy/terraform/` → UpCloud Managed Kubernetes cluster, Managed Object Storage, Managed PostgreSQL, K8s Secrets/ConfigMaps, Helm releases, CI/CD deployer RBAC (Terraform)
@@ -71,8 +71,8 @@ When making changes, **update system.yaml first**, then propagate to affected do
 The `shelly/` directory contains the actual device scripts deployed to Shelly hardware:
 
 - `shelly/control-logic.js` — Pure decision logic (ES5-compatible). Exports an `evaluate(state, config, deviceConfig)` function with no side effects and no Shelly API calls. This is the testable core. The `deviceConfig` parameter enables actuator suppression when controls are disabled.
-- `shelly/control.js` — Shelly shell script that handles timers, RPC, relays, KVS, sensors, config guards, state event emission, and MQTT command execution (sensor config apply, sensor discovery). Imports `control-logic.js` (concatenated at deploy time). Reads device config from KVS. Processes pending MQTT commands (discovery, config apply) after each control cycle, executing SensorAddon RPC on the local network.
-- `shelly/telemetry.js` — Separate Shelly script for MQTT publish/subscribe, config bootstrap (HTTP GET on boot), KVS config persistence, and inter-script events. Publishes state snapshots to `greenhouse/state`, subscribes to `greenhouse/config`, `greenhouse/sensor-config`, `greenhouse/sensor-config-apply`, and `greenhouse/discover-sensors`. Forwards MQTT commands to the control script and publishes results back.
+- `shelly/control.js` — Shelly shell script that handles timers, RPC, relays, KVS, sensors, config guards, state event emission, and MQTT command execution (sensor config apply, sensor discovery, relay commands). Imports `control-logic.js` (concatenated at deploy time). Reads device config from KVS. Supports manual override mode (`deviceConfig.mo`): when active, skips evaluate() and processes direct relay commands; checks TTL expiry on each control loop iteration (device-side enforcement, works offline). Processes pending MQTT commands (discovery, config apply) after each control cycle.
+- `shelly/telemetry.js` — Separate Shelly script for MQTT publish/subscribe, config bootstrap (HTTP GET on boot), KVS config persistence, and inter-script events. Publishes state snapshots to `greenhouse/state`, subscribes to `greenhouse/config`, `greenhouse/sensor-config`, `greenhouse/sensor-config-apply`, `greenhouse/discover-sensors`, and `greenhouse/relay-command`. Forwards MQTT commands to the control script and publishes results back.
 - `shelly/deploy.sh` — Deploys scripts to the Shelly Pro 4PM via HTTP RPC. Deploys both control script (slot 1) and telemetry script (slot 3). Supports `DEPLOY_VIA_VPN=true` for VPN deployment. Can configure MQTT on the device via `MQTT_BROKER_HOST`.
 - `shelly/devices.conf` — DHCP-reserved IP addresses for all Shelly devices. Includes `PRO4PM_VPN` for VPN-routable access.
 
@@ -101,7 +101,7 @@ The `playground/` directory is the main web application — a solar heating moni
 
 - `playground/index.html` — single-page app: Status (default, bento grid dashboard), Components (sensors/valves/actuators), Schematic (SVG system visualization), Controls (sliders, reset), Device (runtime Shelly config with explanations). Floating play/pause FAB.
 - `playground/login.html` — passkey login page (moved from monitor/)
-- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), data-source (LiveSource/SimulationSource abstraction), UI, yaml-loader, login (passkey auth), version-check (polls /version endpoint, shows update toast), sensors (sensor discovery, assignment, apply configuration)
+- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), data-source (LiveSource/SimulationSource abstraction with sendCommand() for WebSocket commands and onCommandResponse() for override ack/error handling), UI, yaml-loader, login (passkey auth), version-check (polls /version endpoint, shows update toast), sensors (sensor discovery, assignment, apply configuration)
 - `playground/css/style.css` — shared styles
 - `design/Stitch/` — Stitch UI design mockups (desktop + mobile) with DESIGN.md spec and code.html references
 
@@ -123,7 +123,7 @@ All third-party libraries are vendored locally in `playground/vendor/` to avoid 
 
 The `server/` directory contains the Node.js API server that serves the playground app, bridges MQTT to WebSocket, and provides authentication, device config, sensor config, sensor discovery, and history APIs. All device communication flows through MQTT — no direct HTTP RPC to Shelly devices.
 
-- `server/server.js` — HTTP server: serves playground at `/`, auth middleware (when `AUTH_ENABLED=true`), WebSocket, device-config API, sensor-config API, sensor-discovery API, history API, health endpoint
+- `server/server.js` — HTTP server: serves playground at `/`, auth middleware (when `AUTH_ENABLED=true`), WebSocket (bidirectional: broadcasts state, receives commands for manual override and relay toggling), device-config API, sensor-config API, sensor-discovery API, history API, health endpoint
 - `server/auth/` — WebAuthn passkey auth: `credentials.js` (S3-backed store), `session.js` (HMAC cookies), `webauthn.js` (handlers), `invitations.js` (registration invitations)
 - `server/lib/` — Shared libraries: logger, S3 storage adapter, database module, MQTT bridge, device config, sensor config, tracing, config CLIs (vpn-config, db-config, nr-config)
 
