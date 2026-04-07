@@ -130,6 +130,18 @@ The `server/` directory contains the Node.js API server that serves the playgrou
 **Local mode**: `node server/server.js` — no auth, direct LAN access to Shelly devices.
 **Cloud mode**: `AUTH_ENABLED=true RPID=domain ORIGIN=https://domain node server/server.js` — passkey auth required, VPN tunnel to reach devices.
 
+## Testing Policy
+
+**Bug fixes follow test-first workflow:**
+
+1. **Write a failing test first** — an e2e or integration test that reproduces the bug
+2. **Run it to confirm it fails** — this verifies you understood the problem correctly
+3. **Implement the fix**
+4. **Run the test again to confirm it passes**
+5. **Commit both the test and the fix**
+
+This applies to behavior changes too (e.g. removing auto-polling, changing error messages) — write the test for the new expected behavior first. Do not commit fixes without accompanying test additions — treat missing tests as an incomplete fix.
+
 ## Running Tests
 
 ```bash

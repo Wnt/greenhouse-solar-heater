@@ -354,3 +354,34 @@ test.describe('Sensor discovery no response for a host', () => {
     await expect(error).toContainText('No response');
   });
 });
+
+test.describe('Sensor view hash navigation on reload', () => {
+  test('navigating directly to #sensors shows the sensors view', async ({ page }) => {
+    await page.route('**/api/sensor-config', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
+    });
+
+    // Navigate directly with #sensors hash (simulates browser reload)
+    await page.goto('/playground/#sensors');
+    await page.waitForSelector('#sensors-content .card', { timeout: 15000 });
+
+    // Sensors view should be active, not status
+    const sensorsView = page.locator('#view-sensors');
+    await expect(sensorsView).toHaveClass(/active/);
+
+    // Status view should NOT be active
+    const statusView = page.locator('#view-status');
+    await expect(statusView).not.toHaveClass(/active/);
+  });
+
+  test('navigating directly to #device shows the device view', async ({ page }) => {
+    await page.goto('/playground/#device');
+    await page.waitForSelector('.sidebar-nav');
+
+    const deviceView = page.locator('#view-device');
+    await expect(deviceView).toHaveClass(/active/);
+
+    const statusView = page.locator('#view-status');
+    await expect(statusView).not.toHaveClass(/active/);
+  });
+});
