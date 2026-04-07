@@ -169,7 +169,7 @@ function pollAllSensors(cb) {
 
 // ── Display ──
 
-function updateDisplay() {
+function updateDisplay(cb) {
   var labels = buildDisplayLabels({
     mode: state.mode,
     modeDurationMs: Date.now() - state.mode_start,
@@ -177,9 +177,13 @@ function updateDisplay() {
     lastError: state.last_error,
     collectorsDrained: state.collectors_drained,
   });
-  for (var i = 0; i < 4; i++) {
-    Shelly.call("Switch.SetConfig", {id: i, config: {name: labels[i]}}, function() {});
+  function nextLabel(i) {
+    if (i >= 4) { if (cb) cb(); return; }
+    Shelly.call("Switch.SetConfig", {id: i, config: {name: labels[i]}}, function() {
+      nextLabel(i + 1);
+    });
   }
+  nextLabel(0);
 }
 
 // ── State snapshot for evaluate() and events ──
@@ -354,29 +358,30 @@ function stopDrain(reason) {
 function controlLoop() {
   if (state.transitioning) return;
   pollAllSensors(function() {
-    updateDisplay();
-    if (state.transitioning) return;
+    updateDisplay(function() {
+      if (state.transitioning) return;
 
-    var evalState = buildEvalState();
-    var result = evaluate(evalState, null, deviceConfig);
+      var evalState = buildEvalState();
+      var result = evaluate(evalState, null, deviceConfig);
 
-    if (result.nextMode !== state.mode) {
-      if (result.safetyOverride) {
-        transitionTo(result);
-      } else if (result.suppressed) {
-        applyFlags(result.flags);
-        emitStateUpdate();
+      if (result.nextMode !== state.mode) {
+        if (result.safetyOverride) {
+          transitionTo(result);
+        } else if (result.suppressed) {
+          applyFlags(result.flags);
+          emitStateUpdate();
+        } else {
+          transitionTo(result);
+        }
       } else {
-        transitionTo(result);
+        applyFlags(result.flags);
+        setSpaceHeater(!!result.actuators.space_heater);
+        emitStateUpdate();
       }
-    } else {
-      applyFlags(result.flags);
-      setSpaceHeater(!!result.actuators.space_heater);
-      emitStateUpdate();
-    }
 
-    // Process pending MQTT commands after control cycle completes
-    processPendingCommands();
+      // Process pending MQTT commands after control cycle completes
+      processPendingCommands();
+    });
   });
 }
 
