@@ -944,6 +944,7 @@ button.primary:hover { opacity: 0.9; }
   transition: all 0.15s ease;
 }
 .preset-btn:hover {
+  background: transparent;
   border-color: var(--primary);
   color: var(--primary);
 }
@@ -1142,6 +1143,7 @@ button.primary:hover { opacity: 0.9; }
 }
 
 .update-toast-refresh:hover {
+  background: var(--primary);
   transform: scale(1.04);
   box-shadow: 0 2px 10px rgba(233, 195, 73, 0.3);
 }
@@ -1159,6 +1161,7 @@ button.primary:hover { opacity: 0.9; }
 }
 
 .update-toast-dismiss:hover {
+  background: transparent;
   color: var(--on-surface);
 }
 
