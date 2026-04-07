@@ -57,7 +57,7 @@ export const derived = {
 
   get availableViews() {
     const phase = store.get('phase');
-    if (phase === 'live') return ['status', 'components', 'schematic', 'sensors', 'device'];
+    if (phase === 'live' || phase === 'init') return ['status', 'components', 'schematic', 'sensors', 'device'];
     if (phase === 'simulation') return ['status', 'components', 'schematic', 'controls'];
     return ['status', 'components', 'schematic'];
   },
