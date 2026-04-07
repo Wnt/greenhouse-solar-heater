@@ -10,6 +10,7 @@
 ### Session 2026-04-07
 
 - Q: Should safety overrides (freeze drain, overheat drain) always take precedence during manual override, or should the user be able to suppress them? → A: User-selectable option when entering manual override. "Suppress Safety Overrides" defaults to OFF (safe default). When ON, safety overrides are suspended for the TTL duration, allowing unrestricted actuator testing.
+- Q: When a relay toggle command fails (device unreachable, actuator doesn't respond), how should the system handle it? → A: Silently revert the button state with a brief visual "shake" or error color flash (no modal/toast).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -58,7 +59,7 @@ As a mobile user, I want each relay button tap to produce immediate visual feedb
 
 1. **Given** manual override mode is active on a mobile device, **When** I tap a relay button, **Then** the button provides instant visual feedback (color/state change) and a short vibration pulse before the server round-trip completes.
 2. **Given** the device does not support the Vibration API (e.g., desktop browser), **When** I tap a relay button, **Then** visual feedback still occurs and no errors are thrown.
-3. **Given** manual override mode is active, **When** the server confirms the relay state change, **Then** the button state is reconciled with the actual hardware state (corrected if the command failed).
+3. **Given** manual override mode is active, **When** a relay toggle command fails, **Then** the button silently reverts to its previous state with a brief visual error indicator (shake or error color flash), without modal dialogs or toasts.
 
 ---
 
@@ -83,6 +84,7 @@ As a system operator, I want to exit manual override before the TTL expires, so 
 - What happens if another user saves a device config change during manual override? The manual override takes precedence until TTL expires. Config changes that disable controls (`ce=false`) immediately end the override and disable all relays (safety takes priority).
 - What happens if a safety condition (freeze drain, overheat drain) triggers during manual override? If "Suppress Safety Overrides" is OFF (default), safety overrides take precedence — the system executes the safety mode, manual override is suspended, and the user is notified. If "Suppress Safety Overrides" is ON, the safety condition is ignored for the duration of the override TTL, allowing unrestricted testing.
 - What happens when the browser tab is closed during manual override? The override TTL continues server/device-side. Relays remain in their manual state until TTL expires, then automation resumes.
+- What happens when a relay toggle command fails? The button silently reverts to its previous state with a brief visual error indicator (shake or error color flash). No retry is attempted automatically — the user can tap again to retry manually.
 
 ## Requirements *(mandatory)*
 
@@ -104,6 +106,7 @@ As a system operator, I want to exit manual override before the TTL expires, so 
 - **FR-014**: When entering manual override, the user MUST be presented with a "Suppress Safety Overrides" option that defaults to OFF (safe default: safety overrides active). When the option is OFF, safety-critical operations (freeze drain, overheat drain) take precedence and can interrupt manual override. When the option is ON, safety overrides are also suspended for the duration of the manual override TTL, allowing unrestricted actuator testing.
 - **FR-016**: The "Suppress Safety Overrides" setting MUST revert to its safe default (OFF) when the manual override session ends (whether by TTL expiry, voluntary exit, or controls being disabled externally).
 - **FR-015**: The relay toggle board MUST display human-readable labels for each actuator alongside technical identifiers so operators can identify which physical component each button controls.
+- **FR-017**: When a relay toggle command fails (device unreachable, actuator unresponsive), the system MUST silently revert the button to its previous state with a brief visual error indicator (shake animation or error color flash) — no modal dialogs or toast notifications.
 
 ### Key Entities
 
