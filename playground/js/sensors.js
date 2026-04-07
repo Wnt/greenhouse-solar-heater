@@ -17,7 +17,6 @@ const SENSOR_ROLES = [
 
 let sensorConfig = null;
 let detectedSensors = {};  // hostId -> [{addr, component, tC, error}]
-let refreshTimer = null;
 let scanning = false;
 let scanInFlight = false;  // guards against concurrent scan requests
 
@@ -32,17 +31,19 @@ function friendlyError(err) {
   return err;
 }
 
-async function scanAllHosts() {
+async function scanAllHosts({ withTemp = false } = {}) {
   if (!sensorConfig || !sensorConfig.hosts) return;
   if (scanInFlight) return;  // skip if a scan is already running
   scanInFlight = true;
   detectedSensors = {};
   const hostIps = sensorConfig.hosts.map(h => h.ip);
   try {
+    const payload = { hosts: hostIps };
+    if (!withTemp) payload.skipTemp = true;
     const res = await fetch('/api/sensor-discovery', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hosts: hostIps }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
@@ -431,19 +432,7 @@ async function handleApply() {
 export async function initSensorsView() {
   try {
     await loadSensorConfig();
-    // Mark all hosts as scanning and show indicator before first scan
-    scanning = true;
-    if (sensorConfig && sensorConfig.hosts) {
-      for (const host of sensorConfig.hosts) {
-        detectedSensors[host.id] = null;
-      }
-    }
     renderSensorsView();
-    // Start auto-refresh
-    await scanAllHosts();
-    scanning = false;
-    renderSensorsView();
-    startAutoRefresh();
   } catch (e) {
     const container = document.getElementById('sensors-content');
     if (container) {
@@ -453,22 +442,5 @@ export async function initSensorsView() {
 }
 
 export function destroySensorsView() {
-  stopAutoRefresh();
-}
-
-function startAutoRefresh() {
-  stopAutoRefresh();
-  refreshTimer = setInterval(async () => {
-    if (scanInFlight) return;  // skip if scan already running
-    if (document.hidden) return;  // skip when tab is backgrounded
-    await scanAllHosts();
-    renderSensorsView();
-  }, 30000);
-}
-
-function stopAutoRefresh() {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
+  // no-op — no background activity to clean up
 }

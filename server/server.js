@@ -208,7 +208,9 @@ function handleSensorDiscovery(req, res, body) {
     jsonResponse(res, 400, { error: 'Missing hosts array' });
     return;
   }
-  mqttBridge.publishDiscoveryRequest(parsed.hosts).then(function (result) {
+  var options = {};
+  if (parsed.skipTemp) options.skipTemp = true;
+  mqttBridge.publishDiscoveryRequest(parsed.hosts, options).then(function (result) {
     jsonResponse(res, 200, result);
   }).catch(function (err) {
     var msg = err.message || String(err);

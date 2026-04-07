@@ -86,7 +86,24 @@ test.describe('Sensor Configuration View', () => {
     await page.waitForSelector('#sensors-content .card', { timeout: 15000 });
   }
 
-  test('loads sensors view and shows sensor hosts', async ({ page }) => {
+  // Helper: go to sensors view and trigger a scan
+  async function goToSensorsAndScan(page) {
+    await goToSensors(page);
+    await page.click('#btn-scan-sensors');
+    await page.waitForSelector('.sensor-table', { timeout: 15000 });
+  }
+
+  test('loads sensors view and shows sensor hosts without auto-scanning', async ({ page }) => {
+    let discoveryCallCount = 0;
+    await page.route('**/api/sensor-discovery', async (route) => {
+      discoveryCallCount++;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'disc-mock', results: [] }),
+      });
+    });
+
     await goToSensors(page);
 
     // Should show sensor roles section
@@ -98,12 +115,13 @@ test.describe('Sensor Configuration View', () => {
     // Should show both sensor host names
     await expect(page.locator('text=Sensor Hub 1')).toBeVisible();
     await expect(page.locator('text=Sensor Hub 2')).toBeVisible();
+
+    // No discovery request should have been made
+    expect(discoveryCallCount).toBe(0);
   });
 
-  test('displays detected sensors with addresses and temperatures', async ({ page }) => {
-    await goToSensors(page);
-    // Wait for scan to complete — sensor table appears after async scan
-    await page.waitForSelector('.sensor-table', { timeout: 15000 });
+  test('displays detected sensors with addresses and temperatures after scan', async ({ page }) => {
+    await goToSensorsAndScan(page);
 
     // Should show sensor addresses (from mock, same 3 sensors returned by both hosts)
     await expect(page.locator('td:has-text("40:FF:64:06:C7:CC:95:B1")').first()).toBeVisible();
@@ -112,10 +130,8 @@ test.describe('Sensor Configuration View', () => {
     await expect(page.locator('td:has-text("24.5")').first()).toBeVisible();
   });
 
-  test('shows role assignment dropdowns', async ({ page }) => {
-    await goToSensors(page);
-    // Wait for scan to complete so options are populated
-    await page.waitForSelector('.sensor-table', { timeout: 15000 });
+  test('shows role assignment dropdowns after scan', async ({ page }) => {
+    await goToSensorsAndScan(page);
 
     // Should show dropdowns for all roles
     const selects = page.locator('.sensor-select');
@@ -153,8 +169,7 @@ test.describe('Sensor Configuration View', () => {
       }
     });
 
-    await goToSensors(page);
-    await page.waitForSelector('.sensor-select');
+    await goToSensorsAndScan(page);
 
     // Select a sensor for the collector role
     const collectorSelect = page.locator('[data-role="collector"]');
