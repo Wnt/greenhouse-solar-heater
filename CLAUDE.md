@@ -132,7 +132,15 @@ The `server/` directory contains the Node.js API server that serves the playgrou
 
 ## Testing Policy
 
-**Every bug fix and behavior change must include tests.** When fixing a bug, add a test that would have failed before the fix and passes after. When changing behavior (e.g. removing auto-polling, changing error messages), update existing tests and add new ones that verify the new behavior. Do not commit fixes without accompanying test additions — treat missing tests as an incomplete fix.
+**Bug fixes follow test-first workflow:**
+
+1. **Write a failing test first** — an e2e or integration test that reproduces the bug
+2. **Run it to confirm it fails** — this verifies you understood the problem correctly
+3. **Implement the fix**
+4. **Run the test again to confirm it passes**
+5. **Commit both the test and the fix**
+
+This applies to behavior changes too (e.g. removing auto-polling, changing error messages) — write the test for the new expected behavior first. Do not commit fixes without accompanying test additions — treat missing tests as an incomplete fix.
 
 ## Running Tests
 
