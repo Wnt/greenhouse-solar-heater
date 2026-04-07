@@ -413,6 +413,11 @@
     import { LiveSource, SimulationSource } from './js/data-source.js';
     import { startVersionCheck, triggerVersionCheck } from './js/version-check.js';
     import { initSensorsView, destroySensorsView } from './js/sensors.js';
+    import { store as appStore, derived } from './js/app-state.js';
+    import { initSubscriptions, setViewLifecycle } from './js/subscriptions.js';
+    import { initNavigation } from './js/actions/navigation.js';
+    // connection.js actions will be used in later phases — import deferred to avoid name collisions
+    // import { switchToLive, switchToSimulation, ... } from './js/actions/connection.js';
     // Expose for e2e testing
     window.__triggerVersionCheck = triggerVersionCheck;
 
@@ -422,6 +427,7 @@
     const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     const forceSimulation = new URLSearchParams(location.search).get('mode') === 'sim';
     const isLiveCapable = !isGitHubPages && !forceSimulation;
+    appStore.set('isLiveCapable', isLiveCapable);
 
     let activeSource = 'simulation'; // 'simulation' or 'live'
     let liveSource = null;
@@ -579,7 +585,10 @@
       const toggle = document.getElementById('mode-toggle');
       const sw = document.getElementById('mode-toggle-switch');
       const label = document.getElementById('mode-toggle-label');
-      if (!toggle || !isLiveCapable) return;
+      if (!toggle || !isLiveCapable) {
+        appStore.set('phase', 'simulation');
+        return;
+      }
 
       toggle.classList.add('visible');
       // Default to live mode on deployed app
@@ -596,14 +605,12 @@
 
     function switchToLive() {
       activeSource = 'live';
+      appStore.set('phase', 'live');
       const sw = document.getElementById('mode-toggle-switch');
       const label = document.getElementById('mode-toggle-label');
       if (sw) sw.classList.add('active');
       if (label) { label.textContent = 'Live'; label.classList.add('active'); }
-      // Hide controls view in live mode
-      document.querySelectorAll('[data-view="controls"]').forEach(el => el.style.display = 'none');
-      // Hide FAB in live mode
-      document.getElementById('fab-play').style.display = 'none';
+      // Controls/FAB/live-only visibility handled by store phase subscription
 
       if (!liveSource) {
         liveSource = new LiveSource();
@@ -628,13 +635,7 @@
       // Pause simulation
       running = false;
 
-      // Show live-only time range pills
-      document.querySelectorAll('.live-only').forEach(el => el.style.display = '');
-      // Re-navigate to current hash now that live-only views are visible
-      const hashView = window.location.hash.replace('#', '');
-      if (hashView && hashView !== document.querySelector('.view.active')?.id?.replace('view-', '')) {
-        navigateToView(hashView);
-      }
+      // live-only nav visibility is now handled by store phase subscription
       fetchLiveHistory(graphRange);
 
       if (!stalenessTimer) {
@@ -669,24 +670,17 @@
 
     function switchToSimulation() {
       activeSource = 'simulation';
+      appStore.set('phase', 'simulation');
       const sw = document.getElementById('mode-toggle-switch');
       const label = document.getElementById('mode-toggle-label');
       if (sw) sw.classList.remove('active');
       if (label) { label.textContent = 'Simulation'; label.classList.remove('active'); }
-      // Show controls view and FAB
-      document.querySelectorAll('[data-view="controls"]').forEach(el => el.style.display = '');
-      document.getElementById('fab-play').style.display = '';
+      // Controls/FAB/live-only visibility handled by store phase subscription
 
       if (liveSource) liveSource.stop();
       updateConnectionUI('disconnected');
       liveHistoryData = null;
-      // Hide live-only time range pills
-      document.querySelectorAll('.live-only').forEach(el => el.style.display = 'none');
-      // Redirect away from live-only views
-      const currentView = window.location.hash.replace('#', '');
-      if (currentView === 'sensors' || currentView === 'device') {
-        window.location.hash = 'status';
-      }
+      // live-only nav visibility and view redirect handled by store phase subscription
       if (stalenessTimer) { clearInterval(stalenessTimer); stalenessTimer = null; }
       const banner = document.getElementById('staleness-banner');
       if (banner) banner.classList.remove('visible');
@@ -951,7 +945,22 @@
       model = new ThermalModel();
       controller = new ControlStateMachine(config.modes);
 
-      setupNavigation();
+      // Set up view lifecycle callbacks for the store-driven navigation
+      setViewLifecycle({
+        sensors: {
+          mount: (container, s) => {
+            initSensorsView();
+            return () => destroySensorsView();
+          }
+        }
+      });
+
+      // Initialize store subscriptions (nav, overlays, indicators)
+      initSubscriptions(appStore);
+
+      // Initialize hash-based navigation via store
+      initNavigation(appStore);
+
       setupControls();
       setupTimeRangePills();
       setupFAB();
@@ -983,54 +992,7 @@
       };
     }
 
-    // ── Navigation (hash-based deep linking) ──
-    const VALID_VIEWS = ['status', 'components', 'schematic', 'controls', 'sensors', 'device'];
-
-    function navigateToView(viewId) {
-      if (!VALID_VIEWS.includes(viewId)) viewId = 'status';
-      // Device/Sensors views require live mode — fall back to status if not available
-      const deviceNav = document.querySelector('[data-view="device"]');
-      if (viewId === 'device' && deviceNav && deviceNav.style.display === 'none') {
-        viewId = 'status';
-      }
-      const sensorsNav = document.querySelector('[data-view="sensors"]');
-      if (viewId === 'sensors' && sensorsNav && sensorsNav.style.display === 'none') {
-        viewId = 'status';
-      }
-      // Lifecycle: destroy sensors view when leaving, init when entering
-      const currentView = document.querySelector('.view.active');
-      if (currentView && currentView.id === 'view-sensors' && viewId !== 'sensors') {
-        destroySensorsView();
-      }
-      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-      document.getElementById('view-' + viewId).classList.add('active');
-      if (viewId === 'sensors') {
-        initSensorsView();
-      }
-      document.querySelectorAll('[data-view]').forEach(l => l.classList.remove('active'));
-      document.querySelectorAll(`[data-view="${viewId}"]`).forEach(l => l.classList.add('active'));
-    }
-
-    function setupNavigation() {
-      // Click handler: update hash (triggers hashchange → navigateToView)
-      document.querySelectorAll('[data-view]').forEach(link => {
-        link.addEventListener('click', (e) => {
-          e.preventDefault();
-          window.location.hash = link.dataset.view;
-        });
-      });
-
-      // Hash change handler: navigate to the view in the hash
-      window.addEventListener('hashchange', () => {
-        const viewId = window.location.hash.replace('#', '') || 'status';
-        navigateToView(viewId);
-      });
-
-      // Initial view from hash (or default to status)
-      const initialView = window.location.hash.replace('#', '') || 'status';
-      if (window.location.hash === '') window.location.hash = 'status';
-      navigateToView(initialView);
-    }
+    // ── Navigation is now store-driven via js/actions/navigation.js + js/subscriptions.js ──
 
     // ── FAB ──
     function setupFAB() {

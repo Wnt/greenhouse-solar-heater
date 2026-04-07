@@ -38,6 +38,9 @@ export const store = createStore({
   baselineHash: null,
   serverHash: null,
   versionDismissed: false,
+
+  // Internal: staleness tick for periodic re-evaluation
+  _staleTick: 0,
 });
 
 /**
