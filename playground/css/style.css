@@ -930,6 +930,12 @@ button.primary {
 }
 
 button.primary:hover { opacity: 0.9; }
+button.primary:disabled {
+  background: var(--surface-container);
+  color: var(--outline);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
 
 /* ── Scenario Preset Buttons ── */
 .preset-btn {
