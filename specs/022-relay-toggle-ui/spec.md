@@ -119,7 +119,7 @@ As a system operator, I want to exit manual override before the TTL expires, so 
 ### Measurable Outcomes
 
 - **SC-001**: Users can toggle any individual relay and see confirmed state feedback within 1 second of tapping the button in typical network conditions.
-- **SC-002**: Manual override auto-reverts to automation within 5 seconds of TTL expiration with no user intervention.
+- **SC-002**: Manual override auto-reverts to automation within 30 seconds of TTL expiration with no user intervention, even when the server or internet connection is down.
 - **SC-003**: 100% of relay toggle taps on supported mobile devices produce haptic vibration feedback.
 - **SC-004**: The toggle board displays all 10 controllable actuators (8 valves + pump + fan) in a grid layout that is usable on both mobile and desktop screens.
 - **SC-005**: Users can complete a full commissioning test (enter override, toggle each actuator on then off, exit override) in under 3 minutes.
@@ -129,6 +129,6 @@ As a system operator, I want to exit manual override before the TTL expires, so 
 
 - The existing device config mechanism (controls-enabled, enabled-actuators bitmask) provides the authorization gate for manual override — no new permission system is needed.
 - Space heater and immersion heater are excluded from the toggle board, as the user specifically mentioned valves, fan, and pump. These can be added later if needed.
-- The override TTL is enforced on the device/server side, not just in the browser, to prevent stale manual states if the browser disconnects.
+- The override TTL is enforced primarily on the Shelly device itself (checked every control loop iteration, ~30 seconds), ensuring auto-revert even when the server or internet is unreachable. The server tracks TTL as a secondary measure for client notification.
 - Optimistic UI updates (instant visual feedback before server confirmation) are acceptable, with reconciliation when the actual state is received.
 - The existing communication infrastructure provides sufficient latency for near-real-time relay control.

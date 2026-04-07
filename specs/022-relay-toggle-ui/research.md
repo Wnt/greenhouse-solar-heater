@@ -16,12 +16,13 @@
 
 ## R2: Manual Override State Management — Where to Enforce TTL
 
-**Decision**: Override session state (active flag, TTL expiry timestamp, safety suppression flag) is managed on the Shelly device via the existing device config mechanism. A new field `mo` (manual override) is added to the compact device config. The server tracks the TTL and publishes a config update to end the override when it expires.
+**Decision**: Override session state (active flag, TTL expiry timestamp, safety suppression flag) is managed on the Shelly device via the existing device config mechanism. A new field `mo` (manual override) is added to the compact device config. TTL expiry is enforced **on the device** by checking `mo.ex` against the current time on every control loop iteration (runs every 30 seconds). When the override expires, the device clears `mo` from its config, saves to KVS, emits a state update, and resumes normal automation. The server also tracks the TTL as a secondary measure and can push a config update to end the override, but the device is the primary authority.
 
-**Rationale**: The TTL must survive browser disconnection (spec requirement). The Shelly device is the authority for relay state, but it has limited timer resources (5 timers max, most already used). The server already manages device config persistence and MQTT publishing. Having the server own TTL expiry and push a config update is the simplest approach: it uses existing infrastructure and keeps the Shelly script changes minimal.
+**Rationale**: The TTL must survive browser disconnection AND server/internet outage — the device must be able to revert to automation autonomously. The existing control loop already runs every 30 seconds, so checking the expiry timestamp there adds no new timers and no resource cost. Worst-case auto-revert latency is 30 seconds after TTL expiry, which is acceptable for a 5-minute default TTL. The server acts as a secondary safety net (e.g., cleaning up its own state and notifying connected clients) but is not required for TTL enforcement.
 
 **Alternatives considered**:
-- **Shelly-side TTL timer**: Shelly has only 5 timers, most already allocated (control loop, drain monitor, valve settle, pump prime, boot retry). Adding another risks exceeding the limit. Rejected.
+- **Server-only TTL**: Device depends on server being reachable. If internet or server is down, override never expires — relays stay in manual state indefinitely. Unacceptable safety risk. Rejected.
+- **Dedicated Shelly timer**: Shelly has only 5 timers, most already allocated (control loop, drain monitor, valve settle, pump prime, boot retry). Adding another risks exceeding the limit. Rejected.
 - **Browser-only TTL**: Doesn't survive tab close. Violates spec requirement. Rejected.
 - **Separate override state in S3/DB**: Overengineered for a transient session. Rejected.
 
@@ -37,9 +38,9 @@
 
 ## R4: Device Config Extension — Compact Format for Manual Override
 
-**Decision**: Extend the device config with a `mo` (manual override) field: `{mo: {a: true, ex: 1712505600, ss: false}}` where `a` = active, `ex` = expiry unix timestamp (seconds), `ss` = suppress safety overrides. When `mo` is null or `mo.a` is false, the system operates normally. The server sets `ex` based on current time + TTL when entering override, and publishes a config update with `mo: null` when TTL expires.
+**Decision**: Extend the device config with a `mo` (manual override) field: `{mo: {a: true, ex: 1712505600, ss: false}}` where `a` = active, `ex` = expiry unix timestamp (seconds), `ss` = suppress safety overrides. When `mo` is null or `mo.a` is false, the system operates normally. The server sets `ex` based on current time + TTL when entering override. The device checks `ex` against its own clock on every control loop iteration and autonomously clears `mo` when expired.
 
-**Rationale**: Reuses the existing device config MQTT channel (`greenhouse/config`, QoS 1, retained) for override state. The compact key format (`mo`, `a`, `ex`, `ss`) fits within the Shelly KVS 256-byte limit. The server handles TTL expiry rather than the device, keeping Shelly timer usage unchanged.
+**Rationale**: Reuses the existing device config MQTT channel (`greenhouse/config`, QoS 1, retained) for override state. The compact key format (`mo`, `a`, `ex`, `ss`) fits within the Shelly KVS 256-byte limit. Device-side expiry check in the existing control loop uses zero additional timers. The device's clock (synced via NTP) provides reliable timestamps for expiry comparison.
 
 **Alternatives considered**:
 - **Separate MQTT topic for override state**: Adds complexity — device would need to subscribe to another topic and merge state. Rejected.

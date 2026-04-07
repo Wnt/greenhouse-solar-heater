@@ -5,7 +5,7 @@
 
 ## Summary
 
-Add a soundboard-style manual relay toggle UI to the Device view that allows operators to individually control each valve, pump, and fan relay during commissioning and testing. Communication uses WebSocket → MQTT for low-latency actuation. Manual override mode suspends automation with a configurable TTL (default 5 minutes) enforced server-side, with an option to suppress safety overrides. Tactile feedback via Vibration API and optimistic UI updates.
+Add a soundboard-style manual relay toggle UI to the Device view that allows operators to individually control each valve, pump, and fan relay during commissioning and testing. Communication uses WebSocket → MQTT for low-latency actuation. Manual override mode suspends automation with a configurable TTL (default 5 minutes) enforced on the Shelly device itself (checked every control loop iteration, no new timer needed), with an option to suppress safety overrides. The server tracks TTL as a secondary measure. Tactile feedback via Vibration API and optimistic UI updates.
 
 ## Technical Context
 
@@ -40,7 +40,7 @@ Add a soundboard-style manual relay toggle UI to the Device view that allows ope
 | Principle | Status | Notes |
 |-----------|--------|-------|
 | II. Pure Logic / IO Separation | PASS | `control-logic.js` unchanged. All manual override logic is in the I/O layer (`control.js`). Safety override detection still uses `evaluate()` when `mo.ss=false`. |
-| III. Safe by Default | PASS | Research R2–R4 confirm: server-side TTL enforcement, safe defaults for all override parameters, `ce=false` kills override immediately. Suppress-safety requires explicit opt-in. |
+| III. Safe by Default | PASS | Research R2–R4 confirm: device-side TTL enforcement (works offline, no server dependency), safe defaults for all override parameters, `ce=false` kills override immediately. Suppress-safety requires explicit opt-in. |
 | IV. Proportional Test Coverage | PASS | Quickstart lists all test files. Unit tests cover config extension, MQTT publishing, control loop guard. E2e tests cover UI flow. |
 
 ## Project Structure
@@ -63,7 +63,7 @@ specs/022-relay-toggle-ui/
 ```text
 # Modified files (existing)
 server/
-├── server.js                    # + WebSocket message handler, override TTL timer
+├── server.js                    # + WebSocket message handler, secondary TTL tracking
 ├── lib/
 │   ├── mqtt-bridge.js           # + publishRelayCommand(), override state in broadcasts
 │   └── device-config.js         # + mo field support, override enter/exit/update

@@ -31,7 +31,7 @@ Enters manual override mode. Requires `ce=true` in current device config.
 3. Compute `ex = Math.floor(Date.now()/1000) + ttl`.
 4. Update device config: set `mo: {a: true, ex, ss: suppressSafety}`.
 5. Publish updated config to MQTT `greenhouse/config`.
-6. Start server-side TTL timer.
+6. Track TTL expiry server-side as secondary measure (device enforces primary expiry via control loop).
 7. Send acknowledgment.
 
 **Response** (Server → Client):
@@ -56,7 +56,7 @@ Exits manual override mode voluntarily.
 
 **Server behavior**:
 1. Clear override: update device config with `mo: null`.
-2. Cancel server-side TTL timer.
+2. Clear server-side TTL tracking.
 3. Publish updated config to MQTT.
 4. Send acknowledgment.
 
@@ -85,7 +85,7 @@ Updates TTL while override is active.
 1. Validate override is active. If not, send error.
 2. Compute new `ex = Math.floor(Date.now()/1000) + ttl`.
 3. Update device config `mo.ex`.
-4. Reset server-side TTL timer.
+4. Reset server-side TTL tracking.
 5. Publish updated config to MQTT.
 6. Send acknowledgment with new expiry.
 
@@ -128,9 +128,19 @@ Toggles a specific relay. Only valid during active manual override.
 ```
 
 **Device behavior**:
-1. Validate `deviceConfig.mo.a === true` (override active).
+1. Validate `deviceConfig.mo.a === true` and `now < deviceConfig.mo.ex` (override active and not expired).
 2. Call the appropriate relay function (`setPump`, `setFan`, `setValve`).
 3. Emit state update via `greenhouse/state`.
+
+### Device-side TTL enforcement
+
+On every control loop iteration (every 30 seconds), the device checks:
+1. If `deviceConfig.mo && deviceConfig.mo.a && Shelly.getComponentStatus("sys").unixtime >= deviceConfig.mo.ex`:
+   - Clear `deviceConfig.mo` (set to null)
+   - Save updated config to KVS
+   - Resume normal `evaluate()` cycle
+   - Emit state update (clears `manual_override` in broadcast)
+2. This ensures override expires even when the server/internet is unreachable.
 
 ## Server → Client State Broadcast (extended)
 

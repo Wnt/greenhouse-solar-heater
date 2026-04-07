@@ -29,9 +29,9 @@ Nested within device config. Transient — set to null when override ends.
 | `ss` | boolean | false | Suppress safety overrides |
 
 **Lifecycle**:
-- **Created**: When user enters manual override. Server sets `ex = now + ttl`.
+- **Created**: When user enters manual override. Server sets `ex = now + ttl` and publishes config.
 - **Active**: `mo.a === true && now < mo.ex`. Control loop skips `evaluate()`.
-- **Expired**: `now >= mo.ex`. Server publishes config with `mo: null`.
+- **Expired**: Device detects `now >= mo.ex` on next control loop iteration (≤30s latency). Device clears `mo` from config, saves to KVS, and emits state update. Server also tracks expiry as secondary measure.
 - **Cancelled**: User exits override. Server publishes config with `mo: null`.
 - **Interrupted**: External `ce=false` change. Server publishes config with `mo: null`.
 
