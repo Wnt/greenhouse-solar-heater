@@ -415,7 +415,7 @@
             Suppress Safety
           </label>
         </div>
-        <p id="override-gate-msg" style="font-size:12px;color:var(--on-surface-variant);margin:4px 0 0;">Requires Controls Enabled to be switched on above.</p>
+        <p id="override-gate-msg" style="font-size:12px;color:var(--error);margin:4px 0 0;display:none;">Requires Controls Enabled to be switched on above.</p>
 
         <!-- Active override header -->
         <div id="override-active-header" style="display:none;">
@@ -2043,12 +2043,43 @@
       }
     }
 
+    var overrideAckTimer = null;
+
     function enterOverride() {
       if (!liveSource) return;
+      var btn = document.getElementById('override-enter-btn');
+      btn.disabled = true;
+      btn.textContent = 'Connecting...';
+
       var ss = document.getElementById('override-suppress-safety').classList.contains('active');
       var activeTtlBtn = document.querySelector('.ttl-btn.active');
       var ttl = activeTtlBtn ? parseInt(activeTtlBtn.dataset.ttl, 10) : 300;
-      liveSource.sendCommand({ type: 'override-enter', ttl: ttl, suppressSafety: ss });
+      var sent = liveSource.sendCommand({ type: 'override-enter', ttl: ttl, suppressSafety: ss });
+
+      if (!sent) {
+        btn.disabled = false;
+        btn.textContent = 'Enter Manual Override';
+        showOverrideMsg('WebSocket not connected.', 'var(--error)');
+        return;
+      }
+
+      // Timeout if no ack received
+      clearTimeout(overrideAckTimer);
+      overrideAckTimer = setTimeout(function () {
+        if (!overrideActive) {
+          btn.disabled = false;
+          btn.textContent = 'Enter Manual Override';
+          showOverrideMsg('No response from server. Is the controller reachable?', 'var(--error)');
+        }
+      }, 5000);
+    }
+
+    function showOverrideMsg(text, color) {
+      var el = document.getElementById('override-expired-msg');
+      el.textContent = text;
+      el.style.color = color || 'var(--on-surface-variant)';
+      el.style.display = '';
+      setTimeout(function () { el.style.display = 'none'; }, 6000);
     }
 
     function exitOverride() {
@@ -2062,6 +2093,7 @@
     }
 
     function handleOverrideResponse(msg) {
+      clearTimeout(overrideAckTimer);
       if (msg.type === 'override-ack') {
         if (msg.active) {
           activateOverrideUI(msg.expiresAt, msg.suppressSafety);
@@ -2069,11 +2101,11 @@
           deactivateOverrideUI();
         }
       } else if (msg.type === 'override-error') {
-        var expMsg = document.getElementById('override-expired-msg');
-        expMsg.textContent = msg.message;
-        expMsg.style.display = '';
-        expMsg.style.color = 'var(--error)';
-        setTimeout(() => { expMsg.style.display = 'none'; }, 4000);
+        // Restore enter button
+        var btn = document.getElementById('override-enter-btn');
+        btn.disabled = false;
+        btn.textContent = 'Enter Manual Override';
+        showOverrideMsg(msg.message, 'var(--error)');
       }
     }
 
