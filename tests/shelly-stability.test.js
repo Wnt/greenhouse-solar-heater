@@ -231,6 +231,41 @@ describe('Shelly control script stability', function() {
     }
     runLoop();
   });
+
+  it('serializes rapid manual-override relay commands (no concurrent burst)', function(t, done) {
+    // Real-device crash repro: with manual override active, the user toggled
+    // pump on, fan on, fan off, pump off in quick succession and the entire
+    // Shelly Pro 4PM rebooted (reset_reason 3 = software watchdog). The fix
+    // serializes relay commands so at most one Switch.Set is in flight at
+    // any moment from the manual-override path.
+    var rt = createShellyRuntime();
+    loadScript(rt, ['control-logic.js', 'control.js']);
+
+    // Activate manual override via the script's existing config_changed event
+    // path so deviceConfig.mo is properly set inside the script's closure.
+    var future = Math.floor(Date.now() / 1000) + 600;
+    rt.globals.Shelly.emitEvent('config_changed', {
+      config: { ce: true, ea: 31, fm: null, am: null, v: 99, mo: { a: true, ex: future, ss: false } },
+      safety_critical: false,
+    });
+
+    rt.reset();
+    // Fire 4 relay commands in the same synchronous tick (worst case).
+    rt.globals.Shelly.emitEvent('relay_command', { relay: 'pump', on: true });
+    rt.globals.Shelly.emitEvent('relay_command', { relay: 'fan',  on: true });
+    rt.globals.Shelly.emitEvent('relay_command', { relay: 'fan',  on: false });
+    rt.globals.Shelly.emitEvent('relay_command', { relay: 'pump', on: false });
+
+    setTimeout(function() {
+      var stats = rt.stats();
+      assert.deepStrictEqual(stats.callViolations, [],
+        'No violations expected — peak: ' + stats.peakConcurrent);
+      assert.ok(stats.peakConcurrent <= 1,
+        'Manual-override relay path must serialize Shelly.call to ≤1 in flight, ' +
+        'observed peak: ' + stats.peakConcurrent);
+      done();
+    }, 300);
+  });
 });
 
 // ── Telemetry script tests ──

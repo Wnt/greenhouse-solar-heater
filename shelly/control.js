@@ -372,17 +372,54 @@ function isManualOverrideActive() {
   return true;
 }
 
+// Manual override relay command queue. Serializes commands so at most one
+// Shelly.call is in flight from this path at any moment. Without this, a
+// user toggling 4 relays in quick succession would queue 4 fire-and-forget
+// Switch.Set calls in the same tick. Combined with the control loop's
+// in-flight HTTP.GET sensor polls, total concurrent Shelly.call invocations
+// can exceed the platform's ~5-call limit and trigger a software watchdog
+// reset of the entire Pro 4PM. Reproduced on device 2026-04-09.
+var relayCmdQueue = [];
+var relayCmdInFlight = false;
+
 function handleRelayCommand(relay, on) {
-  if (!isManualOverrideActive()) return;
-  if (relay === "pump") { setPump(on); }
-  else if (relay === "fan") { setFan(on); }
-  else if (VALVES[relay]) {
-    setValve(relay, on, function() {
-      emitStateUpdate();
-    });
-    return; // setValve is async — emitStateUpdate called in callback
+  relayCmdQueue.push({relay: relay, on: on});
+  processRelayCmdQueue();
+}
+
+function processRelayCmdQueue() {
+  if (relayCmdInFlight) return;
+  if (relayCmdQueue.length === 0) return;
+  if (!isManualOverrideActive()) {
+    relayCmdQueue = [];
+    return;
   }
-  emitStateUpdate();
+  var cmd = relayCmdQueue.shift();
+  relayCmdInFlight = true;
+
+  function done() {
+    relayCmdInFlight = false;
+    emitStateUpdate();
+    processRelayCmdQueue();
+  }
+
+  if (cmd.relay === "pump") {
+    if (cmd.on && (!deviceConfig.ce || !(deviceConfig.ea & EA_PUMP))) { state.pump_on = false; done(); return; }
+    Shelly.call("Switch.Set", {id: 0, on: cmd.on}, function() {
+      state.pump_on = cmd.on;
+      done();
+    });
+  } else if (cmd.relay === "fan") {
+    if (cmd.on && (!deviceConfig.ce || !(deviceConfig.ea & EA_FAN))) { done(); return; }
+    Shelly.call("Switch.Set", {id: 1, on: cmd.on}, function() {
+      state.fan_on = cmd.on;
+      done();
+    });
+  } else if (VALVES[cmd.relay]) {
+    setValve(cmd.relay, cmd.on, function() { done(); });
+  } else {
+    done();
+  }
 }
 
 // ── Control loop ──
