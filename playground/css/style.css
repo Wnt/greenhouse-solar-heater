@@ -1556,3 +1556,174 @@ button.scanning { opacity: 0.7; cursor: wait; }
   .sensor-role-row { flex-direction: column; align-items: stretch; }
   .sensor-select { min-width: unset; width: 100%; }
 }
+
+/* ── Auth actions (sidebar + mobile) ── */
+.auth-actions {
+  padding: 12px 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.auth-actions[hidden] { display: none; }
+
+.auth-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+.auth-btn:hover {
+  color: var(--on-surface);
+  background: var(--surface-container-high);
+  border-color: var(--outline);
+}
+.auth-btn .material-symbols-outlined { font-size: 18px; }
+
+.auth-btn-primary {
+  color: var(--primary);
+  background: rgba(233, 195, 73, 0.08);
+  border-color: rgba(233, 195, 73, 0.35);
+}
+.auth-btn-primary:hover {
+  background: rgba(233, 195, 73, 0.14);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+@media (max-width: 768px) {
+  /* On mobile the sidebar is hidden. Show auth actions as a floating stack
+     in the top-right corner so the user still has logout/invite access. */
+  .auth-actions {
+    position: fixed;
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    right: 16px;
+    z-index: 45;
+    padding: 0;
+    flex-direction: row;
+    gap: 8px;
+  }
+  .auth-btn {
+    background: rgba(37, 44, 57, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 8px 10px;
+    font-size: 0;
+    letter-spacing: 0;
+  }
+  .auth-btn .material-symbols-outlined { font-size: 20px; }
+}
+
+/* ── Invitation modal ── */
+.invite-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.invite-modal[hidden] { display: none; }
+.invite-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.invite-modal-content {
+  position: relative;
+  background: var(--surface-container-high);
+  border-radius: 1rem;
+  padding: 32px;
+  max-width: 380px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.invite-code {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: 10px;
+  color: var(--primary);
+  padding: 14px;
+  background: var(--surface-container-low);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+.invite-qr {
+  display: block;
+  margin: 0 auto 12px;
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: 8px;
+  background: #fff;
+}
+.invite-timer {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--on-surface-variant);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+.invite-timer.expiring { color: var(--error); }
+.invite-error {
+  margin-top: 16px;
+  padding: 10px 12px;
+  background: rgba(238, 125, 119, 0.1);
+  border: 1px solid rgba(238, 125, 119, 0.35);
+  border-radius: 8px;
+  color: var(--error);
+  font-size: 13px;
+}
+.invite-error[hidden] { display: none; }
+
+/* ── Login page invitation input (login.html) ── */
+.invite-link {
+  display: inline-block;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  border: none;
+  background: none;
+  text-decoration: underline;
+}
+.invite-link:hover { color: var(--primary); }
+
+.invite-section {
+  display: none;
+  margin-top: 16px;
+}
+.invite-section.visible { display: block; }
+
+.invite-input {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  text-align: center;
+  width: 100%;
+  padding: 10px;
+  border: 2px solid var(--outline-variant);
+  border-radius: 8px;
+  background: var(--surface-container-low);
+  color: var(--on-surface);
+  margin-bottom: 12px;
+}
+.invite-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}

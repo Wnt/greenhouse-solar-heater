@@ -101,7 +101,7 @@ The `playground/` directory is the main web application — a solar heating moni
 
 - `playground/index.html` — single-page app: Status (default, bento grid dashboard), Components (sensors/valves/actuators), Schematic (SVG system visualization), Controls (sliders, reset), Device (runtime Shelly config with explanations). Floating play/pause FAB.
 - `playground/login.html` — passkey login page (moved from monitor/)
-- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), data-source (LiveSource/SimulationSource abstraction with sendCommand() for WebSocket commands and onCommandResponse() for override ack/error handling), UI, yaml-loader, login (passkey auth), version-check (polls /version endpoint, shows update toast), sensors (sensor discovery, assignment, apply configuration)
+- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), data-source (LiveSource/SimulationSource abstraction with sendCommand() for WebSocket commands and onCommandResponse() for override ack/error handling), UI, yaml-loader, login (passkey auth), auth (sidebar logout + "Add Device" invitation modal, noop when auth disabled), version-check (polls /version endpoint, shows update toast), sensors (sensor discovery, assignment, apply configuration)
 - `playground/css/style.css` — shared styles
 - `design/Stitch/` — Stitch UI design mockups (desktop + mobile) with DESIGN.md spec and code.html references
 
@@ -173,6 +173,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/e2e/sensor-config.spec.js` — Playwright e2e tests for the Sensors config UI (detection, assignment, apply with mocked RPC)
 - `tests/e2e/live-mode.spec.js` — Playwright e2e tests for live mode toggle, WebSocket connection, simulation fallback
 - `tests/e2e/version-check.spec.js` — Playwright e2e tests for JS version check toast (appearance, editorial copy, dismiss, silent failure)
+- `tests/e2e/auth-actions.spec.js` — Playwright e2e tests for the sidebar logout + Add Device invitation flow (visibility based on `/auth/status`, logout POST, invite modal with QR code, error handling)
 - `tests/e2e/take-screenshots.spec.js` — Screenshot generator: runs 24h simulation, captures all views (excluded from normal test runs via `testIgnore` in `playwright.config.js`, uses separate `playwright.screenshots.config.js`)
 
 ### Test Setup Notes
