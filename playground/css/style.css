@@ -1087,11 +1087,11 @@ button.primary:disabled {
 /* ── Update Toast (top-right, compact) ── */
 .update-toast {
   position: fixed;
-  top: 16px;
-  right: 16px;
+  bottom: 24px;
+  right: 24px;
   z-index: 48;
   opacity: 0;
-  transform: translateY(-12px);
+  transform: translateY(12px);
   transition: opacity 0.3s ease, transform 0.3s ease;
   pointer-events: none;
 }
@@ -1173,7 +1173,7 @@ button.primary:disabled {
 
 @media (max-width: 768px) {
   .update-toast {
-    top: 12px;
+    bottom: 76px; /* clear the glassmorphic bottom nav */
     right: 12px;
     left: 12px;
   }
@@ -1496,10 +1496,25 @@ button.primary.disabled {
   gap: 16px; padding: 10px 12px;
   background: var(--surface-container-low);
   border-radius: 8px;
+  border-left: 3px solid transparent;
+}
+.sensor-role-row[data-required="true"] {
+  border-left-color: var(--primary);
 }
 
 .role-info { display: flex; flex-direction: column; gap: 2px; min-width: 160px; }
-.role-info strong { font-size: 14px; color: var(--on-surface); }
+.role-info strong { font-size: 14px; color: var(--on-surface); display: inline-flex; align-items: center; gap: 8px; }
+.role-required-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--primary);
+  background: rgba(233, 195, 73, 0.1);
+  border: 1px solid rgba(233, 195, 73, 0.3);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
 .role-location { font-size: 12px; color: var(--on-surface-variant); }
 
 .role-assignment { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

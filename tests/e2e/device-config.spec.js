@@ -393,6 +393,32 @@ test.describe('Relay toggle board', () => {
     await expect(page.locator('#override-entry')).toBeVisible();
   });
 
+  test('after exit, enter button text resets and re-enables immediately (no 30s wait)', async ({ page }) => {
+    // Regression: previously the button stayed at "Connecting..." disabled
+    // until the next state broadcast (~30s), making it look broken.
+    await setupRelayView(page);
+    await expect(page.locator('#override-enter-btn')).toBeEnabled();
+
+    // Enter override
+    await page.locator('#override-enter-btn').click();
+    await expect(page.locator('#override-enter-btn')).toContainText('Connecting');
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+    });
+    await expect(page.locator('#relay-board')).toBeVisible();
+
+    // Exit override
+    await page.locator('#override-exit-btn').click();
+    await page.evaluate(() => {
+      window.__wsInject({ type: 'override-ack', active: false });
+    });
+
+    // Without any further state broadcast: button text should be reset and enabled.
+    const enterBtn = page.locator('#override-enter-btn');
+    await expect(enterBtn).toHaveText('Enter Manual Override');
+    await expect(enterBtn).toBeEnabled();
+  });
+
   test('suppress safety toggle sends correct flag', async ({ page }) => {
     await setupRelayView(page);
     await expect(page.locator('#override-enter-btn')).toBeEnabled();

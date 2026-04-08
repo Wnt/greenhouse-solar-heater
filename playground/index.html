@@ -122,7 +122,7 @@
       <div class="staleness-banner" id="staleness-banner">No data received for over 60 seconds. The device may be offline.</div>
       <div class="view-header">
         <h2>How your sanctuary is breathing.</h2>
-        <p>Thermal simulation of the solar heating system. Adjust parameters in Controls and observe behavior here.</p>
+        <p id="status-view-description">Live readings from the Shelly controller. Mode, valves, actuators, and 24h history.</p>
       </div>
 
       <div class="bento-grid">
@@ -266,7 +266,7 @@
             <h3 style="margin-bottom:0;">System Logs</h3>
           </div>
           <div class="logs-list" id="logs-list">
-            <div style="color:var(--on-surface-variant);font-size:13px;">No transitions yet. Start the simulation.</div>
+            <div data-empty="true" style="color:var(--on-surface-variant);font-size:13px;">No transitions yet. Awaiting controller activity…</div>
           </div>
         </div>
       </div>
@@ -342,7 +342,7 @@
     <section id="view-sensors" class="view">
       <div class="view-header">
         <h2>Sensor configuration.</h2>
-        <p>Discover, identify, and assign DS18B20 sensors to system roles. Temperatures refresh every 30 seconds.</p>
+        <p>Discover, identify, and assign DS18B20 sensors to system roles. Click <strong>Scan Sensors</strong> to read addresses and live temperatures.</p>
       </div>
       <div id="sensors-content">
         <div class="card"><p style="color:var(--on-surface-variant);">Loading sensor configuration...</p></div>
@@ -772,6 +772,7 @@
       clearLiveDisplay();
       updateConnectionUI('disconnected');
       updateSidebarSubtitle();
+      updatePhaseAwareCopy();
     }
 
     function clearLiveDisplay() {
@@ -807,6 +808,37 @@
       updateConnectionOverlays();
       updateDevicePushState();
       updateSidebarSubtitle();
+      updatePhaseAwareCopy();
+    }
+
+    // Swap user-facing copy that differs between live and simulation modes,
+    // so the Status view doesn't tell live users to "Adjust parameters in
+    // Controls" or "Start the simulation".
+    function updatePhaseAwareCopy() {
+      var isLive = store.get('phase') === 'live';
+      var desc = document.getElementById('status-view-description');
+      if (desc) {
+        desc.textContent = isLive
+          ? 'Live readings from the Shelly controller. Mode, valves, actuators, and 24h history.'
+          : 'Thermal simulation of the solar heating system. Adjust parameters in Controls and observe behavior here.';
+      }
+      var logsEmpty = document.getElementById('logs-list');
+      if (logsEmpty && logsEmpty.children.length <= 1) {
+        // Only replace the placeholder, not real log entries
+        var placeholder = logsEmpty.querySelector('div[data-empty]') || (logsEmpty.children.length === 0 ? null : logsEmpty.firstElementChild);
+        if (placeholder && placeholder.dataset && placeholder.dataset.empty === 'true') {
+          placeholder.textContent = isLive
+            ? 'No transitions yet. Awaiting controller activity…'
+            : 'No transitions yet. Start the simulation.';
+        }
+      }
+      var ctrl = document.getElementById('comp-controller');
+      if (ctrl && isLive) {
+        // In live mode the simulation "running" flag is meaningless. Show
+        // ACTIVE when the controller is responsive (will be re-evaluated by
+        // the next state broadcast).
+        ctrl.textContent = 'ACTIVE';
+      }
     }
 
     function updateSidebarSubtitle() {
@@ -1540,7 +1572,16 @@
       updateComponent('comp-pump', result.actuators.pump, 'ACTIVE', 'OFF');
       updateComponent('comp-fan', result.actuators.fan, 'ON', 'OFF');
       updateComponent('comp-heater', result.actuators.space_heater, 'ON', 'OFF');
-      document.getElementById('comp-controller').textContent = running ? 'OPTIMAL' : 'READY';
+      // Live mode: 'running' is meaningless (sim-only). Reflect actual operation
+      // by checking whether any actuator is active OR mode is non-idle.
+      var isLivePhase = store.get('phase') === 'live';
+      var ctrlEl = document.getElementById('comp-controller');
+      if (isLivePhase) {
+        var anyActive = result.mode && result.mode !== 'idle';
+        ctrlEl.textContent = anyActive ? 'ACTIVE' : 'READY';
+      } else {
+        ctrlEl.textContent = running ? 'OPTIMAL' : 'READY';
+      }
 
       // Logs
       if (transitionLog.length > 0) {
@@ -2073,6 +2114,10 @@
     let overrideCountdownTimer = null;
     let relayPendingState = {}; // relay → expected state (for reconciliation)
     let relayPendingTimers = {}; // relay → timeout ID
+    // Last known controls_enabled value from any state message — used for
+    // optimistic re-enable of the Enter button after Exit Override, so the
+    // user doesn't wait up to 30s for the next Shelly state broadcast.
+    let lastControlsEnabled = false;
 
     function initRelayBoard() {
       // Enter override
@@ -2200,6 +2245,13 @@
       relayPendingState = {};
       for (var k in relayPendingTimers) clearTimeout(relayPendingTimers[k]);
       relayPendingTimers = {};
+      // Reset the Enter button so the user doesn't see a stale "Connecting..."
+      // and doesn't have to wait ~30s for the next state broadcast to recover.
+      var enterBtn = document.getElementById('override-enter-btn');
+      enterBtn.textContent = 'Enter Manual Override';
+      enterBtn.disabled = !lastControlsEnabled;
+      var gateMsg = document.getElementById('override-gate-msg');
+      if (gateMsg) gateMsg.style.display = lastControlsEnabled ? 'none' : 'block';
       if (msg) {
         var expEl = document.getElementById('override-expired-msg');
         expEl.textContent = msg;
@@ -2257,6 +2309,9 @@
     function updateRelayBoard(result) {
       if (!result) return;
       var mo = result.manual_override;
+      // Update last-known controls_enabled FIRST so deactivateOverrideUI()
+      // can use the fresh value for its optimistic re-enable.
+      lastControlsEnabled = !!result.controls_enabled;
 
       // Handle override state from server
       if (mo && mo.active && !overrideActive) {
@@ -2272,7 +2327,7 @@
       }
 
       // Update controls-enabled gate
-      var ceEnabled = result.controls_enabled;
+      var ceEnabled = lastControlsEnabled;
       var enterBtn = document.getElementById('override-enter-btn');
       var gateMsg = document.getElementById('override-gate-msg');
       if (!overrideActive) {

@@ -165,6 +165,82 @@ describe('device-config', () => {
     });
   });
 
+  // ── Allowed modes (am) validation ──
+
+  it('rejects empty allowed modes array (would lock the controller)', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ am: [] }, function (err2) {
+        assert.ok(err2, 'should reject empty allowed modes');
+        assert.match(err2.message, /at least one|allowed modes/i);
+        done();
+      });
+    });
+  });
+
+  it('PUT with empty allowed modes returns 400 not 500', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      const res = mockResponse();
+      deviceConfig.handlePut({}, res, JSON.stringify({ am: [] }), null);
+      // Tiny tick so async update completes
+      setTimeout(() => {
+        assert.strictEqual(res._statusCode, 400, 'expected 400 validation error');
+        done();
+      }, 50);
+    });
+  });
+
+  it('null allowed modes still means unrestricted (all modes allowed)', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ am: null }, function (err2, config) {
+        assert.ifError(err2);
+        assert.strictEqual(config.am, null);
+        done();
+      });
+    });
+  });
+
+  it('all 5 modes selected normalizes to null (unrestricted)', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ am: ['I', 'SC', 'GH', 'AD', 'EH'] }, function (err2, config) {
+        assert.ifError(err2);
+        assert.strictEqual(config.am, null, 'all-5 should normalize to unrestricted');
+        done();
+      });
+    });
+  });
+
+  it('subset of modes is preserved as-is', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ am: ['I', 'SC'] }, function (err2, config) {
+        assert.ifError(err2);
+        assert.deepStrictEqual(config.am, ['I', 'SC']);
+        done();
+      });
+    });
+  });
+
+  // ── Save no-op detection ──
+
+  it('PUT with identical config does not bump version', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ ce: true, ea: 31 }, function (err2, first) {
+        assert.ifError(err2);
+        const v1 = first.v;
+        deviceConfig.updateConfig({ ce: true, ea: 31 }, function (err3, second) {
+          assert.ifError(err3);
+          assert.strictEqual(second.v, v1, 'identical save should not bump version');
+          done();
+        });
+      });
+    });
+  });
+
   it('config with mo fits within 256 bytes', (t, done) => {
     deviceConfig.load(function (err) {
       assert.ifError(err);

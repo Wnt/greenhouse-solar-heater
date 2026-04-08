@@ -143,8 +143,17 @@ function getConfig() {
   return currentConfig || deepCopy(DEFAULT_CONFIG);
 }
 
+function validationError(message) {
+  var err = new Error(message);
+  err.code = 'VALIDATION';
+  return err;
+}
+
 function updateConfig(newConfig, callback) {
   var config = getConfig();
+  // Snapshot for no-op detection (compare BEFORE mutating)
+  var beforeSnapshot = JSON.stringify(stripVersion(config));
+
   if (newConfig.ce !== undefined) {
     config.ce = !!newConfig.ce;
   }
@@ -156,8 +165,15 @@ function updateConfig(newConfig, callback) {
   }
   if (newConfig.am !== undefined) {
     var am = newConfig.am;
+    // Empty array would mean "no modes allowed" — controller would never select
+    // any operating mode, effectively bricking the system. Reject explicitly so
+    // the user gets a clear error instead of a silent normalize-to-null surprise.
+    if (Array.isArray(am) && am.length === 0) {
+      callback(validationError('Allowed modes cannot be empty — select at least one mode (or all to leave unrestricted).'));
+      return;
+    }
     // null or all 5 modes = unrestricted; normalize to null to save KVS space
-    if (!Array.isArray(am) || am.length === 0 || am.length >= 5) {
+    if (!Array.isArray(am) || am.length >= 5) {
       config.am = null;
     } else {
       config.am = am;
@@ -170,11 +186,19 @@ function updateConfig(newConfig, callback) {
     } else if (typeof newConfig.mo === 'object' && newConfig.mo !== null) {
       var mo = newConfig.mo;
       if (typeof mo.a !== 'boolean' || typeof mo.ex !== 'number' || typeof mo.ss !== 'boolean') {
-        callback(new Error('Invalid mo: requires {a: bool, ex: int, ss: bool}'));
+        callback(validationError('Invalid mo: requires {a: bool, ex: int, ss: bool}'));
         return;
       }
       config.mo = { a: mo.a, ex: Math.floor(mo.ex), ss: mo.ss };
     }
+  }
+
+  // No-op detection: if nothing changed, return current config without bumping
+  // version. Saves S3 writes and MQTT republishes for repeated identical PUTs.
+  var afterSnapshot = JSON.stringify(stripVersion(config));
+  if (afterSnapshot === beforeSnapshot) {
+    callback(null, config);
+    return;
   }
 
   config.v = (config.v || 0) + 1;
@@ -182,6 +206,14 @@ function updateConfig(newConfig, callback) {
     if (err) { callback(err); return; }
     callback(null, config);
   });
+}
+
+function stripVersion(cfg) {
+  var copy = {};
+  for (var k in cfg) {
+    if (k !== 'v') copy[k] = cfg[k];
+  }
+  return copy;
 }
 
 // ── HTTP handlers ──
@@ -204,13 +236,20 @@ function handlePut(req, res, body, onUpdate) {
 
   updateConfig(parsed, function (err, config) {
     if (err) {
+      // Validation errors are user-correctable — surface them as 400 with the
+      // exact message so the UI can show it to the user.
+      if (err.code === 'VALIDATION') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+        return;
+      }
       log.error('failed to update config', { error: err.message });
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Failed to save config' }));
       return;
     }
 
-    log.info('config updated', { version: config.version });
+    log.info('config updated', { version: config.v });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(config));
 

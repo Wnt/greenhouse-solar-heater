@@ -93,6 +93,68 @@ test.describe('Sensor Configuration View', () => {
     await page.waitForSelector('.sensor-table', { timeout: 15000 });
   }
 
+  test('initial render shows "not yet scanned" hint, not stale "Scanning..." text', async ({ page }) => {
+    let discoveryCallCount = 0;
+    await page.route('**/api/sensor-discovery', async (route) => {
+      discoveryCallCount++;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'disc-mock', results: [] }) });
+    });
+    await goToSensors(page);
+
+    // The Detected Sensors panel must NOT show "Scanning..." before any scan is triggered.
+    const detectedCard = page.locator('#sensors-content .card', { hasText: 'Detected Sensors' });
+    await expect(detectedCard).not.toContainText('Scanning');
+    // It should give the user a hint to start a scan instead.
+    await expect(detectedCard).toContainText(/not yet scanned|click scan|scan sensors/i);
+    expect(discoveryCallCount).toBe(0);
+  });
+
+  test('save with no changes does not call PUT or bump version', async ({ page }) => {
+    let putCallCount = 0;
+    await page.route('**/api/sensor-config', async (route) => {
+      if (route.request().method() === 'PUT') {
+        putCallCount++;
+        await route.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify({ hosts: [], assignments: {}, version: 999 }) });
+      } else {
+        await route.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify({
+            hosts: [
+              { id: 'sensor_1', ip: '192.168.30.20', name: 'Sensor Hub 1' },
+              { id: 'sensor_2', ip: '192.168.30.21', name: 'Sensor Hub 2' },
+            ],
+            assignments: {},
+            version: 5,
+          }),
+        });
+      }
+    });
+
+    await goToSensors(page);
+
+    // Click Save without changing anything
+    await page.click('#btn-save-sensors');
+    await page.waitForTimeout(500);
+
+    expect(putCallCount, 'no-op save should not call PUT').toBe(0);
+    // Version should remain unchanged on screen
+    await expect(page.locator('#sensors-content')).toContainText('Version: 5');
+  });
+
+  test('required and optional sensor roles are visually distinguishable', async ({ page }) => {
+    await goToSensors(page);
+
+    // Required roles should have a "required" indicator (badge, asterisk, or class)
+    const collectorRow = page.locator('.sensor-role-row', { hasText: 'Collector Outlet' });
+    const radiatorInletRow = page.locator('.sensor-role-row', { hasText: 'Radiator Inlet' });
+
+    // Required role: data-required="true" attribute or "required" class
+    await expect(collectorRow).toHaveAttribute('data-required', 'true');
+    // Optional role: NOT data-required="true"
+    const radInReq = await radiatorInletRow.getAttribute('data-required');
+    expect(radInReq).not.toBe('true');
+  });
+
   test('loads sensors view and shows sensor hosts without auto-scanning', async ({ page }) => {
     let discoveryCallCount = 0;
     await page.route('**/api/sensor-discovery', async (route) => {

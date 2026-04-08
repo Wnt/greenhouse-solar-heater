@@ -180,9 +180,9 @@ function renderSensorsView() {
     const detected = allDetected.find(s => s.addr === assignedAddr);
     const isMissing = assignedAddr && !detected;
 
-    html += '<div class="sensor-role-row">';
+    html += '<div class="sensor-role-row" data-required="' + (!role.optional) + '">';
     html += '<div class="role-info">';
-    html += '<strong>' + role.label + '</strong>';
+    html += '<strong>' + role.label + (role.optional ? '' : ' <span class="role-required-badge">required</span>') + '</strong>';
     html += '<span class="role-location">' + role.location + (role.optional ? ' (optional)' : '') + '</span>';
     html += '</div>';
     html += '<div class="role-assignment">';
@@ -216,11 +216,15 @@ function renderSensorsView() {
     html += '<p style="color:var(--on-surface-variant);">No sensor hosts configured.</p>';
   } else {
     for (const host of sensorConfig.hosts) {
+      const hasResult = Object.prototype.hasOwnProperty.call(detectedSensors, host.id);
       const result = detectedSensors[host.id];
       html += '<div class="host-group">';
       html += '<h4>' + host.name + ' <span class="host-ip">(' + host.ip + ')</span></h4>';
-      if (!result) {
-        html += '<p style="color:var(--on-surface-variant);">Scanning...</p>';
+      if (!hasResult) {
+        // Never scanned in this session — distinct from "scan in flight" (null).
+        html += '<p style="color:var(--on-surface-variant);">Not yet scanned. Click <strong>Scan Sensors</strong> to discover.</p>';
+      } else if (result === null) {
+        html += '<p style="color:var(--on-surface-variant);"><span class="scan-spinner"></span>Scanning\u2026</p>';
       } else if (result.error) {
         html += '<p class="host-error">' + result.error + '</p>';
       } else if (result.sensors.length === 0) {
@@ -359,7 +363,9 @@ async function handleScan() {
   showStatus('Waiting for device response via MQTT...');
 
   try {
-    await scanAllHosts();
+    // Read temperatures during the scan so the user sees actual values they
+    // can use to identify which physical sensor is which (vs raw 1-Wire ROM IDs).
+    await scanAllHosts({ withTemp: true });
     scanning = false;
     renderSensorsView();
 
@@ -404,8 +410,30 @@ function buildScanSummary() {
   return { message: 'Found ' + totalSensors + ' sensor(s) on ' + hostsOk + ' host(s).', isError: false };
 }
 
+function assignmentsEqual(a, b) {
+  if (!a && !b) return true;
+  a = a || {};
+  b = b || {};
+  const aKeys = Object.keys(a).sort();
+  const bKeys = Object.keys(b).sort();
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i++) {
+    if (aKeys[i] !== bKeys[i]) return false;
+    const av = a[aKeys[i]] || {};
+    const bv = b[bKeys[i]] || {};
+    if (av.addr !== bv.addr || av.hostIndex !== bv.hostIndex || av.componentId !== bv.componentId) return false;
+  }
+  return true;
+}
+
 async function handleSave() {
   const assignments = collectAssignments();
+  // Skip the round-trip when nothing changed — no version bump, no S3 write,
+  // no MQTT republish. Saves users from accidentally pushing redundant configs.
+  if (sensorConfig && assignmentsEqual(assignments, sensorConfig.assignments)) {
+    showStatus('No changes to save.');
+    return;
+  }
   showStatus('Saving...');
   try {
     await saveSensorConfig(assignments);
