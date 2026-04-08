@@ -113,11 +113,23 @@ function applySensorConfig(newCfg) {
 
 var mqttSubscribed = false;
 
+// Wrap a single subscribe so a "Invalid topic" throw (e.g. from
+// re-subscribing to a topic Shelly already has registered) cannot kill
+// the script. Real Shelly devices throw on duplicate subscribe even
+// though our guard flag should prevent it — defense in depth.
+function safeSubscribe(topic, cb) {
+  try {
+    MQTT.subscribe(topic, cb);
+  } catch (e) {
+    // Already subscribed in this Shelly session — safe to ignore.
+  }
+}
+
 function setupMqttSubscription() {
   if (!MQTT.isConnected()) return;
   if (mqttSubscribed) return;
   mqttSubscribed = true;
-  MQTT.subscribe(CONFIG_TOPIC, function(topic, message) {
+  safeSubscribe(CONFIG_TOPIC, function(topic, message) {
     if (topic !== CONFIG_TOPIC) return;
     try {
       var newCfg = JSON.parse(message);
@@ -128,7 +140,7 @@ function setupMqttSubscription() {
       }
     } catch(e) {}
   });
-  MQTT.subscribe(SENSOR_CONFIG_TOPIC, function(topic, message) {
+  safeSubscribe(SENSOR_CONFIG_TOPIC, function(topic, message) {
     if (topic !== SENSOR_CONFIG_TOPIC) return;
     try {
       var newCfg = JSON.parse(message);
@@ -137,7 +149,7 @@ function setupMqttSubscription() {
       }
     } catch(e) {}
   });
-  MQTT.subscribe(SENSOR_CONFIG_APPLY_TOPIC, function(topic, message) {
+  safeSubscribe(SENSOR_CONFIG_APPLY_TOPIC, function(topic, message) {
     if (topic !== SENSOR_CONFIG_APPLY_TOPIC) return;
     try {
       var req = JSON.parse(message);
@@ -146,7 +158,7 @@ function setupMqttSubscription() {
       }
     } catch(e) {}
   });
-  MQTT.subscribe(DISCOVER_TOPIC, function(topic, message) {
+  safeSubscribe(DISCOVER_TOPIC, function(topic, message) {
     if (topic !== DISCOVER_TOPIC) return;
     try {
       var req = JSON.parse(message);
@@ -155,7 +167,7 @@ function setupMqttSubscription() {
       }
     } catch(e) {}
   });
-  MQTT.subscribe(RELAY_COMMAND_TOPIC, function(topic, message) {
+  safeSubscribe(RELAY_COMMAND_TOPIC, function(topic, message) {
     if (topic !== RELAY_COMMAND_TOPIC) return;
     try {
       var cmd = JSON.parse(message);
@@ -188,8 +200,12 @@ Shelly.addEventHandler(function(ev) {
 
 // ── MQTT connection handler ──
 
+// Shelly's MQTT client maintains its subscriptions across (re)connects, so
+// we do NOT clear the guard flag here. Resetting it caused setupMqttSubscription
+// to re-call MQTT.subscribe on already-subscribed topics, which throws
+// "Invalid topic" and crashes the script — symptom: relay commands stop
+// reaching the controller because the topic handler is dead.
 MQTT.setConnectHandler(function() {
-  mqttSubscribed = false;  // re-subscribe after reconnect
   setupMqttSubscription();
 });
 

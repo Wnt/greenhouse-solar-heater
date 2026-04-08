@@ -96,6 +96,15 @@ function createShellyRuntime(opts) {
 
   var mqtt = {
     subscribe: function(topic, cb) {
+      // Match real Shelly behavior: subscribing to an already-subscribed
+      // topic throws "Invalid topic" and crashes the script. The real
+      // device exhibited this with telemetry.js after a connectHandler
+      // reset re-ran setupMqttSubscription.
+      for (var i = 0; i < mqttSubscriptions.length; i++) {
+        if (mqttSubscriptions[i].topic === topic) {
+          throw new Error('Invalid topic');
+        }
+      }
       mqttSubscriptions.push({ topic: topic, cb: cb });
     },
     publish: function() {},
@@ -277,5 +286,20 @@ describe('Shelly telemetry script stability', function() {
     var stats = runtime.stats();
     assert.ok(stats.timerCount <= LIMITS.MAX_TIMERS,
       'Timers: ' + stats.timerCount + ' (max ' + LIMITS.MAX_TIMERS + ')');
+  });
+
+  it('survives connectHandler firing after bootTelemetry already subscribed', function() {
+    // Real-device crash: bootTelemetry → setupMqttSubscription subscribes
+    // 5 topics, then Shelly fires the connectHandler for the same active
+    // connection, which used to reset the guard flag and re-subscribe →
+    // "Invalid topic" → script crashed → relays stopped responding.
+    var runtime = createShellyRuntime({ mqttConnected: true });
+    assert.doesNotThrow(function () {
+      loadScript(runtime, ['telemetry.js']);
+      // Simulate Shelly firing the connectHandler for the same connection
+      // (or a quick reconnect). Either way the script must not crash.
+      runtime.triggerMqttConnect();
+      runtime.triggerMqttConnect();
+    }, 'telemetry must not crash on duplicate connectHandler invocations');
   });
 });
