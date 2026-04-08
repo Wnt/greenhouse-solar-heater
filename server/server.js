@@ -503,6 +503,12 @@ function initWebSocket() {
         type: 'connection',
         status: mqttBridge.getConnectionStatus(),
       }));
+      // Replay the last cached state so the client can render an immediate
+      // snapshot instead of waiting up to ~30s for the next Shelly publish.
+      var lastState = mqttBridge.getLastState();
+      if (lastState) {
+        ws.send(JSON.stringify({ type: 'state', data: lastState }));
+      }
       // Handle incoming commands from clients
       ws.on('message', function (data) {
         handleWsCommand(ws, data);

@@ -151,20 +151,30 @@ function detectStateChanges(ts, prev, curr, _db) {
   }
 }
 
+// Enrich a raw greenhouse/state payload with the manual_override session
+// from device config. Pure — safe to call from broadcasts and replays.
+function enrichState(payload) {
+  if (!deviceConfigRef) return payload;
+  var cfg = deviceConfigRef.getConfig();
+  if (cfg && cfg.mo && cfg.mo.a) {
+    return Object.assign({}, payload, {
+      manual_override: { active: true, expiresAt: cfg.mo.ex, suppressSafety: cfg.mo.ss },
+    });
+  }
+  return Object.assign({}, payload, { manual_override: null });
+}
+
+// Returns the most recent enriched state payload, or null if none received yet.
+// Used by the WebSocket upgrade handler to give new clients an immediate
+// snapshot instead of waiting up to ~30s for the next Shelly publish.
+function getLastState() {
+  if (!previousState) return null;
+  return enrichState(previousState);
+}
+
 function broadcastState(payload) {
   if (!wsServer) return;
-  // Enrich state with manual override info from device config
-  var enriched = payload;
-  if (deviceConfigRef) {
-    var cfg = deviceConfigRef.getConfig();
-    if (cfg && cfg.mo && cfg.mo.a) {
-      enriched = Object.assign({}, payload, {
-        manual_override: { active: true, expiresAt: cfg.mo.ex, suppressSafety: cfg.mo.ss },
-      });
-    } else {
-      enriched = Object.assign({}, payload, { manual_override: null });
-    }
-  }
+  var enriched = enrichState(payload);
   var msg = JSON.stringify({ type: 'state', data: enriched });
   wsServer.clients.forEach(function (client) {
     if (client.readyState === 1) { // WebSocket.OPEN
@@ -307,6 +317,7 @@ module.exports = {
   start: start,
   stop: stop,
   getConnectionStatus: getConnectionStatus,
+  getLastState: getLastState,
   publishConfig: publishConfig,
   publishSensorConfig: publishSensorConfig,
   publishRelayCommand: publishRelayCommand,
@@ -314,6 +325,7 @@ module.exports = {
   publishDiscoveryRequest: publishDiscoveryRequest,
   handleStateMessage: handleStateMessage,
   detectStateChanges: detectStateChanges,
+  _setDeviceConfigRefForTest: function (ref) { deviceConfigRef = ref; },
   _reset: function () {
     mqttClient = null;
     wsServer = null;

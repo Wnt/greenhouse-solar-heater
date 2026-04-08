@@ -292,6 +292,47 @@ test.describe('Manual override gating with unbound sensors', () => {
     expect(errors, 'no uncaught page errors').toEqual([]);
   });
 
+  test('button enables on the first message of the connection (no waiting for next publish)', async ({ page }) => {
+    // Mock WS sends connection + state immediately on open, so the button
+    // should enable as soon as the page finishes initial connect — no extra
+    // round-trips, no waiting for the Shelly to push fresh state.
+    await page.addInitScript(() => {
+      const OrigWS = window.WebSocket;
+      // @ts-ignore
+      window.WebSocket = function (url) {
+        const fake = {
+          readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+          close() { this.readyState = 3; },
+          send() {},
+        };
+        setTimeout(() => {
+          fake.readyState = 1;
+          if (fake.onopen) fake.onopen(new Event('open'));
+          if (fake.onmessage) {
+            // Server sends connection status, then immediately replays cached state
+            fake.onmessage({ data: JSON.stringify({ type: 'connection', status: 'connected' }) });
+            fake.onmessage({ data: JSON.stringify({
+              type: 'state',
+              data: {
+                ts: Date.now(), mode: 'idle',
+                temps: { collector: null, tank_top: null, tank_bottom: null, greenhouse: null, outdoor: null },
+                valves: {}, actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
+                controls_enabled: true, manual_override: null,
+              },
+            }) });
+          }
+        }, 50);
+        return fake;
+      };
+      // @ts-ignore
+      window.WebSocket.prototype = OrigWS.prototype;
+    });
+
+    await page.goto('/playground/#device');
+    // Tight timeout — this is the whole point: no waiting for the next publish.
+    await expect(page.locator('#override-enter-btn')).toBeEnabled({ timeout: 1500 });
+  });
+
   test('temperature display shows placeholder for null sensors instead of crashing', async ({ page }) => {
     await installMockWs(page);
     await page.goto('/playground/#components');

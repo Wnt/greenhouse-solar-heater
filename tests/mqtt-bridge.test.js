@@ -124,6 +124,63 @@ describe('mqtt-bridge', () => {
     });
   });
 
+  describe('last state replay (fast first paint)', () => {
+    it('getLastState returns null before any greenhouse/state has been received', () => {
+      assert.strictEqual(bridge.getLastState(), null);
+    });
+
+    it('getLastState returns the most recent payload after handleStateMessage', () => {
+      const payload = {
+        ts: 1, mode: 'idle',
+        temps: { collector: null, tank_top: null, tank_bottom: null, greenhouse: null, outdoor: null },
+        valves: {}, actuators: {},
+        controls_enabled: true,
+      };
+      bridge.handleStateMessage(payload);
+      const last = bridge.getLastState();
+      assert.ok(last, 'expected cached state');
+      assert.strictEqual(last.mode, 'idle');
+      assert.strictEqual(last.controls_enabled, true);
+    });
+
+    it('getLastState enriches with manual_override from deviceConfig (active session)', () => {
+      bridge._setDeviceConfigRefForTest({
+        getConfig: function () {
+          return { ce: true, ea: 31, mo: { a: true, ex: 9999, ss: false } };
+        },
+      });
+      bridge.handleStateMessage({
+        ts: 1, mode: 'idle', temps: {}, valves: {}, actuators: {}, controls_enabled: true,
+      });
+      const last = bridge.getLastState();
+      assert.deepStrictEqual(last.manual_override, { active: true, expiresAt: 9999, suppressSafety: false });
+    });
+
+    it('getLastState enriches manual_override as null when no active override', () => {
+      bridge._setDeviceConfigRefForTest({
+        getConfig: function () { return { ce: true, ea: 31 }; },
+      });
+      bridge.handleStateMessage({
+        ts: 1, mode: 'idle', temps: {}, valves: {}, actuators: {}, controls_enabled: true,
+      });
+      const last = bridge.getLastState();
+      assert.strictEqual(last.manual_override, null);
+    });
+
+    it('subsequent state messages overwrite the cache so the latest is always served', () => {
+      bridge.handleStateMessage({
+        ts: 1, mode: 'idle', temps: {}, valves: {}, actuators: {}, controls_enabled: false,
+      });
+      bridge.handleStateMessage({
+        ts: 2, mode: 'solar_charging', temps: {}, valves: {}, actuators: {}, controls_enabled: true,
+      });
+      const last = bridge.getLastState();
+      assert.strictEqual(last.mode, 'solar_charging');
+      assert.strictEqual(last.controls_enabled, true);
+      assert.strictEqual(last.ts, 2);
+    });
+  });
+
   describe('MQTT request/response', () => {
     it('publishSensorConfigApply rejects when MQTT not connected', async () => {
       await assert.rejects(
