@@ -12,7 +12,8 @@
   <script type="importmap">
   {
     "imports": {
-      "js-yaml": "./vendor/js-yaml.mjs"
+      "js-yaml": "./vendor/js-yaml.mjs",
+      "qrcode-generator": "./vendor/qrcode-generator.mjs"
     }
   }
   </script>
@@ -67,6 +68,16 @@
     <div class="controls-indicator" id="controls-indicator">
       <span class="material-symbols-outlined" style="font-size:14px;">shield</span>
       <span>Controls disabled</span>
+    </div>
+    <div class="auth-actions" id="auth-actions" hidden>
+      <button id="invite-btn" class="auth-btn auth-btn-primary" type="button">
+        <span class="material-symbols-outlined">add_to_home_screen</span>
+        Add Device
+      </button>
+      <button id="logout-btn" class="auth-btn" type="button">
+        <span class="material-symbols-outlined">logout</span>
+        Logout
+      </button>
     </div>
   </aside>
 
@@ -484,6 +495,20 @@
 
   </main>
 
+  <!-- ── Invitation modal (Add Device) ── -->
+  <div id="invite-modal" class="invite-modal" hidden>
+    <div class="invite-modal-backdrop" id="invite-modal-backdrop"></div>
+    <div class="invite-modal-content card">
+      <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;font-size:24px;color:var(--primary);margin-bottom:8px;letter-spacing:-0.01em;text-transform:none;">Add a Device</h3>
+      <p style="color:var(--on-surface-variant);font-size:14px;margin-bottom:20px;">Share this code or scan the QR on your new device to register a passkey. The invitation expires when the timer runs out.</p>
+      <div id="invite-code" class="invite-code"></div>
+      <canvas id="invite-qr" class="invite-qr"></canvas>
+      <div id="invite-timer" class="invite-timer"></div>
+      <div id="invite-error" class="invite-error" hidden></div>
+      <button id="invite-close-btn" class="auth-btn" type="button" style="margin-top:20px;width:100%;justify-content:center;">Close</button>
+    </div>
+  </div>
+
   <script type="module">
     import { loadSystemYaml } from './js/yaml-loader.js';
     import { ThermalModel } from './js/physics.js';
@@ -495,6 +520,7 @@
     import { store, derived } from './js/app-state.js';
     import { initSubscriptions, setViewLifecycle } from './js/subscriptions.js';
     import { initNavigation } from './js/actions/navigation.js';
+    import { initAuth } from './js/auth.js';
     // connection.js actions will be used in later phases — import deferred to avoid name collisions
     // import { switchToLive, switchToSimulation, ... } from './js/actions/connection.js';
     // Expose for e2e testing
@@ -1060,6 +1086,9 @@
       initModeToggle();
       initDeviceConfig();
       initRelayBoard();
+
+      // Initialize auth UI (logout + invite buttons) — noop when auth disabled
+      initAuth();
 
       // Start polling for JS source updates
       startVersionCheck();
