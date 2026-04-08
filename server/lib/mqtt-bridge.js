@@ -40,6 +40,7 @@ function start(options) {
       if (err) log.error('subscribe failed', { error: err.message });
     });
     subscribeResponseTopics();
+    republishDeviceConfig();
     broadcastConnection('connected');
   });
 
@@ -195,6 +196,18 @@ function publishConfig(config) {
   mqttClient.publish('greenhouse/config', JSON.stringify(config), { qos: 1, retain: true });
   span.end();
   return true;
+}
+
+// Re-publish the current device config on every MQTT (re)connect so the
+// retained `greenhouse/config` message survives broker restarts. Mosquitto
+// in our deploy is a sidecar without persistence — without this, the Shelly
+// would never see the latest config until someone manually clicked
+// "Save & Push to Device" in the UI.
+function republishDeviceConfig() {
+  if (!deviceConfigRef) return;
+  var cfg = deviceConfigRef.getConfig();
+  if (!cfg) return;
+  publishConfig(cfg);
 }
 
 function publishSensorConfig(config) {

@@ -1,5 +1,6 @@
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert');
+const { EventEmitter } = require('node:events');
 
 describe('mqtt-bridge', () => {
   let bridge;
@@ -178,6 +179,118 @@ describe('mqtt-bridge', () => {
 
     it('publishes sensor config via publishSensorConfig', () => {
       assert.strictEqual(bridge.publishSensorConfig({ s: {}, h: [], v: 1 }), false);
+    });
+  });
+
+  describe('auto-republish on MQTT connect', () => {
+    let fakeMqttModule;
+    let fakeClient;
+    let mqttModulePath;
+    let originalCacheEntry;
+
+    beforeEach(() => {
+      fakeClient = new EventEmitter();
+      fakeClient.connected = false;
+      fakeClient.subscribe = function (topic, opts, cb) {
+        if (typeof opts === 'function') { cb = opts; }
+        if (cb) cb(null);
+      };
+      fakeClient.publish = function (topic, message, opts, cb) {
+        fakeClient.publishCalls.push({ topic: topic, message: message, opts: opts });
+        if (cb) cb(null);
+      };
+      fakeClient.end = function (force, opts, cb) { if (cb) cb(); };
+      fakeClient.publishCalls = [];
+
+      fakeMqttModule = {
+        connect: function () { return fakeClient; },
+      };
+
+      mqttModulePath = require.resolve('mqtt');
+      originalCacheEntry = require.cache[mqttModulePath];
+      require.cache[mqttModulePath] = { id: mqttModulePath, filename: mqttModulePath, loaded: true, exports: fakeMqttModule };
+
+      // Reload bridge so it picks up the fake mqtt module via require()
+      delete require.cache[require.resolve('../server/lib/mqtt-bridge.js')];
+      bridge = require('../server/lib/mqtt-bridge.js');
+      bridge._reset();
+    });
+
+    afterEach(() => {
+      if (originalCacheEntry) {
+        require.cache[mqttModulePath] = originalCacheEntry;
+      } else {
+        delete require.cache[mqttModulePath];
+      }
+      bridge._reset();
+    });
+
+    it('republishes the current device config to greenhouse/config (retained) when MQTT connects', () => {
+      const currentConfig = { ce: true, ea: 31, fm: null, am: null, v: 8 };
+      const fakeDeviceConfig = {
+        getConfig: function () { return currentConfig; },
+      };
+
+      bridge.start({ mqttHost: '127.0.0.1', deviceConfig: fakeDeviceConfig });
+
+      // Simulate broker handshake completing
+      fakeClient.connected = true;
+      fakeClient.emit('connect');
+
+      const configPublishes = fakeClient.publishCalls.filter(function (c) {
+        return c.topic === 'greenhouse/config';
+      });
+      assert.strictEqual(configPublishes.length, 1,
+        'bridge should publish device config exactly once on MQTT connect');
+      assert.deepStrictEqual(JSON.parse(configPublishes[0].message), currentConfig);
+      assert.strictEqual(configPublishes[0].opts.retain, true,
+        'config publish must be retained so reconnecting Shellies receive it');
+      assert.strictEqual(configPublishes[0].opts.qos, 1);
+    });
+
+    it('republishes again on every reconnect (e.g. broker restart)', () => {
+      const fakeDeviceConfig = {
+        getConfig: function () { return { ce: true, ea: 31, fm: null, am: null, v: 1 }; },
+      };
+
+      bridge.start({ mqttHost: '127.0.0.1', deviceConfig: fakeDeviceConfig });
+
+      fakeClient.connected = true;
+      fakeClient.emit('connect');
+      fakeClient.emit('connect');
+      fakeClient.emit('connect');
+
+      const configPublishes = fakeClient.publishCalls.filter(function (c) {
+        return c.topic === 'greenhouse/config';
+      });
+      assert.strictEqual(configPublishes.length, 3,
+        'bridge should re-publish on every MQTT connect event so a broker restart self-heals');
+    });
+
+    it('does not crash on connect when no deviceConfig provider was supplied', () => {
+      bridge.start({ mqttHost: '127.0.0.1' });
+
+      fakeClient.connected = true;
+      assert.doesNotThrow(function () { fakeClient.emit('connect'); });
+
+      const configPublishes = fakeClient.publishCalls.filter(function (c) {
+        return c.topic === 'greenhouse/config';
+      });
+      assert.strictEqual(configPublishes.length, 0);
+    });
+
+    it('does not republish when deviceConfig.getConfig() returns null', () => {
+      const fakeDeviceConfig = { getConfig: function () { return null; } };
+      bridge.start({ mqttHost: '127.0.0.1', deviceConfig: fakeDeviceConfig });
+
+      fakeClient.connected = true;
+      fakeClient.emit('connect');
+
+      const configPublishes = fakeClient.publishCalls.filter(function (c) {
+        return c.topic === 'greenhouse/config';
+      });
+      assert.strictEqual(configPublishes.length, 0,
+        'should skip republish when no config is loaded yet (e.g. S3 fetch still in flight)');
     });
   });
 });
