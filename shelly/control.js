@@ -414,11 +414,15 @@ function processRelayCmdQueue() {
 
   function done() {
     relayCmdInFlight = false;
-    // Defer the next dequeue by one Timer tick so the runtime gets a chance
-    // to drain the event loop, run GC, and service the system watchdog
-    // between consecutive Switch.Set calls. Without this gap a tight burst
-    // can starve the firmware of cycles and trip the watchdog.
-    Timer.set(40, false, processRelayCmdQueue);
+    // Empirical Shelly Pro 4PM firmware bug (1.7.4): rapidly switching
+    // multiple internal relays driving inductive loads (pump motor, fan
+    // motor) causes the device to reboot, even when the calls are made
+    // sequentially via HTTP RPC bypassing our script. Verified on
+    // 2026-04-09: 50ms gap reboots, 100ms gap survives, 250ms gap survives.
+    // Bypassing the script entirely (direct VPN HTTP RPC) reproduces the
+    // crash. Switching id=3 with no load does NOT reboot.
+    // Use 200ms for a safety margin above the empirical threshold.
+    Timer.set(200, false, processRelayCmdQueue);
   }
 
   if (cmd.relay === "pump") {
