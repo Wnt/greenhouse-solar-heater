@@ -25,7 +25,7 @@ function loadConfig(cb) {
     if (res && res.value) {
       try {
         var cfg = JSON.parse(res.value);
-        currentVersion = cfg.version || 0;
+        currentVersion = cfg.v || 0;
         if (cb) cb(cfg);
         return;
       } catch(e) {}
@@ -35,7 +35,7 @@ function loadConfig(cb) {
 }
 
 function saveConfig(cfg) {
-  currentVersion = cfg.version || 0;
+  currentVersion = cfg.v || 0;
   Shelly.call("KVS.Set", {key: CONFIG_KVS_KEY, value: JSON.stringify(cfg)});
 }
 
@@ -49,7 +49,7 @@ function isSafetyCritical(oldCfg, newCfg) {
 }
 
 function applyConfig(newCfg, oldCfg) {
-  if (newCfg.version === currentVersion) return;
+  if (newCfg.v === currentVersion) return;
   var critical = isSafetyCritical(oldCfg, newCfg);
   saveConfig(newCfg);
   Shelly.emitEvent("config_changed", {
@@ -70,7 +70,7 @@ function bootstrapConfig() {
       if (err || !httpRes || httpRes.code !== 200 || !httpRes.body) return;
       try {
         var cfg = JSON.parse(httpRes.body);
-        if (cfg.version && cfg.version !== currentVersion) {
+        if (cfg.v && cfg.v !== currentVersion) {
           loadConfig(function(oldCfg) {
             applyConfig(cfg, oldCfg);
           });
@@ -121,7 +121,7 @@ function setupMqttSubscription() {
     if (topic !== CONFIG_TOPIC) return;
     try {
       var newCfg = JSON.parse(message);
-      if (newCfg.version && newCfg.version !== currentVersion) {
+      if (newCfg.v && newCfg.v !== currentVersion) {
         loadConfig(function(oldCfg) {
           applyConfig(newCfg, oldCfg);
         });
