@@ -373,16 +373,17 @@ function isManualOverrideActive() {
 }
 
 // Manual override relay command queue. Serializes commands so at most one
-// Shelly.call is in flight from this path at any moment. Without this, a
-// user toggling 4 relays in quick succession queues 4 fire-and-forget
-// Switch.Set calls in the same tick. Combined with the control loop's
-// in-flight HTTP.GET sensor polls, total concurrent Shelly.call invocations
-// can exceed the platform's ~5-call limit and trigger a software watchdog
-// reset of the entire Pro 4PM. Reproduced on device 2026-04-09.
+// Shelly.call is in flight from this path at any moment AND emits at most
+// one state update per burst. Without this, a user toggling 4 relays in
+// quick succession would queue 4 fire-and-forget Switch.Set calls plus 4
+// state emits plus 4 MQTT publishes within milliseconds — combined with
+// the control loop's in-flight HTTP.GET sensor polls and the buildStateSnapshot
+// allocations, the script ran out of heap or the firmware task watchdog
+// fired and the entire Pro 4PM rebooted. Reproduced on device 2026-04-09.
 //
 // NOTE: Shelly's Espruino runtime does NOT support Array.prototype.shift().
-// We use an index-pointer scheme: relayCmdHead advances, and we periodically
-// compact the array by setting it to a fresh empty when head catches up.
+// We use an index-pointer scheme: relayCmdHead advances, queue is replaced
+// with [] when drained.
 var relayCmdQueue = [];
 var relayCmdHead = 0;
 var relayCmdInFlight = false;
@@ -395,9 +396,11 @@ function handleRelayCommand(relay, on) {
 function processRelayCmdQueue() {
   if (relayCmdInFlight) return;
   if (relayCmdHead >= relayCmdQueue.length) {
-    // Queue drained — compact memory.
+    // Queue drained — emit a single state snapshot for the whole burst,
+    // then compact memory.
     relayCmdQueue = [];
     relayCmdHead = 0;
+    emitStateUpdate();
     return;
   }
   if (!isManualOverrideActive()) {
@@ -411,8 +414,11 @@ function processRelayCmdQueue() {
 
   function done() {
     relayCmdInFlight = false;
-    emitStateUpdate();
-    processRelayCmdQueue();
+    // Defer the next dequeue by one Timer tick so the runtime gets a chance
+    // to drain the event loop, run GC, and service the system watchdog
+    // between consecutive Switch.Set calls. Without this gap a tight burst
+    // can starve the firmware of cycles and trip the watchdog.
+    Timer.set(40, false, processRelayCmdQueue);
   }
 
   if (cmd.relay === "pump") {
