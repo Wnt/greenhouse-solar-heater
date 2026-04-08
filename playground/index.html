@@ -726,13 +726,20 @@
         liveSource.onCommandResponse(handleOverrideResponse);
         liveSource.onUpdate(function (state, result) {
           lastDataTime = Date.now();
-          if (store.get('phase') === 'live') {
-            updateDisplay(state, result);
-            refreshConnectionIndicator();
-            updateConnectionOverlays();
-            updateSidebarSubtitle();
-            updateDevicePushState();
-            updateRelayBoard(result);
+          if (store.get('phase') !== 'live') return;
+          // Defense-in-depth: each step is independent. A bug in updateDisplay
+          // must not break the manual override controls (or vice versa).
+          var steps = [
+            ['updateDisplay',           function () { updateDisplay(state, result); }],
+            ['refreshConnectionIndicator', refreshConnectionIndicator],
+            ['updateConnectionOverlays',   updateConnectionOverlays],
+            ['updateSidebarSubtitle',      updateSidebarSubtitle],
+            ['updateDevicePushState',      updateDevicePushState],
+            ['updateRelayBoard',        function () { updateRelayBoard(result); }],
+          ];
+          for (var i = 0; i < steps.length; i++) {
+            try { steps[i][1](); }
+            catch (e) { console.error('liveSource.onUpdate ' + steps[i][0] + ' failed:', e); }
           }
         });
         liveSource.onConnectionChange(function (status) {
@@ -1383,6 +1390,15 @@
     }
 
     // ── Display update ──
+    // Null-tolerant helpers for live data: the Shelly publishes `null` for any
+    // sensor whose role is not assigned. Display "—" instead of crashing.
+    const TEMP_PLACEHOLDER = '\u2014';
+    function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
+    function fmtTemp(v, digits) {
+      if (digits === undefined) digits = 0;
+      return isNum(v) ? v.toFixed(digits) : TEMP_PLACEHOLDER;
+    }
+
     function updateDisplay(state, result) {
       const mode = result.mode;
       const info = MODE_INFO[mode] || MODE_INFO.idle;
@@ -1415,53 +1431,69 @@
       }).join('');
 
       // Tank temperature gauge (shows tank bottom)
-      document.getElementById('tank-temp-val').textContent = state.t_tank_bottom.toFixed(0);
+      document.getElementById('tank-temp-val').textContent = fmtTemp(state.t_tank_bottom, 0);
 
       // Energy stored: Q = m * c * (T_avg - T_base), 300L water, base 12°C
       // Heat loss: estimated from 24h temperature history in store
       const TANK_MASS = 300; // kg
       const SPECIFIC_HEAT = 4.186; // kJ/(kg·K)
       const BASE_TEMP = 12; // °C
-      const avgTankTemp = (state.t_tank_top + state.t_tank_bottom) / 2;
-      const grossKwh = TANK_MASS * SPECIFIC_HEAT * Math.max(0, avgTankTemp - BASE_TEMP) / 3600;
-      // Estimate 24h heat loss from stored data
-      let lossKwh = 0;
-      if (timeSeriesStore.times.length > 1) {
-        const now = timeSeriesStore.times[timeSeriesStore.times.length - 1];
-        const dayAgo = now - 86400;
-        // Sum temperature drops during idle periods (no active heating/charging)
-        for (let i = 1; i < timeSeriesStore.times.length; i++) {
-          if (timeSeriesStore.times[i] < dayAgo) continue;
-          const dt = timeSeriesStore.times[i] - timeSeriesStore.times[i - 1];
-          const mode = timeSeriesStore.modes[i];
-          if (mode === 'idle' || mode === 'greenhouse_heating') {
-            const prevAvg = (timeSeriesStore.values[i - 1].t_tank_top + timeSeriesStore.values[i - 1].t_tank_bottom) / 2;
-            const currAvg = (timeSeriesStore.values[i].t_tank_top + timeSeriesStore.values[i].t_tank_bottom) / 2;
-            const drop = prevAvg - currAvg;
-            if (drop > 0) lossKwh += TANK_MASS * SPECIFIC_HEAT * drop / 3600;
+      const energyEl = document.getElementById('tank-stat-energy');
+      if (isNum(state.t_tank_top) && isNum(state.t_tank_bottom)) {
+        const avgTankTemp = (state.t_tank_top + state.t_tank_bottom) / 2;
+        const grossKwh = TANK_MASS * SPECIFIC_HEAT * Math.max(0, avgTankTemp - BASE_TEMP) / 3600;
+        // Estimate 24h heat loss from stored data
+        let lossKwh = 0;
+        if (timeSeriesStore.times.length > 1) {
+          const now = timeSeriesStore.times[timeSeriesStore.times.length - 1];
+          const dayAgo = now - 86400;
+          // Sum temperature drops during idle periods (no active heating/charging)
+          for (let i = 1; i < timeSeriesStore.times.length; i++) {
+            if (timeSeriesStore.times[i] < dayAgo) continue;
+            const m = timeSeriesStore.modes[i];
+            if (m === 'idle' || m === 'greenhouse_heating') {
+              const prev = timeSeriesStore.values[i - 1];
+              const curr = timeSeriesStore.values[i];
+              if (!isNum(prev.t_tank_top) || !isNum(prev.t_tank_bottom) ||
+                  !isNum(curr.t_tank_top) || !isNum(curr.t_tank_bottom)) continue;
+              const prevAvg = (prev.t_tank_top + prev.t_tank_bottom) / 2;
+              const currAvg = (curr.t_tank_top + curr.t_tank_bottom) / 2;
+              const drop = prevAvg - currAvg;
+              if (drop > 0) lossKwh += TANK_MASS * SPECIFIC_HEAT * drop / 3600;
+            }
           }
         }
+        const netKwh = Math.max(0, grossKwh - lossKwh);
+        energyEl.textContent = netKwh.toFixed(1);
+      } else {
+        energyEl.textContent = TEMP_PLACEHOLDER;
       }
-      const netKwh = Math.max(0, grossKwh - lossKwh);
-      document.getElementById('tank-stat-energy').textContent = netKwh.toFixed(1);
 
       // Greenhouse current temperature
-      document.getElementById('tank-stat-greenhouse').textContent = state.t_greenhouse.toFixed(0);
+      document.getElementById('tank-stat-greenhouse').textContent = fmtTemp(state.t_greenhouse, 0);
 
       // Track yesterday's high (peak from previous 24h simulated day)
-      if (state.t_tank_bottom > yesterdayHigh) yesterdayHigh = state.t_tank_bottom;
-      const simDay = Math.floor(state.simTime / 86400);
-      if (simDay > lastDay) {
-        confirmedYesterdayHigh = yesterdayHigh;
-        yesterdayHigh = state.t_tank_bottom;
-        lastDay = simDay;
+      if (isNum(state.t_tank_bottom)) {
+        if (state.t_tank_bottom > yesterdayHigh) yesterdayHigh = state.t_tank_bottom;
+        const simDay = Math.floor(state.simTime / 86400);
+        if (simDay > lastDay) {
+          confirmedYesterdayHigh = yesterdayHigh;
+          yesterdayHigh = state.t_tank_bottom;
+          lastDay = simDay;
+        }
       }
 
       // Gauge arc: 0°C = empty, 100°C = full circle (628 circumference)
-      const tempFrac = Math.max(0, Math.min(1, state.t_tank_bottom / 100));
-      const dashOffset = 628 - (tempFrac * 628);
       const arc = document.getElementById('tank-gauge-arc');
-      if (arc) arc.setAttribute('stroke-dashoffset', dashOffset.toFixed(0));
+      if (arc) {
+        if (isNum(state.t_tank_bottom)) {
+          const tempFrac = Math.max(0, Math.min(1, state.t_tank_bottom / 100));
+          const dashOffset = 628 - (tempFrac * 628);
+          arc.setAttribute('stroke-dashoffset', dashOffset.toFixed(0));
+        } else {
+          arc.setAttribute('stroke-dashoffset', '628');
+        }
+      }
 
       // Status label: Rising/Falling/Stable based on rate of change
       // Check last 5 minutes (300s) of store data; threshold: 1°C/hr = 300/3600 ≈ 0.083°C per 5 min
@@ -1480,9 +1512,13 @@
           startIdx = i;
         }
         if (startIdx < timeSeriesStore.times.length - 1) {
-          const tempChange = timeSeriesStore.values[timeSeriesStore.values.length - 1].t_tank_bottom - timeSeriesStore.values[startIdx].t_tank_bottom;
-          if (tempChange >= ROC_THRESHOLD) { rateStatus = 'RISING'; rateColor = '#e9c349'; }
-          else if (tempChange <= -ROC_THRESHOLD) { rateStatus = 'FALLING'; rateColor = '#ee7d77'; }
+          const latest = timeSeriesStore.values[timeSeriesStore.values.length - 1].t_tank_bottom;
+          const earlier = timeSeriesStore.values[startIdx].t_tank_bottom;
+          if (isNum(latest) && isNum(earlier)) {
+            const tempChange = latest - earlier;
+            if (tempChange >= ROC_THRESHOLD) { rateStatus = 'RISING'; rateColor = '#e9c349'; }
+            else if (tempChange <= -ROC_THRESHOLD) { rateStatus = 'FALLING'; rateColor = '#ee7d77'; }
+          }
         }
       }
       statusLabel.textContent = rateStatus;
@@ -1490,7 +1526,8 @@
 
       // Message
       const msgEl = document.getElementById('tank-temp-message');
-      if (state.t_tank_bottom > 80) msgEl.textContent = 'Approaching maximum temperature.';
+      if (!isNum(state.t_tank_bottom)) msgEl.textContent = 'Waiting for sensor data — assign sensors in the Sensors view.';
+      else if (state.t_tank_bottom > 80) msgEl.textContent = 'Approaching maximum temperature.';
       else if (state.t_tank_bottom > 50) msgEl.textContent = 'Tank is well charged.';
       else if (state.t_tank_bottom > 25) msgEl.textContent = 'Moderate thermal storage.';
       else msgEl.textContent = 'Tank is cold — waiting for solar gain.';
@@ -1535,7 +1572,7 @@
         ['Outdoor', state.t_outdoor],
       ];
       tempBody.innerHTML = temps.map(([n, v]) =>
-        `<tr><td>${n}</td><td class="val">${v.toFixed(1)}°C</td></tr>`
+        `<tr><td>${n}</td><td class="val">${isNum(v) ? v.toFixed(1) + '°C' : TEMP_PLACEHOLDER}</td></tr>`
       ).join('');
 
       // Valve grid

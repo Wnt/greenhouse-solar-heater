@@ -198,6 +198,128 @@ test.describe('Connection state overlays', () => {
   });
 });
 
+test.describe('Manual override gating with unbound sensors', () => {
+  // Helper: install a mock WebSocket that lets the test push state messages
+  // into the page after navigation. The Shelly publishes `null` for any
+  // temperature whose role is not assigned, and the override button must
+  // still become enableable when controls_enabled is true.
+  async function installMockWs(page) {
+    await page.addInitScript(() => {
+      const OrigWS = window.WebSocket;
+      // @ts-ignore
+      window.WebSocket = function (url) {
+        const fake = {
+          readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+          close() { this.readyState = 3; },
+          send() {},
+        };
+        // @ts-ignore
+        window.__mockWs = fake;
+        setTimeout(() => {
+          fake.readyState = 1;
+          if (fake.onopen) fake.onopen(new Event('open'));
+          if (fake.onmessage) {
+            fake.onmessage({ data: JSON.stringify({ type: 'connection', status: 'connected' }) });
+          }
+        }, 50);
+        return fake;
+      };
+      // @ts-ignore
+      window.WebSocket.prototype = OrigWS.prototype;
+    });
+  }
+
+  test('Enter Manual Override becomes enabled when controls_enabled=true even if all sensors are null', async ({ page }) => {
+    await installMockWs(page);
+    await page.goto('/playground/#device');
+    await page.waitForTimeout(300);
+
+    // Push a Shelly-shaped state with all sensors unbound (null) and controls enabled
+    await page.evaluate(() => {
+      // @ts-ignore
+      const ws = window.__mockWs;
+      if (!ws || !ws.onmessage) throw new Error('mock ws not initialized');
+      ws.onmessage({
+        data: JSON.stringify({
+          type: 'state',
+          data: {
+            ts: Date.now(),
+            mode: 'idle',
+            transitioning: false,
+            transition_step: null,
+            temps: { collector: null, tank_top: null, tank_bottom: null, greenhouse: null, outdoor: null },
+            valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_ret: false, v_air: false },
+            actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
+            flags: { collectors_drained: false, emergency_heating_active: false },
+            controls_enabled: true,
+            manual_override: null,
+          },
+        }),
+      });
+    });
+
+    // Button should be enabled — the live-update pipeline must not throw on null temps
+    const btn = page.locator('#override-enter-btn');
+    await expect(btn).toBeEnabled({ timeout: 3000 });
+  });
+
+  test('Live-update pipeline does not throw uncaught errors on null sensor data', async ({ page }) => {
+    await installMockWs(page);
+
+    const errors = [];
+    page.on('pageerror', (err) => errors.push(String(err)));
+
+    await page.goto('/playground/#device');
+    await page.waitForTimeout(300);
+
+    await page.evaluate(() => {
+      // @ts-ignore
+      const ws = window.__mockWs;
+      ws.onmessage({
+        data: JSON.stringify({
+          type: 'state',
+          data: {
+            ts: Date.now(), mode: 'idle',
+            temps: { collector: null, tank_top: null, tank_bottom: null, greenhouse: null, outdoor: null },
+            valves: {}, actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
+            controls_enabled: true, manual_override: null,
+          },
+        }),
+      });
+    });
+
+    await page.waitForTimeout(500);
+    expect(errors, 'no uncaught page errors').toEqual([]);
+  });
+
+  test('temperature display shows placeholder for null sensors instead of crashing', async ({ page }) => {
+    await installMockWs(page);
+    await page.goto('/playground/#components');
+    await page.waitForTimeout(300);
+
+    await page.evaluate(() => {
+      // @ts-ignore
+      const ws = window.__mockWs;
+      ws.onmessage({
+        data: JSON.stringify({
+          type: 'state',
+          data: {
+            ts: Date.now(), mode: 'idle',
+            temps: { collector: null, tank_top: 42.5, tank_bottom: null, greenhouse: null, outdoor: null },
+            valves: {}, actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
+            controls_enabled: true, manual_override: null,
+          },
+        }),
+      });
+    });
+
+    const tempTable = page.locator('#temp-table');
+    // Bound sensor renders as a number, unbound sensors render as a placeholder
+    await expect(tempTable).toContainText('42.5', { timeout: 3000 });
+    await expect(tempTable).toContainText('—');
+  });
+});
+
 test.describe('FAB visibility', () => {
   test('FAB is hidden in live mode', async ({ page }) => {
     await page.goto('/playground/');
