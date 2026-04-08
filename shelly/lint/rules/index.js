@@ -122,6 +122,16 @@ export function lintScript(source, options = {}) {
       findings.push({ rule: 'SH-013', severity: 'error', line: node.loc?.start?.line || 0, column: node.loc?.start?.column || 0, message: `API not available on Shelly Gen2+: ${node.name}` });
     }
 
+    // SH-014: Array methods missing from Shelly's Espruino runtime.
+    // Verified on device 2026-04-09: control script crashed with
+    // 'Function "shift" not found!' after using arr.shift().
+    if (node.type === 'CallExpression' && node.callee?.type === 'MemberExpression') {
+      const propName = node.callee.property?.name;
+      if (propName === 'shift' || propName === 'unshift' || propName === 'splice' || propName === 'flat' || propName === 'flatMap' || propName === 'findLast') {
+        findings.push({ rule: 'SH-014', severity: 'error', line: node.loc?.start?.line || 0, column: node.loc?.start?.column || 0, message: `Array.${propName}() not supported by Shelly's Espruino runtime — use index-based access` });
+      }
+    }
+
     // Count API calls for resource limits
     if (node.type === 'CallExpression') {
       const name = callExprName(node);

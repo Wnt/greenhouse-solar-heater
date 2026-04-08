@@ -374,12 +374,17 @@ function isManualOverrideActive() {
 
 // Manual override relay command queue. Serializes commands so at most one
 // Shelly.call is in flight from this path at any moment. Without this, a
-// user toggling 4 relays in quick succession would queue 4 fire-and-forget
+// user toggling 4 relays in quick succession queues 4 fire-and-forget
 // Switch.Set calls in the same tick. Combined with the control loop's
 // in-flight HTTP.GET sensor polls, total concurrent Shelly.call invocations
 // can exceed the platform's ~5-call limit and trigger a software watchdog
 // reset of the entire Pro 4PM. Reproduced on device 2026-04-09.
+//
+// NOTE: Shelly's Espruino runtime does NOT support Array.prototype.shift().
+// We use an index-pointer scheme: relayCmdHead advances, and we periodically
+// compact the array by setting it to a fresh empty when head catches up.
 var relayCmdQueue = [];
+var relayCmdHead = 0;
 var relayCmdInFlight = false;
 
 function handleRelayCommand(relay, on) {
@@ -389,12 +394,19 @@ function handleRelayCommand(relay, on) {
 
 function processRelayCmdQueue() {
   if (relayCmdInFlight) return;
-  if (relayCmdQueue.length === 0) return;
-  if (!isManualOverrideActive()) {
+  if (relayCmdHead >= relayCmdQueue.length) {
+    // Queue drained — compact memory.
     relayCmdQueue = [];
+    relayCmdHead = 0;
     return;
   }
-  var cmd = relayCmdQueue.shift();
+  if (!isManualOverrideActive()) {
+    relayCmdQueue = [];
+    relayCmdHead = 0;
+    return;
+  }
+  var cmd = relayCmdQueue[relayCmdHead];
+  relayCmdHead++;
   relayCmdInFlight = true;
 
   function done() {
