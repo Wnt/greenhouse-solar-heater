@@ -423,19 +423,24 @@ function scheduleStep() {
     runValveBatch(openPairs, function(okO) {
       if (!okO) { finalizeTransitionFail(); return; }
 
+      // Always re-enter scheduleStep via Timer.set so the next step
+      // runs on a fresh JS stack. Shelly's Espruino runtime has a
+      // shallow stack limit (~10-20 frames); synchronously re-entering
+      // scheduleStep from inside the runBoundedPool → HTTP callback
+      // chain pushed the depth past the limit and crashed the script
+      // with "Too much recursion" on the SC → IDLE transition
+      // (2026-04-10). The delay is 1 ms when we just need to
+      // re-evaluate after immediate actions, or the scheduler-chosen
+      // remaining window otherwise.
+      clearTransitionTimer();
+      var delay;
       if (plan.nextResumeAt !== null) {
-        // Arm the resume timer for the earliest outstanding event.
-        var delay = plan.nextResumeAt - Date.now();
+        delay = plan.nextResumeAt - Date.now();
         if (delay < 1) delay = 1;
-        clearTransitionTimer();
-        state.transitionTimer = Timer.set(delay, false, resumeTransition);
       } else {
-        // No future deferrals were returned. Re-run the SCHEDULE step
-        // immediately so the scheduler can observe the freshly-applied
-        // actions and finalize the transition (targetReached after the
-        // closes take effect).
-        scheduleStep();
+        delay = 1;
       }
+      state.transitionTimer = Timer.set(delay, false, resumeTransition);
     });
   });
 }
