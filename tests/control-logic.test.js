@@ -1732,4 +1732,3 @@ describe('toSchedulerView / fromSchedulerView polarity helpers', () => {
     assert.strictEqual(toSchedulerView(undefined), undefined);
   });
 });
-

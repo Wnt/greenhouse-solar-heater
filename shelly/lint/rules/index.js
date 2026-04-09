@@ -123,12 +123,28 @@ export function lintScript(source, options = {}) {
     }
 
     // SH-014: Array methods missing from Shelly's Espruino runtime.
-    // Verified on device 2026-04-09: control script crashed with
-    // 'Function "shift" not found!' after using arr.shift().
+    // Verified on device:
+    //   2026-04-09: control script crashed with 'Function "shift" not
+    //               found!' after using arr.shift().
+    //   2026-04-10: control script crashed with 'Function "sort" not
+    //               found!' after buildSnapshotFromState called
+    //               opening.sort() to alphabetize the staged-open list.
+    //               Post-023-limit-valve-operations deploy.
+    // If you discover another missing method, add it here and document
+    // the device incident so future maintainers know this is empirical,
+    // not speculative.
     if (node.type === 'CallExpression' && node.callee?.type === 'MemberExpression') {
       const propName = node.callee.property?.name;
-      if (propName === 'shift' || propName === 'unshift' || propName === 'splice' || propName === 'flat' || propName === 'flatMap' || propName === 'findLast') {
-        findings.push({ rule: 'SH-014', severity: 'error', line: node.loc?.start?.line || 0, column: node.loc?.start?.column || 0, message: `Array.${propName}() not supported by Shelly's Espruino runtime — use index-based access` });
+      if (propName === 'shift' || propName === 'unshift' || propName === 'splice' ||
+          propName === 'sort' || propName === 'flat' || propName === 'flatMap' ||
+          propName === 'findLast' || propName === 'findLastIndex') {
+        findings.push({
+          rule: 'SH-014',
+          severity: 'error',
+          line: node.loc?.start?.line || 0,
+          column: node.loc?.start?.column || 0,
+          message: `Array.${propName}() not supported by Shelly's Espruino runtime — iterate a pre-sorted constant or use manual insertion instead`
+        });
       }
     }
 

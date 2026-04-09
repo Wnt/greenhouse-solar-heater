@@ -11,6 +11,17 @@ var MODES = {
   EMERGENCY_HEATING: "EMERGENCY_HEATING"
 };
 
+// All valve names in alphabetical order. Used as a pre-sorted iteration
+// key whenever a deterministic order is required without calling
+// Array.prototype.sort() — Shelly's Espruino runtime does not implement
+// sort() (same family of missing methods as Array.prototype.shift(); see
+// the relayCmdQueue comment in control.js). Keep in sync with the valve
+// set in MODE_VALVES below.
+var VALVE_NAMES_SORTED = [
+  "v_air", "v_ret", "vi_btm", "vi_coll", "vi_top",
+  "vo_coll", "vo_rad", "vo_tank"
+];
+
 var MODE_VALVES = {
   IDLE: {
     vi_btm: false, vi_top: false, vi_coll: false,
@@ -403,14 +414,26 @@ function planValveTransition(target, current, openSince, opening, now, cfg) {
   };
 
   // Union of target + current keys, collected into a stable alphabetical
-  // order so that every call with the same logical input produces the same
-  // action arrays (checklist case 15 / INV8 determinism).
+  // order so that every call with the same logical input produces the
+  // same action arrays (checklist case 15 / INV8 determinism). We cannot
+  // call Array.prototype.sort() on Shelly's Espruino runtime, so iterate
+  // the pre-sorted VALVE_NAMES_SORTED constant and only include names
+  // that actually appear in target or current. Any key present in target
+  // or current but not in VALVE_NAMES_SORTED is appended at the end in
+  // insertion order — defensive, since the shell always uses the 8 known
+  // valve names.
   var seen = {};
   var names = [];
   var k;
+  for (var si = 0; si < VALVE_NAMES_SORTED.length; si++) {
+    var sname = VALVE_NAMES_SORTED[si];
+    if (target[sname] !== undefined || current[sname] !== undefined) {
+      seen[sname] = true;
+      names.push(sname);
+    }
+  }
   for (k in target) { if (!seen[k]) { seen[k] = true; names.push(k); } }
   for (k in current) { if (!seen[k]) { seen[k] = true; names.push(k); } }
-  names.sort();
 
   // Count live opening windows. A window is live iff its entry exists and
   // opening[v] > now. Expired entries are ignored (the shell is expected to
@@ -563,12 +586,15 @@ function runBoundedPool(items, limit, dispatch, done) {
 //   pending_closes — valves deferred due to the minimum-open hold, with
 //                    their ready-at timestamps (unix seconds)
 function buildSnapshotFromState(st, dc, now) {
+  // Iterate VALVE_NAMES_SORTED to produce a deterministic order without
+  // calling Array.prototype.sort() (unsupported on Shelly Espruino).
   var opening = [];
-  var ov;
-  for (ov in st.valveOpening) {
-    if (st.valveOpening[ov] > now) opening.push(ov);
+  for (var oi = 0; oi < VALVE_NAMES_SORTED.length; oi++) {
+    var oname = VALVE_NAMES_SORTED[oi];
+    if (st.valveOpening[oname] !== undefined && st.valveOpening[oname] > now) {
+      opening.push(oname);
+    }
   }
-  opening.sort();
   var pendingCloses = [];
   var pi;
   var pending = st.valvePendingClose || [];
@@ -672,6 +698,7 @@ if (typeof module !== "undefined" && module.exports) {
     MODE_VALVES: MODE_VALVES,
     MODE_ACTUATORS: MODE_ACTUATORS,
     DEFAULT_CONFIG: DEFAULT_CONFIG,
+    VALVE_NAMES_SORTED: VALVE_NAMES_SORTED,
     VALVE_TIMING: VALVE_TIMING,
     planValveTransition: planValveTransition,
     toSchedulerView: toSchedulerView,
