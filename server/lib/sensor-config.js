@@ -163,6 +163,21 @@ function getConfig() {
 
 // ── Validation ──
 
+// Shelly's SensorAddon.OneWireScan returns 1-Wire addresses as colon-separated
+// DECIMAL bytes (e.g. "40:208:87:71:0:0:0:120" — leading 40 = 0x28, the
+// DS18B20 family code). Validate as 8 decimal bytes, each 0-255.
+function isValidOneWireAddr(addr) {
+  if (typeof addr !== 'string') return false;
+  var parts = addr.split(':');
+  if (parts.length !== 8) return false;
+  for (var i = 0; i < 8; i++) {
+    if (!/^\d{1,3}$/.test(parts[i])) return false;
+    var n = parseInt(parts[i], 10);
+    if (n < 0 || n > 255) return false;
+  }
+  return true;
+}
+
 function validateAssignments(assignments, hosts) {
   var addrs = {};
   var components = {};
@@ -170,8 +185,7 @@ function validateAssignments(assignments, hosts) {
     var a = assignments[role];
     if (!a || !a.addr) continue;
 
-    // Validate addr format (colon-separated hex bytes)
-    if (!/^[\da-fA-F]{1,2}(:[\da-fA-F]{1,2}){7}$/.test(a.addr)) {
+    if (!isValidOneWireAddr(a.addr)) {
       return 'Invalid 1-Wire address format for ' + role + ': ' + a.addr;
     }
 

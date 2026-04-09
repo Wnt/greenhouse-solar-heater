@@ -19,7 +19,7 @@
 
 **Key detail**: Add-on peripheral component IDs use the **100-199 range** (100, 101, 102...). The current `control.js` uses IDs 0-4, which are placeholder values that don't match the actual Add-on component numbering. This feature must update the control system to use the correct IDs from the applied configuration.
 
-**1-Wire address format**: Colon-separated hex bytes, e.g., `"40:255:100:6:199:204:149:177"` (8 bytes).
+**1-Wire address format**: Colon-separated **decimal** bytes (0-255), e.g., `"40:255:100:6:199:204:149:177"` (8 bytes). The leading `40` decimal is `0x28`, the DS18B20 family code.
 
 **Alternatives considered**:
 - Manual RPC calls by operator — rejected: error-prone, requires Shelly API knowledge

@@ -46,18 +46,18 @@ test.describe('Sensor Configuration View', () => {
               host: '192.168.30.20',
               ok: true,
               sensors: [
-                { addr: '40:FF:64:06:C7:CC:95:B1', tC: 24.5, component: 'temperature:100' },
-                { addr: '40:FF:64:06:C7:CC:95:B2', tC: 22.3, component: 'temperature:101' },
-                { addr: '40:FF:64:06:C7:CC:95:B3', tC: null, component: null },
+                { addr: '40:255:100:6:199:204:149:177', tC: 24.5, component: 'temperature:100' },
+                { addr: '40:255:100:6:199:204:149:178', tC: 22.3, component: 'temperature:101' },
+                { addr: '40:255:100:6:199:204:149:179', tC: null, component: null },
               ],
             },
             {
               host: '192.168.30.21',
               ok: true,
               sensors: [
-                { addr: '40:FF:64:06:C7:CC:95:B1', tC: 24.5, component: 'temperature:100' },
-                { addr: '40:FF:64:06:C7:CC:95:B2', tC: 22.3, component: 'temperature:101' },
-                { addr: '40:FF:64:06:C7:CC:95:B3', tC: null, component: null },
+                { addr: '40:255:100:6:199:204:149:177', tC: 24.5, component: 'temperature:100' },
+                { addr: '40:255:100:6:199:204:149:178', tC: 22.3, component: 'temperature:101' },
+                { addr: '40:255:100:6:199:204:149:179', tC: null, component: null },
               ],
             },
           ],
@@ -186,7 +186,7 @@ test.describe('Sensor Configuration View', () => {
     await goToSensorsAndScan(page);
 
     // Should show sensor addresses (from mock, same 3 sensors returned by both hosts)
-    await expect(page.locator('td:has-text("40:FF:64:06:C7:CC:95:B1")').first()).toBeVisible();
+    await expect(page.locator('td:has-text("40:255:100:6:199:204:149:177")').first()).toBeVisible();
 
     // Should show temperature readings
     await expect(page.locator('td:has-text("24.5")').first()).toBeVisible();

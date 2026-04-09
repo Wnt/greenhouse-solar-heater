@@ -68,7 +68,7 @@ describe('sensor-config', () => {
       sensorConfig.load(function (err) {
         assert.ifError(err);
         const assignments = {
-          collector: { addr: '40:FF:64:06:C7:CC:95:B1', hostIndex: 0, componentId: 100 },
+          collector: { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 100 },
         };
         sensorConfig.updateAssignments(assignments, function (err2, config) {
           assert.ifError(err2);
@@ -82,7 +82,7 @@ describe('sensor-config', () => {
           process.env.SENSOR_CONFIG_PATH = configPath;
           fresh.load(function (err3, loaded) {
             assert.ifError(err3);
-            assert.equal(loaded.assignments.collector.addr, '40:FF:64:06:C7:CC:95:B1');
+            assert.equal(loaded.assignments.collector.addr, '40:255:100:6:199:204:149:177');
             assert.equal(loaded.version, 1);
             done();
           });
@@ -96,16 +96,16 @@ describe('sensor-config', () => {
 
     it('accepts valid assignments', () => {
       const assignments = {
-        collector: { addr: '40:FF:64:06:C7:CC:95:B1', hostIndex: 0, componentId: 100 },
-        tank_top: { addr: '40:FF:64:06:C7:CC:95:B2', hostIndex: 0, componentId: 101 },
+        collector: { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 100 },
+        tank_top: { addr: '40:255:100:6:199:204:149:178', hostIndex: 0, componentId: 101 },
       };
       assert.equal(sensorConfig.validateAssignments(assignments, hosts), null);
     });
 
     it('rejects duplicate addresses', () => {
       const assignments = {
-        collector: { addr: '40:FF:64:06:C7:CC:95:B1', hostIndex: 0, componentId: 100 },
-        tank_top: { addr: '40:FF:64:06:C7:CC:95:B1', hostIndex: 0, componentId: 101 },
+        collector: { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 100 },
+        tank_top: { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 101 },
       };
       const err = sensorConfig.validateAssignments(assignments, hosts);
       assert.ok(err);
@@ -114,7 +114,7 @@ describe('sensor-config', () => {
 
     it('rejects component ID out of range', () => {
       const assignments = {
-        collector: { addr: '40:FF:64:06:C7:CC:95:B1', hostIndex: 0, componentId: 5 },
+        collector: { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 5 },
       };
       const err = sensorConfig.validateAssignments(assignments, hosts);
       assert.ok(err);
@@ -123,7 +123,7 @@ describe('sensor-config', () => {
 
     it('rejects invalid host index', () => {
       const assignments = {
-        collector: { addr: '40:FF:64:06:C7:CC:95:B1', hostIndex: 5, componentId: 100 },
+        collector: { addr: '40:255:100:6:199:204:149:177', hostIndex: 5, componentId: 100 },
       };
       const err = sensorConfig.validateAssignments(assignments, hosts);
       assert.ok(err);
@@ -132,8 +132,8 @@ describe('sensor-config', () => {
 
     it('rejects duplicate component IDs on same host', () => {
       const assignments = {
-        collector: { addr: '40:FF:64:06:C7:CC:95:B1', hostIndex: 0, componentId: 100 },
-        tank_top: { addr: '40:FF:64:06:C7:CC:95:B2', hostIndex: 0, componentId: 100 },
+        collector: { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 100 },
+        tank_top: { addr: '40:255:100:6:199:204:149:178', hostIndex: 0, componentId: 100 },
       };
       const err = sensorConfig.validateAssignments(assignments, hosts);
       assert.ok(err);
@@ -142,10 +142,49 @@ describe('sensor-config', () => {
 
     it('allows same component ID on different hosts', () => {
       const assignments = {
-        collector: { addr: '40:FF:64:06:C7:CC:95:B1', hostIndex: 0, componentId: 100 },
-        radiator_in: { addr: '40:FF:64:06:C7:CC:95:B6', hostIndex: 1, componentId: 100 },
+        collector: { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 100 },
+        radiator_in: { addr: '40:255:100:6:199:204:149:182', hostIndex: 1, componentId: 100 },
       };
       assert.equal(sensorConfig.validateAssignments(assignments, hosts), null);
+    });
+
+    // Shelly's SensorAddon.OneWireScan returns addresses as colon-separated
+    // DECIMAL bytes (e.g. "40:208:87:71:0:0:0:120"), not hex. The leading `40`
+    // decimal is 0x28, the DS18B20 family code. The validator must accept
+    // values with 1-3 digits per byte in the 0-255 range.
+    it('accepts decimal byte format from Shelly OneWireScan', () => {
+      const assignments = {
+        collector: { addr: '40:208:87:71:0:0:0:120', hostIndex: 0, componentId: 100 },
+        tank_top: { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 101 },
+      };
+      assert.equal(sensorConfig.validateAssignments(assignments, hosts), null);
+    });
+
+    it('rejects byte values above 255', () => {
+      const assignments = {
+        collector: { addr: '40:256:87:71:0:0:0:120', hostIndex: 0, componentId: 100 },
+      };
+      const err = sensorConfig.validateAssignments(assignments, hosts);
+      assert.ok(err);
+      assert.ok(err.includes('Invalid 1-Wire address format'));
+    });
+
+    it('rejects addresses with too few bytes', () => {
+      const assignments = {
+        collector: { addr: '40:208:87:71:0:0:0', hostIndex: 0, componentId: 100 },
+      };
+      const err = sensorConfig.validateAssignments(assignments, hosts);
+      assert.ok(err);
+      assert.ok(err.includes('Invalid 1-Wire address format'));
+    });
+
+    it('rejects non-numeric bytes', () => {
+      const assignments = {
+        collector: { addr: '40:abc:87:71:0:0:0:120', hostIndex: 0, componentId: 100 },
+      };
+      const err = sensorConfig.validateAssignments(assignments, hosts);
+      assert.ok(err);
+      assert.ok(err.includes('Invalid 1-Wire address format'));
     });
   });
 
@@ -157,11 +196,11 @@ describe('sensor-config', () => {
 
     it('returns empty when all required roles assigned', () => {
       const assignments = {
-        collector: { addr: '40:FF:64:06:C7:CC:95:B1' },
-        tank_top: { addr: '40:FF:64:06:C7:CC:95:B2' },
-        tank_bottom: { addr: '40:FF:64:06:C7:CC:95:B3' },
-        greenhouse: { addr: '40:FF:64:06:C7:CC:95:B4' },
-        outdoor: { addr: '40:FF:64:06:C7:CC:95:B5' },
+        collector: { addr: '40:255:100:6:199:204:149:177' },
+        tank_top: { addr: '40:255:100:6:199:204:149:178' },
+        tank_bottom: { addr: '40:255:100:6:199:204:149:179' },
+        greenhouse: { addr: '40:255:100:6:199:204:149:180' },
+        outdoor: { addr: '40:255:100:6:199:204:149:181' },
       };
       const missing = sensorConfig.getUnassignedRequiredRoles(assignments);
       assert.deepStrictEqual(missing, []);
@@ -173,8 +212,8 @@ describe('sensor-config', () => {
       const config = {
         hosts: [{ id: 'sensor_1', ip: '192.168.30.20' }, { id: 'sensor_2', ip: '192.168.30.21' }],
         assignments: {
-          collector: { addr: '40:FF:64:06:C7:CC:95:B1', hostIndex: 0, componentId: 100 },
-          radiator_in: { addr: '40:FF:64:06:C7:CC:95:B6', hostIndex: 1, componentId: 100 },
+          collector: { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 100 },
+          radiator_in: { addr: '40:255:100:6:199:204:149:182', hostIndex: 1, componentId: 100 },
         },
         version: 3,
       };
@@ -319,13 +358,13 @@ describe('sensor-config', () => {
         assert.ifError(err);
         const body = JSON.stringify({
           assignments: {
-            collector: { addr: '40:FF:64:06:C7:CC:95:B1', hostIndex: 0, componentId: 100 },
+            collector: { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 100 },
           },
         });
         const res = mockResponse();
         sensorConfig.handlePut({}, res, body, function (config) {
           assert.equal(config.version, 1);
-          assert.equal(config.assignments.collector.addr, '40:FF:64:06:C7:CC:95:B1');
+          assert.equal(config.assignments.collector.addr, '40:255:100:6:199:204:149:177');
 
           const saved = JSON.parse(fs.readFileSync(configPath, 'utf8'));
           assert.equal(saved.version, 1);
@@ -349,8 +388,8 @@ describe('sensor-config', () => {
         assert.ifError(err);
         const body = JSON.stringify({
           assignments: {
-            collector: { addr: '40:FF:64:06:C7:CC:95:B1', hostIndex: 0, componentId: 100 },
-            tank_top: { addr: '40:FF:64:06:C7:CC:95:B1', hostIndex: 0, componentId: 101 },
+            collector: { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 100 },
+            tank_top: { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 101 },
           },
         });
         const res = mockResponse();

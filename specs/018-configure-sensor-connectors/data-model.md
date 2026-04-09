@@ -24,7 +24,7 @@ A DS18B20 sensor discovered on a sensor host via 1-Wire bus scan.
 
 | Field     | Type        | Description                                                         |
 |-----------|-------------|---------------------------------------------------------------------|
-| addr      | string      | 1-Wire hardware address (colon-separated hex, e.g., "40:FF:64:06:C7:CC:95:B1") |
+| addr      | string      | 1-Wire hardware address (colon-separated decimal bytes 0-255, e.g., "40:255:100:6:199:204:149:177") |
 | hostId    | string      | ID of the sensor host this sensor was found on                       |
 | component | string/null | Current Shelly component binding (e.g., "temperature:100") or null   |
 | tC        | number/null | Current temperature reading in Celsius, or null if error             |
@@ -131,7 +131,7 @@ Each target tracks its own apply status. Failed targets can be retried independe
 
 ## Validation Rules
 
-- A sensor address must be exactly 8 colon-separated hex bytes.
+- A sensor address must be exactly 8 colon-separated decimal bytes in the 0-255 range.
 - Component IDs must be in the 100-199 range (Add-on peripheral range).
 - All 5 required roles must be assigned before applying (warning if not).
 - No duplicate sensor addresses across roles.
