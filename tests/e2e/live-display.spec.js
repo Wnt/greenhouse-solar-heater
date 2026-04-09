@@ -157,6 +157,44 @@ test.describe('Status history graph uses live data', () => {
   });
 });
 
+test.describe('Status history graph includes collector temperature', () => {
+  test('legend has a Collector entry', async ({ page }) => {
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    // The graph legend must include a Collector entry alongside Tank/In/Out.
+    await expect(page.locator('.graph-legend')).toContainText('Collector');
+  });
+
+  test('inspector row reflects collector temperature from history sample', async ({ page }) => {
+    const now = Date.now();
+    const points = [
+      { ts: now - 7200_000, collector: 25.0, tank_top: 38.0, tank_bottom: 30.0, greenhouse: 17.0, outdoor: 9.0 },
+      { ts: now - 3600_000, collector: 45.0, tank_top: 42.0, tank_bottom: 32.0, greenhouse: 18.5, outdoor: 10.0 },
+      { ts: now - 1800_000, collector: 60.0, tank_top: 46.0, tank_bottom: 33.5, greenhouse: 20.0, outdoor: 11.0 },
+    ];
+    await installMockWs(page);
+    await mockHistoryApi(page, points);
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    // The inspector must have a collector row that updates on hover.
+    const inspectorColl = page.locator('#inspector-coll');
+    await expect(inspectorColl).toHaveCount(1);
+
+    // Hover the middle of the canvas to surface the inspector.
+    const canvas = page.locator('#chart');
+    await canvas.hover({ position: { x: 200, y: 100 } });
+
+    // The collector row must render a temperature in °C (not empty).
+    await expect(inspectorColl).toHaveText(/\d+\.\d°C/);
+  });
+});
+
 test.describe('Live mode is the default data source', () => {
   test('app starts in live mode on localhost (simulation is secondary)', async ({ page }) => {
     await installMockWs(page);
