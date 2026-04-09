@@ -7,7 +7,8 @@
     "test": "node --test 'tests/**/*.test.js' && npx playwright test",
     "test:unit": "node --test 'tests/**/*.test.js'",
     "test:e2e": "npx playwright test",
-    "screenshots": "npx playwright test --config=playwright.screenshots.config.js"
+    "screenshots": "npx playwright test --config=playwright.screenshots.config.js",
+    "diagram": "node design/diagrams/generate-topology.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",

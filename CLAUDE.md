@@ -95,6 +95,25 @@ Static SVGs in `design/diagrams/` use a dark background (#0d1117). Playground in
 
 Height scales in SVGs are approximate — `system-height-layout.svg` is the most precise for physical positioning.
 
+## drawio Topology Diagram
+
+`design/diagrams/system-topology.drawio` is **generated**, not hand-edited. Edit the source files instead, then regenerate:
+
+- `design/diagrams/topology-layout.yaml` — declarative layout rules: canvas, styles, component positions + ports, manifolds, valves, sensors, and the pipe list (each pipe declares `from`/`to` as `{component|valve, port}` references, optional label, optional waypoints).
+- `design/diagrams/generate-topology.js` — Node.js generator. Reads `system.yaml` (for advisory validation that the layout covers everything) + `topology-layout.yaml` and emits `system-topology.drawio`.
+
+Regenerate with `npm run diagram` (or `node design/diagrams/generate-topology.js`).
+
+The generator produces a drawio file where:
+- **Pipe endpoints are attached** to their component/valve cells via `source`/`target` refs + `exitX/exitY/entryX/entryY` style attributes. Moving a component in diagrams.net drags every connected pipe along with it.
+- **Pipe labels are attached** to the edge cell's `value` attribute and render at the edge midpoint.
+- **Sensor labels are attached** to the sensor dot via drawio's `labelPosition=right|left;align=left|right;verticalLabelPosition=middle` style — the label is part of the same cell and follows the dot.
+- **Tank interior** (gas pocket, HOT/COOL zones, heater, dip/bottom port dots, ports label) are drawio children of the tank vertex, so dragging the tank moves the whole composite — and every pipe connected to the port dots follows.
+
+`system.yaml` parses strictly in Node's js-yaml 4.x except for the `shopping_list.electronics` section (mixed map + sequence). The generator tolerates this: if parsing fails, it warns and skips cross-validation but still emits the diagram.
+
+js-yaml dependency resolution: the generator tries `require('js-yaml')` first and falls back to `shelly/lint/node_modules/js-yaml` (already installed via `shelly/lint/package.json`) so no extra install is needed.
+
 ## Playground Architecture
 
 The `playground/` directory is the main web application — a solar heating monitoring and control system. Dark editorial theme based on the Stitch "Digital Sanctuary" design system (`design/Stitch/`): dark backgrounds (#0c0e12), gold primary (#e9c349), teal secondary (#43aea4), Newsreader serif headings, Manrope sans-serif body, tonal layering (no border lines for structure). Responsive: desktop sidebar nav (256px), mobile (<768px) glassmorphic bottom nav. Single HTML file with 5 hash-routed views, `<script type="importmap">` for ES modules. Deep-linkable via URL fragments (`#status`, `#components`, `#schematic`, `#controls`, `#device`).
