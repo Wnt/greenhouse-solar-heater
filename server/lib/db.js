@@ -314,6 +314,47 @@ function getHistory(range, sensor, callback) {
   });
 }
 
+// Paginated newest-first query for state_events, with a cursor for
+// infinite-scroll UIs. Returns { events, hasMore } where `hasMore` is true
+// if at least one row exists older than the oldest returned row.
+//
+//   entityType — required (e.g. 'mode', 'valve', 'actuator')
+//   limit      — capped at 100
+//   before     — optional Unix ms cursor; returns rows with ts < before
+function getEventsPaginated(entityType, limit, before, callback) {
+  var p = getPool();
+  var cap = 100;
+  var effLimit = Math.max(1, Math.min(cap, parseInt(limit, 10) || 10));
+  // Query limit+1 so we can detect whether more rows exist beyond this page.
+  var fetchLimit = effLimit + 1;
+
+  var params = [entityType];
+  var sql = 'SELECT ts, entity_type, entity_id, old_value, new_value FROM state_events WHERE entity_type = $1';
+  if (before !== null && before !== undefined) {
+    params.push(new Date(before));
+    sql += ' AND ts < $' + params.length;
+  }
+  params.push(fetchLimit);
+  sql += ' ORDER BY ts DESC LIMIT $' + params.length;
+
+  p.query(sql, params, function (err, result) {
+    if (err) { callback(err); return; }
+    var rows = result.rows;
+    var hasMore = rows.length > effLimit;
+    if (hasMore) rows = rows.slice(0, effLimit);
+    var events = rows.map(function (row) {
+      return {
+        ts: new Date(row.ts).getTime(),
+        type: row.entity_type,
+        id: row.entity_id,
+        from: row.old_value,
+        to: row.new_value,
+      };
+    });
+    callback(null, { events: events, hasMore: hasMore });
+  });
+}
+
 function getEvents(range, entityType, callback) {
   var p = getPool();
   var interval = RANGE_INTERVALS[range];
@@ -405,6 +446,7 @@ module.exports = {
   insertStateEvent: insertStateEvent,
   getHistory: getHistory,
   getEvents: getEvents,
+  getEventsPaginated: getEventsPaginated,
   close: close,
   _reset: function () { pool = null; resolvedCa = null; stopMaintenance(); },
 };
