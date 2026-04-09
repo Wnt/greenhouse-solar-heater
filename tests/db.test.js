@@ -150,6 +150,121 @@ describe('db module', () => {
     });
   });
 
+  it('getEventsPaginated returns events newest-first limited by limit', (t, done) => {
+    process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
+    db._reset();
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
+
+    db.getEventsPaginated('mode', 10, null, function (err) {
+      assert.ifError(err);
+      const eventsQ = capturedQueries.find(q => q.sql && q.sql.includes('state_events'));
+      assert.ok(eventsQ, 'should have a state_events query');
+      assert.ok(/ORDER BY\s+ts\s+DESC/i.test(eventsQ.sql), 'should order newest-first');
+      assert.ok(/LIMIT\s+\$\d+/.test(eventsQ.sql), 'limit must be parameterized');
+      assert.ok(eventsQ.params.includes('mode'));
+      assert.ok(eventsQ.params.includes(11), 'should query limit+1 to compute hasMore');
+      done();
+    });
+  });
+
+  it('getEventsPaginated supports cursor-based pagination with `before`', (t, done) => {
+    process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
+    db._reset();
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
+
+    const beforeMs = 1_700_000_000_000;
+    db.getEventsPaginated('mode', 10, beforeMs, function (err) {
+      assert.ifError(err);
+      const eventsQ = capturedQueries.find(q => q.sql && q.sql.includes('state_events'));
+      assert.ok(eventsQ);
+      // Cursor should be parameterized and applied as strict inequality
+      assert.ok(/ts\s*<\s*\$\d+/.test(eventsQ.sql), 'should use a strict-less-than cursor on ts');
+      // Parameter should be a Date derived from beforeMs (not the raw number)
+      const cursorParam = eventsQ.params.find(p => p instanceof Date);
+      assert.ok(cursorParam, 'cursor must be passed as a Date');
+      assert.strictEqual(cursorParam.getTime(), beforeMs);
+      done();
+    });
+  });
+
+  it('getEventsPaginated caps limit at 100', (t, done) => {
+    process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
+    db._reset();
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
+
+    db.getEventsPaginated('mode', 999, null, function (err) {
+      assert.ifError(err);
+      const eventsQ = capturedQueries.find(q => q.sql && q.sql.includes('state_events'));
+      assert.ok(eventsQ);
+      // Must query at most 101 rows (100 cap + 1 for hasMore)
+      assert.ok(eventsQ.params.includes(101), 'limit should be capped at 100 (+1 for hasMore)');
+      done();
+    });
+  });
+
+  it('getEventsPaginated returns {events, hasMore:false} when row count <= limit', (t, done) => {
+    process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
+    db._reset();
+
+    // Custom pool that returns 2 rows for a limit of 10
+    const rows = [
+      { ts: new Date('2026-04-09T12:00:00Z'), entity_type: 'mode', entity_id: 'mode', old_value: 'idle',           new_value: 'solar_charging' },
+      { ts: new Date('2026-04-09T11:00:00Z'), entity_type: 'mode', entity_id: 'mode', old_value: 'solar_charging', new_value: 'idle' },
+    ];
+    require.cache[require.resolve('pg')] = {
+      id: require.resolve('pg'),
+      exports: { Pool: function () { return {
+        on: function () {},
+        query: function (sql, params, cb) { cb(null, { rows: rows }); },
+      }; } },
+    };
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
+
+    db.getEventsPaginated('mode', 10, null, function (err, result) {
+      assert.ifError(err);
+      assert.strictEqual(result.events.length, 2);
+      assert.strictEqual(result.hasMore, false);
+      // Events should carry { ts, type, id, from, to }
+      assert.strictEqual(result.events[0].type, 'mode');
+      assert.strictEqual(result.events[0].from, 'idle');
+      assert.strictEqual(result.events[0].to, 'solar_charging');
+      assert.strictEqual(typeof result.events[0].ts, 'number');
+      done();
+    });
+  });
+
+  it('getEventsPaginated returns {events, hasMore:true} when row count > limit', (t, done) => {
+    process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
+    db._reset();
+
+    // limit=2, return 3 rows (2 + 1 extra for hasMore)
+    const rows = [
+      { ts: new Date('2026-04-09T12:00:00Z'), entity_type: 'mode', entity_id: 'mode', old_value: 'idle',           new_value: 'solar_charging' },
+      { ts: new Date('2026-04-09T11:00:00Z'), entity_type: 'mode', entity_id: 'mode', old_value: 'solar_charging', new_value: 'idle' },
+      { ts: new Date('2026-04-09T10:00:00Z'), entity_type: 'mode', entity_id: 'mode', old_value: 'idle',           new_value: 'solar_charging' },
+    ];
+    require.cache[require.resolve('pg')] = {
+      id: require.resolve('pg'),
+      exports: { Pool: function () { return {
+        on: function () {},
+        query: function (sql, params, cb) { cb(null, { rows: rows }); },
+      }; } },
+    };
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
+
+    db.getEventsPaginated('mode', 2, null, function (err, result) {
+      assert.ifError(err);
+      assert.strictEqual(result.events.length, 2, 'trailing sentinel row should be dropped');
+      assert.strictEqual(result.hasMore, true);
+      done();
+    });
+  });
+
   it('getHistory with SQL metacharacters in sensor uses parameterized query', (t, done) => {
     process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
     db._reset();

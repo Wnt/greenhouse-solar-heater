@@ -121,9 +121,9 @@ All third-party libraries are vendored locally in `playground/vendor/` to avoid 
 
 ## Server
 
-The `server/` directory contains the Node.js API server that serves the playground app, bridges MQTT to WebSocket, and provides authentication, device config, sensor config, sensor discovery, and history APIs. All device communication flows through MQTT — no direct HTTP RPC to Shelly devices.
+The `server/` directory contains the Node.js API server that serves the playground app, bridges MQTT to WebSocket, and provides authentication, device config, sensor config, sensor discovery, history, and events APIs. All device communication flows through MQTT — no direct HTTP RPC to Shelly devices.
 
-- `server/server.js` — HTTP server: serves playground at `/`, auth middleware (when `AUTH_ENABLED=true`), WebSocket (bidirectional: broadcasts state, receives commands for manual override and relay toggling), device-config API, sensor-config API, sensor-discovery API, history API, health endpoint
+- `server/server.js` — HTTP server: serves playground at `/`, auth middleware (when `AUTH_ENABLED=true`), WebSocket (bidirectional: broadcasts state, receives commands for manual override and relay toggling), device-config API, sensor-config API, sensor-discovery API, history API, events API (`GET /api/events?type=mode&limit=10&before=<unix_ms>` — paginated newest-first state-events feed for the System Logs UI), health endpoint
 - `server/auth/` — WebAuthn passkey auth: `credentials.js` (S3-backed store), `session.js` (HMAC cookies), `webauthn.js` (handlers), `invitations.js` (registration invitations)
 - `server/lib/` — Shared libraries: logger, S3 storage adapter, database module, MQTT bridge, device config, sensor config, tracing, config CLIs (vpn-config, db-config, nr-config)
 
@@ -173,6 +173,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/e2e/sensor-config.spec.js` — Playwright e2e tests for the Sensors config UI (detection, assignment, apply with mocked RPC)
 - `tests/e2e/live-mode.spec.js` — Playwright e2e tests for live mode toggle, WebSocket connection, simulation fallback
 - `tests/e2e/live-display.spec.js` — Playwright e2e tests verifying that the schematic view and status history graph render real values from the live data source (not simulation defaults or empty state)
+- `tests/e2e/live-logs.spec.js` — Playwright e2e tests verifying that the System Logs card is backed by the `/api/events` state-events feed, lazy-loads older entries on scroll, and prepends new entries when the live mode changes
 - `tests/e2e/version-check.spec.js` — Playwright e2e tests for JS version check toast (appearance, editorial copy, dismiss, silent failure)
 - `tests/e2e/auth-actions.spec.js` — Playwright e2e tests for the sidebar logout + Add Device invitation flow (visibility based on `/auth/status`, logout POST, invite modal with QR code, error handling)
 - `tests/e2e/take-screenshots.spec.js` — Screenshot generator: runs 24h simulation, captures all views (excluded from normal test runs via `testIgnore` in `playwright.config.js`, uses separate `playwright.screenshots.config.js`)

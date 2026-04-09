@@ -169,6 +169,36 @@ function handleHistoryApi(req, res) {
   });
 }
 
+// Paginated state_events feed for the System Logs UI. Supports newest-first
+// cursor pagination so the client can lazy-load older entries on scroll.
+//   GET /api/events?type=mode&limit=10&before=<unix_ms>
+//   -> { events: [...], hasMore: bool }
+function handleEventsApi(req, res) {
+  if (!db) {
+    jsonResponse(res, 503, { error: 'Database not available' });
+    return;
+  }
+
+  var parsed = new URL(req.url, 'http://localhost');
+  var type = parsed.searchParams.get('type') || 'mode';
+  var limit = parseInt(parsed.searchParams.get('limit'), 10) || 10;
+  var beforeRaw = parsed.searchParams.get('before');
+  var before = beforeRaw ? parseInt(beforeRaw, 10) : null;
+  if (beforeRaw && (Number.isNaN(before) || before <= 0)) {
+    jsonResponse(res, 400, { error: 'Invalid `before` cursor' });
+    return;
+  }
+
+  db.getEventsPaginated(type, limit, before, function (err, result) {
+    if (err) {
+      log.error('events query failed', { error: err.message });
+      jsonResponse(res, 500, { error: 'Query failed' });
+      return;
+    }
+    jsonResponse(res, 200, result);
+  });
+}
+
 // ── Device Config API ──
 
 function handleDeviceConfigApi(req, res, urlPath, body) {
@@ -230,6 +260,7 @@ function resolveRoute(urlPath, method) {
   if (urlPath.startsWith('/api/sensor-config/')) return '/api/sensor-config/*';
   if (urlPath === '/api/sensor-discovery') return '/api/sensor-discovery';
   if (urlPath === '/api/history') return '/api/history';
+  if (urlPath === '/api/events') return '/api/events';
   if (urlPath === '/ws') return '/ws';
   return urlPath;
 }
@@ -335,6 +366,8 @@ var server = http.createServer(function (req, res) {
     }
   } else if (urlPath === '/api/history') {
     handleHistoryApi(req, res);
+  } else if (urlPath === '/api/events') {
+    handleEventsApi(req, res);
   } else {
     serveStatic(req, res);
   }

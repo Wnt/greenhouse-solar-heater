@@ -256,6 +256,7 @@ function switchToLive() {
   ensureLiveSource();
   running = false;
   fetchLiveHistory(graphRange);
+  fetchLiveEvents(null);
   startStalenessTimer();
   clearLiveDisplay();
   updateConnectionUI('disconnected');
@@ -282,6 +283,15 @@ function clearLiveDisplay() {
   // Clear simulation graph data and redraw empty canvas
   timeSeriesStore.reset();
   drawHistoryGraph();
+  // Clear the transition log — fetchLiveEvents() will repopulate it from the DB
+  transitionLog.length = 0;
+  eventsCursor = null;
+  eventsHasMore = false;
+  lastLiveMode = null;
+  var logsEl = document.getElementById('logs-list');
+  if (logsEl) {
+    logsEl.innerHTML = '<div data-empty="true" style="color:var(--on-surface-variant);font-size:13px;">Loading transitions…</div>';
+  }
 }
 
 function switchToSimulation() {
@@ -552,7 +562,17 @@ const timeSeriesStore = {
 };
 
 // ── Transition log ──
+// Unified log entry shape across sim/live modes:
+//   sim:  { kind: 'sim',  time: simSeconds, text, mode }
+//   live: { kind: 'live', ts: unixMs,       text, mode, from }
 const transitionLog = [];
+
+// Live-mode pagination + mode-change detection state
+const EVENTS_PAGE_SIZE = 10;
+let eventsCursor = null;      // ms timestamp of oldest entry currently shown
+let eventsHasMore = false;    // true if the DB has older entries to load
+let eventsLoading = false;    // in-flight guard
+let lastLiveMode = null;      // last observed live mode (change detector)
 
 // ── Scenario presets ──
 const PRESETS = {
@@ -616,6 +636,7 @@ async function init() {
   resetSim();
   buildSchematic();
   setupInspector();
+  setupLogsScrollLoader();
   updateDisplay(model.getState(), { mode: 'idle', valves: config.modes.idle.valve_states, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
 
   // Initialize live/simulation mode toggle
@@ -759,6 +780,157 @@ function recordLiveHistoryPoint(state, result) {
 // store. Used by e2e tests to verify that live data populates the graph.
 window.__getHistoryPointCount = function () { return timeSeriesStore.times.length; };
 
+// ── Live System Logs (paginated) ──
+// Fetch the next page of mode-transition events from the DB. When `before`
+// is null this is a fresh load (replaces the log); otherwise appended.
+function fetchLiveEvents(before) {
+  if (store.get('phase') !== 'live') return;
+  if (eventsLoading) return;
+  eventsLoading = true;
+
+  let url = '/api/events?type=mode&limit=' + EVENTS_PAGE_SIZE;
+  if (before !== null && before !== undefined) url += '&before=' + before;
+
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      // Only apply to the current phase — the user may have switched back
+      // to simulation while the request was in flight.
+      if (store.get('phase') !== 'live') return;
+      const events = (data && Array.isArray(data.events)) ? data.events : [];
+      if (before === null) {
+        // First load: replace everything
+        transitionLog.length = 0;
+      }
+      for (let i = 0; i < events.length; i++) {
+        const e = events[i];
+        transitionLog.push({
+          kind: 'live',
+          ts: e.ts,
+          mode: e.to,
+          from: e.from,
+          text: formatLiveTransitionText(e.from, e.to),
+        });
+      }
+      if (events.length > 0) {
+        eventsCursor = events[events.length - 1].ts;
+      }
+      eventsHasMore = !!(data && data.hasMore);
+      renderLogsList();
+    })
+    .catch(() => {
+      // Silent fail — leave whatever is already rendered
+    })
+    .then(() => { eventsLoading = false; });
+}
+
+function formatLiveTransitionText(from, to) {
+  const fromLabel = (from && MODE_INFO[from]) ? MODE_INFO[from].label : (from || '—');
+  const toLabel = (to && MODE_INFO[to]) ? MODE_INFO[to].label : (to || '—');
+  return fromLabel + ' \u2192 ' + toLabel;
+}
+
+// Detect client-side mode changes from incoming live state frames and
+// prepend synthetic log entries. The server also persists these to the DB,
+// so a subsequent refresh will replay the same transitions.
+function detectLiveTransition(result) {
+  if (store.get('phase') !== 'live') return;
+  const mode = result && result.mode;
+  if (!mode) return;
+  if (lastLiveMode === null) {
+    lastLiveMode = mode;
+    return;
+  }
+  if (lastLiveMode === mode) return;
+  transitionLog.unshift({
+    kind: 'live',
+    ts: Date.now(),
+    mode: mode,
+    from: lastLiveMode,
+    text: formatLiveTransitionText(lastLiveMode, mode),
+  });
+  lastLiveMode = mode;
+  renderLogsList();
+}
+
+// Render the transition log into the #logs-list container. Handles both
+// simulation-time and wall-clock entries. In live mode we also render a
+// trailing "Load more" sentinel which the scroll handler uses to lazy-load.
+function renderLogsList() {
+  const container = document.getElementById('logs-list');
+  if (!container) return;
+  const isLive = store.get('phase') === 'live';
+
+  if (transitionLog.length === 0) {
+    const isSim = store.get('phase') === 'simulation';
+    container.innerHTML = '<div data-empty="true" style="color:var(--on-surface-variant);font-size:13px;">' +
+      (isSim ? 'No transitions yet. Start the simulation.' : 'No transitions yet. Awaiting controller activity\u2026') +
+      '</div>';
+    return;
+  }
+
+  // Sim mode caps at 20 rendered rows to mirror the pre-existing behavior.
+  // Live mode renders all fetched rows — the DB-backed list is bounded by
+  // how many pages the user has scrolled through.
+  const visible = isLive ? transitionLog : transitionLog.slice(0, 20);
+
+  let html = '';
+  for (let i = 0; i < visible.length; i++) {
+    const t = visible[i];
+    const mi = MODE_INFO[t.mode] || MODE_INFO.idle;
+    const dotClass = t.mode === 'solar_charging' || t.mode === 'active_drain' ? 'log-dot-charging'
+      : t.mode === 'greenhouse_heating' ? 'log-dot-heating'
+      : t.mode === 'emergency_heating' ? 'log-dot-emergency' : 'log-dot-muted';
+    const timeLabel = t.kind === 'live' ? formatClockTime(t.ts) : formatTimeOfDay(t.time);
+    html += '<div class="log-item">' +
+      '<div class="log-dot ' + dotClass + '"></div>' +
+      '<div class="log-content">' +
+        '<div class="log-title">' + escapeHtml(mi.label) + '</div>' +
+        '<div class="log-desc">' + escapeHtml(t.text || '') + '</div>' +
+      '</div>' +
+      '<div class="log-time">' + timeLabel + '</div>' +
+    '</div>';
+  }
+
+  if (isLive && eventsHasMore) {
+    html += '<div class="log-loading" data-log-loading="true" style="color:var(--on-surface-variant);font-size:12px;text-align:center;padding:8px 0;">' +
+      (eventsLoading ? 'Loading older transitions\u2026' : 'Scroll to load older transitions') +
+    '</div>';
+  }
+
+  container.innerHTML = html;
+}
+
+function formatClockTime(unixMs) {
+  const d = new Date(unixMs);
+  return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Attach a one-time scroll listener that lazy-loads older events when the
+// user reaches the bottom of the System Logs card.
+function setupLogsScrollLoader() {
+  const container = document.getElementById('logs-list');
+  if (!container || container._scrollHandlerAttached) return;
+  container._scrollHandlerAttached = true;
+  container.addEventListener('scroll', function () {
+    if (store.get('phase') !== 'live') return;
+    if (!eventsHasMore || eventsLoading || eventsCursor === null) return;
+    // Trigger when the scroll reaches within 40px of the bottom
+    const remaining = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (remaining < 40) {
+      fetchLiveEvents(eventsCursor);
+    }
+  });
+}
+
 function setupTimeRangePills() {
   document.getElementById('time-range-pills').addEventListener('click', (e) => {
     const btn = e.target.closest('button');
@@ -869,7 +1041,6 @@ function resetSim() {
   updateFABIcon();
   document.getElementById('sim-status-text').textContent = 'Ready — press play to start';
   updateSidebarSubtitle();
-  document.getElementById('logs-list').innerHTML = '<div style="color:var(--on-surface-variant);font-size:13px;">No transitions yet. Start the simulation.</div>';
   updateDisplay(model.getState(), { mode: 'idle', valves: config.modes.idle.valve_states, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
 }
 
@@ -947,7 +1118,7 @@ function simLoop(timestamp) {
     result = controller.evaluate(sensors, model.state.simTime);
 
     if (result.transition) {
-      transitionLog.unshift({ time: model.state.simTime, text: result.transition, mode: result.mode });
+      transitionLog.unshift({ kind: 'sim', time: model.state.simTime, text: result.transition, mode: result.mode });
     }
 
     model.step(DT, env, result.actuators, result.mode);
@@ -1138,23 +1309,12 @@ function updateDisplay(state, result) {
   }
 
   // Logs
-  if (transitionLog.length > 0) {
-    const logHtml = transitionLog.slice(0, 20).map(t => {
-      const mi = MODE_INFO[t.mode] || MODE_INFO.idle;
-      const dotClass = t.mode === 'solar_charging' || t.mode === 'active_drain' ? 'log-dot-charging'
-        : t.mode === 'greenhouse_heating' ? 'log-dot-heating'
-        : t.mode === 'emergency_heating' ? 'log-dot-emergency' : 'log-dot-muted';
-      return `<div class="log-item">
-        <div class="log-dot ${dotClass}"></div>
-        <div class="log-content">
-          <div class="log-title">${mi.label}</div>
-          <div class="log-desc">${t.text}</div>
-        </div>
-        <div class="log-time">${formatTimeOfDay(t.time)}</div>
-      </div>`;
-    }).join('');
-    document.getElementById('logs-list').innerHTML = logHtml;
-  }
+  // Live mode: detect mode changes from the incoming state frame and prepend
+  // synthetic entries (the server persists these to state_events too).
+  // Simulation mode: transitionLog is populated by simLoop, so we just
+  // re-render whatever it contains.
+  if (isLivePhase) detectLiveTransition(result);
+  renderLogsList();
 
   // ── Components view ──
   // Temperatures
