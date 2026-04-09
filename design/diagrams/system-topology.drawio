@@ -1,0 +1,421 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.6.6 Chrome/144.0.7559.236 Electron/40.8.4 Safari/537.36" version="29.6.6">
+  <diagram id="system-topology" name="System Topology">
+    <mxGraphModel dx="1375" dy="916" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="980" background="#0d1117" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=20;fontStyle=1;fontColor=#e9c349;" value="Greenhouse Solar Heating — Pipe &amp; Valve Topology" vertex="1">
+          <mxGeometry height="32" width="900" x="350" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontColor=#888888;" value="8 motorized valves · Wilo pump · 2 solar collectors · Jäspi 300L tank · radiator + fan · 2kW space heater" vertex="1">
+          <mxGeometry height="20" width="1000" x="300" y="54" as="geometry" />
+        </mxCell>
+        <mxCell id="scale-280" parent="1" style="text;html=1;align=right;fontSize=9;fontColor=#666666;" value="280 cm" vertex="1">
+          <mxGeometry height="15" width="50" x="20" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="scale-200" parent="1" style="text;html=1;align=right;fontSize=9;fontColor=#666666;" value="200 cm" vertex="1">
+          <mxGeometry height="15" width="50" x="20" y="245" as="geometry" />
+        </mxCell>
+        <mxCell id="scale-30" parent="1" style="text;html=1;align=right;fontSize=9;fontColor=#666666;" value="30 cm" vertex="1">
+          <mxGeometry height="15" width="50" x="20" y="510" as="geometry" />
+        </mxCell>
+        <mxCell id="scale-0" parent="1" style="text;html=1;align=right;fontSize=9;fontColor=#666666;" value="0 cm" vertex="1">
+          <mxGeometry height="15" width="50" x="20" y="565" as="geometry" />
+        </mxCell>
+        <mxCell id="scale-line" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#333333;strokeWidth=1;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="80" y="125" as="sourcePoint" />
+            <mxPoint x="80" y="580" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ground-line" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#5d4037;strokeWidth=2;dashed=1;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="80" y="600" as="sourcePoint" />
+            <mxPoint x="1580" y="600" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="collectors" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9a82520;strokeColor=#f9a825;strokeWidth=2.5;fontColor=#f9a825;fontSize=12;fontStyle=1;verticalAlign=middle;" value="Solar Collectors&#xa;(2 × 2m × 1m)&#xa;30–280 cm" vertex="1">
+          <mxGeometry height="395" width="100" x="110" y="125" as="geometry" />
+        </mxCell>
+        <mxCell id="coll-top-port" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f9a825;strokeColor=#f9a825;" value="" vertex="1">
+          <mxGeometry height="10" width="10" x="205" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="coll-top-label" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#aaaaaa;" value="collector top" vertex="1">
+          <mxGeometry height="15" width="90" x="220" y="138" as="geometry" />
+        </mxCell>
+        <mxCell id="coll-btm-port" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fbc02d;strokeColor=#fbc02d;" value="" vertex="1">
+          <mxGeometry height="10" width="10" x="205" y="505" as="geometry" />
+        </mxCell>
+        <mxCell id="coll-btm-label" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#aaaaaa;" value="collector bottom" vertex="1">
+          <mxGeometry height="15" width="100" x="220" y="503" as="geometry" />
+        </mxCell>
+        <mxCell id="t-coll-dot" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#76ff03;strokeColor=#76ff03;" value="" vertex="1">
+          <mxGeometry height="8" width="8" x="95" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="t-coll-label" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#76ff03;" value="T_coll" vertex="1">
+          <mxGeometry height="14" width="50" x="108" y="152" as="geometry" />
+        </mxCell>
+        <mxCell id="coll-top-manifold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#555555;strokeWidth=1;fontColor=#b39ddb;fontSize=10;fontStyle=1;verticalAlign=top;" value="COLLECTOR TOP MANIFOLD" vertex="1">
+          <mxGeometry height="100" width="260" x="310" y="115" as="geometry" />
+        </mxCell>
+        <mxCell id="v-ret" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e040fb20;strokeColor=#e040fb;strokeWidth=1.5;fontColor=#e040fb;fontSize=10;" value="V_ret" vertex="1">
+          <mxGeometry height="24" width="90" x="335" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="v-ret-label" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#64b5f6;" value="→ reservoir" vertex="1">
+          <mxGeometry height="16" width="100" x="435" y="143" as="geometry" />
+        </mxCell>
+        <mxCell id="v-air" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e040fb20;strokeColor=#e040fb;strokeWidth=1.5;fontColor=#e040fb;fontSize=10;" value="V_air" vertex="1">
+          <mxGeometry height="24" width="90" x="335" y="175" as="geometry" />
+        </mxCell>
+        <mxCell id="v-air-label" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#90caf9;" value="→ air intake" vertex="1">
+          <mxGeometry height="16" width="100" x="435" y="178" as="geometry" />
+        </mxCell>
+        <mxCell id="pipe-coll-vret" edge="1" parent="1" source="coll-top-port" style="endArrow=none;html=1;strokeColor=#f9a825;strokeWidth=2;" target="v-ret">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pipe-coll-vair" edge="1" parent="1" source="coll-top-port" style="endArrow=none;html=1;strokeColor=#f9a825;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="v-air">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="275" y="187" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="tank" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1565c015;strokeColor=#1565c0;strokeWidth=2.5;" value="" vertex="1">
+          <mxGeometry height="317" width="150" x="700" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="tank-gas" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#90caf915;strokeColor=none;fontColor=#90caf9;fontSize=8;" value="gas pocket" vertex="1">
+          <mxGeometry height="14" width="142" x="704" y="254" as="geometry" />
+        </mxCell>
+        <mxCell id="tank-hot" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e5393515;strokeColor=none;fontColor=#ef9a9a;fontSize=11;" value="HOT (top)" vertex="1">
+          <mxGeometry height="95" width="142" x="704" y="268" as="geometry" />
+        </mxCell>
+        <mxCell id="tank-label" parent="1" style="text;html=1;align=center;fontSize=13;fontStyle=1;fontColor=#90caf9;" value="Jäspi VLM&#xa;300 L&#xa;unpressurized" vertex="1">
+          <mxGeometry height="60" width="142" x="704" y="385" as="geometry" />
+        </mxCell>
+        <mxCell id="tank-heater" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#ff5722;strokeWidth=2;dashed=1;fontColor=#ff8a65;fontSize=9;" value="heater element" vertex="1">
+          <mxGeometry height="20" width="110" x="720" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="tank-cool" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#1565c025;strokeColor=none;fontColor=#64b5f6;fontSize=11;" value="COOL (btm)" vertex="1">
+          <mxGeometry height="62" width="142" x="704" y="500" as="geometry" />
+        </mxCell>
+        <mxCell id="tank-dip-port" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e53935;strokeColor=#e53935;" value="" vertex="1">
+          <mxGeometry height="10" width="10" x="735" y="563" as="geometry" />
+        </mxCell>
+        <mxCell id="tank-btm-port" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1565c0;strokeColor=#1565c0;" value="" vertex="1">
+          <mxGeometry height="10" width="10" x="795" y="563" as="geometry" />
+        </mxCell>
+        <mxCell id="tank-ports-label" parent="1" style="text;html=1;align=center;fontSize=9;fontColor=#888888;" value="dip tube port  |  bottom port  (both at 0 cm)" vertex="1">
+          <mxGeometry height="14" width="220" x="670" y="578" as="geometry" />
+        </mxCell>
+        <mxCell id="t-tank-top-dot" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#76ff03;strokeColor=#76ff03;" value="" vertex="1">
+          <mxGeometry height="8" width="8" x="692" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="t-tank-top-label" parent="1" style="text;html=1;align=right;fontSize=9;fontColor=#76ff03;" value="T_tank_top" vertex="1">
+          <mxGeometry height="14" width="70" x="620" y="286" as="geometry" />
+        </mxCell>
+        <mxCell id="t-tank-btm-dot" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#76ff03;strokeColor=#76ff03;" value="" vertex="1">
+          <mxGeometry height="8" width="8" x="692" y="525" as="geometry" />
+        </mxCell>
+        <mxCell id="t-tank-btm-label" parent="1" style="text;html=1;align=right;fontSize=9;fontColor=#76ff03;" value="T_tank_btm" vertex="1">
+          <mxGeometry height="14" width="70" x="620" y="521" as="geometry" />
+        </mxCell>
+        <mxCell id="reservoir" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#42a5f520;strokeColor=#42a5f5;strokeWidth=2.5;fontColor=#64b5f6;fontSize=11;fontStyle=1;" value="Reservoir&#xa;air separator" vertex="1">
+          <mxGeometry height="60" width="140" x="880" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="reservoir-vent" parent="1" style="text;html=1;align=center;fontSize=9;fontColor=#90caf9;" value="open / vented ↑" vertex="1">
+          <mxGeometry height="16" width="140" x="880" y="242" as="geometry" />
+        </mxCell>
+        <mxCell id="water-level-label" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#42a5f5;" value="water level ~197 cm (communicating vessels)" vertex="1">
+          <mxGeometry height="16" width="260" x="880" y="325" as="geometry" />
+        </mxCell>
+        <mxCell id="pipe-dip-reservoir" edge="1" parent="1" style="endArrow=classic;html=1;strokeColor=#ef5350;strokeWidth=1.5;dashed=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="740" y="840" />
+              <mxPoint x="1035" y="840" />
+            </Array>
+            <mxPoint x="740" y="573" as="sourcePoint" />
+            <mxPoint x="1035" y="290" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pipe-dip-label" parent="1" style="text;html=1;align=left;fontSize=8;fontColor=#ef9a9a;" value="dip tube port → reservoir (gas vents)" vertex="1">
+          <mxGeometry height="14" width="240" x="840" y="843" as="geometry" />
+        </mxCell>
+        <mxCell id="pipe-vret-reservoir" edge="1" parent="1" source="v-ret" style="endArrow=classic;html=1;strokeColor=#42a5f5;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="reservoir">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="640" y="152" />
+              <mxPoint x="640" y="290" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="input-manifold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a2a1a;strokeColor=#388e3c;strokeWidth=1.5;fontColor=#66bb6a;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;" value="INPUT MANIFOLD" vertex="1">
+          <mxGeometry height="180" width="200" x="230" y="640" as="geometry" />
+        </mxCell>
+        <mxCell id="vi-btm" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e040fb20;strokeColor=#e040fb;strokeWidth=1.5;fontColor=#e040fb;fontSize=10;" value="VI-btm  (tank btm)" vertex="1">
+          <mxGeometry height="30" width="160" x="250" y="675" as="geometry" />
+        </mxCell>
+        <mxCell id="vi-top" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e040fb20;strokeColor=#e040fb;strokeWidth=1.5;fontColor=#e040fb;fontSize=10;" value="VI-top  (reservoir)" vertex="1">
+          <mxGeometry height="30" width="160" x="250" y="715" as="geometry" />
+        </mxCell>
+        <mxCell id="vi-coll" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e040fb20;strokeColor=#e040fb;strokeWidth=1.5;fontColor=#e040fb;fontSize=10;" value="VI-coll  (coll btm)" vertex="1">
+          <mxGeometry height="30" width="160" x="250" y="755" as="geometry" />
+        </mxCell>
+        <mxCell id="input-bus-vert" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#42a5f5;strokeWidth=2.5;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="440" y="690" as="sourcePoint" />
+            <mxPoint x="440" y="770" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="input-bus-b1" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#42a5f5;strokeWidth=1.5;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="410" y="690" as="sourcePoint" />
+            <mxPoint x="440" y="690" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="input-bus-b2" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#42a5f5;strokeWidth=1.5;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="410" y="730" as="sourcePoint" />
+            <mxPoint x="440" y="730" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="input-bus-b3" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#42a5f5;strokeWidth=1.5;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="410" y="770" as="sourcePoint" />
+            <mxPoint x="440" y="770" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="input-to-pump" edge="1" parent="1" style="endArrow=classic;html=1;strokeColor=#42a5f5;strokeWidth=3;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="440" y="730" as="sourcePoint" />
+            <mxPoint x="500" y="730" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pump" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#00695c20;strokeColor=#4fc3f7;strokeWidth=3;fontColor=#4fc3f7;fontSize=11;fontStyle=1;" value="PUMP&#xa;Wilo Z20/4" vertex="1">
+          <mxGeometry height="70" width="90" x="500" y="695" as="geometry" />
+        </mxCell>
+        <mxCell id="pump-out" edge="1" parent="1" style="endArrow=classic;html=1;strokeColor=#ef5350;strokeWidth=3;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="590" y="730" as="sourcePoint" />
+            <mxPoint x="660" y="730" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="output-manifold" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2a1a1a;strokeColor=#c62828;strokeWidth=1.5;fontColor=#ef5350;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;" value="OUTPUT MANIFOLD" vertex="1">
+          <mxGeometry height="180" width="220" x="660" y="640" as="geometry" />
+        </mxCell>
+        <mxCell id="vo-coll" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e040fb20;strokeColor=#e040fb;strokeWidth=1.5;fontColor=#e040fb;fontSize=10;" value="VO-coll  (→ coll btm)" vertex="1">
+          <mxGeometry height="30" width="180" x="680" y="675" as="geometry" />
+        </mxCell>
+        <mxCell id="vo-rad" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e040fb20;strokeColor=#e040fb;strokeWidth=1.5;fontColor=#e040fb;fontSize=10;" value="VO-rad  (→ radiator)" vertex="1">
+          <mxGeometry height="30" width="180" x="680" y="715" as="geometry" />
+        </mxCell>
+        <mxCell id="vo-tank" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e040fb20;strokeColor=#e040fb;strokeWidth=1.5;fontColor=#e040fb;fontSize=10;" value="VO-tank  (→ tank)" vertex="1">
+          <mxGeometry height="30" width="180" x="680" y="755" as="geometry" />
+        </mxCell>
+        <mxCell id="output-bus-vert" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#ef5350;strokeWidth=2.5;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="660" y="690" as="sourcePoint" />
+            <mxPoint x="660" y="770" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="out-bus-b1" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#ef5350;strokeWidth=1.5;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="660" y="690" as="sourcePoint" />
+            <mxPoint x="680" y="690" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="out-bus-b2" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#ef5350;strokeWidth=1.5;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="660" y="730" as="sourcePoint" />
+            <mxPoint x="680" y="730" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="out-bus-b3" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#ef5350;strokeWidth=1.5;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="660" y="770" as="sourcePoint" />
+            <mxPoint x="680" y="770" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pipe-tank-vibtm" edge="1" parent="1" style="endArrow=classic;html=1;strokeColor=#64b5f6;strokeWidth=1.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="800" y="880" />
+              <mxPoint x="210" y="880" />
+              <mxPoint x="210" y="690" />
+            </Array>
+            <mxPoint x="800" y="573" as="sourcePoint" />
+            <mxPoint x="250" y="690" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pipe-collbtm-vicoll" edge="1" parent="1" style="endArrow=classic;html=1;strokeColor=#fbc02d;strokeWidth=1.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="210" y="770" />
+            </Array>
+            <mxPoint x="210" y="515" as="sourcePoint" />
+            <mxPoint x="250" y="770" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pipe-reservoir-vitop" edge="1" parent="1" style="endArrow=classic;html=1;strokeColor=#ef9a9a;strokeWidth=1.5;dashed=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="950" y="910" />
+              <mxPoint x="185" y="910" />
+              <mxPoint x="185" y="730" />
+            </Array>
+            <mxPoint x="950" y="320" as="sourcePoint" />
+            <mxPoint x="250" y="730" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pipe-res-vitop-label" parent="1" style="text;html=1;align=left;fontSize=8;fontColor=#ef9a9a;" value="reservoir bottom → VI-top (de-aired)" vertex="1">
+          <mxGeometry height="14" width="240" x="220" y="913" as="geometry" />
+        </mxCell>
+        <mxCell id="pipe-vocoll-coll" edge="1" parent="1" style="endArrow=classic;html=1;strokeColor=#f9a825;strokeWidth=1.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="895" y="690" />
+              <mxPoint x="895" y="615" />
+              <mxPoint x="235" y="615" />
+              <mxPoint x="235" y="515" />
+            </Array>
+            <mxPoint x="860" y="690" as="sourcePoint" />
+            <mxPoint x="215" y="515" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pipe-vocoll-label" parent="1" style="text;html=1;align=center;fontSize=9;fontColor=#f9a825;" value="supply to collectors" vertex="1">
+          <mxGeometry height="14" width="200" x="400" y="598" as="geometry" />
+        </mxCell>
+        <mxCell id="pipe-vorad-rad" edge="1" parent="1" style="endArrow=classic;html=1;strokeColor=#ff5722;strokeWidth=2;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1080" y="730" />
+              <mxPoint x="1080" y="675" />
+            </Array>
+            <mxPoint x="860" y="730" as="sourcePoint" />
+            <mxPoint x="1100" y="675" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pipe-votank-tank" edge="1" parent="1" style="endArrow=classic;html=1;strokeColor=#1565c0;strokeWidth=1.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="870" y="770" />
+              <mxPoint x="870" y="590" />
+              <mxPoint x="800" y="590" />
+            </Array>
+            <mxPoint x="860" y="770" as="sourcePoint" />
+            <mxPoint x="800" y="573" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pipe-votank-label" parent="1" style="text;html=1;align=left;fontSize=8;fontColor=#64b5f6;" value="drain → tank bottom" vertex="1">
+          <mxGeometry height="14" width="140" x="875" y="680" as="geometry" />
+        </mxCell>
+        <mxCell id="greenhouse-roof" parent="1" style="triangle;whiteSpace=wrap;html=1;direction=north;fillColor=#2e7d3215;strokeColor=#2e7d32;strokeWidth=2.5;" value="" vertex="1">
+          <mxGeometry height="70" width="500" x="1060" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="greenhouse-body" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#2e7d3210;strokeColor=#2e7d32;strokeWidth=2.5;fontColor=#66bb6a;fontSize=16;fontStyle=1;verticalAlign=top;spacingTop=16;" value="Greenhouse" vertex="1">
+          <mxGeometry height="370" width="500" x="1060" y="410" as="geometry" />
+        </mxCell>
+        <mxCell id="radiator" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ff572220;strokeColor=#ff5722;strokeWidth=2;fontColor=#ff8a65;fontSize=12;fontStyle=1;" value="Radiator&#xa;+ 230V Fan" vertex="1">
+          <mxGeometry height="70" width="140" x="1100" y="640" as="geometry" />
+        </mxCell>
+        <mxCell id="fan" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ff980030;strokeColor=#ff9800;strokeWidth=2;fontColor=#ffb74d;fontSize=10;fontStyle=1;" value="FAN" vertex="1">
+          <mxGeometry height="44" width="44" x="1260" y="653" as="geometry" />
+        </mxCell>
+        <mxCell id="space-heater" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4433620;strokeColor=#f44336;strokeWidth=2;fontColor=#ef9a9a;fontSize=11;fontStyle=1;" value="2 kW&#xa;Space Heater" vertex="1">
+          <mxGeometry height="70" width="140" x="1340" y="640" as="geometry" />
+        </mxCell>
+        <mxCell id="t-greenhouse-dot" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#76ff03;strokeColor=#76ff03;" value="" vertex="1">
+          <mxGeometry height="8" width="8" x="1170" y="500" as="geometry" />
+        </mxCell>
+        <mxCell id="t-greenhouse-label" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#76ff03;" value="T_greenhouse" vertex="1">
+          <mxGeometry height="14" width="90" x="1182" y="497" as="geometry" />
+        </mxCell>
+        <mxCell id="t-outdoor-dot" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#76ff03;strokeColor=#76ff03;" value="" vertex="1">
+          <mxGeometry height="8" width="8" x="1000" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="t-outdoor-label" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#76ff03;" value="T_outdoor" vertex="1">
+          <mxGeometry height="14" width="70" x="1012" y="397" as="geometry" />
+        </mxCell>
+        <mxCell id="pipe-rad-return" edge="1" parent="1" style="endArrow=classic;html=1;strokeColor=#42a5f5;strokeWidth=1.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1040" y="700" />
+              <mxPoint x="1040" y="810" />
+              <mxPoint x="920" y="810" />
+              <mxPoint x="920" y="582" />
+              <mxPoint x="805" y="582" />
+            </Array>
+            <mxPoint x="1100" y="700" as="sourcePoint" />
+            <mxPoint x="805" y="573" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pipe-rad-return-label" parent="1" style="text;html=1;align=left;fontSize=8;fontColor=#42a5f5;" value="radiator return → tank bottom" vertex="1">
+          <mxGeometry height="14" width="200" x="925" y="792" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#111111;strokeColor=#444444;strokeWidth=1;fontColor=#cccccc;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;" value="Legend" vertex="1">
+          <mxGeometry height="240" width="220" x="1360" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-supply-line" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#42a5f5;strokeWidth=2.5;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1375" y="125" as="sourcePoint" />
+            <mxPoint x="1410" y="125" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg-supply" parent="1" style="text;html=1;align=left;fontSize=10;fontColor=#aaaaaa;" value="Supply / cool water" vertex="1">
+          <mxGeometry height="16" width="160" x="1420" y="118" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-return-line" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#ef5350;strokeWidth=2.5;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1375" y="148" as="sourcePoint" />
+            <mxPoint x="1410" y="148" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg-return" parent="1" style="text;html=1;align=left;fontSize=10;fontColor=#aaaaaa;" value="Output / hot water" vertex="1">
+          <mxGeometry height="16" width="160" x="1420" y="141" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-yellow-line" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#f9a825;strokeWidth=2;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1375" y="171" as="sourcePoint" />
+            <mxPoint x="1410" y="171" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg-yellow" parent="1" style="text;html=1;align=left;fontSize=10;fontColor=#aaaaaa;" value="Collector loop" vertex="1">
+          <mxGeometry height="16" width="160" x="1420" y="164" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-air-line" edge="1" parent="1" style="endArrow=none;html=1;strokeColor=#90caf9;strokeWidth=2;dashed=1;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1375" y="194" as="sourcePoint" />
+            <mxPoint x="1410" y="194" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg-air" parent="1" style="text;html=1;align=left;fontSize=10;fontColor=#aaaaaa;" value="Air path" vertex="1">
+          <mxGeometry height="16" width="160" x="1420" y="187" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-valve" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e040fb20;strokeColor=#e040fb;strokeWidth=1.5;" value="" vertex="1">
+          <mxGeometry height="16" width="35" x="1375" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-valve-label" parent="1" style="text;html=1;align=left;fontSize=10;fontColor=#aaaaaa;" value="Motorized on/off valve" vertex="1">
+          <mxGeometry height="16" width="160" x="1420" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-sensor" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#76ff03;strokeColor=#76ff03;" value="" vertex="1">
+          <mxGeometry height="10" width="10" x="1388" y="237" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-sensor-label" parent="1" style="text;html=1;align=left;fontSize=10;fontColor=#aaaaaa;" value="DS18B20 sensor" vertex="1">
+          <mxGeometry height="16" width="160" x="1420" y="234" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-pump" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#00695c20;strokeColor=#4fc3f7;strokeWidth=2;" value="" vertex="1">
+          <mxGeometry height="22" width="28" x="1378" y="258" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-pump-label" parent="1" style="text;html=1;align=left;fontSize=10;fontColor=#aaaaaa;" value="Pump (Wilo Z20/4)" vertex="1">
+          <mxGeometry height="16" width="160" x="1420" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-radiator" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ff572220;strokeColor=#ff5722;strokeWidth=2;" value="" vertex="1">
+          <mxGeometry height="16" width="35" x="1375" y="288" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-radiator-label" parent="1" style="text;html=1;align=left;fontSize=10;fontColor=#aaaaaa;" value="Radiator + fan" vertex="1">
+          <mxGeometry height="16" width="160" x="1420" y="288" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
