@@ -104,6 +104,8 @@ Height scales in SVGs are approximate — `system-height-layout.svg` is the most
 
 Regenerate with `npm run diagram` (or `node design/diagrams/generate-topology.js`).
 
+**Drift check in CI**: `tests/topology-diagram.test.js` runs as part of `npm run test:unit` (and therefore the full CI test suite). It calls `generateTopology()` and byte-compares the result to the committed `system-topology.drawio`. If you edit `system.yaml` or `topology-layout.yaml` without regenerating, the test fails with an error pointing at the first differing line and the `npm run diagram` fix command.
+
 The generator produces a drawio file where:
 - **Pipe endpoints are attached** to their component/valve cells via `source`/`target` refs + `exitX/exitY/entryX/entryY` style attributes. Moving a component in diagrams.net drags every connected pipe along with it.
 - **Pipe labels are attached** to the edge cell's `value` attribute and render at the edge midpoint.

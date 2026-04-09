@@ -18,45 +18,42 @@
 const fs = require('fs');
 const path = require('path');
 
-// js-yaml lives under shelly/lint/node_modules (not at repo root). Try both.
-let yaml;
-try {
-  yaml = require('js-yaml');
-} catch {
-  try {
-    yaml = require(path.join(__dirname, '..', '..', 'shelly', 'lint', 'node_modules', 'js-yaml'));
-  } catch {
-    console.error('[generate-topology] js-yaml not found. Run: (cd shelly/lint && npm install)');
-    process.exit(1);
-  }
-}
+const yaml = require('js-yaml');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
-const SYSTEM_FILE = path.join(REPO_ROOT, 'system.yaml');
-const LAYOUT_FILE = path.join(__dirname, 'topology-layout.yaml');
-const OUTPUT_FILE = path.join(__dirname, 'system-topology.drawio');
+const DEFAULT_SYSTEM_FILE = path.join(REPO_ROOT, 'system.yaml');
+const DEFAULT_LAYOUT_FILE = path.join(__dirname, 'topology-layout.yaml');
+const DEFAULT_OUTPUT_FILE = path.join(__dirname, 'system-topology.drawio');
 
 // -----------------------------------------------------------------------------
-// Main
+// Public API: pure function that produces the drawio XML string.
+// Used both by the CLI entry point (below) and by the up-to-date test in
+// tests/topology-diagram.test.js.
 // -----------------------------------------------------------------------------
 
-function main() {
-  const layout = yaml.load(fs.readFileSync(LAYOUT_FILE, 'utf8'));
+function generateTopology({
+  systemFile = DEFAULT_SYSTEM_FILE,
+  layoutFile = DEFAULT_LAYOUT_FILE,
+  silent = false,
+} = {}) {
+  const warn = silent ? () => {} : (...args) => console.warn(...args);
 
-  // system.yaml is only used for validation (warning if a component/valve/sensor
-  // declared there is missing from the layout). We parse it tolerantly — if it
-  // fails (e.g. the shopping_list section has mixed map/sequence YAML), we skip
-  // the cross-check instead of blocking diagram generation.
+  const layout = yaml.load(fs.readFileSync(layoutFile, 'utf8'));
+
+  // system.yaml is only used for validation (warning if a component/valve/
+  // sensor declared there is missing from the layout). Parse tolerantly —
+  // if it fails (e.g. the shopping_list section has mixed map/sequence
+  // YAML), skip the cross-check instead of blocking diagram generation.
   let system = null;
   try {
-    system = yaml.load(fs.readFileSync(SYSTEM_FILE, 'utf8'));
+    system = yaml.load(fs.readFileSync(systemFile, 'utf8'));
   } catch (err) {
     const firstLine = String(err.message || err).split('\n')[0];
-    console.warn(`  ! system.yaml parse failed: ${firstLine}`);
-    console.warn(`  ! skipping cross-validation (layout-only generation)`);
+    warn(`  ! system.yaml parse failed: ${firstLine}`);
+    warn(`  ! skipping cross-validation (layout-only generation)`);
   }
 
-  if (system) validateLayout(system, layout);
+  if (system) validateLayout(system, layout, warn);
 
   const cells = [];
   cells.push(...titleCells(layout));
@@ -69,16 +66,24 @@ function main() {
   cells.push(...pipeCells(layout));
   cells.push(...legendCells(layout));
 
-  const xml = wrapMxfile(cells, layout.canvas);
-  fs.writeFileSync(OUTPUT_FILE, xml);
-  console.log(`✓ wrote ${path.relative(REPO_ROOT, OUTPUT_FILE)} (${cells.length} cells)`);
+  return { xml: wrapMxfile(cells, layout.canvas), cellCount: cells.length };
+}
+
+// -----------------------------------------------------------------------------
+// CLI entry point: writes the result to disk.
+// -----------------------------------------------------------------------------
+
+function main() {
+  const { xml, cellCount } = generateTopology();
+  fs.writeFileSync(DEFAULT_OUTPUT_FILE, xml);
+  console.log(`✓ wrote ${path.relative(REPO_ROOT, DEFAULT_OUTPUT_FILE)} (${cellCount} cells)`);
 }
 
 // -----------------------------------------------------------------------------
 // Validation: warn if system.yaml declares things the layout doesn't cover
 // -----------------------------------------------------------------------------
 
-function validateLayout(system, layout) {
+function validateLayout(system, layout, warn = console.warn) {
   const expectedValves = [];
   const v = system.valves || {};
   if (v.input_manifold) {
@@ -99,7 +104,7 @@ function validateLayout(system, layout) {
   const laidOutValves = new Set(Object.keys(layout.valves || {}));
   const missingValves = expectedValves.filter((n) => !laidOutValves.has(n));
   if (missingValves.length) {
-    console.warn('  ! layout missing valves:', missingValves.join(', '));
+    warn('  ! layout missing valves:', missingValves.join(', '));
   }
 
   const expectedSensors = Object.entries(system.sensors || {})
@@ -108,7 +113,7 @@ function validateLayout(system, layout) {
   const laidOutSensors = new Set(Object.keys(layout.sensors || {}));
   const missingSensors = expectedSensors.filter((n) => !laidOutSensors.has(n));
   if (missingSensors.length) {
-    console.warn('  ! layout missing sensors:', missingSensors.join(', '));
+    warn('  ! layout missing sensors:', missingSensors.join(', '));
   }
 }
 
@@ -699,4 +704,8 @@ function wrapMxfile(cells, canvas) {
   );
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { generateTopology };
