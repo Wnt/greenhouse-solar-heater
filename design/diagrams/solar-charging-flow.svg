@@ -39,11 +39,10 @@
   <polygon points="90,95 85,110 95,110" fill="#ef5350"/>
   <text x="55" y="280" fill="#ef5350" font-size="9" transform="rotate(-90 55 280)">heating ↑</text>
 
-  <!-- ====== V_ret at collector top ====== -->
-  <rect x="150" y="75" width="55" height="20" fill="#76ff0320" stroke="#76ff03" stroke-width="1.5" rx="3"/>
-  <text x="177" y="89" fill="#76ff03" text-anchor="middle" font-size="9">V_ret</text>
-  <text x="177" y="69" fill="#76ff03" text-anchor="middle" font-size="8">OPEN</text>
-  <line x1="120" y1="85" x2="150" y2="85" stroke="#ef5350" stroke-width="2"/>
+  <!-- ====== Passive T joint at collector top (spec 024) ====== -->
+  <circle cx="175" cy="85" r="5" fill="#64b5f6"/>
+  <text x="177" y="69" fill="#64b5f6" text-anchor="middle" font-size="8">T joint</text>
+  <line x1="120" y1="85" x2="170" y2="85" stroke="#ef5350" stroke-width="2"/>
 
   <!-- ====== RESERVOIR ====== -->
   <rect x="290" y="72" width="120" height="45"
@@ -52,9 +51,9 @@
   <text x="350" y="107" fill="#64b5f6" text-anchor="middle" font-size="9">air separator</text>
   <text x="350" y="66" fill="#90caf9" text-anchor="middle" font-size="9">open / vented (200cm)</text>
 
-  <!-- Return pipe: V_ret → reservoir top -->
-  <path d="M 205 85 L 250 85 L 250 87 L 290 87" fill="none" stroke="#ef5350" stroke-width="2.5"/>
-  <polygon points="290,87 282,82 282,92" fill="#ef5350"/>
+  <!-- Return pipe: T joint → reservoir (permanent, below water line) -->
+  <path d="M 180 85 L 250 85 L 250 100 L 290 100" fill="none" stroke="#ef5350" stroke-width="2.5"/>
+  <polygon points="290,100 282,95 282,105" fill="#ef5350"/>
   <text x="255" y="78" fill="#ef5350" font-size="9">hot return →</text>
 
   <!-- ====== JÄSPI TANK ====== -->
@@ -131,7 +130,7 @@
   <text x="585" y="92" fill="#66bb6a" font-size="12" font-weight="bold">Open Valves</text>
   <text x="585" y="115" fill="#ccc" font-size="11">VI-btm — tank bottom</text>
   <text x="585" y="135" fill="#ccc" font-size="11">VO-coll — to collectors</text>
-  <text x="585" y="155" fill="#ccc" font-size="11">V_ret — collector → reservoir</text>
+  <text x="585" y="155" fill="#ccc" font-size="11">T joint — collector → reservoir</text>
   <line x1="580" y1="168" x2="770" y2="168" stroke="#388e3c55"/>
   <text x="585" y="188" fill="#66bb6a" font-size="11">Pump: ON</text>
   <text x="585" y="208" fill="#888" font-size="11">Fan: OFF</text>

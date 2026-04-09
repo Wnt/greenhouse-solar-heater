@@ -45,9 +45,9 @@ The system uses 8 motorized on/off ball valves (DN15, A83 9-24V DC 2-wire actuat
 
 **Collector top** (at panel top, ~280cm):
 
-| Valve | Path | Used In |
-|-------|------|---------|
-| V_ret | Collector top → reservoir | Solar charging (return path) |
+| Component | Path | Used In |
+|-----------|------|---------|
+| T joint (passive) | Collector top → reservoir (below water line) | Solar charging (return path), permanent connection |
 | V_air | Collector top → open air | Active drain (air intake) |
 
 **Service valves:**
@@ -69,7 +69,7 @@ All physical pipe connections on the Jäspi tank are at the **bottom** (0cm):
 The reservoir sits on top of the Jäspi (~200cm) and serves as the system's **primary air separator**. It has three connections:
 
 1. **Top/mid inlet — dip tube pipe:** from dip tube port (0cm) up to reservoir. Hot water from the tank top exits here; trapped gas separates and vents to atmosphere.
-2. **Top/mid inlet — V_ret pipe:** collector return water enters here during solar charging.
+2. **Submerged inlet — T joint return pipe:** collector return water enters here during solar charging via the passive T joint at the collector top. The pipe terminates *below* the water line so the siphon cannot ingest air under sub-atmospheric pressure at the collector top.
 3. **Bottom outlet:** clean, de-aired water feeds VI-top → pump. Gravity head (~200cm) ensures the pump never loses prime.
 
 The Jäspi tank has no vent at the top — gas trapped above the dip tube opening (~185cm) cannot exit downward. By routing all water through the open reservoir, gas is separated before reaching the pump. The pump always pushes water through the radiator (positive pressure clears trapped gas from the radiator's small parallel channels).
@@ -97,12 +97,12 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 
 ### Control Hardware — Shelly Components
 
-12 relay outputs needed: 8 motorized valves + pump + fan + 2 heaters. All Pro devices connect via wired Ethernet; sensor hub connects via WiFi. See `docs/bom.md` for full order list with pricing.
+11 relay outputs needed: 7 motorized valves + pump + fan + 2 heaters. All Pro devices connect via wired Ethernet; sensor hub connects via WiFi. See `docs/bom.md` for full order list with pricing.
 
 | Device | Qty | Outputs | Assignment |
 |--------|-----|---------|------------|
 | **Shelly Pro 4PM** | 1 | 4 | Pump, radiator fan, immersion heater, space heater |
-| **Shelly Pro 2PM** | 4 | 2 each | 8 motorized valves (2 per unit) |
+| **Shelly Pro 2PM** | 4 | 2 each | 7 motorized valves (unit #4 has one spare relay) |
 | **Shelly 1 Gen3 + Plus Add-on** | 1 | — | Temperature sensor hub (DS18B20, 1-Wire) |
 | **DS18B20 sensors (3m cable)** | 5–7 | — | T_coll, T_tank×2, T_greenhouse, T_outdoor (+2 optional) |
 | **Zyxel GS-108BV5** | 1 | — | 8-port Gigabit Ethernet switch (wall-mount) |
@@ -116,7 +116,7 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 | #1 | VI-btm | VI-top | Input manifold (ground) |
 | #2 | VI-coll | VO-coll | Input/output manifold (ground) |
 | #3 | VO-rad | VO-tank | Output manifold (ground) |
-| #4 | V_ret | V_air | Collector top (~280cm) |
+| #4 | *(spare)* | V_air | Collector top (~280cm) |
 
 **V_air:** Standard normally-closed valve (same 24V DC actuator as all others). Opens only during active drain to provide high-flow air intake at the collector top. A normally-open or spring-return design was considered and rejected — the sub-atmospheric pressure at the collector top (due to the 250cm water column below) would cause constant air ingress during idle. Fail-safe drain on power loss is not possible in this topology regardless of V_air design: collectors sit below the reservoir and cannot gravity-drain, and the pump requires power.
 
@@ -128,7 +128,7 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 
 ### Air Management
 
-**Collector loop:** No auto air vent at the collector top — sub-atmospheric pressure there (80cm water column falling to reservoir at 200cm) would draw air in, not vent it out. Confirmed by testing. Trapped air in the collector loop is carried by water flow through V_ret to the open reservoir, where it separates and vents to atmosphere.
+**Collector loop:** No auto air vent at the collector top — sub-atmospheric pressure there (80cm water column falling to reservoir at 200cm) would draw air in, not vent it out. Confirmed by testing. Trapped air in the collector loop is carried by water flow through the passive T joint to the open reservoir, where it separates and vents to atmosphere. The T-joint-to-reservoir pipe terminates below the reservoir water line so no air can re-enter from the reservoir side.
 
 **Tank gas venting:** The Jäspi has no top vent — gas trapped above the dip tube (~185cm) cannot escape downward. The reservoir solves this by acting as the primary air separator:
 - Water from the tank top exits via dip tube → enters reservoir at top/mid level
@@ -154,12 +154,11 @@ All valves closed, all actuators off. Shelly monitors sensor temperatures contin
 |-------|-------|
 | VI-btm | OPEN |
 | VO-coll | OPEN |
-| V_ret | OPEN |
 | All others | CLOSED |
 
 **Flow loop:**
 - Supply: Tank bottom port (0cm) → VI-btm → Pump → VO-coll → Collector bottom (30cm) → up through panels (to 280cm)
-- Return: Collector top (280cm) → V_ret → Reservoir top (200cm) → dip tube pipe down to 0cm → up through internal dip tube → exits at ~185cm inside tank (enters at TOP = excellent stratification)
+- Return: Collector top (280cm) → passive T joint → Reservoir (below water line, ~200cm) → dip tube pipe down to 0cm → up through internal dip tube → exits at ~185cm inside tank (enters at TOP = excellent stratification)
 
 **Actuators:** Pump ON, Fan OFF
 
@@ -244,7 +243,7 @@ T_collector reads air temperature when collectors are empty, so it can't reliabl
 8. Check for leaks at all fittings
 9. Add corrosion inhibitor (e.g. Sentinel X100) per manufacturer dosing
 
-Air escapes through the open reservoir during fill. Residual air in the collector loop is carried by flow through V_ret to the reservoir.
+Air escapes through the open reservoir during fill. Residual air in the collector loop is carried by flow through the passive T joint (collector top) to the reservoir.
 
 ### Mode 8: Autumn Shutdown
 
@@ -271,11 +270,11 @@ Full shutdown for deep winter — no active heating from tank:
 
 ```
 280cm ─── Collector top (upper panel)
-          V_ret, V_air (collector top valves)
+          V_air (collector top valve) + passive T joint
           T_collector sensor
 
 200cm ─── Open reservoir / air separator (on top of Jäspi)
-          IN:  dip tube pipe (from 0cm below) + V_ret pipe (collector return)
+          IN:  dip tube pipe (from 0cm below) + T-joint return pipe (collector return, below water line)
           OUT: bottom outlet → VI-top → pump
 
 ~185cm── Dip tube opening inside tank (top of water column)

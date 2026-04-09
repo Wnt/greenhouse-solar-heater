@@ -97,7 +97,7 @@ function validateLayout(system, layout, warn = console.warn) {
     }
   }
   if (v.collector_top) {
-    for (const k of ['v_ret', 'v_air']) {
+    for (const k of ['v_air']) {
       if (v.collector_top[k]) expectedValves.push(k);
     }
   }

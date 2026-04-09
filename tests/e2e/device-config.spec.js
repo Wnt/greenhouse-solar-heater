@@ -121,7 +121,7 @@ async function mockLiveConnectionWithRelay(page, stateOverrides) {
       var stateData = Object.assign({
         mode: 'idle',
         temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
-        valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_ret: false, v_air: false },
+        valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
         actuators: { pump: false, fan: false, space_heater: false },
         controls_enabled: true,
         manual_override: null,
@@ -218,7 +218,7 @@ test.describe('Relay toggle board', () => {
     // Board and relay buttons visible
     await expect(page.locator('#relay-board')).toBeVisible();
     const buttons = page.locator('.relay-btn');
-    await expect(buttons).toHaveCount(10);
+    await expect(buttons).toHaveCount(9);
 
     // All buttons enabled
     for (const btn of await buttons.all()) {
@@ -289,7 +289,7 @@ test.describe('Relay toggle board', () => {
     await page.evaluate(() => {
       window.__wsInject({ type: 'state', data: {
         mode: 'idle', temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
-        valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_ret: false, v_air: false },
+        valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
         actuators: { pump: true, fan: false, space_heater: false },
         controls_enabled: true,
         manual_override: { active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false },
@@ -318,7 +318,7 @@ test.describe('Relay toggle board', () => {
     await page.evaluate(() => {
       window.__wsInject({ type: 'state', data: {
         mode: 'idle', temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
-        valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_ret: false, v_air: false },
+        valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
         actuators: { pump: false, fan: false, space_heater: false },
         controls_enabled: true,
         manual_override: { active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false },

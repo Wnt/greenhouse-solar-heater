@@ -42,10 +42,10 @@ test.describe('Thermal Simulation UI', () => {
     await expect(rows.nth(4)).toContainText('Outdoor');
   });
 
-  test('valve grid shows all 8 valves', async ({ page }) => {
+  test('valve grid shows all 7 valves', async ({ page }) => {
     await goToView(page, 'components');
     const valveChips = page.locator('#valve-grid .valve-chip');
-    await expect(valveChips).toHaveCount(8);
+    await expect(valveChips).toHaveCount(7);
   });
 
   test('FAB toggles simulation', async ({ page }) => {

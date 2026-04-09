@@ -62,7 +62,7 @@ When making changes, **update system.yaml first**, then propagate to affected do
 
 - **Unpressurized system**: Jäspi tank is sealed but vented via an open reservoir connected to the dip tube port. The reservoir acts as an air separator — gas from the tank vents to atmosphere through the open reservoir top.
 - **Communicating vessels**: Water level in reservoir equals water level at the dip tube opening inside the tank (~197cm). Gas is trapped above this level in the sealed tank.
-- **Valve manifold**: 8 motorized on/off DN15 valves in input/output manifolds around a single pump. Three input valves (VI-btm, VI-top, VI-coll) and three output valves (VO-coll, VO-rad, VO-tank) plus two at collector top (V_ret, V_air).
+- **Valve manifold**: 7 motorized on/off DN15 valves in input/output manifolds around a single pump. Three input valves (VI-btm, VI-top, VI-coll), three output valves (VO-coll, VO-rad, VO-tank), plus one at collector top (V_air) with a passive T joint permanently connecting the collector-top pipe to the reservoir (terminates below water line so the siphon cannot ingest air).
 - **Three operating modes**: Solar Charging (Mode 1), Greenhouse Heating (Mode 2), Active Drain (Mode 3). Each mode opens a specific subset of valves — see the `modes` section in system.yaml.
 - **Safety rule**: Always stop pump BEFORE switching valves.
 
@@ -268,6 +268,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - Device config in S3/local JSON (existing), override state transient in device config `mo` field (022-relay-toggle-ui)
 - JavaScript ES5 (Shelly device scripts), Node.js 20 LTS (server + tests, CommonJS), ES6+ (browser modules) + Existing — `mqtt` (MQTT client), `ws` (WebSocket), `pg` (PostgreSQL), `node:test` (unit tests), Playwright 1.56.0 (e2e). No new dependencies. (023-limit-valve-operations)
 - Valve open-since timestamps and the staged-opening state machine are in-memory on the Shelly device (non-persisted across reboot by design, see FR-015). The concurrent-open limit, opening-window duration, and minimum-open-hold are defined as named constants in `shelly/control-logic.js` so they can be adjusted without code hunting. (023-limit-valve-operations)
+- JavaScript ES5 (Shelly device scripts, constrained by Espruino runtime — no `const`/`let`, no arrow functions, no `Array.sort`/`.shift`/`.findLast`, enforced by `shelly/lint/`), ES6+ browser modules (playground), Node.js 20 LTS (server + tests, CommonJS), POSIX shell (deploy scripts), YAML (`system.yaml`, `topology-layout.yaml`), Mermaid (`control-states.mmd`), SVG (hand-authored). + `mqtt`, `ws`, `pg`, `@aws-sdk/client-s3`, `@simplewebauthn/server` (all existing, unchanged); `acorn` + `js-yaml` (linter + topology generator); `node:test` (unit tests); Playwright 1.56.0 + `npx serve` (e2e tests). No new dependencies. (024-remove-vret-valve)
+- `system.yaml` + `topology-layout.yaml` (authored files, checked into git); `design/diagrams/system-topology.drawio` (generated, drift-checked); Shelly KVS (device-config JSON with compact keys, valve-agnostic — no migration); PostgreSQL/TimescaleDB (sensor history, valve-agnostic rows); S3 `device-config.json` (valve-agnostic). No schema changes. (024-remove-vret-valve)
 
 ## Cloud Deployment Architecture
 
@@ -338,6 +340,6 @@ Terraform stores the key in the `app-secrets` Kubernetes Secret. Redeploy to act
 - PostgreSQL health — via nri-postgresql integration
 
 ## Recent Changes
+- 024-remove-vret-valve: Added JavaScript ES5 (Shelly device scripts, constrained by Espruino runtime — no `const`/`let`, no arrow functions, no `Array.sort`/`.shift`/`.findLast`, enforced by `shelly/lint/`), ES6+ browser modules (playground), Node.js 20 LTS (server + tests, CommonJS), POSIX shell (deploy scripts), YAML (`system.yaml`, `topology-layout.yaml`), Mermaid (`control-states.mmd`), SVG (hand-authored). + `mqtt`, `ws`, `pg`, `@aws-sdk/client-s3`, `@simplewebauthn/server` (all existing, unchanged); `acorn` + `js-yaml` (linter + topology generator); `node:test` (unit tests); Playwright 1.56.0 + `npx serve` (e2e tests). No new dependencies.
 - 023-limit-valve-operations: Added JavaScript ES5 (Shelly device scripts), Node.js 20 LTS (server + tests, CommonJS), ES6+ (browser modules) + Existing — `mqtt` (MQTT client), `ws` (WebSocket), `pg` (PostgreSQL), `node:test` (unit tests), Playwright 1.56.0 (e2e). No new dependencies.
 - 022-relay-toggle-ui: Added JavaScript ES5 (Shelly device scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `ws` (WebSocket), `mqtt` (MQTT client), `pg` (PostgreSQL) — all existing
-- 021-reactive-state-ui: Added JavaScript ES6+ (browser modules), HTML5, CSS3 + None new — vanilla ES modules only. Existing vendored: js-yaml 4.1.0

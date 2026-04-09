@@ -50,9 +50,9 @@
   <text x="110" y="334" fill="#fbc02d" text-anchor="middle" class="component-label">Panel</text>
   <text x="147" y="446" class="detail">30cm</text>
 
-  <!-- V_ret / V_air at collector top -->
+  <!-- V_air at collector top (plus passive T joint to reservoir, spec 024) -->
   <rect x="82" y="50" width="56" height="20" fill="#e040fb33" stroke="#e040fb" stroke-width="1.5" rx="3"/>
-  <text x="110" y="64" fill="#e040fb" text-anchor="middle" font-size="8">V_ret / V_air</text>
+  <text x="110" y="64" fill="#e040fb" text-anchor="middle" font-size="8">V_air (+ T)</text>
 
   <!-- Flow sensor at collector bottom -->
   <rect x="88" y="448" width="44" height="14" fill="#e040fb22" stroke="#e040fb" stroke-width="1" rx="2"/>

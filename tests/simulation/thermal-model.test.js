@@ -5,35 +5,35 @@ const { createModel, tick, PARAMS } = require('./thermal-model.js');
 const IDLE_DECISIONS = {
   valves: { vi_btm: false, vi_top: false, vi_coll: false,
             vo_coll: false, vo_rad: false, vo_tank: false,
-            v_ret: false, v_air: false },
+            v_air: false },
   actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false }
 };
 
 const SOLAR_DECISIONS = {
   valves: { vi_btm: true, vi_top: false, vi_coll: false,
             vo_coll: true, vo_rad: false, vo_tank: false,
-            v_ret: true, v_air: false },
+            v_air: false },
   actuators: { pump: true, fan: false, space_heater: false, immersion_heater: false }
 };
 
 const HEATING_DECISIONS = {
   valves: { vi_btm: false, vi_top: true, vi_coll: false,
             vo_coll: false, vo_rad: true, vo_tank: false,
-            v_ret: false, v_air: false },
+            v_air: false },
   actuators: { pump: true, fan: true, space_heater: false, immersion_heater: false }
 };
 
 const DRAIN_DECISIONS = {
   valves: { vi_btm: false, vi_top: false, vi_coll: true,
             vo_coll: false, vo_rad: false, vo_tank: true,
-            v_ret: false, v_air: true },
+            v_air: true },
   actuators: { pump: true, fan: false, space_heater: false, immersion_heater: false }
 };
 
 const EMERGENCY_DECISIONS = {
   valves: { vi_btm: false, vi_top: false, vi_coll: false,
             vo_coll: false, vo_rad: false, vo_tank: false,
-            v_ret: false, v_air: false },
+            v_air: false },
   actuators: { pump: false, fan: false, space_heater: true, immersion_heater: true }
 };
 

@@ -30,7 +30,7 @@ async function installMockWs(page, stateOverrides) {
       var stateData = Object.assign({
         mode: 'solar_charging',
         temps: { collector: 62.5, tank_top: 48.2, tank_bottom: 33.9, greenhouse: 21.7, outdoor: 11.4 },
-        valves: { vi_btm: true, vi_top: false, vi_coll: false, vo_coll: true, vo_rad: false, vo_tank: false, v_ret: true, v_air: false },
+        valves: { vi_btm: true, vi_top: false, vi_coll: false, vo_coll: true, vo_rad: false, vo_tank: false, v_air: false },
         actuators: { pump: true, fan: false, space_heater: false },
         controls_enabled: true,
         manual_override: null,

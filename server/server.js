@@ -375,7 +375,7 @@ var server = http.createServer(function (req, res) {
 
 // ── WebSocket command handling ──
 
-var VALID_RELAYS = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_ret', 'v_air', 'pump', 'fan'];
+var VALID_RELAYS = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air', 'pump', 'fan'];
 var overrideTtlTimer = null;
 
 function wsSend(ws, msg) {

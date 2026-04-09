@@ -52,10 +52,9 @@
   <text x="248" y="82" fill="#90caf9" font-size="10" font-weight="bold">AIR IN</text>
   <polygon points="205,85 215,80 215,90" fill="#90caf9"/>
 
-  <!-- ====== V_ret CLOSED ====== -->
-  <rect x="150" y="110" width="55" height="20" fill="#33333380" stroke="#555" stroke-width="1" rx="3"/>
-  <text x="177" y="124" fill="#666" text-anchor="middle" font-size="9">V_ret</text>
-  <text x="220" y="124" fill="#666" font-size="8">CLOSED</text>
+  <!-- ====== Passive T joint (spec 024) — siphon broken when V_air opens ====== -->
+  <text x="177" y="124" fill="#888" text-anchor="middle" font-size="9">T joint</text>
+  <text x="220" y="124" fill="#666" font-size="8">siphon broken</text>
 
   <!-- ====== RESERVOIR (receives overflow via dip tube) ====== -->
   <rect x="290" y="158" width="90" height="30"

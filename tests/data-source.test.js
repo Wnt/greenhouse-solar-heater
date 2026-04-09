@@ -14,7 +14,7 @@ describe('data-source contract', () => {
       transitioning: false,
       transition_step: null,
       temps: { collector: 65.2, tank_top: 48.1, tank_bottom: 32.5, greenhouse: 18.3, outdoor: 12.7 },
-      valves: { vi_btm: true, vi_top: false, vi_coll: false, vo_coll: true, vo_rad: false, vo_tank: false, v_ret: true, v_air: false },
+      valves: { vi_btm: true, vi_top: false, vi_coll: false, vo_coll: true, vo_rad: false, vo_tank: false, v_air: false },
       actuators: { pump: true, fan: false, space_heater: false, immersion_heater: false },
       controls_enabled: true,
     };

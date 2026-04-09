@@ -66,24 +66,26 @@
   <!-- ============================================================ -->
   <rect x="240" y="68" width="200" height="80"
         fill="#1a1a2e" stroke="#555" stroke-width="1" rx="5"/>
-  <text x="340" y="62" fill="#b39ddb" font-size="11" font-weight="bold">COLLECTOR TOP MANIFOLD</text>
+  <text x="340" y="62" fill="#b39ddb" font-size="11" font-weight="bold">COLLECTOR TOP (V_air + T joint)</text>
 
-  <!-- V_ret -->
-  <rect x="260" y="82" width="60" height="22" fill="#e040fb12" stroke="#e040fb" stroke-width="1.5" rx="3"/>
-  <text x="290" y="97" fill="#e040fb" text-anchor="middle" font-size="10">V_ret</text>
+  <!-- Passive T joint (spec 024): one motorized valve (V_air) plus a permanent
+       pipe to the reservoir (terminates below water line). The T is implicit
+       in the shared branch point at (200, 95). -->
+  <circle cx="200" cy="95" r="4" fill="#64b5f6"/>
 
-  <!-- Pipe: collector top → V_ret -->
-  <line x1="140" y1="95" x2="260" y2="93" stroke="#f9a825" stroke-width="2"/>
-  <!-- Pipe: V_ret → reservoir top -->
-  <path d="M 320 93 L 460 93 L 460 190 L 570 190" fill="none" stroke="#42a5f5" stroke-width="2"/>
-  <polygon points="570,190 562,185 562,195" fill="#42a5f5"/>
-  <text x="370" y="87" fill="#64b5f6" font-size="9">→ to reservoir</text>
+  <!-- Pipe: collector top → T joint -->
+  <line x1="140" y1="95" x2="200" y2="95" stroke="#f9a825" stroke-width="2"/>
+
+  <!-- Pipe: T joint → reservoir (below water line, permanent) -->
+  <path d="M 200 95 L 460 95 L 460 195 L 570 195" fill="none" stroke="#42a5f5" stroke-width="2"/>
+  <polygon points="570,195 562,190 562,200" fill="#42a5f5"/>
+  <text x="370" y="87" fill="#64b5f6" font-size="9">→ reservoir (below water line)</text>
 
   <!-- V_air -->
   <rect x="260" y="115" width="60" height="22" fill="#e040fb12" stroke="#e040fb" stroke-width="1.5" rx="3"/>
   <text x="290" y="130" fill="#e040fb" text-anchor="middle" font-size="10">V_air</text>
 
-  <!-- Pipe: collector top → V_air (branch from main) -->
+  <!-- Pipe: T joint → V_air (branch) -->
   <line x1="200" y1="95" x2="200" y2="126" stroke="#f9a825" stroke-width="1.5"/>
   <line x1="200" y1="126" x2="260" y2="126" stroke="#f9a825" stroke-width="1.5"/>
   <!-- Pipe: V_air → open air -->
@@ -360,7 +362,7 @@
   <line x1="710" y1="335" x2="1070" y2="335" stroke="#222"/>
 
   <text x="715" y="353" fill="#f9a825" font-size="9">Solar Charging</text>
-  <text x="810" y="353" fill="#ccc" font-size="9">VI-btm + VO-coll + V_ret</text>
+  <text x="810" y="353" fill="#ccc" font-size="9">VI-btm + VO-coll</text>
   <text x="990" y="353" fill="#76ff03" font-size="9">ON</text>
   <text x="1035" y="353" fill="#888" font-size="9">OFF</text>
 

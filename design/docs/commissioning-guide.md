@@ -49,7 +49,7 @@ Before starting commissioning:
 | Shelly Pro 4PM | 192.168.30.10 | Controller — runs control logic, drives pump |
 | Shelly Pro 2PM #1 | 192.168.30.11 | Valves VI-btm, VI-top (input manifold) |
 | Shelly Pro 2PM #2 | 192.168.30.12 | Valves VI-coll, VO-coll (collector loop) |
-| Shelly Pro 2PM #4 | 192.168.30.14 | Valves V_ret, V_air (collector top) |
+| Shelly Pro 2PM #4 | 192.168.30.14 | Valve V_air (collector top); second relay is a spare — the collector-top return is now a passive T joint |
 | Shelly 1 Gen3 + Add-on | 192.168.30.20 | Sensor hub — 3× DS18B20 |
 | Zyxel GS-108BV5 | — | 8-port Ethernet switch |
 | Mean Well 24V 15W PSU | — | Powers all valve actuators |
@@ -177,7 +177,7 @@ The **Schematic** view shows the active flow path:
 The **Components** view confirms which valves are open:
 
 ![Components — solar charging valves](commissioning-screenshots/07-components-solar-charging.png)
-*Components view during solar charging. Valves VI-btm, VO-coll, and V_ret show OPEN. All other valves are CLOSED. The pump shows ACTIVE.*
+*Components view during solar charging. Valves VI-btm and VO-coll show OPEN. All other valves are CLOSED. The pump shows ACTIVE. (Hot return flows back from the collector top to the reservoir through the passive T joint.)*
 
 ### Step 3.3: Manual Freeze Drain Test
 
@@ -320,7 +320,7 @@ Common combinations: `3` (V+P), `7` (+fan), `15` (+heater), `31` (all).
 | Code | Mode | Valves Open | Actuators |
 |------|------|-------------|-----------|
 | `I` | Idle | None | None |
-| `SC` | Solar Charging | VI-btm, VO-coll, V_ret | Pump |
+| `SC` | Solar Charging | VI-btm, VO-coll (collector-top return via passive T joint) | Pump |
 | `GH` | Greenhouse Heating | VI-top, VO-rad | Pump, Fan |
 | `AD` | Active Drain | VI-coll, VO-tank, V_air | Pump |
 | `EH` | Emergency Heating | None | Space heater, Immersion |

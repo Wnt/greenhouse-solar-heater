@@ -38,10 +38,9 @@
   <text x="177" y="89" fill="#ff9800" text-anchor="middle" font-size="9" font-weight="bold">V_air</text>
   <text x="177" y="69" fill="#ff9800" text-anchor="middle" font-size="8">OPEN*</text>
 
-  <!-- V_ret CLOSED -->
-  <rect x="150" y="110" width="55" height="20" fill="#33333380" stroke="#555" stroke-width="1" rx="3"/>
-  <text x="177" y="124" fill="#666" text-anchor="middle" font-size="9">V_ret</text>
-  <text x="220" y="124" fill="#666" font-size="8">CLOSED</text>
+  <!-- Passive T joint at collector top (spec 024) — permanent connection to reservoir, no motorized valve -->
+  <text x="177" y="124" fill="#888" text-anchor="middle" font-size="9">T joint</text>
+  <text x="220" y="124" fill="#666" font-size="8">→ reservoir</text>
 
   <!-- ====== RESERVOIR ====== -->
   <rect x="290" y="155" width="120" height="45"

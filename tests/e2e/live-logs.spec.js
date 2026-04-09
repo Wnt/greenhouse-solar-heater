@@ -30,7 +30,7 @@ async function installMockWs(page, stateOverrides) {
       var stateData = Object.assign({
         mode: 'idle',
         temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
-        valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_ret: false, v_air: false },
+        valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
         actuators: { pump: false, fan: false, space_heater: false },
         controls_enabled: true,
         manual_override: null,

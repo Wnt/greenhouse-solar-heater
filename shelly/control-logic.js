@@ -18,7 +18,7 @@ var MODES = {
 // the relayCmdQueue comment in control.js). Keep in sync with the valve
 // set in MODE_VALVES below.
 var VALVE_NAMES_SORTED = [
-  "v_air", "v_ret", "vi_btm", "vi_coll", "vi_top",
+  "v_air", "vi_btm", "vi_coll", "vi_top",
   "vo_coll", "vo_rad", "vo_tank"
 ];
 
@@ -26,27 +26,27 @@ var MODE_VALVES = {
   IDLE: {
     vi_btm: false, vi_top: false, vi_coll: false,
     vo_coll: false, vo_rad: false, vo_tank: false,
-    v_ret: false, v_air: false
+    v_air: false
   },
   SOLAR_CHARGING: {
     vi_btm: true, vi_top: false, vi_coll: false,
     vo_coll: true, vo_rad: false, vo_tank: false,
-    v_ret: true, v_air: false
+    v_air: false
   },
   GREENHOUSE_HEATING: {
     vi_btm: false, vi_top: true, vi_coll: false,
     vo_coll: false, vo_rad: true, vo_tank: false,
-    v_ret: false, v_air: false
+    v_air: false
   },
   ACTIVE_DRAIN: {
     vi_btm: false, vi_top: false, vi_coll: true,
     vo_coll: false, vo_rad: false, vo_tank: true,
-    v_ret: false, v_air: true
+    v_air: true
   },
   EMERGENCY_HEATING: {
     vi_btm: false, vi_top: false, vi_coll: false,
     vo_coll: false, vo_rad: false, vo_tank: false,
-    v_ret: false, v_air: false
+    v_air: false
   }
 };
 
@@ -624,7 +624,6 @@ function buildSnapshotFromState(st, dc, now) {
       vo_coll: !!st.valve_states.vo_coll,
       vo_rad: !!st.valve_states.vo_rad,
       vo_tank: !!st.valve_states.vo_tank,
-      v_ret: !!st.valve_states.v_ret,
       v_air: !!st.valve_states.v_air
     },
     actuators: {

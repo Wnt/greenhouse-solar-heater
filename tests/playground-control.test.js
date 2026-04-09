@@ -51,7 +51,7 @@ const MODES_CONFIG = {
   },
   solar_charging: {
     trigger: '', exit: '',
-    valve_states: { vi_btm: 'OPEN', vo_coll: 'OPEN', v_ret: 'OPEN' },
+    valve_states: { vi_btm: 'OPEN', vo_coll: 'OPEN', v_air: 'CLOSED' },
     actuators: { pump: 'ON', fan: 'OFF' },
   },
   greenhouse_heating: {
@@ -211,7 +211,7 @@ describe('playground ControlStateMachine — shared logic integration', () => {
     assert.strictEqual(r.mode, 'solar_charging');
     assert.strictEqual(r.valves.vi_btm, true);
     assert.strictEqual(r.valves.vo_coll, true);
-    assert.strictEqual(r.valves.v_ret, true);
+    assert.strictEqual(r.valves.v_air, false);
     assert.strictEqual(r.actuators.pump, true);
     assert.strictEqual(r.actuators.fan, false);
   });

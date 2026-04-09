@@ -243,20 +243,20 @@ describe('valve and actuator mapping', () => {
     assert.deepStrictEqual(r.valves, {
       vi_btm: false, vi_top: false, vi_coll: false,
       vo_coll: false, vo_rad: false, vo_tank: false,
-      v_ret: false, v_air: false
+      v_air: false
     });
     assert.deepStrictEqual(r.actuators, {
       pump: false, fan: false, space_heater: false, immersion_heater: false
     });
   });
 
-  it('SOLAR_CHARGING: vi_btm + vo_coll + v_ret open, pump on', () => {
+  it('SOLAR_CHARGING: vi_btm + vo_coll open, v_air closed, pump on', () => {
     const r = evaluate(makeState({
       temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null);
     assert.strictEqual(r.valves.vi_btm, true);
     assert.strictEqual(r.valves.vo_coll, true);
-    assert.strictEqual(r.valves.v_ret, true);
+    assert.strictEqual(r.valves.v_air, false);
     assert.strictEqual(r.valves.vi_top, false);
     assert.strictEqual(r.valves.vo_rad, false);
     assert.strictEqual(r.actuators.pump, true);
@@ -295,7 +295,7 @@ describe('valve and actuator mapping', () => {
     assert.deepStrictEqual(r.valves, {
       vi_btm: false, vi_top: false, vi_coll: false,
       vo_coll: false, vo_rad: false, vo_tank: false,
-      v_ret: false, v_air: false
+      v_air: false
     });
     assert.strictEqual(r.actuators.space_heater, true);
     assert.strictEqual(r.actuators.immersion_heater, true);
@@ -1001,7 +1001,7 @@ describe('manual override safety interaction', () => {
 
 // ── planValveTransition scheduler ──
 
-const VALVE_NAMES = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_ret', 'v_air'];
+const VALVE_NAMES = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
 
 function allClosed() {
   const m = {};
@@ -1072,9 +1072,9 @@ function assertInvariants(plan, input) {
 
 describe('planValveTransition — foundational', () => {
   it('target reached: all target === current, no live opens → targetReached=true, nextResumeAt=null (case 9)', () => {
-    const state = { vi_btm: true, vo_coll: true, v_ret: true, v_air: false };
-    const current = { vi_btm: true, vo_coll: true, v_ret: true, v_air: false };
-    const openSince = { vi_btm: 1000, vo_coll: 1000, v_ret: 1000, v_air: 0 };
+    const state = { vi_btm: true, vo_coll: true, v_air: false };
+    const current = { vi_btm: true, vo_coll: true, v_air: false };
+    const openSince = { vi_btm: 1000, vo_coll: 1000, v_air: 0 };
     const opening = {};
     const now = 100000;
     const plan = planValveTransition(state, current, openSince, opening, now, VALVE_TIMING);
@@ -1477,27 +1477,30 @@ describe('planValveTransition — SCHEDULE loop integration', () => {
   });
 
   it('freeze drain from mixed state: elders close immediately, youngsters defer, opens follow 2-at-a-time', () => {
-    // Starting state resembles SOLAR_CHARGING: vi_btm + vo_coll + v_ret open
-    // (scheduler polarity: v_air is energized → v_air=true in scheduler
-    // view means energized/closed-logical). Target is ACTIVE_DRAIN:
-    // vi_coll + vo_tank + v_air(energized=false, i.e. logical open/drain).
+    // Synthetic 3-valve mixed-age starting state (does not correspond to any
+    // real mode after spec 024 — SOLAR_CHARGING now has only 2 open valves).
+    // The point of this test is the scheduler's elder/youngster behaviour,
+    // not the mode invariants. Starting with vi_btm + vo_coll + vo_rad open:
+    // vi_btm and vo_coll are elders (open >60s), vo_rad is a youngster.
+    // Target is ACTIVE_DRAIN: vi_coll + vo_tank + v_air logical-open
+    // (scheduler-view v_air=false because of the polarity inversion).
     const oldOpenSince = 1000000 - 70000; // 70s ago → elders
     const youngOpenSince = 1000000 - 10000; // 10s ago → youngster
     const trace = drivePlanLoop({
       target: {
         vi_btm: false, vi_top: false, vi_coll: true,
         vo_coll: false, vo_rad: false, vo_tank: true,
-        v_ret: false, v_air: false // scheduler view: de-energized
+        v_air: false // scheduler view: de-energized
       },
       current: {
         vi_btm: true, vi_top: false, vi_coll: false,
-        vo_coll: true, vo_rad: false, vo_tank: false,
-        v_ret: true, v_air: false
+        vo_coll: true, vo_rad: true, vo_tank: false,
+        v_air: false
       },
       openSince: {
         vi_btm: oldOpenSince, vi_top: 0, vi_coll: 0,
-        vo_coll: oldOpenSince, vo_rad: 0, vo_tank: 0,
-        v_ret: youngOpenSince, v_air: 0
+        vo_coll: oldOpenSince, vo_rad: youngOpenSince, vo_tank: 0,
+        v_air: 0
       },
       opening: {},
       now: 1000000,
@@ -1512,31 +1515,33 @@ describe('planValveTransition — SCHEDULE loop integration', () => {
       assert.ok(liveOpens + f.startOpening.length <= 2);
     }
 
-    // First frame: vi_btm + vo_coll in closeNow (elders), v_ret in deferredCloses.
+    // First frame: vi_btm + vo_coll in closeNow (elders), vo_rad in deferredCloses.
     const first = trace[0];
     assert.ok(first.closeNow.indexOf('vi_btm') > -1);
     assert.ok(first.closeNow.indexOf('vo_coll') > -1);
-    assert.ok('v_ret' in first.deferredCloses);
+    assert.ok('vo_rad' in first.deferredCloses);
   });
 });
 
 describe('planValveTransition — US4 safety drain mix', () => {
   it('case 7: two valves closing with openSince=now-70s, one closing with openSince=now-10s, three opening', () => {
     // Safety override does not add any throttles — the same rules apply.
+    // Synthetic target/current — not a real mode, exercises the scheduler's
+    // 2-elder + 1-youngster close pattern combined with 3 simultaneous opens.
     const target = {
       vi_btm: false, vi_top: false, vo_rad: false,      // three to close
-      vo_coll: true, vo_tank: true, v_ret: true         // three to open
+      vo_coll: true, vo_tank: true, vi_coll: true       // three to open
     };
     const current = {
       vi_btm: true, vi_top: true, vo_rad: true,
-      vo_coll: false, vo_tank: false, v_ret: false
+      vo_coll: false, vo_tank: false, vi_coll: false
     };
     const now = 200000;
     const openSince = {
       vi_btm: now - 70000,   // elder → closeNow
       vi_top: now - 70000,   // elder → closeNow
       vo_rad: now - 10000,   // youngster → deferredCloses
-      vo_coll: 0, vo_tank: 0, v_ret: 0
+      vo_coll: 0, vo_tank: 0, vi_coll: 0
     };
     const opening = {};
     const plan = planValveTransition(target, current, openSince, opening, now, VALVE_TIMING);
@@ -1697,9 +1702,10 @@ describe('buildSnapshotFromState — US5 staged-transition fields', () => {
 });
 
 describe('toSchedulerView / fromSchedulerView polarity helpers', () => {
-  it('round-trip is identity for every 8-valve combination', () => {
-    // 2^8 = 256 combinations.
-    for (let mask = 0; mask < 256; mask++) {
+  it('round-trip is identity for every 7-valve combination', () => {
+    // 2^7 = 128 combinations.
+    const combos = 1 << VALVE_NAMES.length;
+    for (let mask = 0; mask < combos; mask++) {
       const m = {};
       for (let i = 0; i < VALVE_NAMES.length; i++) {
         m[VALVE_NAMES[i]] = ((mask >> i) & 1) === 1;
@@ -1711,7 +1717,7 @@ describe('toSchedulerView / fromSchedulerView polarity helpers', () => {
   it('v_air is inverted, all others are identity', () => {
     const logical = {
       vi_btm: true, vi_top: false, vi_coll: true, vo_coll: false,
-      vo_rad: true, vo_tank: false, v_ret: true, v_air: false
+      vo_rad: true, vo_tank: false, v_air: false
     };
     const scheduler = toSchedulerView(logical);
     assert.strictEqual(scheduler.vi_btm, true);
@@ -1720,7 +1726,6 @@ describe('toSchedulerView / fromSchedulerView polarity helpers', () => {
     assert.strictEqual(scheduler.vo_coll, false);
     assert.strictEqual(scheduler.vo_rad, true);
     assert.strictEqual(scheduler.vo_tank, false);
-    assert.strictEqual(scheduler.v_ret, true);
     assert.strictEqual(scheduler.v_air, true); // inverted
 
     const flipped = toSchedulerView({ v_air: true });

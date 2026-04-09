@@ -248,7 +248,7 @@ test.describe('Manual override gating with unbound sensors', () => {
             transitioning: false,
             transition_step: null,
             temps: { collector: null, tank_top: null, tank_bottom: null, greenhouse: null, outdoor: null },
-            valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_ret: false, v_air: false },
+            valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
             actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
             flags: { collectors_drained: false, emergency_heating_active: false },
             controls_enabled: true,

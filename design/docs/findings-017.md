@@ -84,7 +84,7 @@ No tests existed for safety drain behavior when device config suppresses control
 
 ### I-001: Valve Names 100% Consistent ✓
 
-All 8 valve names (`vi_btm`, `vi_top`, `vi_coll`, `vo_coll`, `vo_rad`, `vo_tank`, `v_ret`, `v_air`) are identical across `system.yaml` modes section, `MODE_VALVES` in `control-logic.js:14-40`, and `VALVES` map in `control.js:13-22`.
+All 7 valve names (`vi_btm`, `vi_top`, `vi_coll`, `vo_coll`, `vo_rad`, `vo_tank`, `v_air`) are identical across `system.yaml` modes section, `MODE_VALVES` in `control-logic.js:14-40`, and `VALVES` map in `control.js:13-22`. *(Updated for spec 024: the collector-top return valve was replaced by a passive T joint, reducing the motorized count from 8 to 7.)*
 
 ### I-002: Actuator Relay Assignments Correct ✓
 
@@ -100,7 +100,7 @@ All 4 Pro 2PM units match `system.yaml:318-333` ↔ `control.js:13-22`:
 - Unit 1 (192.168.1.11): vi_btm (id:0), vi_top (id:1)
 - Unit 2 (192.168.1.12): vi_coll (id:0), vo_coll (id:1)
 - Unit 3 (192.168.1.13): vo_rad (id:0), vo_tank (id:1)
-- Unit 4 (192.168.1.14): v_ret (id:0), v_air (id:1)
+- Unit 4 (192.168.1.14): (id:0 reserved spare, spec 024), v_air (id:1)
 
 ### I-004: Sensor Mappings Consistent ✓
 
@@ -119,7 +119,7 @@ Optional sensors (t_radiator_in, t_radiator_out) are defined in system.yaml but 
 
 1. **Pump before valve** — `transitionTo()` calls `setPump(false)` first, waits 1000ms (`VALVE_SETTLE_MS`), then switches valves, waits 5000ms (`PUMP_PRIME_MS`), then restarts pump.
 2. **No dry run** — `startDrainMonitor()` checks power every 200ms, 3 consecutive readings below 20W triggers stop. 180s absolute timeout.
-3. **One input, one output** — `MODE_VALVES` enforces per-mode constraint by design. V_ret and V_air never both open.
+3. **One input, one output** — `MODE_VALVES` enforces per-mode constraint by design. V_air is the only motorized valve at the collector top (the return path is a passive T joint, spec 024).
 4. **Drain at 2°C** — `freezeDrainTemp: 2` with immediate preemption (ignores min mode duration).
 
 ### I-007: Deploy Script Correct ✓
@@ -136,7 +136,7 @@ Collector loop water volume ~4-6L. Reservoir capacity 20-50L (TBD, 30L target). 
 
 ### I-010: Air Vent Removal Rationale Sound ✓
 
-Sub-atmospheric pressure at collector top (80cm water column from 280cm collector to 200cm reservoir) would draw air IN through an auto-vent. Trapped air is instead carried by flow through V_ret to the open reservoir, where it separates and vents. Confirmed by testing with manual valve.
+Sub-atmospheric pressure at collector top (80cm water column from 280cm collector to 200cm reservoir) would draw air IN through an auto-vent. Trapped air is instead carried by flow through the passive T joint (spec 024) down to the open reservoir, where it separates and vents. The reservoir-side pipe terminates below the water line so no air can re-enter. Confirmed by testing with manual valve.
 
 ### I-011: Allowed Modes Mechanism Supports Progressive Enablement ✓
 

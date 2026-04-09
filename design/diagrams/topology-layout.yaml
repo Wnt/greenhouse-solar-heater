@@ -101,9 +101,9 @@ text_labels:
     value: "water level ~197 cm (communicating vessels)"
     geometry: {x: 880, y: 325, width: 260, height: 16}
     style: "text;html=1;align=left;fontSize=9;fontColor=#42a5f5;"
-  v_ret_to_label:
-    value: "→ reservoir"
-    geometry: {x: 435, y: 143, width: 100, height: 16}
+  t_joint_to_reservoir_label:
+    value: "T joint → reservoir (below water line)"
+    geometry: {x: 435, y: 143, width: 220, height: 16}
     style: "text;html=1;align=left;fontSize=9;fontColor=#64b5f6;"
   v_air_to_label:
     value: "→ air intake"
@@ -116,7 +116,7 @@ text_labels:
 # ------------------------------------------------------------------------------
 manifolds:
   coll_top_manifold:
-    label: "COLLECTOR TOP MANIFOLD"
+    label: "COLLECTOR TOP (V_air + T joint)"
     style: coll_top_manifold
     geometry: {x: 310, y: 115, width: 260, height: 100}
   input_manifold:
@@ -154,10 +154,11 @@ components:
     style: reservoir
     geometry: {x: 880, y: 260, width: 140, height: 60}
     ports:
-      left:   {x: 0, y: 0.5}
-      right:  {x: 1, y: 0.5}
-      bottom: {x: 0.5, y: 1}
-      top:    {x: 0.5, y: 0}
+      left:             {x: 0, y: 0.5}
+      right:            {x: 1, y: 0.5}
+      bottom:           {x: 0.5, y: 1}
+      top:              {x: 0.5, y: 0}
+      left_submerged:   {x: 0, y: 0.7}  # below water line — permanent T-joint-to-reservoir pipe terminates here
 
   pump:
     label: "PUMP\nWilo Z20/4"
@@ -200,10 +201,6 @@ components:
 # Names must match `system.yaml` valves section (the generator warns on mismatch).
 # ------------------------------------------------------------------------------
 valves:
-  v_ret:
-    label: "V_ret"
-    geometry: {x: 335, y: 140, width: 90, height: 24}
-    ports: {left: {x: 0, y: 0.5}, right: {x: 1, y: 0.5}}
   v_air:
     label: "V_air"
     geometry: {x: 335, y: 175, width: 90, height: 24}
@@ -267,11 +264,10 @@ sensors:
 # ------------------------------------------------------------------------------
 pipes:
   # -- Collector loop (top) ----------------------------------------------------
-  - id: pipe_coll_top_vret
-    from: {component: collectors, port: top}
-    to:   {valve: v_ret, port: left}
-    style: pipe_coll_plain
-
+  # Passive T joint at collector top (spec 024): one pipe to the permanent
+  # reservoir connection (below water line), one pipe to V_air. Both pipes
+  # share the collectors' `top` port as their origin — the T is implicit in
+  # the shared source, same pattern as every other elbow/tee in the system.
   - id: pipe_coll_top_vair
     from: {component: collectors, port: top}
     to:   {valve: v_air, port: left}
@@ -279,13 +275,13 @@ pipes:
     waypoints:
       - {x: 275, y: 187}
 
-  - id: pipe_vret_reservoir
-    from: {valve: v_ret, port: right}
-    to:   {component: reservoir, port: top}
+  - id: pipe_coll_top_reservoir
+    from: {component: collectors, port: top}
+    to:   {component: reservoir, port: left_submerged}
     style: pipe_supply
     waypoints:
       - {x: 640, y: 152}
-      - {x: 640, y: 250}
+      - {x: 640, y: 302}
 
   # -- Reservoir ↔ tank dip tube (gas vent path) -------------------------------
   - id: pipe_dip_reservoir

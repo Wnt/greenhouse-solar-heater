@@ -16,7 +16,7 @@ var VALVES = {
   vo_coll: {ip: "192.168.30.12", id: 1},
   vo_rad:  {ip: "192.168.30.13", id: 0},
   vo_tank: {ip: "192.168.30.13", id: 1},
-  v_ret:   {ip: "192.168.30.14", id: 0},
+  // 192.168.30.14 id 0 is a reserved spare (passive T joint at collector top — spec 024)
   v_air:   {ip: "192.168.30.14", id: 1},
 };
 
@@ -183,7 +183,7 @@ function setValves(pairs, idx, cb) {
 }
 
 function closeAllValves(cb) {
-  var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_ret","v_air"];
+  var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_air"];
   var pairs = [];
   for (var i = 0; i < names.length; i++) pairs.push([names[i], false]);
   setValves(pairs, 0, cb);
@@ -194,7 +194,7 @@ function closeAllValves(cb) {
 // close without waiting for the min-open hold. Fresh opens after boot get a
 // real timestamp when their opening window ends.
 function seedValveOpenSinceOnBoot() {
-  var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_ret","v_air"];
+  var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_air"];
   for (var i = 0; i < names.length; i++) {
     state.valveOpenSince[names[i]] = 0;
   }
@@ -392,7 +392,7 @@ function finalizeTransitionFail() {
 // Build the scheduler view of the current physical valve state. Any valve
 // whose state is unknown (e.g. never commanded) is treated as closed.
 function currentSchedulerView() {
-  var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_ret","v_air"];
+  var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_air"];
   var cur = {};
   for (var i = 0; i < names.length; i++) {
     cur[names[i]] = !!state.valve_states[names[i]];
@@ -587,7 +587,7 @@ function stopDrain(reason) {
     valves: {
       vi_btm: false, vi_top: false, vi_coll: false,
       vo_coll: false, vo_rad: false, vo_tank: false,
-      v_ret: false, v_air: false
+      v_air: false
     },
     actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
     flags: {

@@ -71,8 +71,9 @@ Polish manufacturer with Finnish website. In stock, ships within 24h.
 | VO-coll | Output #1 | Pump → collector bottom | Solar charging |
 | VO-rad | Output #2 | Pump → radiator | Greenhouse heating |
 | VO-tank | Output #3 | Pump → tank return | Active drain |
-| V_ret | Collector top | Collector top → reservoir | Solar charging, wood burning |
 | V_air | Collector top | Collector top → open air | Active drain (air intake) |
+
+*(A passive T joint at the collector top provides a permanent connection from the collector top pipe down to the reservoir — terminating below the reservoir water line so the siphon cannot ingest air. This was a motorized valve until spec 024 replaced it with the passive T joint.)*
 
 ### Future expansion: VO-wood (9th valve)
 
@@ -89,8 +90,8 @@ Pick up in-store.
 | 14 | [Jakaja 3 putkea](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/pex-letkut-ja-liittimet/pex-haaroitusputket/jakaja-3-putkea-2000061955) | 1 | 19.95 | 19.95 | **Input manifold.** ¾" inlet (pump suction) → 3× ½" outlets. |
 | 15 | [Jakaja 4 putkea](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/pex-letkut-ja-liittimet/pex-haaroitusputket/jakaja-4-putkea-2000061956) | 1 | 25.95 | 25.95 | **Output manifold.** ¾" inlet (pump pressure) → 4× ½" outlets. 4th port capped for future VO-wood. |
 | 16 | [Puserrusliitin T-yhde 22×22×22mm](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/puserrusliittimet/messinkiset-puserrusliittimet/puserrusliitin-t-yhde-22-x-22-x-22-mm-2000053854) | 1 | 12.95 | 12.95 | **Collector bottom tee.** Splits collector bottom pipe to VI-coll and VO-coll branches. |
-| 17 | [T-liitin ½" UK](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/kierreliittimet/t-liittimet/t-liitin-uros-12-2000058695) | 1 | ~5.00 | 5.00 | **Collector top tee.** Splits to V_ret and V_air. |
-| 18 | ½" nipple UK-UK | 2 | ~2.00 | 4.00 | Connect collector top tee to V_ret and V_air valves (tee female → nipple → valve female). |
+| 17 | [T-liitin ½" UK](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/kierreliittimet/t-liittimet/t-liitin-uros-12-2000058695) | 1 | ~5.00 | 5.00 | **Collector top T joint.** Permanent passive junction: one branch to the reservoir (below water line), one branch to V_air. |
+| 18 | ½" nipple UK-UK | 1 | ~2.00 | 2.00 | Connect collector top T joint to V_air valve (tee female → nipple → valve female). |
 | 19 | [Palloventtiili ½" R15](https://www.biltema.fi/rakentaminen/lvi/vesijarjestelmat-ja-saniteetti/venttiilit-lvi/palloventtiili-lvi/palloventtiili-12-r15-2000058624) | 2 | 8.95 | 17.90 | Manual service valves: SV-drain + SV-fill. |
 | 20 | [Letkuyhde ½"](https://www.biltema.fi/en-fi/boat/vvs/hose-nipples/hose-nipple-12-x-12-2000049790) | 2 | ~4.00 | 8.00 | Hose barb adapters for service valves. |
 | 21 | Tulppa ½" | 1 | ~2.00 | 2.00 | Cap for the 4th output manifold port (VO-wood future). |
@@ -172,14 +173,14 @@ The SR25 DIN rail terminal blocks with QVB4 shorting bridges form the 24V DC bus
               ──→ Pro 2PM #1 relay COM (switches to VI-btm, VI-top)
               ──→ Pro 2PM #2 relay COM (switches to VI-coll, VO-coll)
               ──→ Pro 2PM #3 relay COM (switches to VO-rad, VO-tank)
-              ──→ Pro 2PM #4 relay COM (switches to V_ret, V_air)
+              ──→ Pro 2PM #4 relay COM (switches to V_air; second relay is a spare)
               ──→ Pro 2PM #5 relay COM (spare / VO-wood)
 
-24V PSU - ──→ [SR25 blue bus, 10 positions, 3× QVB4 bridged]
+24V PSU - ──→ [SR25 blue bus, 9 positions, 3× QVB4 bridged]
               ──→ VI-btm power-   ──→ VO-rad power-
               ──→ VI-top power-   ──→ VO-tank power-
-              ──→ VI-coll power-  ──→ V_ret power-
-              ──→ VO-coll power-  ──→ V_air power-
+              ──→ VI-coll power-  ──→ V_air power-
+              ──→ VO-coll power-
 ```
 
 Each Pro 2PM has two relay channels — 24V+ enters relay COM and is internally jumped to both channel inputs at the device terminals.
@@ -219,10 +220,11 @@ Fixed installation cables subject to electrical regulations — source from any 
 
 ```
                          COLLECTOR TOP (~280 cm)
-                         ┌──────────────────────┐
-                         │  V_ret ──→ reservoir  │
-                         │  V_air ──→ open air   │
-                         └──────┬───────────────┘
+                         ┌────────────────────────────────┐
+                         │  T joint ──→ reservoir          │
+                         │             (below water line)  │
+                         │  V_air   ──→ open air           │
+                         └──────┬─────────────────────────┘
                                 │ collector pipes
                                 │
               ┌─────────────────┤ (tee at collector bottom)
@@ -252,9 +254,9 @@ PUMP (¾") ←→ manifold inlet (¾")         — direct (check pump unions)
 Manifold outlet (½" male) → valve (½" female) — direct thread
 Valve (½" female) → [22×½" adapter] → 22mm PEX — K-Rauta puserrusliitin
 Collector bottom: 22mm PEX tee (22×22×22)  — Biltema, splits to VI-coll + VO-coll
-Collector top: [22×½" adapter] → ½" tee → [½" nipple] → V_ret / V_air
-V_ret pipe side: valve (½" female) → [22×½" adapter] → 22mm PEX to reservoir
-V_air pipe side: valve (½" female) → open to air
+Collector top: [22×½" adapter] → ½" tee (passive T joint) → branches to V_air and to the reservoir return pipe
+Reservoir return: ½" tee branch → [22×½" adapter] → 22mm PEX down to reservoir (terminates below water line)
+V_air branch:     ½" tee branch → [½" nipple] → V_air valve (½" female) → open to air
 ```
 
 **Adapter map (8× K-Rauta 22mm×½" UK puserrusliitin):**
@@ -268,7 +270,7 @@ V_air pipe side: valve (½" female) → open to air
 | 5 | VO-rad → radiator pipe |
 | 6 | VO-tank → tank return pipe |
 | 7 | Collector top pipe → ½" tee |
-| 8 | V_ret → reservoir return pipe |
+| 8 | T joint branch → reservoir return pipe (below water line) |
 
 - Manifold inlets (¾") connect to the pump's ¾" ports.
 - Collector bottom pipe connects to BOTH VI-coll and VO-coll via a 22mm PEX tee.
@@ -278,10 +280,10 @@ V_air pipe side: valve (½" female) → open to air
 
 | Mode | Input valve | Output valve | Collector top | Purpose |
 |------|-------------|--------------|---------------|---------|
-| Solar charging | VI-btm | VO-coll | V_ret open | Heat tank from sun |
+| Solar charging | VI-btm | VO-coll | T joint (passive) | Heat tank from sun |
 | Greenhouse heating | VI-top | VO-rad | — | Warm greenhouse from tank |
 | Active drain | VI-coll | VO-tank | V_air open | Empty collectors (freeze protection) |
-| Wood burning (future) | VI-btm | VO-wood | V_ret open | Heat tank from wood burner |
+| Wood burning (future) | VI-btm | VO-wood | T joint (passive) | Heat tank from wood burner |
 
 ---
 
@@ -313,7 +315,7 @@ MAINS 230V ──→ ┌──────────────────�
                │             ─relay2─→ VO-coll power+ (~1m)            │
                │  Pro 2PM #3 ─relay1─→ VO-rad  power+ (~2m)           │
                │             ─relay2─→ VO-tank power+ (~1m)            │
-               │  Pro 2PM #4 ─relay1─→ V_ret   power+ (~8m, 280cm)   │
+               │  Pro 2PM #4 ─relay1─→ (spare, passive T joint now)  │
                │             ─relay2─→ V_air   power+ (~8m, 280cm)    │
                │  Pro 2PM #5 (spare, future VO-wood)                   │
                │                                                       │

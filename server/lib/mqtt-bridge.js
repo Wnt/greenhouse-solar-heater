@@ -122,7 +122,7 @@ function detectStateChanges(ts, prev, curr, _db) {
 
   // Valve changes
   if (prev.valves && curr.valves) {
-    var valveNames = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_ret', 'v_air'];
+    var valveNames = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
     for (var i = 0; i < valveNames.length; i++) {
       var v = valveNames[i];
       if (prev.valves[v] !== curr.valves[v]) {

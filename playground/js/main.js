@@ -655,12 +655,12 @@ async function init() {
 function buildFallbackConfig() {
   return {
     modes: {
-      idle: { description: 'Default', valve_states: { vi_btm: 'CLOSED', vi_top: 'CLOSED', vi_coll: 'CLOSED', vo_coll: 'CLOSED', vo_rad: 'CLOSED', vo_tank: 'CLOSED', v_ret: 'CLOSED', v_air: 'CLOSED' }, actuators: { pump: 'OFF', fan: 'OFF' } },
-      solar_charging: { description: 'Solar charging', trigger: 't_collector > t_tank_bottom + 7', exit: 't_collector < t_tank_bottom + 3', valve_states: { vi_btm: 'OPEN', vi_top: 'CLOSED', vi_coll: 'CLOSED', vo_coll: 'OPEN', vo_rad: 'CLOSED', vo_tank: 'CLOSED', v_ret: 'OPEN', v_air: 'CLOSED' }, actuators: { pump: 'ON', fan: 'OFF' } },
-      greenhouse_heating: { description: 'Greenhouse heating', trigger: 't_greenhouse < 10 AND t_tank_top > 25', exit: 't_greenhouse > 12', valve_states: { vi_btm: 'CLOSED', vi_top: 'OPEN', vi_coll: 'CLOSED', vo_coll: 'CLOSED', vo_rad: 'OPEN', vo_tank: 'CLOSED', v_ret: 'CLOSED', v_air: 'CLOSED' }, actuators: { pump: 'ON', fan: 'ON' } },
-      active_drain: { description: 'Active drain', trigger: 't_outdoor < 2', exit: null, valve_states: { vi_btm: 'CLOSED', vi_top: 'CLOSED', vi_coll: 'OPEN', vo_coll: 'CLOSED', vo_rad: 'CLOSED', vo_tank: 'OPEN', v_ret: 'CLOSED', v_air: 'OPEN' }, actuators: { pump: 'ON', fan: 'OFF' } },
-      overheat_drain: { description: 'Overheat drain', trigger: 't_tank_top > 85', exit: null, valve_states: { vi_btm: 'CLOSED', vi_top: 'CLOSED', vi_coll: 'OPEN', vo_coll: 'CLOSED', vo_rad: 'CLOSED', vo_tank: 'OPEN', v_ret: 'CLOSED', v_air: 'OPEN' }, actuators: { pump: 'ON', fan: 'OFF' } },
-      emergency_heating: { description: 'Emergency', trigger: 't_greenhouse < 5 AND t_tank_top < 25', exit: 't_greenhouse > 8', valve_states: { vi_btm: 'CLOSED', vi_top: 'CLOSED', vi_coll: 'CLOSED', vo_coll: 'CLOSED', vo_rad: 'CLOSED', vo_tank: 'CLOSED', v_ret: 'CLOSED', v_air: 'CLOSED' }, actuators: { pump: 'OFF', fan: 'OFF', space_heater: 'ON' } },
+      idle: { description: 'Default', valve_states: { vi_btm: 'CLOSED', vi_top: 'CLOSED', vi_coll: 'CLOSED', vo_coll: 'CLOSED', vo_rad: 'CLOSED', vo_tank: 'CLOSED', v_air: 'CLOSED' }, actuators: { pump: 'OFF', fan: 'OFF' } },
+      solar_charging: { description: 'Solar charging', trigger: 't_collector > t_tank_bottom + 7', exit: 't_collector < t_tank_bottom + 3', valve_states: { vi_btm: 'OPEN', vi_top: 'CLOSED', vi_coll: 'CLOSED', vo_coll: 'OPEN', vo_rad: 'CLOSED', vo_tank: 'CLOSED', v_air: 'CLOSED' }, actuators: { pump: 'ON', fan: 'OFF' } },
+      greenhouse_heating: { description: 'Greenhouse heating', trigger: 't_greenhouse < 10 AND t_tank_top > 25', exit: 't_greenhouse > 12', valve_states: { vi_btm: 'CLOSED', vi_top: 'OPEN', vi_coll: 'CLOSED', vo_coll: 'CLOSED', vo_rad: 'OPEN', vo_tank: 'CLOSED', v_air: 'CLOSED' }, actuators: { pump: 'ON', fan: 'ON' } },
+      active_drain: { description: 'Active drain', trigger: 't_outdoor < 2', exit: null, valve_states: { vi_btm: 'CLOSED', vi_top: 'CLOSED', vi_coll: 'OPEN', vo_coll: 'CLOSED', vo_rad: 'CLOSED', vo_tank: 'OPEN', v_air: 'OPEN' }, actuators: { pump: 'ON', fan: 'OFF' } },
+      overheat_drain: { description: 'Overheat drain', trigger: 't_tank_top > 85', exit: null, valve_states: { vi_btm: 'CLOSED', vi_top: 'CLOSED', vi_coll: 'OPEN', vo_coll: 'CLOSED', vo_rad: 'CLOSED', vo_tank: 'OPEN', v_air: 'OPEN' }, actuators: { pump: 'ON', fan: 'OFF' } },
+      emergency_heating: { description: 'Emergency', trigger: 't_greenhouse < 5 AND t_tank_top < 25', exit: 't_greenhouse > 8', valve_states: { vi_btm: 'CLOSED', vi_top: 'CLOSED', vi_coll: 'CLOSED', vo_coll: 'CLOSED', vo_rad: 'CLOSED', vo_tank: 'CLOSED', v_air: 'CLOSED' }, actuators: { pump: 'OFF', fan: 'OFF', space_heater: 'ON' } },
     },
     valves: {}, sensors: {}, components: {}, safety: [],
     project: { name: 'Greenhouse Solar Heater' },
@@ -1339,10 +1339,9 @@ function updateDisplay(state, result) {
     vo_coll: 'Out: Collector',
     vo_rad: 'Out: Radiator',
     vo_tank: 'Out: Tank',
-    v_ret: 'Return',
     v_air: 'Air Intake',
   };
-  const valveNames = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_ret', 'v_air'];
+  const valveNames = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
   document.getElementById('valve-grid').innerHTML = valveNames.map(v => {
     const raw = result.valves[v];
     const isOpen = raw === true || raw === 'OPEN';
@@ -1711,8 +1710,9 @@ function buildSchematic() {
         <text x="225" y="255" fill="#42a5f5" font-size="8">VI-btm</text>
         <path d="M200,316 L200,340 L80,340 L80,220" stroke="#42a5f5" stroke-width="3" fill="none"/>
         <text x="140" y="355" fill="#42a5f5" font-size="8">VO-coll</text>
-        <path d="M80,40 L80,20 L340,20 L340,48" stroke="#ee7d77" stroke-width="3" fill="none"/>
-        <text x="170" y="16" fill="#ee7d77" font-size="8">V-ret → reservoir</text>
+        <path d="M80,40 L80,25 L340,25 L340,62" stroke="#64b5f6" stroke-width="3" fill="none"/>
+        <circle cx="100" cy="25" r="3" fill="#64b5f6"/>
+        <text x="170" y="20" fill="#64b5f6" font-size="8">T joint → reservoir (below water line)</text>
       </g>
       <g id="pipe-heating" opacity="0.3">
         <path d="M365,76 L365,90 L370,90 L370,284" stroke="#ee7d77" stroke-width="3" fill="none"/>

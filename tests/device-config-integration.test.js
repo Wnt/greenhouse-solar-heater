@@ -179,7 +179,7 @@ describe('UI config → Shelly control-logic integration', () => {
     // Valves should all be false because valve bit not set
     assert.strictEqual(result.valves.vi_btm, false);
     assert.strictEqual(result.valves.vo_coll, false);
-    assert.strictEqual(result.valves.v_ret, false);
+    assert.strictEqual(result.valves.v_air, false);
   });
 
   it('all configs fit within Shelly KVS 256-byte limit', () => {
