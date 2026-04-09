@@ -266,6 +266,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - N/A (client-side only; server APIs unchanged) (021-reactive-state-ui)
 - JavaScript ES5 (Shelly device scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `ws` (WebSocket), `mqtt` (MQTT client), `pg` (PostgreSQL) — all existing (022-relay-toggle-ui)
 - Device config in S3/local JSON (existing), override state transient in device config `mo` field (022-relay-toggle-ui)
+- JavaScript ES5 (Shelly device scripts), Node.js 20 LTS (server + tests, CommonJS), ES6+ (browser modules) + Existing — `mqtt` (MQTT client), `ws` (WebSocket), `pg` (PostgreSQL), `node:test` (unit tests), Playwright 1.56.0 (e2e). No new dependencies. (023-limit-valve-operations)
+- Valve open-since timestamps and the staged-opening state machine are in-memory on the Shelly device (non-persisted across reboot by design, see FR-015). The concurrent-open limit, opening-window duration, and minimum-open-hold are defined as named constants in `shelly/control-logic.js` so they can be adjusted without code hunting. (023-limit-valve-operations)
 
 ## Cloud Deployment Architecture
 
@@ -336,7 +338,6 @@ Terraform stores the key in the `app-secrets` Kubernetes Secret. Redeploy to act
 - PostgreSQL health — via nri-postgresql integration
 
 ## Recent Changes
+- 023-limit-valve-operations: Added JavaScript ES5 (Shelly device scripts), Node.js 20 LTS (server + tests, CommonJS), ES6+ (browser modules) + Existing — `mqtt` (MQTT client), `ws` (WebSocket), `pg` (PostgreSQL), `node:test` (unit tests), Playwright 1.56.0 (e2e). No new dependencies.
 - 022-relay-toggle-ui: Added JavaScript ES5 (Shelly device scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `ws` (WebSocket), `mqtt` (MQTT client), `pg` (PostgreSQL) — all existing
 - 021-reactive-state-ui: Added JavaScript ES6+ (browser modules), HTML5, CSS3 + None new — vanilla ES modules only. Existing vendored: js-yaml 4.1.0
-- 019-mqtt-only-shelly-api: Added JavaScript ES5 (Shelly device scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `mqtt` (MQTT client), `ws` (WebSocket server), `pg` (PostgreSQL), `@aws-sdk/client-s3`, Mosquitto 2.x (sidecar broker)
-- 018-configure-sensor-connectors: Added JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + Existing — `ws`, `mqtt`, `pg`, `@aws-sdk/client-s3`, `@simplewebauthn/server`. No new dependencies.
