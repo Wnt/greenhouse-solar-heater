@@ -93,6 +93,53 @@ function setSpaceHeater(on) {
   state.space_heater_on = on;
 }
 
+// setActuators — sequentially sets the 4 local switches (pump, fan, immersion
+// heater, space heater) to the requested states with callback chaining. Only
+// one Shelly.call is in flight at any moment, so this path never contributes
+// more than 1 concurrent RPC to the 5-call limit shared with telemetry
+// KVS.Set / MQTT operations.
+//
+// Without the chaining, firing setPump+setFan+setSpaceHeater+setImmersion
+// back-to-back (as the original code did) queued 4 simultaneous Shelly.call
+// invocations; combined with a telemetry KVS.Set in flight from a concurrent
+// config_changed event, this hit the Shelly RPC_NUMBER_OF_CALLS limit and
+// crashed the control script with "Too many calls in progress" on the
+// setImmersion line (verified on device 2026-04-10).
+//
+// states is an object with keys {pump, fan, immersion_heater, space_heater},
+// each a bool. If a key is omitted the actuator is left untouched. All on=true
+// assignments still go through the device config guards (ce + ea bits); we
+// short-circuit disallowed on=true ops without a Shelly.call.
+function setActuators(states, cb) {
+  var plan = [
+    { key: "pump", id: 0, eaBit: EA_PUMP, stateKey: "pump_on" },
+    { key: "fan", id: 1, eaBit: EA_FAN, stateKey: "fan_on" },
+    { key: "immersion_heater", id: 2, eaBit: EA_IMMERSION, stateKey: "immersion_heater_on" },
+    { key: "space_heater", id: 3, eaBit: EA_SPACE_HEATER, stateKey: "space_heater_on" }
+  ];
+  function next(i) {
+    if (i >= plan.length) { if (cb) cb(); return; }
+    var op = plan[i];
+    if (!(op.key in states)) { next(i + 1); return; }
+    var on = !!states[op.key];
+    if (on && !deviceConfig.ce) {
+      state[op.stateKey] = false;
+      next(i + 1);
+      return;
+    }
+    if (on && !(deviceConfig.ea & op.eaBit)) {
+      state[op.stateKey] = false;
+      next(i + 1);
+      return;
+    }
+    Shelly.call("Switch.Set", { id: op.id, on: on }, function() {
+      state[op.stateKey] = on;
+      next(i + 1);
+    });
+  }
+  next(0);
+}
+
 function setValve(name, open, cb) {
   if (open && !deviceConfig.ce) { if (cb) cb(true); return; }
   if (open && !(deviceConfig.ea & EA_VALVES)) { if (cb) cb(true); return; }
@@ -309,17 +356,22 @@ function finalizeTransitionOK(result) {
     state.valvePendingClose = [];
     applyFlags(result.flags);
 
-    if (result.actuators.pump) setPump(true);
-    if (result.actuators.fan) setFan(true);
-    if (result.actuators.space_heater) setSpaceHeater(true);
-    if (result.actuators.immersion_heater) setImmersion(true);
-
-    if (result.nextMode === MODES.SOLAR_CHARGING) {
-      Shelly.call("KVS.Set", {key: "drained", value: "0"});
-    } else if (result.nextMode === MODES.ACTIVE_DRAIN) {
-      startDrainMonitor();
-    }
-    emitStateUpdate();
+    // Turn the requested actuators on via setActuators so only one
+    // Shelly.call is in flight at a time (same concurrency-budget
+    // reasoning as transitionTo's stop step).
+    setActuators({
+      pump: !!result.actuators.pump,
+      fan: !!result.actuators.fan,
+      space_heater: !!result.actuators.space_heater,
+      immersion_heater: !!result.actuators.immersion_heater
+    }, function() {
+      if (result.nextMode === MODES.SOLAR_CHARGING) {
+        Shelly.call("KVS.Set", {key: "drained", value: "0"});
+      } else if (result.nextMode === MODES.ACTIVE_DRAIN) {
+        startDrainMonitor();
+      }
+      emitStateUpdate();
+    });
   });
 }
 
@@ -490,14 +542,14 @@ function transitionTo(result) {
     state.drain_timer = null;
   }
 
-  setPump(false);
-  setFan(false);
-  setSpaceHeater(false);
-  setImmersion(false);
-  emitStateUpdate();
-
-  Timer.set(SHELL_CFG.VALVE_SETTLE_MS, false, function() {
-    scheduleStep();
+  // Turn off all non-valve actuators sequentially (one Shelly.call at a
+  // time) before starting the valve transition. See setActuators comment
+  // for the concurrency-budget rationale.
+  setActuators({ pump: false, fan: false, space_heater: false, immersion_heater: false }, function() {
+    emitStateUpdate();
+    Timer.set(SHELL_CFG.VALVE_SETTLE_MS, false, function() {
+      scheduleStep();
+    });
   });
 }
 
@@ -827,16 +879,21 @@ Shelly.addEventHandler(function(ev) {
 // ── Boot ──
 
 function boot() {
-  setPump(false);
-  setFan(false);
-  setSpaceHeater(false);
-  setImmersion(false);
-
   seedValveOpenSinceOnBoot();
 
+  // Turn all actuators off sequentially before touching valves. Uses
+  // setActuators so only one Shelly.call is in flight at any moment —
+  // avoids exceeding the 5-call budget at boot when telemetry is also
+  // firing KVS.Get calls concurrently.
+  setActuators({ pump: false, fan: false, space_heater: false, immersion_heater: false }, function() {
+    bootCloseValves();
+  });
+}
+
+function bootCloseValves() {
   closeAllValves(function(ok) {
     if (!ok) {
-      Timer.set(5000, false, function() { boot(); });
+      Timer.set(5000, false, function() { bootCloseValves(); });
       return;
     }
     Timer.set(5000, false, function() {
