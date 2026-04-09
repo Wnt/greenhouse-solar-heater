@@ -92,7 +92,7 @@ test.describe('Sensor discovery error messages', () => {
         body: JSON.stringify({
           id: 'disc-mock',
           results: [
-            { host: '192.168.30.20', ok: true, sensors: [{ addr: '40:FF:AA:BB:CC:DD:00:01', tC: 21.0, component: 'temperature:100' }] },
+            { host: '192.168.30.20', ok: true, sensors: [{ addr: '40:255:170:187:204:221:0:1', tC: 21.0, component: 'temperature:100' }] },
             { host: '192.168.30.21', ok: false, error: 'err' },
           ],
         }),
@@ -103,7 +103,7 @@ test.describe('Sensor discovery error messages', () => {
     await page.waitForSelector('.sensor-table', { timeout: 15000 });
 
     // Sensor Hub 1 should show its sensor
-    await expect(page.locator('td:has-text("40:FF:AA:BB:CC:DD:00:01")')).toBeVisible();
+    await expect(page.locator('td:has-text("40:255:170:187:204:221:0:1")')).toBeVisible();
 
     // Sensor Hub 2 should show a descriptive error, NOT raw "err"
     const hub2Error = page.locator('.host-error');
@@ -211,7 +211,7 @@ test.describe('Sensor discovery per-host error isolation', () => {
           id: 'disc-mock',
           results: [
             { host: '192.168.30.20', ok: true, sensors: [
-              { addr: '40:AA:BB:CC:DD:EE:00:01', tC: 20.5, component: 'temperature:100' },
+              { addr: '40:170:187:204:221:238:0:1', tC: 20.5, component: 'temperature:100' },
             ]},
             { host: '192.168.30.21', ok: false, error: 'RPC error: {"code":-1,"message":"Timeout"}' },
           ],
@@ -224,7 +224,7 @@ test.describe('Sensor discovery per-host error isolation', () => {
 
     // Hub 1 should show its sensor in a table
     await expect(page.locator('.sensor-table')).toHaveCount(1);
-    await expect(page.locator('td:has-text("40:AA:BB:CC:DD:EE:00:01")')).toBeVisible();
+    await expect(page.locator('td:has-text("40:170:187:204:221:238:0:1")')).toBeVisible();
 
     // Hub 2 should show an error
     await expect(page.locator('.host-error')).toHaveCount(1);
@@ -335,7 +335,7 @@ test.describe('Sensor discovery no response for a host', () => {
         body: JSON.stringify({
           id: 'disc-mock',
           results: [
-            { host: '192.168.30.20', ok: true, sensors: [{ addr: '40:FF:00:00:00:00:00:01', tC: 22.0, component: 'temperature:100' }] },
+            { host: '192.168.30.20', ok: true, sensors: [{ addr: '40:255:0:0:0:0:0:1', tC: 22.0, component: 'temperature:100' }] },
             // No result for 192.168.30.21
           ],
         }),
@@ -346,7 +346,7 @@ test.describe('Sensor discovery no response for a host', () => {
     await page.waitForSelector('.sensor-table', { timeout: 15000 });
 
     // Hub 1 should show sensor
-    await expect(page.locator('td:has-text("40:FF:00:00:00:00:00:01")')).toBeVisible();
+    await expect(page.locator('td:has-text("40:255:0:0:0:0:0:1")')).toBeVisible();
 
     // Hub 2 should show "No response" error
     const error = page.locator('.host-error');
