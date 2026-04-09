@@ -468,6 +468,7 @@ function setupInspector() {
 
     // Temperature values (null-tolerant for unbound live sensors)
     const fmtInspTemp = function (x) { return isNum(x) ? x.toFixed(1) + '\u00b0C' : TEMP_PLACEHOLDER; };
+    document.getElementById('inspector-coll').textContent = fmtInspTemp(v.t_collector);
     document.getElementById('inspector-tank').textContent = fmtInspTemp(v.t_tank_top);
     document.getElementById('inspector-gh').textContent = fmtInspTemp(v.t_greenhouse);
     document.getElementById('inspector-out').textContent = fmtInspTemp(v.t_outdoor);
@@ -1577,6 +1578,9 @@ function drawHistoryGraph() {
     ctx.fillStyle = '#e9c349';
     ctx.fill();
   }
+
+  // ── Collector line (red) ──
+  drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_collector', '#ef5350', 1.5);
 
   // ── Greenhouse line (green) ──
   drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_greenhouse', '#69d0c5', 1);
