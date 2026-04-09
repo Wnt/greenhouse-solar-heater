@@ -172,6 +172,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/e2e/device-config.spec.js` — Playwright e2e tests for the Device config UI (toggle switches, dropdowns, checkboxes → compact JSON format)
 - `tests/e2e/sensor-config.spec.js` — Playwright e2e tests for the Sensors config UI (detection, assignment, apply with mocked RPC)
 - `tests/e2e/live-mode.spec.js` — Playwright e2e tests for live mode toggle, WebSocket connection, simulation fallback
+- `tests/e2e/live-display.spec.js` — Playwright e2e tests verifying that the schematic view and status history graph render real values from the live data source (not simulation defaults or empty state)
 - `tests/e2e/version-check.spec.js` — Playwright e2e tests for JS version check toast (appearance, editorial copy, dismiss, silent failure)
 - `tests/e2e/auth-actions.spec.js` — Playwright e2e tests for the sidebar logout + Add Device invitation flow (visibility based on `/auth/status`, logout POST, invite modal with QR code, error handling)
 - `tests/e2e/take-screenshots.spec.js` — Screenshot generator: runs 24h simulation, captures all views (excluded from normal test runs via `testIgnore` in `playwright.config.js`, uses separate `playwright.screenshots.config.js`)
