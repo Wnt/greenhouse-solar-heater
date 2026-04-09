@@ -57,6 +57,20 @@ var MODE_ACTUATORS = {
   }
 };
 
+// Valve timing constants (FR-001, FR-002, FR-007).
+//   maxConcurrentOpens: max valves that may be inside the energizing window
+//                       simultaneously (24 V PSU current budget).
+//   openWindowMs:       duration of the energizing window per valve (time
+//                       for the motor to physically reach open).
+//   minOpenMs:          minimum time a valve must remain energized holding
+//                       open before a close command is allowed (closing-
+//                       motion capacitor charging time).
+var VALVE_TIMING = {
+  maxConcurrentOpens: 2,
+  openWindowMs: 20000,
+  minOpenMs: 60000
+};
+
 var DEFAULT_CONFIG = {
   solarEnterDelta: 7,
   solarExitDelta: 3,
@@ -317,6 +331,298 @@ function evaluate(state, config, deviceConfig) {
   return result;
 }
 
+// ── Valve polarity translation ──
+//
+// V_air is physically normally-open (de-energized = open) for fail-safe
+// drain on power loss. Every other valve is physically normally-closed
+// (energized = open). The pure scheduler works in a uniform "energized
+// = opening" model: when a valve is "energizing" it is drawing current
+// from the 24 V PSU and its capacitor is charging, regardless of whether
+// that corresponds to a logical open or a logical close. So at the
+// scheduler boundary we swap the v_air entry: logical open ↔ de-
+// energized, logical close ↔ energized. The scheduler sees the energized
+// form; the rest of control.js and MODE_VALVES work in the logical form.
+//
+// The mapping is self-inverse, so `fromSchedulerView` is the same
+// function exposed under a second name for readability at call sites.
+function toSchedulerView(valves) {
+  if (!valves) return valves;
+  var result = {};
+  for (var k in valves) {
+    if (k === "v_air") {
+      result.v_air = !valves.v_air;
+    } else {
+      result[k] = valves[k];
+    }
+  }
+  return result;
+}
+
+function fromSchedulerView(valves) {
+  return toSchedulerView(valves);
+}
+
+// ── Valve transition scheduler (pure, no Shelly calls) ──
+//
+// planValveTransition is the sole decision-maker for staged opens, deferred
+// closes, and resume scheduling. It is pure: no Date.now(), no globals, no
+// platform APIs. Inputs:
+//   target    — desired valve map (keys = valve names, values = bool; for the
+//               scheduler's view, "true" means "energized/opening/open",
+//               not logical open — the shell applies v_air polarity at the
+//               boundary).
+//   current   — current physical valve map (same polarity convention).
+//   openSince — map of valve name → epoch-ms when the valve most recently
+//               finished its opening window. `0` means "unknown / boot" and
+//               the hold is treated as satisfied (FR-015).
+//   opening   — map of valve name → epoch-ms at which the current opening
+//               window ends. Presence + opening[v] > now means "still mid-
+//               flight". Missing key means "not currently opening".
+//   now       — epoch-ms supplied by caller (INV8: no Date.now() here).
+//   cfg       — timing config. Defaults to VALVE_TIMING. Shape:
+//               {maxConcurrentOpens, openWindowMs, minOpenMs}.
+//
+// Returns:
+//   {
+//     startOpening:   [names],        // open right now (slots available)
+//     closeNow:       [names],        // close right now (hold satisfied)
+//     queuedOpens:    [names],        // still need to open, no slot available
+//     deferredCloses: {name: readyAt},// need to close, hold not yet satisfied
+//     nextResumeAt:   number|null,    // earliest future ms for resume timer
+//     targetReached:  bool            // true iff no more work remains
+//   }
+function planValveTransition(target, current, openSince, opening, now, cfg) {
+  var timing = cfg || VALVE_TIMING;
+  var plan = {
+    startOpening: [],
+    closeNow: [],
+    queuedOpens: [],
+    deferredCloses: {},
+    nextResumeAt: null,
+    targetReached: false
+  };
+
+  // Union of target + current keys, collected into a stable alphabetical
+  // order so that every call with the same logical input produces the same
+  // action arrays (checklist case 15 / INV8 determinism).
+  var seen = {};
+  var names = [];
+  var k;
+  for (k in target) { if (!seen[k]) { seen[k] = true; names.push(k); } }
+  for (k in current) { if (!seen[k]) { seen[k] = true; names.push(k); } }
+  names.sort();
+
+  // Count live opening windows. A window is live iff its entry exists and
+  // opening[v] > now. Expired entries are ignored (the shell is expected to
+  // have already cleared them in resumeTransition, but defend against stale
+  // input).
+  var liveOpens = 0;
+  var earliestLiveOpen = null;
+  for (k in opening) {
+    if (opening[k] > now) {
+      liveOpens++;
+      if (earliestLiveOpen === null || opening[k] < earliestLiveOpen) {
+        earliestLiveOpen = opening[k];
+      }
+    }
+  }
+
+  // Classify into needs-open / needs-close / satisfied. A valve whose
+  // opening window is still live is left alone on this tick (FR-017,
+  // contract §3 option b): it counts against the slot budget via
+  // liveOpens, but does not enter any action list. When its window ends
+  // the shell will write openSince[v] and the scheduler will see it as a
+  // normal close candidate on the next invocation.
+  var needsOpen = [];
+  var needsClose = [];
+  for (var i = 0; i < names.length; i++) {
+    var name = names[i];
+    var mid = opening[name] !== undefined && opening[name] > now;
+    if (mid) continue;
+    var tgt = !!target[name];
+    var cur = !!current[name];
+    if (tgt === cur) continue; // FR-013 no-op
+    if (tgt && !cur) needsOpen.push(name);
+    else needsClose.push(name);
+  }
+
+  // ── Open set: slot-budget (FR-001, FR-004) ──
+  var freeSlots = timing.maxConcurrentOpens - liveOpens;
+  if (freeSlots < 0) freeSlots = 0;
+  for (var j = 0; j < needsOpen.length; j++) {
+    if (freeSlots > 0) {
+      plan.startOpening.push(needsOpen[j]);
+      freeSlots--;
+    } else {
+      plan.queuedOpens.push(needsOpen[j]);
+    }
+  }
+
+  // ── Close set: min-open hold (FR-007, FR-015, FR-017) ──
+  // For each valve that needs to close and is not mid-opening (already
+  // filtered above), compute the earliest time the close is allowed:
+  //   readyAt = openSince[v] + minOpenMs
+  // If openSince[v] is 0 the valve is boot-recovered and the hold is
+  // trivially satisfied (FR-015 / R7). If readyAt <= now the close fires
+  // immediately; otherwise it is deferred with its ready time.
+  for (var c = 0; c < needsClose.length; c++) {
+    var cn = needsClose[c];
+    var since = openSince[cn] || 0;
+    if (since === 0) {
+      plan.closeNow.push(cn);
+      continue;
+    }
+    var readyAt = since + timing.minOpenMs;
+    if (readyAt <= now) {
+      plan.closeNow.push(cn);
+    } else {
+      plan.deferredCloses[cn] = readyAt;
+    }
+  }
+
+  // ── nextResumeAt ──
+  // Minimum of every live opening window end (pre-existing + freshly
+  // started) and every deferred-close ready timestamp. Null iff nothing
+  // remains (targetReached).
+  var candidate = null;
+  if (earliestLiveOpen !== null) candidate = earliestLiveOpen;
+  if (plan.startOpening.length > 0) {
+    var freshWindow = now + timing.openWindowMs;
+    if (candidate === null || freshWindow < candidate) candidate = freshWindow;
+  }
+  for (var dn in plan.deferredCloses) {
+    var ra = plan.deferredCloses[dn];
+    if (candidate === null || ra < candidate) candidate = ra;
+  }
+  plan.nextResumeAt = candidate;
+
+  // ── targetReached ──
+  // True iff every action list is empty AND no opening windows are live
+  // AND no deferred closes remain. Covers contract §5, checklist case 9,
+  // INV6.
+  var hasDeferred = false;
+  for (var dk in plan.deferredCloses) { hasDeferred = true; break; }
+  if (
+    plan.startOpening.length === 0 &&
+    plan.closeNow.length === 0 &&
+    plan.queuedOpens.length === 0 &&
+    !hasDeferred &&
+    liveOpens === 0
+  ) {
+    plan.targetReached = true;
+    plan.nextResumeAt = null;
+  }
+
+  return plan;
+}
+
+// ── Bounded-parallelism worker pool (pure, testable) ──
+//
+// runBoundedPool(items, limit, dispatch, done) — dispatches at most
+// `limit` work items concurrently via the caller-supplied `dispatch`
+// function, drains FIFO as slots free, invokes `done(okAll)` once every
+// item has finished. `dispatch(item, cb)` is expected to call cb(ok)
+// asynchronously (or synchronously). Used by control.js to cap valve
+// actuation concurrency at N=4, leaving one of the 5 Shelly concurrent-
+// HTTP slots free for telemetry + relay command queue.
+function runBoundedPool(items, limit, dispatch, done) {
+  if (!items || items.length === 0) { if (done) done(true); return; }
+  var idx = 0;
+  var inFlight = 0;
+  var okAll = true;
+  var finished = false;
+  function drain() {
+    if (finished) return;
+    while (inFlight < limit && idx < items.length) {
+      var it = items[idx]; idx++;
+      inFlight++;
+      dispatch(it, function(ok) {
+        inFlight--;
+        if (!ok) okAll = false;
+        if (idx >= items.length && inFlight === 0) {
+          if (!finished) { finished = true; if (done) done(okAll); }
+          return;
+        }
+        drain();
+      });
+    }
+  }
+  drain();
+}
+
+// ── State snapshot builder (pure) ──
+//
+// Extracted from control.js so the JSON shape broadcast over MQTT is
+// testable in Node. Takes the shell's state object, the device config
+// object, and the current epoch-ms timestamp; returns the snapshot the
+// telemetry layer publishes on greenhouse/state.
+//
+// US5 adds three fields used by the playground:
+//   opening        — list of valves currently inside their 20 s window
+//   queued_opens   — FIFO of valves waiting for an opening slot
+//   pending_closes — valves deferred due to the minimum-open hold, with
+//                    their ready-at timestamps (unix seconds)
+function buildSnapshotFromState(st, dc, now) {
+  var opening = [];
+  var ov;
+  for (ov in st.valveOpening) {
+    if (st.valveOpening[ov] > now) opening.push(ov);
+  }
+  opening.sort();
+  var pendingCloses = [];
+  var pi;
+  var pending = st.valvePendingClose || [];
+  for (pi = 0; pi < pending.length; pi++) {
+    var pv = pending[pi];
+    var since = (st.valveOpenSince && st.valveOpenSince[pv]) || 0;
+    var readyAt = since > 0 ? Math.floor((since + VALVE_TIMING.minOpenMs) / 1000) : 0;
+    pendingCloses.push({ valve: pv, readyAt: readyAt });
+  }
+  var queuedOpens = st.valvePendingOpen ? st.valvePendingOpen.slice(0) : [];
+  return {
+    ts: now,
+    mode: st.mode.toLowerCase(),
+    transitioning: st.transitioning,
+    transition_step: st.transition_step || null,
+    temps: {
+      collector: st.temps.collector,
+      tank_top: st.temps.tank_top,
+      tank_bottom: st.temps.tank_bottom,
+      greenhouse: st.temps.greenhouse,
+      outdoor: st.temps.outdoor
+    },
+    valves: {
+      vi_btm: !!st.valve_states.vi_btm,
+      vi_top: !!st.valve_states.vi_top,
+      vi_coll: !!st.valve_states.vi_coll,
+      vo_coll: !!st.valve_states.vo_coll,
+      vo_rad: !!st.valve_states.vo_rad,
+      vo_tank: !!st.valve_states.vo_tank,
+      v_ret: !!st.valve_states.v_ret,
+      v_air: !!st.valve_states.v_air
+    },
+    actuators: {
+      pump: st.pump_on,
+      fan: st.fan_on,
+      space_heater: st.space_heater_on,
+      immersion_heater: st.immersion_heater_on
+    },
+    flags: {
+      collectors_drained: st.collectors_drained,
+      emergency_heating_active: st.emergency_heating_active
+    },
+    controls_enabled: dc.ce,
+    manual_override: (dc.mo && dc.mo.a) ? {
+      active: true,
+      expiresAt: dc.mo.ex,
+      suppressSafety: dc.mo.ss
+    } : null,
+    opening: opening,
+    queued_opens: queuedOpens,
+    pending_closes: pendingCloses
+  };
+}
+
 // ── Display label helpers (pure, no Shelly calls) ──
 
 var MODE_SHORT = {
@@ -366,6 +672,12 @@ if (typeof module !== "undefined" && module.exports) {
     MODE_VALVES: MODE_VALVES,
     MODE_ACTUATORS: MODE_ACTUATORS,
     DEFAULT_CONFIG: DEFAULT_CONFIG,
+    VALVE_TIMING: VALVE_TIMING,
+    planValveTransition: planValveTransition,
+    toSchedulerView: toSchedulerView,
+    fromSchedulerView: fromSchedulerView,
+    buildSnapshotFromState: buildSnapshotFromState,
+    runBoundedPool: runBoundedPool,
     formatDuration: formatDuration,
     formatTemp: formatTemp,
     buildDisplayLabels: buildDisplayLabels,

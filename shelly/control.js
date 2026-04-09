@@ -20,6 +20,10 @@ var VALVES = {
   v_air:   {ip: "192.168.30.14", id: 1},
 };
 
+// toSchedulerView / fromSchedulerView live in control-logic.js (pure). They
+// are globally available in the concatenated Shelly script; Node tests
+// import them from control-logic.js.
+
 // Sensor config from KVS (null = skip polling, safe IDLE default)
 var sensorConfig = null;
 // Device config from KVS
@@ -47,6 +51,16 @@ var state = {
   immersion_heater_on: false,
   transitioning: false,
   drain_timer: null,
+  // ── 023-limit-valve-operations: staged-transition state ──
+  // In-memory only (not persisted to KVS, see FR-015 / research.md R7).
+  valveOpenSince: {},       // name → epoch-ms when the current opening window ended
+  valveOpening: {},         // name → epoch-ms when the current opening window will end
+  valvePendingOpen: [],     // queued opens (waiting for a slot)
+  valvePendingClose: [],    // queued closes (waiting for the min-open hold)
+  targetValves: null,       // target valve map (scheduler polarity) during a transition
+  targetResult: null,       // full evaluate() result held for end-of-transition finalization
+  transitionTimer: null,    // transition-scoped timer handle
+  transition_step: null,
 };
 
 // ── Actuator commands with config guards ──
@@ -126,6 +140,23 @@ function closeAllValves(cb) {
   var pairs = [];
   for (var i = 0; i < names.length; i++) pairs.push([names[i], false]);
   setValves(pairs, 0, cb);
+}
+
+// Seed valveOpenSince so that every valve is treated as "hold satisfied" on
+// boot. FR-015: any valve observed to already be open at boot is allowed to
+// close without waiting for the min-open hold. Fresh opens after boot get a
+// real timestamp when their opening window ends.
+function seedValveOpenSinceOnBoot() {
+  var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_ret","v_air"];
+  for (var i = 0; i < names.length; i++) {
+    state.valveOpenSince[names[i]] = 0;
+  }
+  state.valveOpening = {};
+  state.valvePendingOpen = [];
+  state.valvePendingClose = [];
+  state.targetValves = null;
+  state.targetResult = null;
+  state.transitionTimer = null;
 }
 
 function pollSensor(name, hostIp, componentId, cb) {
@@ -208,46 +239,10 @@ function buildEvalState() {
   };
 }
 
+// buildSnapshotFromState is the pure snapshot builder (defined in
+// control-logic.js so it is unit-testable in Node).
 function buildStateSnapshot() {
-  return {
-    ts: Date.now(),
-    mode: state.mode.toLowerCase(),
-    transitioning: state.transitioning,
-    transition_step: state.transition_step || null,
-    temps: {
-      collector: state.temps.collector,
-      tank_top: state.temps.tank_top,
-      tank_bottom: state.temps.tank_bottom,
-      greenhouse: state.temps.greenhouse,
-      outdoor: state.temps.outdoor,
-    },
-    valves: {
-      vi_btm: !!state.valve_states.vi_btm,
-      vi_top: !!state.valve_states.vi_top,
-      vi_coll: !!state.valve_states.vi_coll,
-      vo_coll: !!state.valve_states.vo_coll,
-      vo_rad: !!state.valve_states.vo_rad,
-      vo_tank: !!state.valve_states.vo_tank,
-      v_ret: !!state.valve_states.v_ret,
-      v_air: !!state.valve_states.v_air,
-    },
-    actuators: {
-      pump: state.pump_on,
-      fan: state.fan_on,
-      space_heater: state.space_heater_on,
-      immersion_heater: state.immersion_heater_on,
-    },
-    flags: {
-      collectors_drained: state.collectors_drained,
-      emergency_heating_active: state.emergency_heating_active,
-    },
-    controls_enabled: deviceConfig.ce,
-    manual_override: (deviceConfig.mo && deviceConfig.mo.a) ? {
-      active: true,
-      expiresAt: deviceConfig.mo.ex,
-      suppressSafety: deviceConfig.mo.ss,
-    } : null,
-  };
+  return buildSnapshotFromState(state, deviceConfig, Date.now());
 }
 
 function emitStateUpdate() {
@@ -260,12 +255,230 @@ function applyFlags(flags) {
   state.emergency_heating_active = flags.emergencyHeatingActive;
 }
 
-// ── Transitions ──
+// ── Staged transitions (023-limit-valve-operations) ──
+//
+// The staged transition is a small state machine:
+//
+//   IDLE → PUMP_STOP → [SCHEDULE → … → SCHEDULE] → PUMP_PRIME → RUNNING
+//
+// Entry point transitionTo() stops the pump/fan/heaters, waits
+// VALVE_SETTLE_MS, then invokes the SCHEDULE step. SCHEDULE calls the pure
+// planValveTransition() helper, fires the returned closeNow + startOpening
+// batches via a bounded worker pool (max 4 concurrent HTTP calls), stores
+// the queued/deferred entries in state, and either:
+//   - schedules a single transition-scoped Timer at plan.nextResumeAt if
+//     work remains, OR
+//   - proceeds to PUMP_PRIME → RUNNING if plan.targetReached is true.
+//
+// See specs/023-limit-valve-operations/data-model.md for the full model.
+
+// Legacy transition_step values ("pump_stop", "valves_closing",
+// "valves_opening", "pump_start") are preserved so existing playground and
+// e2e code that reads this field keeps working.
+
+// Bounded-parallelism actuation. Shelly scripts have a 5-concurrent-HTTP
+// limit; we reserve one slot for telemetry / relay-command queue and cap
+// the actuation pool at 4 (T050b). The pool logic is in control-logic.js
+// (runBoundedPool) so it is unit-testable.
+var VALVE_PARALLELISM = 4;
+
+function runValveBatch(pairs, cb) {
+  runBoundedPool(pairs, VALVE_PARALLELISM, function(pair, inner) {
+    setValve(pair[0], pair[1], inner);
+  }, cb);
+}
+
+function clearTransitionTimer() {
+  if (state.transitionTimer !== null) {
+    Timer.clear(state.transitionTimer);
+    state.transitionTimer = null;
+  }
+}
+
+function finalizeTransitionOK(result) {
+  state.transition_step = "pump_start";
+  emitStateUpdate();
+  Timer.set(SHELL_CFG.PUMP_PRIME_MS, false, function() {
+    state.mode = result.nextMode;
+    state.mode_start = Date.now();
+    state.transitioning = false;
+    state.transition_step = null;
+    state.targetValves = null;
+    state.targetResult = null;
+    state.valvePendingOpen = [];
+    state.valvePendingClose = [];
+    applyFlags(result.flags);
+
+    if (result.actuators.pump) setPump(true);
+    if (result.actuators.fan) setFan(true);
+    if (result.actuators.space_heater) setSpaceHeater(true);
+    if (result.actuators.immersion_heater) setImmersion(true);
+
+    if (result.nextMode === MODES.SOLAR_CHARGING) {
+      Shelly.call("KVS.Set", {key: "drained", value: "0"});
+    } else if (result.nextMode === MODES.ACTIVE_DRAIN) {
+      startDrainMonitor();
+    }
+    emitStateUpdate();
+  });
+}
+
+function finalizeTransitionFail() {
+  clearTransitionTimer();
+  state.targetValves = null;
+  state.targetResult = null;
+  state.valvePendingOpen = [];
+  state.valvePendingClose = [];
+  setPump(false);
+  state.mode = MODES.IDLE;
+  state.mode_start = Date.now();
+  state.transitioning = false;
+  state.transition_step = null;
+  emitStateUpdate();
+}
+
+// Build the scheduler view of the current physical valve state. Any valve
+// whose state is unknown (e.g. never commanded) is treated as closed.
+function currentSchedulerView() {
+  var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_ret","v_air"];
+  var cur = {};
+  for (var i = 0; i < names.length; i++) {
+    cur[names[i]] = !!state.valve_states[names[i]];
+  }
+  return toSchedulerView(cur);
+}
+
+function scheduleStep() {
+  // Called by transitionTo (initial entry after PUMP_STOP) and by
+  // resumeTransition. Reads the stored target, calls the pure scheduler,
+  // executes closeNow + startOpening, updates queued/pending state, then
+  // either schedules the next resume or finalizes the transition.
+  if (state.targetValves === null || state.targetResult === null) {
+    // Transition was cancelled while we were waiting.
+    return;
+  }
+  state.transition_step = "valves_opening";
+
+  var now = Date.now();
+  var schedulerTarget = state.targetValves;
+  var schedulerCurrent = currentSchedulerView();
+  var plan = planValveTransition(
+    schedulerTarget, schedulerCurrent,
+    state.valveOpenSince, state.valveOpening,
+    now, VALVE_TIMING
+  );
+
+  // Record queued/deferred work before actuation — emitStateUpdate during
+  // the batch will reflect the intended steady-state.
+  state.valvePendingOpen = plan.queuedOpens.slice(0);
+  state.valvePendingClose = [];
+  for (var dn in plan.deferredCloses) {
+    state.valvePendingClose.push(dn);
+    // Observability for FR-010 / US4: log any deferred close with its
+    // reason so operators investigating a "slow drain" can see why.
+    console.log("defer_close " + dn + " openSince=" + state.valveOpenSince[dn] +
+                " readyAt=" + plan.deferredCloses[dn]);
+  }
+
+  if (plan.targetReached) {
+    emitStateUpdate();
+    finalizeTransitionOK(state.targetResult);
+    return;
+  }
+
+  // Pre-compute actuation pairs.
+  // Open commands: write opening[v] = now + openWindowMs BEFORE the HTTP
+  // call, so that concurrent reads of the state (snapshot broadcasts,
+  // concurrent re-schedules) see the slot as consumed.
+  var openPairs = [];
+  var closePairs = [];
+  var i;
+  for (i = 0; i < plan.startOpening.length; i++) {
+    var ov = plan.startOpening[i];
+    state.valveOpening[ov] = now + VALVE_TIMING.openWindowMs;
+    // Translate scheduler polarity → logical polarity for setValve().
+    var logicalOpen = (ov === "v_air") ? false : true;
+    openPairs.push([ov, logicalOpen]);
+  }
+  for (i = 0; i < plan.closeNow.length; i++) {
+    var cv = plan.closeNow[i];
+    // FR-017 defensive guard: never close a valve that is inside its
+    // opening window. Should never happen (scheduler enforces this), but
+    // refuse to act if somehow bypassed.
+    if (state.valveOpening[cv] !== undefined && state.valveOpening[cv] > now) {
+      continue;
+    }
+    var logicalClose = (cv === "v_air") ? true : false;
+    closePairs.push([cv, logicalClose]);
+    // Closing a valve clears the openSince so future opens start fresh.
+    state.valveOpenSince[cv] = 0;
+  }
+
+  emitStateUpdate();
+
+  // Fire closes in parallel, then fire new opens in parallel. Both batches
+  // obey the bounded worker pool.
+  runValveBatch(closePairs, function(okC) {
+    if (!okC) { finalizeTransitionFail(); return; }
+    runValveBatch(openPairs, function(okO) {
+      if (!okO) { finalizeTransitionFail(); return; }
+
+      if (plan.nextResumeAt !== null) {
+        // Arm the resume timer for the earliest outstanding event.
+        var delay = plan.nextResumeAt - Date.now();
+        if (delay < 1) delay = 1;
+        clearTransitionTimer();
+        state.transitionTimer = Timer.set(delay, false, resumeTransition);
+      } else {
+        // No future deferrals were returned. Re-run the SCHEDULE step
+        // immediately so the scheduler can observe the freshly-applied
+        // actions and finalize the transition (targetReached after the
+        // closes take effect).
+        scheduleStep();
+      }
+    });
+  });
+}
+
+function resumeTransition() {
+  state.transitionTimer = null;
+  if (state.targetValves === null) return; // cancelled
+
+  // Expire any opening windows whose time has come and record the moment
+  // the capacitor started charging (research.md R3). We use the window-end
+  // timestamp (stored at opening[v]) so that a slightly-late resume does
+  // not push readyAt later than the physical reality.
+  var now = Date.now();
+  var toClear = [];
+  for (var v in state.valveOpening) {
+    if (state.valveOpening[v] <= now) {
+      toClear.push(v);
+    }
+  }
+  for (var i = 0; i < toClear.length; i++) {
+    var n = toClear[i];
+    state.valveOpenSince[n] = state.valveOpening[n];
+    delete state.valveOpening[n];
+  }
+
+  scheduleStep();
+}
 
 function transitionTo(result) {
-  if (state.transitioning) return;
+  if (state.transitioning) {
+    // Allow in-place target change during an in-flight staged transition.
+    if (state.targetValves !== null) {
+      state.targetValves = toSchedulerView(result.valves);
+      state.targetResult = result;
+      // Do not interrupt any live opening windows — the next resume will
+      // re-plan against the new target.
+    }
+    return;
+  }
   state.transitioning = true;
   state.transition_step = "pump_stop";
+  state.targetResult = result;
+  state.targetValves = toSchedulerView(result.valves);
 
   if (state.drain_timer !== null) {
     Timer.clear(state.drain_timer);
@@ -279,45 +492,7 @@ function transitionTo(result) {
   emitStateUpdate();
 
   Timer.set(SHELL_CFG.VALVE_SETTLE_MS, false, function() {
-    state.transition_step = "valves_closing";
-    emitStateUpdate();
-    closeAllValves(function(ok) {
-      if (!ok) return;
-
-      state.transition_step = "valves_opening";
-      emitStateUpdate();
-      var pairs = [];
-      var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_ret","v_air"];
-      for (var i = 0; i < names.length; i++) {
-        if (result.valves[names[i]]) pairs.push([names[i], true]);
-      }
-
-      setValves(pairs, 0, function(ok2) {
-        if (!ok2) return;
-
-        state.transition_step = "pump_start";
-        emitStateUpdate();
-        Timer.set(SHELL_CFG.PUMP_PRIME_MS, false, function() {
-          state.mode = result.nextMode;
-          state.mode_start = Date.now();
-          state.transitioning = false;
-          state.transition_step = null;
-          applyFlags(result.flags);
-
-          if (result.actuators.pump) setPump(true);
-          if (result.actuators.fan) setFan(true);
-          if (result.actuators.space_heater) setSpaceHeater(true);
-          if (result.actuators.immersion_heater) setImmersion(true);
-
-          if (result.nextMode === MODES.SOLAR_CHARGING) {
-            Shelly.call("KVS.Set", {key: "drained", value: "0"});
-          } else if (result.nextMode === MODES.ACTIVE_DRAIN) {
-            startDrainMonitor();
-          }
-          emitStateUpdate();
-        });
-      });
-    });
+    scheduleStep();
   });
 }
 
@@ -344,18 +519,29 @@ function stopDrain(reason) {
     Timer.clear(state.drain_timer);
     state.drain_timer = null;
   }
-  state.transitioning = true;
-  setPump(false);
   state.collectors_drained = true;
   Shelly.call("KVS.Set", {key: "drained", value: "1"});
   state.last_error = (reason === "timeout") ? "drain_timeout" : null;
-  closeAllValves(function() {
-    state.mode = MODES.IDLE;
-    state.mode_start = Date.now();
-    state.transitioning = false;
-    state.transition_step = null;
-    emitStateUpdate();
-  });
+  // Route through the staged transition so that valve closes honor the
+  // PSU slot budget (trivially satisfied for closes) and the min-open
+  // hold (FR-007) — same hardware rules as any other mode transition.
+  var idleResult = {
+    nextMode: MODES.IDLE,
+    valves: {
+      vi_btm: false, vi_top: false, vi_coll: false,
+      vo_coll: false, vo_rad: false, vo_tank: false,
+      v_ret: false, v_air: false
+    },
+    actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
+    flags: {
+      collectorsDrained: true,
+      lastRefillAttempt: state.last_refill_attempt / 1000,
+      emergencyHeatingActive: false
+    },
+    suppressed: false,
+    safetyOverride: false
+  };
+  transitionTo(idleResult);
 }
 
 // ── Manual override helpers ──
@@ -640,6 +826,8 @@ function boot() {
   setFan(false);
   setSpaceHeater(false);
   setImmersion(false);
+
+  seedValveOpenSinceOnBoot();
 
   closeAllValves(function(ok) {
     if (!ok) {

@@ -303,6 +303,7 @@
         <div id="transition-status" class="card bento-span-3" style="display:none;margin-top:8px;">
           <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;font-size:20px;color:var(--primary);margin-bottom:8px;text-transform:none;letter-spacing:-0.02em;">Transition in Progress</h3>
           <div id="transition-step" style="font-family:'Manrope',sans-serif;font-size:14px;color:var(--on-surface-variant);"></div>
+          <div id="staged-valve-indicator" class="staged-valve-indicator" style="display:none;"></div>
         </div>
       </div>
     </section>
@@ -356,6 +357,13 @@
       <div class="view-header">
         <h2>Device configuration.</h2>
         <p>Runtime settings for the Shelly controller. Changes are pushed instantly via MQTT.</p>
+      </div>
+
+      <div class="card" id="staged-valve-detail-card" style="display:none;">
+        <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;font-size:20px;color:var(--on-surface);margin-bottom:12px;text-transform:none;letter-spacing:-0.02em;">Staged valve progress</h3>
+        <div id="staged-valve-detail-opening" class="staged-valve-list"></div>
+        <div id="staged-valve-detail-queued" class="staged-valve-list"></div>
+        <div id="staged-valve-detail-pending-close" class="staged-valve-list"></div>
       </div>
 
       <div class="card" id="device-config-card">

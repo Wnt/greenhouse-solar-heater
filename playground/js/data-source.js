@@ -175,6 +175,10 @@ export class LiveSource extends DataSource {
       transition_step: data.transition_step || null,
       controls_enabled: data.controls_enabled,
       manual_override: data.manual_override || null,
+      // 023-limit-valve-operations: staged-transition observability
+      opening: data.opening || [],
+      queued_opens: data.queued_opens || [],
+      pending_closes: data.pending_closes || [],
     };
 
     this._emitUpdate(state, result);

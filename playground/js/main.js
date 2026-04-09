@@ -1367,6 +1367,10 @@ function updateDisplay(state, result) {
   // ── Transition status (live mode) ──
   const transEl = document.getElementById('transition-status');
   const stepEl = document.getElementById('transition-step');
+  const opening = Array.isArray(result.opening) ? result.opening : [];
+  const queuedOpens = Array.isArray(result.queued_opens) ? result.queued_opens : [];
+  const pendingCloses = Array.isArray(result.pending_closes) ? result.pending_closes : [];
+  const hasStaged = opening.length > 0 || queuedOpens.length > 0 || pendingCloses.length > 0;
   if (transEl && stepEl) {
     if (result.transitioning && result.transition_step) {
       transEl.style.display = '';
@@ -1377,8 +1381,63 @@ function updateDisplay(state, result) {
         pump_start: 'Starting pump...',
       };
       stepEl.textContent = stepLabels[result.transition_step] || result.transition_step;
+    } else if (hasStaged) {
+      // Staged transition in progress even though transition_step may
+      // not be set (e.g. pure deferred-close window). See 023.
+      transEl.style.display = '';
+      stepEl.textContent = 'Staged valve transition in progress';
     } else {
       transEl.style.display = 'none';
+    }
+  }
+
+  // ── Staged valve indicator (US5, 023-limit-valve-operations) ──
+  const stagedInd = document.getElementById('staged-valve-indicator');
+  if (stagedInd) {
+    if (hasStaged) {
+      stagedInd.style.display = '';
+      stagedInd.textContent =
+        'Transitioning — ' + opening.length + ' opening, ' +
+        queuedOpens.length + ' queued, ' +
+        pendingCloses.length + ' pending close';
+    } else {
+      stagedInd.style.display = 'none';
+    }
+  }
+
+  // ── Staged valve detail pane (Device view) ──
+  const stagedDetailCard = document.getElementById('staged-valve-detail-card');
+  if (stagedDetailCard) {
+    if (hasStaged) {
+      stagedDetailCard.style.display = '';
+      const nowSec = Math.floor(Date.now() / 1000);
+      const openingEl = document.getElementById('staged-valve-detail-opening');
+      const queuedEl = document.getElementById('staged-valve-detail-queued');
+      const pendingEl = document.getElementById('staged-valve-detail-pending-close');
+      if (openingEl) {
+        openingEl.innerHTML = opening.length > 0
+          ? '<div class="staged-valve-list-label">Opening now</div>' +
+            opening.map(v => `<div class="staged-valve-row staged-valve-opening"><span class="staged-valve-name">${v}</span></div>`).join('')
+          : '';
+      }
+      if (queuedEl) {
+        queuedEl.innerHTML = queuedOpens.length > 0
+          ? '<div class="staged-valve-list-label">Queued to open</div>' +
+            queuedOpens.map(v => `<div class="staged-valve-row staged-valve-queued"><span class="staged-valve-name">${v}</span></div>`).join('')
+          : '';
+      }
+      if (pendingEl) {
+        pendingEl.innerHTML = pendingCloses.length > 0
+          ? '<div class="staged-valve-list-label">Pending close (hold)</div>' +
+            pendingCloses.map(pc => {
+              const readyAt = pc.readyAt || 0;
+              const remaining = Math.max(0, readyAt - nowSec);
+              return `<div class="staged-valve-row staged-valve-pending-close"><span class="staged-valve-name">${pc.valve}</span><span class="staged-valve-countdown">${remaining}s</span></div>`;
+            }).join('')
+          : '';
+      }
+    } else {
+      stagedDetailCard.style.display = 'none';
     }
   }
 
