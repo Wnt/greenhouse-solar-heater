@@ -32,8 +32,8 @@ styles:
   radiator:           "rounded=1;whiteSpace=wrap;html=1;fillColor=#ff572220;strokeColor=#ff5722;strokeWidth=2;fontColor=#ff8a65;fontSize=12;fontStyle=1;"
   fan:                "ellipse;whiteSpace=wrap;html=1;fillColor=#ff980030;strokeColor=#ff9800;strokeWidth=2;fontColor=#ffb74d;fontSize=10;fontStyle=1;"
   space_heater:       "rounded=1;whiteSpace=wrap;html=1;fillColor=#f4433620;strokeColor=#f44336;strokeWidth=2;fontColor=#ef9a9a;fontSize=11;fontStyle=1;"
-  greenhouse_body:    "rounded=0;whiteSpace=wrap;html=1;fillColor=#2e7d3210;strokeColor=#2e7d32;strokeWidth=2.5;fontColor=#66bb6a;fontSize=16;fontStyle=1;verticalAlign=top;spacingTop=16;"
-  greenhouse_roof:    "triangle;whiteSpace=wrap;html=1;direction=north;fillColor=#2e7d3215;strokeColor=#2e7d32;strokeWidth=2.5;"
+  greenhouse_body:    "rounded=0;whiteSpace=wrap;html=1;fillColor=#2e7d3210;strokeColor=#B3B3B3;strokeWidth=2.5;fontColor=#66bb6a;fontSize=16;fontStyle=1;verticalAlign=top;spacingTop=16;"
+  greenhouse_roof:    "triangle;whiteSpace=wrap;html=1;direction=north;fillColor=#2e7d3215;strokeColor=#B3B3B3;strokeWidth=2.5;"
 
   # Manifolds
   input_manifold:     "rounded=1;whiteSpace=wrap;html=1;fillColor=#1a2a1a;strokeColor=#388e3c;strokeWidth=1.5;fontColor=#66bb6a;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;"
@@ -173,7 +173,7 @@ manifolds:
 # ------------------------------------------------------------------------------
 components:
   collectors:
-    label: "Solar Collectors\n(2 × 2m × 1m)\n30–280 cm"
+    label: "Solar Collectors"
     style: collector
     geometry: {x: 35, y: 19, width: 100, height: 380}
     ports:
@@ -182,7 +182,7 @@ components:
       bottom_supply: {x: 0.56, y: 1.0}   # inflow from VO-coll (solar charging)
 
   tank:
-    label: "Jäspi VLM\n300 L\nunpressurized"
+    label: "Energy Tank"
     style: tank
     geometry: {x: 450, y: 128, width: 180, height: 317}
     ports:
@@ -280,7 +280,7 @@ valves:
 sensors:
   t_collector:
     label: "T_coll"
-    geometry: {x: 20, y: 19}
+    geometry: {x: 50, y: 36}
   t_tank_top:
     label: "T_tank_top"
     geometry: {x: 442, y: 168}
