@@ -100,6 +100,26 @@ foreignObject div[style*="background-color"] {
   padding: 1px 5px !important;
   border-radius: 3px !important;
 }
+
+/*
+ * Flowing-water pulse overlay for active pipes. installFlowOverlays()
+ * clones each pipe's first <path> and tags it with data-flow-overlay;
+ * the clone is hidden by default and only renders on active pipes.
+ * The dashoffset animation moves the dashes along the path, producing
+ * a directional pulse effect. drop-shadow gives a subtle glow halo.
+ */
+@keyframes schematic-flow-pulse {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -36; }
+}
+path[data-flow-overlay] {
+  display: none;
+  pointer-events: none;
+}
+[data-cell-id^="pipe_"][data-active="true"] path[data-flow-overlay] {
+  display: inline;
+  animation: schematic-flow-pulse 1.2s linear infinite;
+}
 `;
 
 /**
@@ -130,6 +150,7 @@ export async function buildSchematic({ container, svgUrl }) {
 
   installBaseStyles(svgEl);
   initializeManagedCells(svgEl);
+  installFlowOverlays(svgEl);
 
   return {
     update(state) {
@@ -148,6 +169,26 @@ function installBaseStyles(svgEl) {
   style.id = STYLE_TAG_ID;
   style.textContent = BASE_CSS;
   svgEl.insertBefore(style, svgEl.firstChild);
+}
+
+function installFlowOverlays(svgEl) {
+  const pipes = svgEl.querySelectorAll('[data-cell-id^="pipe_"]');
+  for (const pipe of pipes) {
+    if (pipe.querySelector('path[data-flow-overlay]')) continue;
+    const firstPath = pipe.querySelector('path');
+    if (!firstPath || !firstPath.parentElement) continue;
+    const clone = firstPath.cloneNode(false);
+    clone.setAttribute('data-flow-overlay', 'true');
+    clone.removeAttribute('style');
+    clone.setAttribute('stroke', '#ffffff');
+    clone.setAttribute('stroke-width', '4');
+    clone.setAttribute('stroke-dasharray', '6 30');
+    clone.setAttribute('stroke-linecap', 'round');
+    clone.setAttribute('fill', 'none');
+    clone.setAttribute('opacity', '0.85');
+    clone.style.filter = 'drop-shadow(0 0 2px rgba(255,255,255,0.7))';
+    firstPath.parentElement.appendChild(clone);
+  }
 }
 
 function initializeManagedCells(svgEl) {
