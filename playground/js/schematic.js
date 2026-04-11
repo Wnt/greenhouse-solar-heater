@@ -75,6 +75,17 @@ const BASE_CSS = `
 /* Pump gets a teal highlight when on */
 [data-cell-id="pump"][data-active="true"] path,
 [data-cell-id="pump"][data-active="true"] ellipse { stroke: #43aea4; }
+
+/*
+ * Hide drawio's raster label fallbacks. drawio wraps every foreignObject
+ * label in a <switch> with a base64 PNG <image> sibling as the fallback.
+ * The foreignObject carries requiredFeatures="…SVG11/feature#Extensibility"
+ * but modern browsers no longer support SVG 1.1 feature strings, so the
+ * switch picks the <image> instead — rendering light-mode PNG rasters on
+ * top of the dark card. Hiding the raster leaves only the HTML foreignObject
+ * label, which inherits the card's text color correctly.
+ */
+switch > image { display: none; }
 `;
 
 /**
