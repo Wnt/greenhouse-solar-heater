@@ -99,10 +99,22 @@ Height scales in SVGs are approximate — `system-height-layout.svg` is the most
 
 `design/diagrams/system-topology.drawio` is **generated**, not hand-edited. Edit the source files instead, then regenerate:
 
-- `design/diagrams/topology-layout.yaml` — declarative layout rules: canvas, styles, component positions + ports, manifolds, valves, sensors, and the pipe list (each pipe declares `from`/`to` as `{component|valve, port}` references, optional label, optional waypoints).
-- `design/diagrams/generate-topology.js` — Node.js generator. Reads `system.yaml` (for advisory validation that the layout covers everything) + `topology-layout.yaml` and emits `system-topology.drawio`.
+- `design/diagrams/topology-layout.yaml` — declarative layout rules: canvas, styles, `themes.light` color overrides, component positions + ports, manifolds, valves, sensors, and the pipe list (each pipe declares `from`/`to` as `{component|valve, port}` references, optional label, optional waypoints).
+- `design/diagrams/generate-topology.js` — Node.js generator. Reads `system.yaml` (for advisory validation that the layout covers everything) + `topology-layout.yaml` and emits `system-topology.drawio`. Supports `--theme <dark|light>` and `--output <path>` flags; default `dark` produces the committed drift-checked file.
 
 Regenerate with `npm run diagram` (or `node design/diagrams/generate-topology.js`).
+
+### Light-theme PDF
+
+A printable, WCAG-AA-contrast-compliant PDF of the topology diagram is generated from the same source via `npm run topology-pdf`. The underlying script `design/docs/pdf/generate-topology-pdf.js`:
+1. Generates a light-theme drawio variant to a temp file via `generate-topology.js --theme light`
+2. Exports an SVG via the `drawio` CLI (`/opt/homebrew/bin/drawio` by default, override with `DRAWIO_BIN` env var) with `--svg-theme light`
+3. Renders an A4 landscape PDF via Playwright (with `color-scheme: light` emulation so drawio's `light-dark()` CSS resolves to the light branch)
+4. Writes `design/docs/pdf/system-topology.pdf`
+
+`npm run topology-contrast` runs `design/docs/pdf/check-contrast.js` against the committed drawio and prints a WCAG contrast audit — it parses each `mxCell` with a `fontColor`, resolves the effective background (own fillColor > parent fillColor > smallest containing vertex > canvas), alpha-blends over white, and flags anything below AA normal (4.5:1). Exits non-zero when any cell fails; pass a different path to audit a different file (e.g. `node design/docs/pdf/check-contrast.js /tmp/light.drawio`).
+
+Light theme color overrides live in `topology-layout.yaml` under `themes.light.{fill,font,stroke}` — hex → hex substitution maps. Add or change entries there to update the light palette without touching the generator.
 
 **Drift check in CI**: `tests/topology-diagram.test.js` runs as part of `npm run test:unit` (and therefore the full CI test suite). It calls `generateTopology()` and byte-compares the result to the committed `system-topology.drawio`. If you edit `system.yaml` or `topology-layout.yaml` without regenerating, the test fails with an error pointing at the first differing line and the `npm run diagram` fix command.
 

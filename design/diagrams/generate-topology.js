@@ -34,6 +34,7 @@ const DEFAULT_OUTPUT_FILE = path.join(__dirname, 'system-topology.drawio');
 function generateTopology({
   systemFile = DEFAULT_SYSTEM_FILE,
   layoutFile = DEFAULT_LAYOUT_FILE,
+  theme = 'dark',
   silent = false,
 } = {}) {
   const warn = silent ? () => {} : (...args) => console.warn(...args);
@@ -66,17 +67,76 @@ function generateTopology({
   cells.push(...pipeCells(layout));
   cells.push(...legendCells(layout));
 
-  return { xml: wrapMxfile(cells, layout.canvas), cellCount: cells.length };
+  // Theme overrides. The default 'dark' theme is a no-op so the committed
+  // system-topology.drawio stays byte-identical.
+  const themeSpec = theme && theme !== 'dark' ? (layout.themes || {})[theme] : null;
+  if (theme && theme !== 'dark' && !themeSpec) {
+    throw new Error(`Unknown theme '${theme}'. Declared themes: ${Object.keys(layout.themes || {}).join(', ') || '(none)'}`);
+  }
+  const canvas = themeSpec && themeSpec.canvas_background
+    ? { ...layout.canvas, background: themeSpec.canvas_background }
+    : layout.canvas;
+  const themed = themeSpec
+    ? cells.map((c) => applyThemeToStyle(c, themeSpec))
+    : cells;
+
+  return { xml: wrapMxfile(themed, canvas), cellCount: themed.length };
+}
+
+// Regex-based substitution on emitted style attributes. Preserves the alpha
+// suffix (e.g. `#f9a82520` stays tinted even after the base color swap). Works
+// on the raw cell strings so hardcoded colors in builders (tank children,
+// legend, title, scale, etc.) are caught in the same pass.
+function applyThemeToStyle(cellXml, themeSpec) {
+  let out = cellXml;
+  const keys = ['fillColor', 'fontColor', 'strokeColor'];
+  const maps = {
+    fillColor: themeSpec.fill || {},
+    fontColor: themeSpec.font || {},
+    strokeColor: themeSpec.stroke || {},
+  };
+  for (const key of keys) {
+    const map = maps[key];
+    if (!map || Object.keys(map).length === 0) continue;
+    const re = new RegExp(`${key}=(#[0-9a-fA-F]{6})([0-9a-fA-F]{2})?`, 'g');
+    out = out.replace(re, (match, base, alpha) => {
+      const replacement = map[base.toLowerCase()];
+      if (!replacement) return match;
+      return `${key}=${replacement}${alpha || ''}`;
+    });
+  }
+  return out;
 }
 
 // -----------------------------------------------------------------------------
 // CLI entry point: writes the result to disk.
+//
+// Flags:
+//   --theme <dark|light>     Theme to apply (default: dark — committed file)
+//   --output, -o <path>      Output path (default: design/diagrams/system-topology.drawio)
 // -----------------------------------------------------------------------------
 
+function parseArgs(argv) {
+  const args = { theme: 'dark', output: DEFAULT_OUTPUT_FILE };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--theme') args.theme = argv[++i];
+    else if (a.startsWith('--theme=')) args.theme = a.slice('--theme='.length);
+    else if (a === '--output' || a === '-o') args.output = argv[++i];
+    else if (a.startsWith('--output=')) args.output = a.slice('--output='.length);
+    else if (a === '--help' || a === '-h') {
+      console.log('Usage: node generate-topology.js [--theme dark|light] [--output path]');
+      process.exit(0);
+    }
+  }
+  return args;
+}
+
 function main() {
-  const { xml, cellCount } = generateTopology();
-  fs.writeFileSync(DEFAULT_OUTPUT_FILE, xml);
-  console.log(`✓ wrote ${path.relative(REPO_ROOT, DEFAULT_OUTPUT_FILE)} (${cellCount} cells)`);
+  const { theme, output } = parseArgs(process.argv.slice(2));
+  const { xml, cellCount } = generateTopology({ theme });
+  fs.writeFileSync(output, xml);
+  console.log(`✓ wrote ${path.relative(REPO_ROOT, output)} (${cellCount} cells, theme=${theme})`);
 }
 
 // -----------------------------------------------------------------------------
@@ -96,11 +156,9 @@ function validateLayout(system, layout, warn = console.warn) {
       if (v.output_manifold[k]) expectedValves.push(k);
     }
   }
-  if (v.collector_top) {
-    for (const k of ['v_air']) {
-      if (v.collector_top[k]) expectedValves.push(k);
-    }
-  }
+  // Note: v_air (collector_top) is deliberately excluded from the topology
+  // layout — see the comment in topology-layout.yaml `valves:`. It remains a
+  // real valve in system.yaml, so we just don't expect it in the layout.
   const laidOutValves = new Set(Object.keys(layout.valves || {}));
   const missingValves = expectedValves.filter((n) => !laidOutValves.has(n));
   if (missingValves.length) {

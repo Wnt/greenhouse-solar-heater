@@ -63,6 +63,51 @@ styles:
   pipe_reservoir_return: "endArrow=classic;html=1;strokeColor=#ef9a9a;strokeWidth=1.5;dashed=1;fontColor=#ef9a9a;fontSize=9;"
 
 # ------------------------------------------------------------------------------
+# Theme overrides. The default (dark) theme uses the colors declared in the
+# `styles` palette above and on the `canvas.background`. Alternate themes
+# declare color substitution maps that the generator applies to every emitted
+# `fillColor=`, `fontColor=`, and `strokeColor=` value (alpha suffixes
+# preserved). The canvas background is overridden via `canvas_background`.
+#
+# Invoke a non-default theme via:
+#   node design/diagrams/generate-topology.js --theme light --output <path>
+#
+# The committed `system-topology.drawio` is always produced with the default
+# dark theme — the drift test in tests/topology-diagram.test.js enforces this.
+# ------------------------------------------------------------------------------
+themes:
+  light:
+    canvas_background: "#ffffff"
+    fill:
+      "#111111": "#f5f5f5"   # legend box
+      "#1a1a2e": "#ede7f6"   # coll_top_manifold
+      "#1a2a1a": "#e8f5e9"   # input_manifold
+      "#2a1a1a": "#ffebee"   # output_manifold
+    font:
+      "#76ff03": "#33691e"   # sensor labels — deep green
+      "#90caf9": "#1565c0"   # pale blue → tank blue
+      "#64b5f6": "#0d47a1"   # pale blue → material blue 900 (contrast on tinted panels)
+      "#42a5f5": "#1565c0"   # blue 400 → blue 800
+      "#4fc3f7": "#006064"   # cyan 300 → cyan 900
+      "#ef9a9a": "#c62828"   # red 200 → red 800
+      "#ef5350": "#c62828"   # red 400 → red 800
+      "#ffb74d": "#bf360c"   # orange 300 → deep orange 900
+      "#ff8a65": "#bf360c"   # deep orange 300 → deep orange 900
+      "#f9a825": "#8b6914"   # yellow 800 → dark amber
+      "#e9c349": "#8b6914"   # brand gold → dark amber
+      "#66bb6a": "#2e7d32"   # green 400 → green 800
+      "#b39ddb": "#4527a0"   # deep purple 200 → deep purple 800
+      "#e040fb": "#8e24aa"   # purple A200 → purple 700
+      "#aaaaaa": "#555555"   # grey mid
+      "#888888": "#555555"   # grey mid
+      "#cccccc": "#333333"   # grey 300 → grey 800
+      "#666666": "#444444"   # grey darker
+    stroke:
+      "#444444": "#888888"   # legend border (dark grey → mid grey on white)
+      "#333333": "#888888"   # scale line
+      "#555555": "#888888"   # coll_top_manifold border
+
+# ------------------------------------------------------------------------------
 # Height scale (left column) and ground line
 # ------------------------------------------------------------------------------
 scale:
@@ -76,10 +121,6 @@ scale:
     x: 80
     y1: 125
     y2: 580
-  ground_line:
-    x1: 80
-    x2: 1580
-    y: 600
 
 # ------------------------------------------------------------------------------
 # Loose text labels (not attached to a component)
@@ -95,30 +136,18 @@ text_labels:
     style: "text;html=1;align=left;fontSize=9;fontColor=#aaaaaa;"
   reservoir_vent:
     value: "open / vented ↑"
-    geometry: {x: 880, y: 242, width: 140, height: 16}
+    geometry: {x: 700, y: 152, width: 150, height: 16}
     style: "text;html=1;align=center;fontSize=9;fontColor=#90caf9;"
   water_level:
     value: "water level ~197 cm (communicating vessels)"
     geometry: {x: 880, y: 325, width: 260, height: 16}
     style: "text;html=1;align=left;fontSize=9;fontColor=#42a5f5;"
-  t_joint_to_reservoir_label:
-    value: "T joint → reservoir (below water line)"
-    geometry: {x: 435, y: 143, width: 220, height: 16}
-    style: "text;html=1;align=left;fontSize=9;fontColor=#64b5f6;"
-  v_air_to_label:
-    value: "→ air intake"
-    geometry: {x: 435, y: 178, width: 100, height: 16}
-    style: "text;html=1;align=left;fontSize=9;fontColor=#90caf9;"
 
 # ------------------------------------------------------------------------------
 # Manifold containers (visual group boxes — valves inside them are declared
 # separately in the `valves` section with absolute geometry)
 # ------------------------------------------------------------------------------
 manifolds:
-  coll_top_manifold:
-    label: "COLLECTOR TOP (V_air + T joint)"
-    style: coll_top_manifold
-    geometry: {x: 310, y: 115, width: 260, height: 100}
   input_manifold:
     label: "INPUT MANIFOLD"
     style: input_manifold
@@ -152,7 +181,9 @@ components:
   reservoir:
     label: "Reservoir\nair separator"
     style: reservoir
-    geometry: {x: 880, y: 260, width: 140, height: 60}
+    # Sits on top of the tank — communicating vessels means the water level
+    # in the reservoir equals the water level inside the tank's dip tube.
+    geometry: {x: 700, y: 170, width: 150, height: 60}
     ports:
       left:             {x: 0, y: 0.5}
       right:            {x: 1, y: 0.5}
@@ -201,11 +232,11 @@ components:
 # Names must match `system.yaml` valves section (the generator warns on mismatch).
 # ------------------------------------------------------------------------------
 valves:
-  v_air:
-    label: "V_air"
-    geometry: {x: 335, y: 175, width: 90, height: 24}
-    ports: {left: {x: 0, y: 0.5}, right: {x: 1, y: 0.5}}
-
+  # Note: v_air still exists as a physical valve in system.yaml, but its
+  # visualization (valve box + pipe to collector top + legend entry) was
+  # removed from this layout — the atmosphere intake path is conceptual for
+  # drain-mode operation and doesn't need to appear in the topology diagram.
+  # generate-topology.js drops v_air from the validateLayout expected set.
   vi_btm:
     label: "VI-btm  (tank btm)"
     geometry: {x: 250, y: 675, width: 160, height: 30}
@@ -264,45 +295,44 @@ sensors:
 # ------------------------------------------------------------------------------
 pipes:
   # -- Collector loop (top) ----------------------------------------------------
-  # Passive T joint at collector top (spec 024): one pipe to the permanent
-  # reservoir connection (below water line), one pipe to V_air. Both pipes
-  # share the collectors' `top` port as their origin — the T is implicit in
-  # the shared source, same pattern as every other elbow/tee in the system.
-  - id: pipe_coll_top_vair
-    from: {component: collectors, port: top}
-    to:   {valve: v_air, port: left}
-    style: pipe_coll_plain
-    waypoints:
-      - {x: 275, y: 187}
-
+  # Passive T joint at collector top (spec 024): permanent pipe down to the
+  # reservoir's submerged port. The V_air branch is implicit in system.yaml
+  # but not drawn (see `valves:` note above).
   - id: pipe_coll_top_reservoir
     from: {component: collectors, port: top}
     to:   {component: reservoir, port: left_submerged}
     style: pipe_supply
     waypoints:
-      - {x: 640, y: 152}
-      - {x: 640, y: 302}
+      - {x: 650, y: 140}
+      - {x: 650, y: 212}
 
   # -- Reservoir ↔ tank dip tube (gas vent path) -------------------------------
+  # Reservoir is now directly above the tank, so the pipe exits the dip port
+  # downward out of the tank, wraps around the tank's right side, and enters
+  # the reservoir's right port.
   - id: pipe_dip_reservoir
     from: {component: tank, port: dip_port}
     to:   {component: reservoir, port: right}
     style: pipe_dip_dashed
     label: "dip tube port → reservoir (gas vents)"
     waypoints:
-      - {x: 740, y: 860}
-      - {x: 1080, y: 860}
-      - {x: 1080, y: 290}
+      - {x: 737, y: 590}
+      - {x: 910, y: 590}
+      - {x: 910, y: 200}
 
-  # -- Reservoir bottom → VI-top (de-aired supply for greenhouse heating) ------
+  # -- Reservoir → VI-top (de-aired supply for greenhouse heating) -------------
+  # Exits the reservoir's left face (bottom port would dive into the tank now
+  # that the reservoir sits on top) and routes around the collectors to reach
+  # the input manifold.
   - id: pipe_reservoir_vitop
-    from: {component: reservoir, port: bottom}
+    from: {component: reservoir, port: left}
     to:   {valve: vi_top, port: left}
     style: pipe_reservoir_return
     label: "reservoir bottom → VI-top (de-aired)"
     waypoints:
-      - {x: 950, y: 910}
-      - {x: 185, y: 910}
+      - {x: 660, y: 200}
+      - {x: 660, y: 550}
+      - {x: 185, y: 550}
       - {x: 185, y: 730}
 
   # -- Tank bottom → VI-btm (cool water supply for solar charging) -------------
@@ -407,13 +437,10 @@ pipes:
 # Legend (top-right box). Items are rendered top-to-bottom in declaration order.
 # ------------------------------------------------------------------------------
 legend:
-  position: {x: 1360, y: 90, width: 220, height: 220}
+  position: {x: 1360, y: 90, width: 220, height: 140}
   items:
     - {type: line,    color: "#42a5f5", width: 2.5, label: "Supply / cool water"}
     - {type: line,    color: "#ef5350", width: 2.5, label: "Output / hot water"}
     - {type: line,    color: "#f9a825", width: 2,   label: "Collector loop"}
-    - {type: line,    color: "#90caf9", width: 2, dashed: true, label: "Air path"}
     - {type: swatch,  fill: "#e040fb20", stroke: "#e040fb", label: "Motorized on/off valve"}
     - {type: dot,     color: "#76ff03", label: "DS18B20 sensor"}
-    - {type: ellipse, fill: "#00695c20", stroke: "#4fc3f7", label: "Pump (Wilo Z20/4)"}
-    - {type: swatch,  fill: "#ff572220", stroke: "#ff5722", label: "Radiator + fan"}
