@@ -118,6 +118,24 @@ A printable, WCAG-AA-contrast-compliant PDF of the topology diagram is generated
 
 Light theme color overrides live in `topology-layout.yaml` under `themes.light.{fill,font,stroke}` — hex → hex substitution maps. Add or change entries there to update the light palette without touching the generator.
 
+### Playground-theme SVG
+
+The playground's Schematic view is driven by `playground/assets/system-topology.svg`,
+a playground-themed SVG generated from the same topology source. It uses the Stitch
+dark palette (gold collectors, teal pump, coral radiator) and renders on a dark
+card background.
+
+Regenerate via:
+- `npm run topology-drawio-playground` — writes `playground/assets/system-topology.drawio`
+- `npm run topology-svg-playground`    — writes `playground/assets/system-topology.svg`
+
+Drift check: `tests/topology-diagram.test.js` also byte-compares the playground-theme
+drawio intermediate against the committed copy. The SVG itself is not byte-checked
+(drawio CLI output varies across versions) — only the drawio file.
+
+The playground-theme color substitutions live in `topology-layout.yaml` under
+`themes.playground.{fill,font,stroke}`.
+
 **Drift check in CI**: `tests/topology-diagram.test.js` runs as part of `npm run test:unit` (and therefore the full CI test suite). It calls `generateTopology()` and byte-compares the result to the committed `system-topology.drawio`. If you edit `system.yaml` or `topology-layout.yaml` without regenerating, the test fails with an error pointing at the first differing line and the `npm run diagram` fix command.
 
 The generator produces a drawio file where:
@@ -137,6 +155,10 @@ The `playground/` directory is the main web application — a solar heating moni
 - `playground/index.html` — single-page app: Status (default, bento grid dashboard), Components (sensors/valves/actuators), Schematic (SVG system visualization), Controls (sliders, reset), Device (runtime Shelly config with explanations). Floating play/pause FAB.
 - `playground/login.html` — passkey login page (moved from monitor/)
 - `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), data-source (LiveSource/SimulationSource abstraction with sendCommand() for WebSocket commands and onCommandResponse() for override ack/error handling), UI, yaml-loader, login (passkey auth), auth (sidebar logout + "Add Device" invitation modal, noop when auth disabled), version-check (polls /version endpoint, shows update toast), sensors (sensor discovery, assignment, apply configuration)
+- `playground/js/schematic.js` → schematic rendering module: fetches the generated topology SVG, installs highlighting CSS, exposes `buildSchematic({container, svgUrl}) → { update, destroy }`. Pure helper `computeActivePipes(state, pipes)` is unit-tested
+- `playground/js/schematic-topology.js` → PIPES data: per-pipe activation rules consumed by `computeActivePipes`
+- `playground/js/schematic-tester.js` + `playground/schematic-tester.html` → standalone component tester with mode presets and per-valve/actuator toggles. Not linked from SPA nav, reached by direct URL
+- `playground/assets/system-topology.svg` + `.drawio` → generated playground-theme topology (via `npm run topology-svg-playground` / `topology-drawio-playground`)
 - `playground/css/style.css` — shared styles
 - `design/Stitch/` — Stitch UI design mockups (desktop + mobile) with DESIGN.md spec and code.html references
 
@@ -201,6 +223,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/device-config-integration.test.js` — integration tests: UI config format → Shelly control-logic interpretation (staged deployment scenarios)
 - `tests/data-source.test.js` — unit tests for data source abstraction (state mapping, connection transitions)
 - `tests/version-check.test.js` — unit tests for /version endpoint hash computation (determinism, change detection)
+- `tests/schematic.test.js` — unit tests for the pure `computeActivePipes` helper (solar/greenhouse/drain modes + pump-off edge cases)
 - `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
 - `tests/e2e/fixtures.js` — shared Playwright fixture: blocks Google Fonts for offline environments. **All e2e tests must import from this file, not from `@playwright/test`.**
 - `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
@@ -211,6 +234,7 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/e2e/live-logs.spec.js` — Playwright e2e tests verifying that the System Logs card is backed by the `/api/events` state-events feed, lazy-loads older entries on scroll, and prepends new entries when the live mode changes
 - `tests/e2e/version-check.spec.js` — Playwright e2e tests for JS version check toast (appearance, editorial copy, dismiss, silent failure)
 - `tests/e2e/auth-actions.spec.js` — Playwright e2e tests for the sidebar logout + Add Device invitation flow (visibility based on `/auth/status`, logout POST, invite modal with QR code, error handling)
+- `tests/e2e/schematic-tester.spec.js` — Playwright e2e tests for the standalone component tester at `/playground/schematic-tester.html` (preset buttons + per-valve toggles)
 - `tests/e2e/take-screenshots.spec.js` — Screenshot generator: runs 24h simulation, captures all views (excluded from normal test runs via `testIgnore` in `playwright.config.js`, uses separate `playwright.screenshots.config.js`)
 
 ### Test Setup Notes
