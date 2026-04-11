@@ -110,6 +110,30 @@ themes:
       "#444444": "#888888"   # legend border (dark grey → mid grey on white)
       "#333333": "#888888"   # scale line
       "#555555": "#888888"   # coll_top_manifold border
+  playground:
+    # Dark canvas that matches Stitch --surface (#161a21). Not transparent —
+    # we want the SVG to render consistently whether embedded in a card or
+    # opened raw in a browser.
+    canvas_background: "#161a21"
+    fill:
+      "#f9a825": "#e9c349"   # collector panel fill tint (alpha preserved)
+      "#00695c": "#43aea4"   # pump fill tint
+      "#ff5722": "#ee7d77"   # radiator fill tint
+      "#f44336": "#ee7d77"   # space heater fill tint
+      "#ff9800": "#ee7d77"   # fan fill tint (if present)
+    font:
+      "#f9a825": "#e9c349"   # collector labels
+      "#4fc3f7": "#43aea4"   # pump labels
+      "#ff5722": "#ee7d77"   # radiator labels
+      "#ff8a65": "#ee7d77"   # radiator accent
+      "#ef5350": "#ee7d77"   # hot pipe labels
+      "#ef9a9a": "#ee7d77"   # hot pipe accent
+    stroke:
+      "#f9a825": "#e9c349"
+      "#4fc3f7": "#43aea4"
+      "#ff5722": "#ee7d77"
+      "#ef5350": "#ee7d77"
+      "#f44336": "#ee7d77"
 
 # ------------------------------------------------------------------------------
 # Loose text labels (not attached to a component)
