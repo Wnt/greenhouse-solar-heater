@@ -24,6 +24,7 @@ import {
   VALVE_IDS,
   ACTUATOR_CELLS,
   SENSOR_CELLS,
+  COMPONENT_CELLS,
 } from './schematic-topology.js';
 
 /**
@@ -94,6 +95,14 @@ export async function buildSchematic({ container, svgUrl }) {
   const svgEl = container.querySelector('svg');
   if (!svgEl) throw new Error('buildSchematic: no <svg> element found in response');
 
+  // drawio's CLI wraps every fill/stroke in `light-dark(source, substitute)`
+  // where the SECOND value is a light-mode "correction" drawio injects for
+  // readability on a light background. Our playground renders on a dark card
+  // and WANTS the source colors. Forcing color-scheme: light on the SVG makes
+  // the browser resolve `light-dark()` to the first argument — the actual
+  // palette we authored in topology-layout.yaml.
+  svgEl.style.colorScheme = 'light';
+
   installBaseStyles(svgEl);
   initializeManagedCells(svgEl);
 
@@ -121,6 +130,7 @@ function initializeManagedCells(svgEl) {
     ...VALVE_IDS,
     ...Object.keys(ACTUATOR_CELLS),
     ...Object.keys(PIPES),
+    ...Object.keys(COMPONENT_CELLS),
   ];
   for (const id of ids) {
     const cell = svgEl.querySelector(`[data-cell-id="${id}"]`);
@@ -154,6 +164,13 @@ function applyState(svgEl, state) {
   const activePipes = computeActivePipes(state, PIPES);
   for (const [pipeId, isActive] of Object.entries(activePipes)) {
     const cell = svgEl.querySelector(`[data-cell-id="${pipeId}"]`);
+    if (cell) cell.setAttribute('data-active', isActive ? 'true' : 'false');
+  }
+
+  // Non-pipe components (radiator, …) — same rule shape, separate map
+  const activeComponents = computeActivePipes(state, COMPONENT_CELLS);
+  for (const [cellId, isActive] of Object.entries(activeComponents)) {
+    const cell = svgEl.querySelector(`[data-cell-id="${cellId}"]`);
     if (cell) cell.setAttribute('data-active', isActive ? 'true' : 'false');
   }
 

@@ -18,6 +18,10 @@ test.describe('schematic tester', () => {
     await expect(
       page.locator('[data-cell-id="pump"]')
     ).toHaveAttribute('data-active', 'false');
+    // radiator is a component cell driven by vo_rad+pump — dim at idle
+    await expect(
+      page.locator('[data-cell-id="radiator"]')
+    ).toHaveAttribute('data-active', 'false');
   });
 
   test('solar charging preset lights collector loop + passive coll-top pipe', async ({ page }) => {
@@ -77,6 +81,10 @@ test.describe('schematic tester', () => {
     await expect(
       page.locator('[data-cell-id="pipe_coll_top_reservoir"]')
     ).toHaveAttribute('data-active', 'false');
+    // radiator component cell lights up
+    await expect(
+      page.locator('[data-cell-id="radiator"]')
+    ).toHaveAttribute('data-active', 'true');
   });
 
   test('active drain preset lights drain path', async ({ page }) => {

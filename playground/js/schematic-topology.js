@@ -66,6 +66,15 @@ export const ACTUATOR_CELLS = {
 };
 
 /**
+ * Non-pipe components whose activity is derived from valve + pump state,
+ * same rule shapes as PIPES. Used so "downstream consumers" like the
+ * radiator dim when no flow reaches them.
+ */
+export const COMPONENT_CELLS = {
+  radiator: { valves: ['vo_rad'], needsPump: true },
+};
+
+/**
  * Sensor cell id → state key under `state.sensors`. The schematic module
  * finds the label text node inside each sensor cell and replaces its
  * textContent with the formatted temperature.
