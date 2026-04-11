@@ -12,15 +12,13 @@
 # bottom-right corner.
 
 canvas:
-  width: 1600
-  height: 980
+  width: 940
+  height: 760
   background: "#0d1117"
 
-title:
-  text: "Greenhouse Solar Heating — Pipe & Valve Topology"
-  subtitle: "8 motorized valves · Wilo pump · 2 solar collectors · Jäspi 300L tank · radiator + fan · 2kW space heater"
-  color: "#e9c349"
-  subtitle_color: "#888888"
+# Title/subtitle intentionally omitted — layout is expected to fit inside a
+# single A4 landscape page. The generator's titleCells() is a no-op when
+# `title:` is absent.
 
 # ------------------------------------------------------------------------------
 # Named style palette — referenced by components, manifolds, valves, sensors,
@@ -59,8 +57,14 @@ styles:
   pipe_coll_plain:    "endArrow=none;html=1;strokeColor=#f9a825;strokeWidth=2;"
   pipe_drain:         "endArrow=classic;html=1;strokeColor=#1565c0;strokeWidth=1.5;fontColor=#64b5f6;fontSize=9;"
   pipe_rad_supply:    "endArrow=classic;html=1;strokeColor=#ff5722;strokeWidth=2;"
-  pipe_dip_dashed:    "endArrow=classic;html=1;strokeColor=#ef5350;strokeWidth=1.5;dashed=1;fontColor=#ef9a9a;fontSize=9;"
-  pipe_reservoir_return: "endArrow=classic;html=1;strokeColor=#ef9a9a;strokeWidth=1.5;dashed=1;fontColor=#ef9a9a;fontSize=9;"
+  # Gas-vent pipe from tank top → reservoir. No arrow, solid line (the user
+  # simplified this in drawio; keeping the legacy `pipe_dip_dashed` key for
+  # stability even though it is no longer dashed).
+  pipe_dip_dashed:    "endArrow=none;html=1;strokeColor=#ef5350;strokeWidth=1.5;fontColor=#ef9a9a;fontSize=9;"
+  pipe_reservoir_return: "endArrow=classic;html=1;strokeColor=#ef9a9a;strokeWidth=1.5;fontColor=#ef9a9a;fontSize=9;"
+  # Supply pipe without an end arrow — used where the pipe represents a
+  # permanent passive connection rather than a directed flow.
+  pipe_supply_plain:  "endArrow=none;endFill=0;html=1;strokeColor=#42a5f5;strokeWidth=1.5;fontColor=#42a5f5;fontSize=9;"
 
 # ------------------------------------------------------------------------------
 # Theme overrides. The default (dark) theme uses the colors declared in the
@@ -108,40 +112,17 @@ themes:
       "#555555": "#888888"   # coll_top_manifold border
 
 # ------------------------------------------------------------------------------
-# Height scale (left column) and ground line
-# ------------------------------------------------------------------------------
-scale:
-  label_x: 20
-  markers:
-    - {label: "280 cm", y: 128}
-    - {label: "200 cm", y: 252}
-    - {label: "30 cm",  y: 514}
-    - {label: "0 cm",   y: 570}
-  line:
-    x: 80
-    y1: 125
-    y2: 580
-
-# ------------------------------------------------------------------------------
 # Loose text labels (not attached to a component)
 # ------------------------------------------------------------------------------
 text_labels:
   coll_top_port_label:
     value: "collector top"
-    geometry: {x: 220, y: 135, width: 90, height: 15}
-    style: "text;html=1;align=left;fontSize=9;fontColor=#aaaaaa;"
-  coll_btm_port_label:
-    value: "collector bottom"
-    geometry: {x: 220, y: 500, width: 110, height: 15}
+    geometry: {x: 50, y: 14, width: 90, height: 15}
     style: "text;html=1;align=left;fontSize=9;fontColor=#aaaaaa;"
   reservoir_vent:
     value: "open / vented ↑"
-    geometry: {x: 700, y: 152, width: 150, height: 16}
+    geometry: {x: 450, y: 30, width: 150, height: 16}
     style: "text;html=1;align=center;fontSize=9;fontColor=#90caf9;"
-  water_level:
-    value: "water level ~197 cm (communicating vessels)"
-    geometry: {x: 880, y: 325, width: 260, height: 16}
-    style: "text;html=1;align=left;fontSize=9;fontColor=#42a5f5;"
 
 # ------------------------------------------------------------------------------
 # Manifold containers (visual group boxes — valves inside them are declared
@@ -151,11 +132,11 @@ manifolds:
   input_manifold:
     label: "INPUT MANIFOLD"
     style: input_manifold
-    geometry: {x: 230, y: 640, width: 200, height: 180}
+    geometry: {x: 140, y: 518, width: 100, height: 180}
   output_manifold:
     label: "OUTPUT MANIFOLD"
     style: output_manifold
-    geometry: {x: 660, y: 640, width: 220, height: 180}
+    geometry: {x: 402, y: 518, width: 100, height: 180}
 
 # ------------------------------------------------------------------------------
 # Components: the top-level structural shapes that pipes connect to.
@@ -165,36 +146,41 @@ components:
   collectors:
     label: "Solar Collectors\n(2 × 2m × 1m)\n30–280 cm"
     style: collector
-    geometry: {x: 110, y: 125, width: 100, height: 395}
+    geometry: {x: 35, y: 19, width: 100, height: 380}
     ports:
-      top:    {x: 0.95, y: 0.04}
-      bottom: {x: 0.95, y: 0.97}
+      top:           {x: 0.95, y: 0.04}
+      bottom_drain:  {x: 0.39, y: 1.0}   # outflow to VI-coll (drain mode)
+      bottom_supply: {x: 0.56, y: 1.0}   # inflow from VO-coll (solar charging)
 
   tank:
     label: "Jäspi VLM\n300 L\nunpressurized"
     style: tank
-    geometry: {x: 700, y: 250, width: 150, height: 317}
+    geometry: {x: 450, y: 128, width: 180, height: 317}
     ports:
-      dip_port: {x: 0.25, y: 0.99}   # rendered as red dot
-      btm_port: {x: 0.65, y: 0.99}   # rendered as blue dot
+      dip_port:   {x: 0.25,  y: 0.99}   # rendered as red dot
+      btm_port:   {x: 0.65,  y: 0.99}   # rendered as blue dot
+      gas_out:    {x: 0.167, y: 0.032}  # top-of-gas-pocket exit point used by the gas-vent pipe to the reservoir
+      supply_out: {x: 0.5,   y: 1.0}    # bottom-center outflow (pipe_tank_vibtm, cool water to VI-btm)
+      rad_return: {x: 0.881, y: 1.0}    # bottom-right entry point (pipe_rad_return, radiator return)
 
   reservoir:
     label: "Reservoir\nair separator"
     style: reservoir
     # Sits on top of the tank — communicating vessels means the water level
     # in the reservoir equals the water level inside the tank's dip tube.
-    geometry: {x: 700, y: 170, width: 150, height: 60}
+    geometry: {x: 450, y: 48, width: 150, height: 60}
     ports:
-      left:             {x: 0, y: 0.5}
-      right:            {x: 1, y: 0.5}
+      left:             {x: 0,   y: 0.5}
+      right:            {x: 1,   y: 0.5}
       bottom:           {x: 0.5, y: 1}
       top:              {x: 0.5, y: 0}
-      left_submerged:   {x: 0, y: 0.7}  # below water line — permanent T-joint-to-reservoir pipe terminates here
+      left_upper:       {x: 0,   y: 0.25} # used by the passive collector-top → reservoir pipe (entry above water line)
+      left_submerged:   {x: 0,   y: 0.7}  # below water line — kept for future use
 
   pump:
-    label: "PUMP\nWilo Z20/4"
+    label: "PUMP"
     style: pump
-    geometry: {x: 500, y: 695, width: 90, height: 70}
+    geometry: {x: 290, y: 588, width: 70, height: 70}
     ports:
       in:  {x: 0, y: 0.5}
       out: {x: 1, y: 0.5}
@@ -202,30 +188,25 @@ components:
   radiator:
     label: "Radiator\n+ 230V Fan"
     style: radiator
-    geometry: {x: 1100, y: 640, width: 140, height: 70}
+    geometry: {x: 760, y: 588, width: 110, height: 70}
     ports:
       in:  {x: 0, y: 0.5}
       out: {x: 0, y: 0.85}
 
-  fan:
-    label: "FAN"
-    style: fan
-    geometry: {x: 1260, y: 653, width: 44, height: 44}
-
   space_heater:
     label: "2 kW\nSpace Heater"
     style: space_heater
-    geometry: {x: 1340, y: 640, width: 140, height: 70}
+    geometry: {x: 760, y: 498, width: 110, height: 70}
 
   greenhouse_roof:
     label: ""
     style: greenhouse_roof
-    geometry: {x: 1060, y: 340, width: 500, height: 70}
+    geometry: {x: 720, y: 218, width: 190, height: 70}
 
   greenhouse_body:
     label: "Greenhouse"
     style: greenhouse_body
-    geometry: {x: 1060, y: 410, width: 500, height: 370}
+    geometry: {x: 720, y: 288, width: 190, height: 420}
 
 # ------------------------------------------------------------------------------
 # Valves: individual cells with their own geometry and ports.
@@ -238,29 +219,29 @@ valves:
   # drain-mode operation and doesn't need to appear in the topology diagram.
   # generate-topology.js drops v_air from the validateLayout expected set.
   vi_btm:
-    label: "VI-btm  (tank btm)"
-    geometry: {x: 250, y: 675, width: 160, height: 30}
+    label: "VI-btm"
+    geometry: {x: 160, y: 568, width: 60, height: 30}
     ports: {left: {x: 0, y: 0.5}, right: {x: 1, y: 0.5}}
   vi_top:
-    label: "VI-top  (reservoir)"
-    geometry: {x: 250, y: 715, width: 160, height: 30}
+    label: "VI-top"
+    geometry: {x: 160, y: 608, width: 60, height: 30}
     ports: {left: {x: 0, y: 0.5}, right: {x: 1, y: 0.5}}
   vi_coll:
-    label: "VI-coll  (coll btm)"
-    geometry: {x: 250, y: 755, width: 160, height: 30}
+    label: "VI-coll"
+    geometry: {x: 160, y: 648, width: 60, height: 30}
     ports: {left: {x: 0, y: 0.5}, right: {x: 1, y: 0.5}}
 
   vo_coll:
-    label: "VO-coll  (→ coll btm)"
-    geometry: {x: 680, y: 675, width: 180, height: 30}
+    label: "VO-coll"
+    geometry: {x: 422, y: 568, width: 60, height: 30}
     ports: {left: {x: 0, y: 0.5}, right: {x: 1, y: 0.5}}
   vo_rad:
-    label: "VO-rad  (→ radiator)"
-    geometry: {x: 680, y: 715, width: 180, height: 30}
+    label: "VO-rad"
+    geometry: {x: 422, y: 608, width: 60, height: 30}
     ports: {left: {x: 0, y: 0.5}, right: {x: 1, y: 0.5}}
   vo_tank:
-    label: "VO-tank  (→ tank)"
-    geometry: {x: 680, y: 755, width: 180, height: 30}
+    label: "VO-tank"
+    geometry: {x: 422, y: 648, width: 60, height: 30}
     ports: {left: {x: 0, y: 0.5}, right: {x: 1, y: 0.5}}
 
 # ------------------------------------------------------------------------------
@@ -270,21 +251,21 @@ valves:
 sensors:
   t_collector:
     label: "T_coll"
-    geometry: {x: 95, y: 140}
+    geometry: {x: 20, y: 19}
   t_tank_top:
     label: "T_tank_top"
-    geometry: {x: 692, y: 290}
+    geometry: {x: 442, y: 168}
     label_side: left
   t_tank_bottom:
     label: "T_tank_btm"
-    geometry: {x: 692, y: 525}
+    geometry: {x: 442, y: 403}
     label_side: left
   t_greenhouse:
     label: "T_greenhouse"
-    geometry: {x: 1170, y: 500}
+    geometry: {x: 780, y: 380}
   t_outdoor:
     label: "T_outdoor"
-    geometry: {x: 1000, y: 400}
+    geometry: {x: 200, y: 168}
 
 # ------------------------------------------------------------------------------
 # Pipes: declarative connection list. `from`/`to` reference a component, valve,
@@ -300,25 +281,25 @@ pipes:
   # but not drawn (see `valves:` note above).
   - id: pipe_coll_top_reservoir
     from: {component: collectors, port: top}
-    to:   {component: reservoir, port: left_submerged}
-    style: pipe_supply
+    to:   {component: reservoir, port: left_upper}
+    style: pipe_supply_plain
     waypoints:
-      - {x: 650, y: 140}
-      - {x: 650, y: 212}
+      - {x: 330, y: 18}
+      - {x: 330, y: 63}
 
   # -- Reservoir ↔ tank dip tube (gas vent path) -------------------------------
-  # Reservoir is now directly above the tank, so the pipe exits the dip port
-  # downward out of the tank, wraps around the tank's right side, and enters
-  # the reservoir's right port.
+  # Anchored to the gas pocket at the top of the tank (gas_out port). The pipe
+  # drops down along the left side of the tank, wraps around the tank's right
+  # side, and enters the reservoir's right port.
   - id: pipe_dip_reservoir
-    from: {component: tank, port: dip_port}
+    from: {component: tank, port: gas_out}
     to:   {component: reservoir, port: right}
     style: pipe_dip_dashed
-    label: "dip tube port → reservoir (gas vents)"
+    label: "dip tube port → reservoir"
     waypoints:
-      - {x: 737, y: 590}
-      - {x: 910, y: 590}
-      - {x: 910, y: 200}
+      - {x: 476, y: 468}
+      - {x: 660, y: 468}
+      - {x: 660, y: 78}
 
   # -- Reservoir → VI-top (de-aired supply for greenhouse heating) -------------
   # Exits the reservoir's left face (bottom port would dive into the tank now
@@ -328,30 +309,30 @@ pipes:
     from: {component: reservoir, port: left}
     to:   {valve: vi_top, port: left}
     style: pipe_reservoir_return
-    label: "reservoir bottom → VI-top (de-aired)"
+    label: "reservoir bottom → VI-top"
     waypoints:
-      - {x: 660, y: 200}
-      - {x: 660, y: 550}
-      - {x: 185, y: 550}
-      - {x: 185, y: 730}
+      - {x: 330, y: 78}
+      - {x: 330, y: 428}
+      - {x: 110, y: 428}
+      - {x: 110, y: 623}
 
   # -- Tank bottom → VI-btm (cool water supply for solar charging) -------------
   - id: pipe_tank_vibtm
-    from: {component: tank, port: btm_port}
+    from: {component: tank, port: supply_out}
     to:   {valve: vi_btm, port: left}
     style: pipe_supply
     waypoints:
-      - {x: 800, y: 880}
-      - {x: 210, y: 880}
-      - {x: 210, y: 690}
+      - {x: 540, y: 728}
+      - {x: 40, y: 728}
+      - {x: 40, y: 583}
 
   # -- Collector bottom → VI-coll (drain mode supply) --------------------------
   - id: pipe_collbtm_vicoll
-    from: {component: collectors, port: bottom}
+    from: {component: collectors, port: bottom_drain}
     to:   {valve: vi_coll, port: left}
     style: pipe_coll_loop
     waypoints:
-      - {x: 210, y: 770}
+      - {x: 74, y: 663}
 
   # -- Input manifold valves → pump input (conceptual single pipe) -------------
   - id: pipe_vibtm_pump
@@ -359,8 +340,8 @@ pipes:
     to:   {component: pump, port: in}
     style: pipe_supply_thick
     waypoints:
-      - {x: 450, y: 690}
-      - {x: 450, y: 730}
+      - {x: 260, y: 583}
+      - {x: 260, y: 623}
   - id: pipe_vitop_pump
     from: {valve: vi_top, port: right}
     to:   {component: pump, port: in}
@@ -370,8 +351,8 @@ pipes:
     to:   {component: pump, port: in}
     style: pipe_supply_thick
     waypoints:
-      - {x: 450, y: 770}
-      - {x: 450, y: 730}
+      - {x: 260, y: 663}
+      - {x: 260, y: 623}
 
   # -- Pump output → output manifold valves ------------------------------------
   - id: pipe_pump_vocoll
@@ -379,8 +360,8 @@ pipes:
     to:   {valve: vo_coll, port: left}
     style: pipe_hot_thick
     waypoints:
-      - {x: 640, y: 730}
-      - {x: 640, y: 690}
+      - {x: 380, y: 623}
+      - {x: 380, y: 583}
   - id: pipe_pump_vorad
     from: {component: pump, port: out}
     to:   {valve: vo_rad, port: left}
@@ -390,27 +371,26 @@ pipes:
     to:   {valve: vo_tank, port: left}
     style: pipe_hot_thick
     waypoints:
-      - {x: 640, y: 730}
-      - {x: 640, y: 770}
+      - {x: 380, y: 623}
+      - {x: 380, y: 663}
 
   # -- Output manifold → destinations ------------------------------------------
   - id: pipe_vocoll_collbtm
     from: {valve: vo_coll, port: right}
-    to:   {component: collectors, port: bottom}
+    to:   {component: collectors, port: bottom_supply}
     style: pipe_coll_loop
     label: "supply to collectors"
     waypoints:
-      - {x: 895, y: 690}
-      - {x: 895, y: 615}
-      - {x: 235, y: 615}
+      - {x: 520, y: 583}
+      - {x: 520, y: 493}
+      - {x: 91, y: 493}
 
   - id: pipe_vorad_radiator
     from: {valve: vo_rad, port: right}
     to:   {component: radiator, port: in}
     style: pipe_rad_supply
     waypoints:
-      - {x: 1080, y: 730}
-      - {x: 1080, y: 675}
+      - {x: 690, y: 623}
 
   - id: pipe_votank_tank
     from: {valve: vo_tank, port: right}
@@ -418,29 +398,16 @@ pipes:
     style: pipe_drain
     label: "drain → tank bottom"
     waypoints:
-      - {x: 870, y: 770}
-      - {x: 870, y: 590}
+      - {x: 567, y: 663}
 
   # -- Radiator return → tank bottom port --------------------------------------
   - id: pipe_rad_return
     from: {component: radiator, port: out}
-    to:   {component: tank, port: btm_port}
+    to:   {component: tank, port: rad_return}
     style: pipe_supply
     label: "radiator return → tank bottom"
     waypoints:
-      - {x: 1040, y: 700}
-      - {x: 1040, y: 820}
-      - {x: 920, y: 820}
-      - {x: 920, y: 582}
+      - {x: 610, y: 648}
 
-# ------------------------------------------------------------------------------
-# Legend (top-right box). Items are rendered top-to-bottom in declaration order.
-# ------------------------------------------------------------------------------
-legend:
-  position: {x: 1360, y: 90, width: 220, height: 140}
-  items:
-    - {type: line,    color: "#42a5f5", width: 2.5, label: "Supply / cool water"}
-    - {type: line,    color: "#ef5350", width: 2.5, label: "Output / hot water"}
-    - {type: line,    color: "#f9a825", width: 2,   label: "Collector loop"}
-    - {type: swatch,  fill: "#e040fb20", stroke: "#e040fb", label: "Motorized on/off valve"}
-    - {type: dot,     color: "#76ff03", label: "DS18B20 sensor"}
+# Legend removed — the diagram elements are labeled inline and the legend
+# added visual noise without explanatory value.

@@ -260,6 +260,7 @@ function mergeStyle(base, extras) {
 function titleCells(layout) {
   const cells = [];
   const t = layout.title || {};
+  const canvasW = (layout.canvas && layout.canvas.width) || 1600;
   if (t.text) {
     cells.push(
       vertex({
@@ -268,9 +269,9 @@ function titleCells(layout) {
         style: `text;html=1;align=center;verticalAlign=middle;fontSize=20;fontStyle=1;fontColor=${
           t.color || '#ffffff'
         };`,
-        x: 300,
+        x: 0,
         y: 20,
-        w: 1000,
+        w: canvasW,
         h: 32,
       }),
     );
@@ -283,9 +284,9 @@ function titleCells(layout) {
         style: `text;html=1;align=center;verticalAlign=middle;fontSize=12;fontColor=${
           t.subtitle_color || '#888888'
         };`,
-        x: 300,
+        x: 0,
         y: 54,
-        w: 1000,
+        w: canvasW,
         h: 20,
       }),
     );
@@ -432,7 +433,7 @@ function tankCells(id, tank, layout) {
         'rounded=0;whiteSpace=wrap;html=1;fillColor=#90caf915;strokeColor=none;fontColor=#90caf9;fontSize=8;',
       x: 4,
       y: 4,
-      w: g.width - 8,
+      w: g.width - 14,
       h: 14,
     }),
   );
@@ -445,7 +446,7 @@ function tankCells(id, tank, layout) {
         'rounded=0;whiteSpace=wrap;html=1;fillColor=#e5393515;strokeColor=none;fontColor=#ef9a9a;fontSize=11;',
       x: 4,
       y: 18,
-      w: g.width - 8,
+      w: g.width - 4,
       h: r(g.height * 0.3),
     }),
   );
@@ -461,29 +462,17 @@ function tankCells(id, tank, layout) {
       h: 60,
     }),
   );
-  // Heater element
-  cells.push(
-    child({
-      id: `${id}_heater`,
-      value: 'heater element',
-      style:
-        'rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#ff5722;strokeWidth=2;dashed=1;fontColor=#ff8a65;fontSize=9;',
-      x: 20,
-      y: r(g.height * 0.69),
-      w: g.width - 40,
-      h: 20,
-    }),
-  );
-  // Cool zone
+  // Cool zone — spans full tank width (no left/right inset, matches the
+  // manually-tuned tank interior layout)
   cells.push(
     child({
       id: `${id}_cool`,
       value: 'COOL (btm)',
       style:
         'rounded=0;whiteSpace=wrap;html=1;fillColor=#1565c025;strokeColor=none;fontColor=#64b5f6;fontSize=11;',
-      x: 4,
+      x: 0,
       y: r(g.height * 0.79),
-      w: g.width - 8,
+      w: g.width,
       h: r(g.height * 0.19),
     }),
   );
@@ -509,18 +498,6 @@ function tankCells(id, tank, layout) {
       y: r(tank.ports.btm_port.y * g.height) - 5,
       w: 10,
       h: 10,
-    }),
-  );
-  // Ports label (below the tank)
-  cells.push(
-    child({
-      id: `${id}_ports_label`,
-      value: 'dip tube port  |  bottom port  (both at 0 cm)',
-      style: 'text;html=1;align=center;fontSize=9;fontColor=#888888;',
-      x: -30,
-      y: g.height + 12,
-      w: g.width + 60,
-      h: 14,
     }),
   );
   return cells;

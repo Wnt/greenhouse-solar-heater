@@ -118,19 +118,28 @@ function buildHtml(svg) {
     html, body {
       margin: 0;
       padding: 0;
+      width: 100%;
+      height: 100vh;
       background: #ffffff;
       color-scheme: light;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+      overflow: hidden;
     }
     .wrap {
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
-    }
-    svg {
       width: 100%;
+      height: 100vh;
+    }
+    /* Fit the SVG inside the A4-landscape content area without overflowing
+       to a second page. max-width/max-height lets CSS pick the tighter
+       constraint so the aspect ratio is preserved and the content centers. */
+    svg {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
       height: auto;
       display: block;
     }
