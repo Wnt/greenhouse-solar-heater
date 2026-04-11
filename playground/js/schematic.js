@@ -127,6 +127,20 @@ path[data-flow-overlay] {
 [data-cell-id^="pipe_"][data-active="true"][data-flow-reverse="true"] path[data-flow-overlay] {
   animation-name: schematic-flow-pulse-reverse;
 }
+
+/*
+ * Per-mode cold override. Some passive pipes carry hot water in one mode
+ * and cold water in another. When data-flow-cold is true, repaint the
+ * underlying pipe stroke (and arrowhead fill, if any) to the cold-water
+ * blue. The flow overlay is excluded so the white pulse animation is
+ * untouched.
+ */
+[data-cell-id^="pipe_"][data-flow-cold="true"] path:not([data-flow-overlay]) {
+  stroke: #42a5f5 !important;
+}
+[data-cell-id^="pipe_"][data-flow-cold="true"] path[fill]:not([fill="none"]):not([data-flow-overlay]) {
+  fill: #42a5f5 !important;
+}
 `;
 
 /**
@@ -244,6 +258,11 @@ function applyState(svgEl, state) {
     const rule = PIPES[pipeId];
     const reversed = !!(rule.reverseWhen && rule.reverseWhen.some((v) => valves[v]));
     cell.setAttribute('data-flow-reverse', reversed ? 'true' : 'false');
+    // Override the static pipe color when the water temperature flips for
+    // this mode (e.g. the passive collector-top pipe carries hot water in
+    // solar_charging but cold water in active_drain).
+    const cold = !!(rule.coldWhen && rule.coldWhen.some((v) => valves[v]));
+    cell.setAttribute('data-flow-cold', cold ? 'true' : 'false');
   }
 
   // Non-pipe components (radiator, …) — same rule shape, separate map

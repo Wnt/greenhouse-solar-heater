@@ -48,6 +48,9 @@ export const PIPES = {
     anyOf: ['vo_coll', 'vi_coll'],
     needsPump: true,
     reverseWhen: ['vi_coll'],
+    // In drain mode ambient reservoir water is pulled into the collectors,
+    // so this pipe carries cold water — override the red baseline to blue.
+    coldWhen: ['vi_coll'],
   },
   pipe_dip_reservoir: {
     anyOf: ['vi_btm', 'vi_top'],

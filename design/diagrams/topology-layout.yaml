@@ -49,24 +49,27 @@ styles:
 
   # Pipe styles. The generator appends exitX/exitY/entryX/entryY based on each
   # pipe's resolved from/to ports, so do NOT embed those here.
-  # All pipe strokes are width 3 for visual consistency — the only thing that
-  # varies is color and arrow style.
+  #
+  # Only two pipe palettes are used: blue (#42a5f5) for cold water and red
+  # (#ef5350) for hot water. Each palette has variants for arrowed/plain and
+  # labeled/unlabeled pipes, but all share the same color family so a glance
+  # at any pipe tells the reader its water temperature.
+  # All pipe strokes are width 3 for visual consistency.
+
+  # Cold water (blue)
   pipe_supply:        "endArrow=classic;html=1;strokeColor=#42a5f5;strokeWidth=3;fontColor=#42a5f5;fontSize=9;"
   pipe_supply_thick:  "endArrow=classic;html=1;strokeColor=#42a5f5;strokeWidth=3;"
+  # Plain (no arrow) blue pipe for passive cold connections.
+  pipe_supply_plain:  "endArrow=none;endFill=0;html=1;strokeColor=#42a5f5;strokeWidth=3;fontColor=#42a5f5;fontSize=9;"
+  pipe_drain:         "endArrow=classic;html=1;strokeColor=#42a5f5;strokeWidth=3;fontColor=#42a5f5;fontSize=9;"
+
+  # Hot water (red)
   pipe_hot:           "endArrow=classic;html=1;strokeColor=#ef5350;strokeWidth=3;fontColor=#ef9a9a;fontSize=9;"
   pipe_hot_thick:     "endArrow=classic;html=1;strokeColor=#ef5350;strokeWidth=3;"
-  pipe_coll_loop:     "endArrow=classic;html=1;strokeColor=#f9a825;strokeWidth=3;fontColor=#f9a825;fontSize=9;"
-  pipe_coll_plain:    "endArrow=none;html=1;strokeColor=#f9a825;strokeWidth=3;"
-  pipe_drain:         "endArrow=classic;html=1;strokeColor=#1565c0;strokeWidth=3;fontColor=#64b5f6;fontSize=9;"
-  pipe_rad_supply:    "endArrow=classic;html=1;strokeColor=#ff5722;strokeWidth=3;"
-  # Gas-vent pipe from tank top → reservoir. No arrow, solid line (the user
-  # simplified this in drawio; keeping the legacy `pipe_dip_dashed` key for
-  # stability even though it is no longer dashed).
-  pipe_dip_dashed:    "endArrow=none;html=1;strokeColor=#ef5350;strokeWidth=3;fontColor=#ef9a9a;fontSize=9;"
-  pipe_reservoir_return: "endArrow=classic;html=1;strokeColor=#ef9a9a;strokeWidth=3;fontColor=#ef9a9a;fontSize=9;"
-  # Supply pipe without an end arrow — used where the pipe represents a
-  # permanent passive connection rather than a directed flow.
-  pipe_supply_plain:  "endArrow=none;endFill=0;html=1;strokeColor=#42a5f5;strokeWidth=3;fontColor=#42a5f5;fontSize=9;"
+  # Plain (no arrow) red pipe for passive hot connections. Used by the
+  # dip-tube gas vent pipe and the collector-top T-joint return.
+  pipe_hot_plain:     "endArrow=none;html=1;strokeColor=#ef5350;strokeWidth=3;fontColor=#ef9a9a;fontSize=9;"
+  pipe_reservoir_return: "endArrow=classic;html=1;strokeColor=#ef5350;strokeWidth=3;fontColor=#ef9a9a;fontSize=9;"
 
 # ------------------------------------------------------------------------------
 # Theme overrides. The default (dark) theme uses the colors declared in the
@@ -308,7 +311,7 @@ pipes:
   - id: pipe_coll_top_reservoir
     from: {component: collectors, port: top}
     to:   {component: reservoir, port: left_upper}
-    style: pipe_supply_plain
+    style: pipe_hot_plain
     waypoints:
       - {x: 330, y: 18}
       - {x: 330, y: 63}
@@ -320,7 +323,7 @@ pipes:
   - id: pipe_dip_reservoir
     from: {component: tank, port: gas_out}
     to:   {component: reservoir, port: right}
-    style: pipe_dip_dashed
+    style: pipe_hot_plain
     label: "dip tube port → reservoir"
     waypoints:
       - {x: 476, y: 468}
@@ -356,7 +359,7 @@ pipes:
   - id: pipe_collbtm_vicoll
     from: {component: collectors, port: bottom_drain}
     to:   {valve: vi_coll, port: left}
-    style: pipe_coll_loop
+    style: pipe_supply
     waypoints:
       - {x: 74, y: 663}
 
@@ -371,7 +374,7 @@ pipes:
   - id: pipe_vitop_pump
     from: {valve: vi_top, port: right}
     to:   {component: pump, port: in}
-    style: pipe_supply_thick
+    style: pipe_hot_thick
   - id: pipe_vicoll_pump
     from: {valve: vi_coll, port: right}
     to:   {component: pump, port: in}
@@ -384,7 +387,7 @@ pipes:
   - id: pipe_pump_vocoll
     from: {component: pump, port: out}
     to:   {valve: vo_coll, port: left}
-    style: pipe_hot_thick
+    style: pipe_supply_thick
     waypoints:
       - {x: 380, y: 623}
       - {x: 380, y: 583}
@@ -395,7 +398,7 @@ pipes:
   - id: pipe_pump_votank
     from: {component: pump, port: out}
     to:   {valve: vo_tank, port: left}
-    style: pipe_hot_thick
+    style: pipe_supply_thick
     waypoints:
       - {x: 380, y: 623}
       - {x: 380, y: 663}
@@ -404,7 +407,7 @@ pipes:
   - id: pipe_vocoll_collbtm
     from: {valve: vo_coll, port: right}
     to:   {component: collectors, port: bottom_supply}
-    style: pipe_coll_loop
+    style: pipe_supply
     label: "supply to collectors"
     waypoints:
       - {x: 520, y: 583}
@@ -414,7 +417,7 @@ pipes:
   - id: pipe_vorad_radiator
     from: {valve: vo_rad, port: right}
     to:   {component: radiator, port: in}
-    style: pipe_rad_supply
+    style: pipe_hot
     waypoints:
       - {x: 690, y: 623}
 
