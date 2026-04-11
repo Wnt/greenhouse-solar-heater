@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 'use strict';
 
-// Generates design/docs/pdf/system-topology.svg from the drawio source:
+// Generates an SVG from the drawio topology source for a given theme:
 //
-//   1. Runs generate-topology.js with --theme light to a temp drawio file
-//      (the light theme only exists as an on-demand generator output —
-//      the committed system-topology.drawio stays dark).
-//   2. Invokes the `drawio` CLI to export a light-theme SVG directly to
-//      design/docs/pdf/system-topology.svg.
+//   1. Runs generate-topology.js --theme <theme> to a temp drawio file.
+//   2. Invokes the `drawio` CLI to export an SVG with the matching
+//      --svg-theme (light for the light theme; dark for all others).
 //
 // Usage:
-//   node design/docs/pdf/generate-topology-svg.js
+//   node design/docs/pdf/generate-topology-svg.js [--theme light|dark|playground] [--output path/to/out.svg]
+//   Default: --theme light, output: design/docs/pdf/system-topology.svg
 //     (or: npm run topology-svg)
 //
 // Requires: the `drawio` CLI in PATH (brew install drawio). Override the
@@ -70,15 +69,15 @@ function main() {
 }
 
 function parseArgs(argv) {
-  var theme = 'light';
-  var output = null;
-  for (var i = 0; i < argv.length; i++) {
-    var a = argv[i];
+  let theme = 'light';
+  let output = null;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
     if (a === '--theme') { theme = argv[++i]; continue; }
     if (a === '--output') { output = argv[++i]; continue; }
     throw new Error('Unknown argument: ' + a);
   }
-  return { theme: theme, output: output };
+  return { theme, output };
 }
 
 function step(msg) {
