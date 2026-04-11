@@ -112,6 +112,10 @@ foreignObject div[style*="background-color"] {
   from { stroke-dashoffset: 0; }
   to   { stroke-dashoffset: -36; }
 }
+@keyframes schematic-flow-pulse-reverse {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: 36; }
+}
 path[data-flow-overlay] {
   display: none;
   pointer-events: none;
@@ -119,6 +123,9 @@ path[data-flow-overlay] {
 [data-cell-id^="pipe_"][data-active="true"] path[data-flow-overlay] {
   display: inline;
   animation: schematic-flow-pulse 1.2s linear infinite;
+}
+[data-cell-id^="pipe_"][data-active="true"][data-flow-reverse="true"] path[data-flow-overlay] {
+  animation-name: schematic-flow-pulse-reverse;
 }
 `;
 
@@ -228,9 +235,15 @@ function applyState(svgEl, state) {
 
   // Pipes — computed from valve + pump state
   const activePipes = computeActivePipes(state, PIPES);
+  const valves = (state && state.valves) || {};
   for (const [pipeId, isActive] of Object.entries(activePipes)) {
     const cell = svgEl.querySelector(`[data-cell-id="${pipeId}"]`);
-    if (cell) cell.setAttribute('data-active', isActive ? 'true' : 'false');
+    if (!cell) continue;
+    cell.setAttribute('data-active', isActive ? 'true' : 'false');
+    // Flip the pulse animation when the pipe's reverseWhen valves are open.
+    const rule = PIPES[pipeId];
+    const reversed = !!(rule.reverseWhen && rule.reverseWhen.some((v) => valves[v]));
+    cell.setAttribute('data-flow-reverse', reversed ? 'true' : 'false');
   }
 
   // Non-pipe components (radiator, …) — same rule shape, separate map

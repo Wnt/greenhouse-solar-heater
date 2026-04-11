@@ -34,15 +34,26 @@ export const PIPES = {
   pipe_pump_votank:        { valves: ['vo_tank'], needsPump: true },
   pipe_votank_tank:        { valves: ['vo_tank'], needsPump: true },
 
-  // Passive connections — flow direction depends on the active mode.
-  // pipe_coll_top_reservoir:
-  //   - solar_charging: vo_coll is open, water circulates collector→reservoir
-  //   - active_drain:   vi_coll is open, water drains reservoir→collector
-  // pipe_dip_reservoir:
-  //   - solar_charging (return): vi_btm is open, return flows via dip tube
-  //   - greenhouse_heating (supply): vi_top is open, supply flows via dip tube
-  pipe_coll_top_reservoir: { anyOf: ['vo_coll', 'vi_coll'], needsPump: true },
-  pipe_dip_reservoir:      { anyOf: ['vi_btm', 'vi_top'],   needsPump: true },
+  // Passive connections — flow direction depends on the active mode, so we
+  // also declare which valves should REVERSE the pulse animation relative
+  // to the drawio path direction.
+  //
+  // pipe_coll_top_reservoir (path drawn collector → reservoir):
+  //   - solar_charging (vo_coll): flows collector → reservoir (forward)
+  //   - active_drain   (vi_coll): reservoir → collector (reversed)
+  // pipe_dip_reservoir (path drawn dip_port → reservoir):
+  //   - greenhouse_heating (vi_top): dip_port → reservoir (forward)
+  //   - solar_charging     (vi_btm): reservoir → dip_port (reversed)
+  pipe_coll_top_reservoir: {
+    anyOf: ['vo_coll', 'vi_coll'],
+    needsPump: true,
+    reverseWhen: ['vi_coll'],
+  },
+  pipe_dip_reservoir: {
+    anyOf: ['vi_btm', 'vi_top'],
+    needsPump: true,
+    reverseWhen: ['vi_btm'],
+  },
 };
 
 /**
