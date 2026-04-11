@@ -661,7 +661,7 @@ async function init() {
   })();
   setupInspector();
   setupLogsScrollLoader();
-  updateDisplay(model.getState(), { mode: 'idle', valves: config.modes.idle.valve_states, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
+  updateDisplay(model.getState(), { mode: 'idle', valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false }, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
 
   // Initialize live/simulation mode toggle
   initModeToggle();
@@ -1065,7 +1065,7 @@ function resetSim() {
   updateFABIcon();
   document.getElementById('sim-status-text').textContent = 'Ready — press play to start';
   updateSidebarSubtitle();
-  updateDisplay(model.getState(), { mode: 'idle', valves: config.modes.idle.valve_states, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
+  updateDisplay(model.getState(), { mode: 'idle', valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false }, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
 }
 
 function applyPreset(key) {
@@ -1718,7 +1718,6 @@ function toSchematicState(state, result) {
       v_air:   !!valves.v_air,
     },
     pump:         !!actuators.pump,
-    fan:          !!actuators.fan,
     space_heater: !!actuators.space_heater,
     sensors: {
       t_tank_top:    state.t_tank_top,

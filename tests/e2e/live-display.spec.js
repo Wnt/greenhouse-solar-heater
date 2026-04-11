@@ -83,13 +83,15 @@ test.describe('Schematic view shows live values', () => {
     // Wait until the live connection has pushed a state frame
     await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
 
-    // The SVG schematic text elements must reflect the live payload,
-    // not the default simulation model values.
-    await expect(page.locator('#s-t-top')).toHaveText('48.2°C');
-    await expect(page.locator('#s-t-bot')).toHaveText('33.9°C');
-    await expect(page.locator('#s-t-coll')).toHaveText('62.5°C');
-    await expect(page.locator('#s-t-gh')).toHaveText('21.7°C');
-    await expect(page.locator('#s-t-out')).toHaveText('Outdoor: 11.4°C');
+    // The SVG schematic sensor cells must reflect the live payload,
+    // not the default simulation model values. The generated topology
+    // SVG renders each sensor label as a drawio foreignObject inside the
+    // [data-cell-id="t_…"] cell — toContainText walks descendants.
+    await expect(page.locator('[data-cell-id="t_tank_top"]')).toContainText('48.2°C');
+    await expect(page.locator('[data-cell-id="t_tank_bottom"]')).toContainText('33.9°C');
+    await expect(page.locator('[data-cell-id="t_collector"]')).toContainText('62.5°C');
+    await expect(page.locator('[data-cell-id="t_greenhouse"]')).toContainText('21.7°C');
+    await expect(page.locator('[data-cell-id="t_outdoor"]')).toContainText('11.4°C');
   });
 
   test('schematic renders placeholders for unbound (null) sensors', async ({ page }) => {
@@ -102,10 +104,11 @@ test.describe('Schematic view shows live values', () => {
     await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
 
     // Bound sensor renders as a formatted temperature
-    await expect(page.locator('#s-t-top')).toHaveText('42.5°C');
-    // Unbound sensors render as "—°C" (or just "—") instead of crashing
-    await expect(page.locator('#s-t-bot')).toContainText('—');
-    await expect(page.locator('#s-t-coll')).toContainText('—');
+    await expect(page.locator('[data-cell-id="t_tank_top"]')).toContainText('42.5°C');
+    // Unbound sensors render as "--°C" (placeholder from schematic.js
+    // formatTemp) instead of crashing.
+    await expect(page.locator('[data-cell-id="t_tank_bottom"]')).toContainText('--°C');
+    await expect(page.locator('[data-cell-id="t_collector"]')).toContainText('--°C');
   });
 });
 
