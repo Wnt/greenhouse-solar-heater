@@ -9,6 +9,7 @@ import { store, derived } from './app-state.js';
 import { initSubscriptions, setViewLifecycle } from './subscriptions.js';
 import { initNavigation } from './actions/navigation.js';
 import { initAuth } from './auth.js';
+import { buildSchematic as buildSchematicFromSvg } from './schematic.js';
 // connection.js actions will be used in later phases — import deferred to avoid name collisions
 // import { switchToLive, switchToSimulation, ... } from './actions/connection.js';
 // Expose for e2e testing
@@ -384,6 +385,12 @@ let running = false;
 let lastFrame = 0;
 let simSpeed = 3000;
 let simTimeAccum = 0;
+
+// Schematic module handle + last tick cache (so we can apply the first
+// update as soon as the async SVG build resolves).
+let schematicHandle = null;
+let lastState = null;
+let lastResult = null;
 const DT = 1;
 let graphRange = 86400; // default 24h
 let yesterdayHigh = 0;
@@ -635,7 +642,23 @@ async function init() {
   setupTimeRangePills();
   setupFAB();
   resetSim();
-  buildSchematic();
+  // Schematic view — async build, handle held in module scope
+  (async () => {
+    try {
+      schematicHandle = await buildSchematicFromSvg({
+        container: document.getElementById('schematic'),
+        svgUrl: './assets/system-topology.svg',
+      });
+      // If a result is already available, apply it immediately
+      if (lastState && lastResult) {
+        schematicHandle.update(toSchematicState(lastState, lastResult));
+      }
+    } catch (err) {
+      console.error('[schematic] build failed:', err);
+      const el = document.getElementById('schematic');
+      if (el) el.textContent = 'Failed to load schematic';
+    }
+  })();
   setupInspector();
   setupLogsScrollLoader();
   updateDisplay(model.getState(), { mode: 'idle', valves: config.modes.idle.valve_states, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
@@ -1447,7 +1470,11 @@ function updateDisplay(state, result) {
   }
 
   // ── Schematic ──
-  updateSchematic(state, result);
+  lastState = state;
+  lastResult = result;
+  if (schematicHandle) {
+    schematicHandle.update(toSchematicState(state, result));
+  }
 
   // ── Graph ──
   // Live mode: each incoming state frame gets recorded so the sliding
@@ -1671,121 +1698,36 @@ function drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph,
 }
 
 // ── SVG Schematic ──
-function buildSchematic() {
-  const svg = document.getElementById('schematic');
-  svg.innerHTML = `
-    <svg viewBox="0 0 700 400" xmlns="http://www.w3.org/2000/svg" style="font-family: 'Manrope', sans-serif;">
-      <rect id="s-tank" x="250" y="60" width="80" height="200" rx="4" fill="#161a21" stroke="#424854" stroke-width="2"/>
-      <text x="290" y="50" fill="#a5abb9" font-size="12" text-anchor="middle">Tank 300L</text>
-      <text id="s-t-top" x="290" y="100" fill="#a5abb9" font-size="11" text-anchor="middle">--°C</text>
-      <text id="s-t-bot" x="290" y="230" fill="#a5abb9" font-size="11" text-anchor="middle">--°C</text>
-      <defs>
-        <linearGradient id="tank-grad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#ee7d77" stop-opacity="0.5"/>
-          <stop offset="100%" stop-color="#43aea4" stop-opacity="0.5"/>
-        </linearGradient>
-      </defs>
-      <rect x="252" y="62" width="76" height="196" rx="3" fill="url(#tank-grad)"/>
-      <rect id="s-reservoir" x="340" y="48" width="50" height="28" rx="3" fill="rgba(67,174,164,0.1)" stroke="#424854" stroke-width="1.5"/>
-      <text x="365" y="45" fill="#a5abb9" font-size="9" text-anchor="middle">Reservoir</text>
-      <text x="365" y="82" fill="#6f7683" font-size="7" text-anchor="middle">200–220cm</text>
-      <path d="M345,48 L385,48" stroke="#43aea4" stroke-width="1" stroke-dasharray="3,2"/>
-      <text x="392" y="52" fill="#43aea4" font-size="7">open</text>
-      <line x1="355" y1="76" x2="330" y2="76" stroke="#6f7683" stroke-width="2" stroke-dasharray="4,2"/>
-      <line x1="330" y1="62" x2="330" y2="76" stroke="#6f7683" stroke-width="2" stroke-dasharray="4,2"/>
-      <rect id="s-coll" x="50" y="40" width="60" height="180" rx="4" fill="#e9c349" stroke="#6f7683" stroke-width="2" opacity="0.7"/>
-      <text x="80" y="30" fill="#a5abb9" font-size="12" text-anchor="middle">Collectors</text>
-      <text id="s-t-coll" x="80" y="140" fill="#e0e5f5" font-size="11" text-anchor="middle" font-weight="bold">--°C</text>
-      <circle id="s-sun" cx="80" cy="15" r="10" fill="#e9c349" opacity="0.5"/>
-      <text id="s-irr" x="100" y="19" fill="#a5abb9" font-size="10">-- W/m²</text>
-      <rect x="500" y="120" width="150" height="140" rx="6" fill="rgba(67,174,164,0.05)" stroke="#424854" stroke-width="1.5" stroke-dasharray="6,3"/>
-      <text x="575" y="115" fill="#a5abb9" font-size="12" text-anchor="middle">Greenhouse</text>
-      <rect id="s-rad" x="520" y="160" width="50" height="40" rx="3" fill="#1b2029" stroke="#ee7d77" stroke-width="1.5"/>
-      <text x="545" y="185" fill="#ee7d77" font-size="9" text-anchor="middle">Radiator</text>
-      <text id="s-t-gh" x="575" y="240" fill="#a5abb9" font-size="11" text-anchor="middle">--°C</text>
-      <circle id="s-pump" cx="200" cy="300" r="16" fill="#161a21" stroke="#6f7683" stroke-width="2"/>
-      <text x="200" y="304" fill="#a5abb9" font-size="10" text-anchor="middle">P</text>
-      <g id="pipe-solar" opacity="0.3">
-        <path d="M250,260 L200,260 L200,284" stroke="#42a5f5" stroke-width="3" fill="none"/>
-        <text x="225" y="255" fill="#42a5f5" font-size="8">VI-btm</text>
-        <path d="M200,316 L200,340 L80,340 L80,220" stroke="#42a5f5" stroke-width="3" fill="none"/>
-        <text x="140" y="355" fill="#42a5f5" font-size="8">VO-coll</text>
-        <path d="M80,40 L80,25 L340,25 L340,62" stroke="#64b5f6" stroke-width="3" fill="none"/>
-        <circle cx="100" cy="25" r="3" fill="#64b5f6"/>
-        <text x="170" y="20" fill="#64b5f6" font-size="8">T joint → reservoir (below water line)</text>
-      </g>
-      <g id="pipe-heating" opacity="0.3">
-        <path d="M365,76 L365,90 L370,90 L370,284" stroke="#ee7d77" stroke-width="3" fill="none"/>
-        <text x="392" y="90" fill="#ee7d77" font-size="8">via reservoir</text>
-        <path d="M370,316 L370,340 L520,340 L520,200" stroke="#ee7d77" stroke-width="3" fill="none"/>
-        <text x="440" y="355" fill="#ee7d77" font-size="8">VO-rad</text>
-        <path d="M570,200 L570,370 L290,370 L290,260" stroke="#42a5f5" stroke-width="3" fill="none"/>
-        <text x="430" y="385" fill="#42a5f5" font-size="8">return → tank bottom</text>
-      </g>
-      <g id="pipe-drain" opacity="0.3">
-        <path d="M80,220 L80,284" stroke="#dab53d" stroke-width="3" fill="none"/>
-        <text x="65" y="255" fill="#dab53d" font-size="8" transform="rotate(-90,65,255)">VI-coll</text>
-        <path d="M80,316 L80,370 L250,370 L250,260" stroke="#dab53d" stroke-width="3" fill="none"/>
-        <text x="165" y="385" fill="#dab53d" font-size="8">VO-tank</text>
-        <path d="M110,40 L130,15" stroke="#dab53d" stroke-width="2" fill="none" stroke-dasharray="4,2"/>
-        <text x="135" y="12" fill="#dab53d" font-size="8">V-air (open)</text>
-      </g>
-      <text id="s-t-out" x="15" y="390" fill="#a5abb9" font-size="11">Outdoor: --°C</text>
-      <text id="s-fan" x="580" y="170" fill="#424854" font-size="10">Fan: OFF</text>
-      <rect id="s-heater" x="590" y="200" width="40" height="20" rx="2" fill="none" stroke="#424854" stroke-width="1"/>
-      <text x="610" y="214" fill="#a5abb9" font-size="8" text-anchor="middle">2kW</text>
-    </svg>
-  `;
-}
-
-function updateSchematic(state, result) {
-  // Use the live state passed in by updateDisplay so the schematic
-  // reflects real sensor readings in live mode. Fall back to the
-  // simulation model for the initial render before any state arrives.
-  const s = state || (model && model.getState ? model.getState() : {});
-  const tempLabel = function (v) { return isNum(v) ? v.toFixed(1) + '°C' : TEMP_PLACEHOLDER + '°C'; };
-  setText('s-t-top', tempLabel(s.t_tank_top));
-  setText('s-t-bot', tempLabel(s.t_tank_bottom));
-  setText('s-t-coll', tempLabel(s.t_collector));
-  setText('s-t-gh', tempLabel(s.t_greenhouse));
-  setText('s-t-out', 'Outdoor: ' + tempLabel(s.t_outdoor));
-
-  // Irradiance is only available in simulation mode (no sensor on the device).
-  const sun = document.getElementById('s-sun');
-  if (isNum(s.irradiance)) {
-    setText('s-irr', s.irradiance + ' W/m²');
-    if (sun) sun.setAttribute('opacity', Math.min(s.irradiance / 800, 1).toFixed(2));
-  } else {
-    setText('s-irr', TEMP_PLACEHOLDER + ' W/m²');
-    if (sun) sun.setAttribute('opacity', '0.3');
-  }
-
-  const mode = result.mode;
-  setOpacity('pipe-solar', mode === 'solar_charging' ? 1 : 0.15);
-  setOpacity('pipe-heating', mode === 'greenhouse_heating' ? 1 : 0.15);
-  setOpacity('pipe-drain', (mode === 'active_drain' || mode === 'overheat_drain') ? 1 : 0.15);
-
-  const pump = document.getElementById('s-pump');
-  if (pump) {
-    pump.setAttribute('fill', result.actuators.pump ? 'rgba(67,174,164,0.2)' : '#161a21');
-    pump.setAttribute('stroke', result.actuators.pump ? '#43aea4' : '#6f7683');
-  }
-
-  setText('s-fan', 'Fan: ' + (result.actuators.fan ? 'ON' : 'OFF'));
-  const fanEl = document.getElementById('s-fan');
-  if (fanEl) fanEl.setAttribute('fill', result.actuators.fan ? '#43aea4' : '#424854');
-
-  const heater = document.getElementById('s-heater');
-  if (heater) heater.setAttribute('stroke', result.actuators.space_heater ? '#ee7d77' : '#424854');
-}
-
-function setText(id, text) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = text;
-}
-function setOpacity(id, val) {
-  const el = document.getElementById(id);
-  if (el) el.setAttribute('opacity', val);
+// The schematic view is built from the generated playground-themed
+// topology SVG (`playground/assets/system-topology.svg`) via the
+// `./schematic.js` module. This adapter maps the tick payload
+// (state + control evaluate() result) into the flat shape that
+// module expects.
+function toSchematicState(state, result) {
+  if (!state || !result) return null;
+  const valves = result.valves || {};
+  const actuators = result.actuators || {};
+  return {
+    valves: {
+      vi_btm:  !!valves.vi_btm,
+      vi_top:  !!valves.vi_top,
+      vi_coll: !!valves.vi_coll,
+      vo_coll: !!valves.vo_coll,
+      vo_rad:  !!valves.vo_rad,
+      vo_tank: !!valves.vo_tank,
+      v_air:   !!valves.v_air,
+    },
+    pump:         !!actuators.pump,
+    fan:          !!actuators.fan,
+    space_heater: !!actuators.space_heater,
+    sensors: {
+      t_tank_top:    state.t_tank_top,
+      t_tank_bottom: state.t_tank_bottom,
+      t_collector:   state.t_collector,
+      t_greenhouse:  state.t_greenhouse,
+      t_outdoor:     state.t_outdoor,
+    },
+  };
 }
 
 // ── Device Config UI ──
