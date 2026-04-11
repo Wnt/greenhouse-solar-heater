@@ -131,15 +131,20 @@ path[data-flow-overlay] {
 /*
  * Per-mode cold override. Some passive pipes carry hot water in one mode
  * and cold water in another. When data-flow-cold is true, repaint the
- * underlying pipe stroke (and arrowhead fill, if any) to the cold-water
- * blue. The flow overlay is excluded so the white pulse animation is
- * untouched.
+ * underlying pipe stroke (and arrowhead fill, if any) AND the two flow
+ * overlay layers (glow + core) to the cold-water palette.
  */
 [data-cell-id^="pipe_"][data-flow-cold="true"] path:not([data-flow-overlay]) {
   stroke: #42a5f5 !important;
 }
 [data-cell-id^="pipe_"][data-flow-cold="true"] path[fill]:not([fill="none"]):not([data-flow-overlay]) {
   fill: #42a5f5 !important;
+}
+[data-cell-id^="pipe_"][data-flow-cold="true"] path[data-flow-overlay="glow"] {
+  stroke: #42a5f5 !important;
+}
+[data-cell-id^="pipe_"][data-flow-cold="true"] path[data-flow-overlay="core"] {
+  stroke: #bbdefb !important;
 }
 `;
 
@@ -193,22 +198,43 @@ function installBaseStyles(svgEl) {
 }
 
 function installFlowOverlays(svgEl) {
+  // Two-layer glow effect: a thicker blurred "glow" layer in the pipe's
+  // base color sits under a lighter-colored "core" layer. Both share the
+  // same dash pattern and animation, producing a pulse that reads as a
+  // bright core surrounded by a soft color halo.
   const pipes = svgEl.querySelectorAll('[data-cell-id^="pipe_"]');
   for (const pipe of pipes) {
     if (pipe.querySelector('path[data-flow-overlay]')) continue;
     const firstPath = pipe.querySelector('path');
     if (!firstPath || !firstPath.parentElement) continue;
-    const clone = firstPath.cloneNode(false);
-    clone.setAttribute('data-flow-overlay', 'true');
-    clone.removeAttribute('style');
-    clone.setAttribute('stroke', '#ffffff');
-    clone.setAttribute('stroke-width', '4');
-    clone.setAttribute('stroke-dasharray', '6 30');
-    clone.setAttribute('stroke-linecap', 'round');
-    clone.setAttribute('fill', 'none');
-    clone.setAttribute('opacity', '0.85');
-    clone.style.filter = 'drop-shadow(0 0 2px rgba(255,255,255,0.7))';
-    firstPath.parentElement.appendChild(clone);
+
+    const base = (firstPath.getAttribute('stroke') || '').toLowerCase();
+    const isHot = base === '#ef5350';
+    const glowColor = isHot ? '#ef5350' : '#42a5f5';
+    const coreColor = isHot ? '#ffcdd2' : '#bbdefb';
+
+    const glow = firstPath.cloneNode(false);
+    glow.setAttribute('data-flow-overlay', 'glow');
+    glow.removeAttribute('style');
+    glow.setAttribute('stroke', glowColor);
+    glow.setAttribute('stroke-width', '10');
+    glow.setAttribute('stroke-dasharray', '6 30');
+    glow.setAttribute('stroke-linecap', 'round');
+    glow.setAttribute('fill', 'none');
+    glow.setAttribute('opacity', '0.55');
+    glow.style.filter = 'blur(3px)';
+    firstPath.parentElement.appendChild(glow);
+
+    const core = firstPath.cloneNode(false);
+    core.setAttribute('data-flow-overlay', 'core');
+    core.removeAttribute('style');
+    core.setAttribute('stroke', coreColor);
+    core.setAttribute('stroke-width', '3');
+    core.setAttribute('stroke-dasharray', '6 30');
+    core.setAttribute('stroke-linecap', 'round');
+    core.setAttribute('fill', 'none');
+    core.setAttribute('opacity', '0.95');
+    firstPath.parentElement.appendChild(core);
   }
 }
 
