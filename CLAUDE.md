@@ -112,6 +112,8 @@ A printable, WCAG-AA-contrast-compliant PDF of the topology diagram is generated
 3. Renders an A4 landscape PDF via Playwright (with `color-scheme: light` emulation so drawio's `light-dark()` CSS resolves to the light branch)
 4. Writes `design/docs/pdf/system-topology.pdf`
 
+`npm run topology-svg` does only steps 1 and 2 (via `design/docs/pdf/generate-topology-svg.js`) and writes `design/docs/pdf/system-topology.svg` — useful when you need the vector source without wrapping it in an A4 page. **Do not confuse this with `design/diagrams/system-topology.svg`, which is a separate, hand-authored SVG (height-layout illustration).**
+
 `npm run topology-contrast` runs `design/docs/pdf/check-contrast.js` against the committed drawio and prints a WCAG contrast audit — it parses each `mxCell` with a `fontColor`, resolves the effective background (own fillColor > parent fillColor > smallest containing vertex > canvas), alpha-blends over white, and flags anything below AA normal (4.5:1). Exits non-zero when any cell fails; pass a different path to audit a different file (e.g. `node design/docs/pdf/check-contrast.js /tmp/light.drawio`).
 
 Light theme color overrides live in `topology-layout.yaml` under `themes.light.{fill,font,stroke}` — hex → hex substitution maps. Add or change entries there to update the light palette without touching the generator.

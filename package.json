@@ -10,6 +10,7 @@
     "screenshots": "npx playwright test --config=playwright.screenshots.config.js",
     "diagram": "node design/diagrams/generate-topology.js",
     "topology-pdf": "node design/docs/pdf/generate-topology-pdf.js",
+    "topology-svg": "node design/docs/pdf/generate-topology-svg.js",
     "topology-contrast": "node design/docs/pdf/check-contrast.js design/diagrams/system-topology.drawio"
   },
   "devDependencies": {
