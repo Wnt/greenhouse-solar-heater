@@ -49,22 +49,24 @@ styles:
 
   # Pipe styles. The generator appends exitX/exitY/entryX/entryY based on each
   # pipe's resolved from/to ports, so do NOT embed those here.
-  pipe_supply:        "endArrow=classic;html=1;strokeColor=#42a5f5;strokeWidth=1.5;fontColor=#42a5f5;fontSize=9;"
+  # All pipe strokes are width 3 for visual consistency — the only thing that
+  # varies is color and arrow style.
+  pipe_supply:        "endArrow=classic;html=1;strokeColor=#42a5f5;strokeWidth=3;fontColor=#42a5f5;fontSize=9;"
   pipe_supply_thick:  "endArrow=classic;html=1;strokeColor=#42a5f5;strokeWidth=3;"
-  pipe_hot:           "endArrow=classic;html=1;strokeColor=#ef5350;strokeWidth=2;fontColor=#ef9a9a;fontSize=9;"
+  pipe_hot:           "endArrow=classic;html=1;strokeColor=#ef5350;strokeWidth=3;fontColor=#ef9a9a;fontSize=9;"
   pipe_hot_thick:     "endArrow=classic;html=1;strokeColor=#ef5350;strokeWidth=3;"
-  pipe_coll_loop:     "endArrow=classic;html=1;strokeColor=#f9a825;strokeWidth=1.5;fontColor=#f9a825;fontSize=9;"
-  pipe_coll_plain:    "endArrow=none;html=1;strokeColor=#f9a825;strokeWidth=2;"
-  pipe_drain:         "endArrow=classic;html=1;strokeColor=#1565c0;strokeWidth=1.5;fontColor=#64b5f6;fontSize=9;"
-  pipe_rad_supply:    "endArrow=classic;html=1;strokeColor=#ff5722;strokeWidth=2;"
+  pipe_coll_loop:     "endArrow=classic;html=1;strokeColor=#f9a825;strokeWidth=3;fontColor=#f9a825;fontSize=9;"
+  pipe_coll_plain:    "endArrow=none;html=1;strokeColor=#f9a825;strokeWidth=3;"
+  pipe_drain:         "endArrow=classic;html=1;strokeColor=#1565c0;strokeWidth=3;fontColor=#64b5f6;fontSize=9;"
+  pipe_rad_supply:    "endArrow=classic;html=1;strokeColor=#ff5722;strokeWidth=3;"
   # Gas-vent pipe from tank top → reservoir. No arrow, solid line (the user
   # simplified this in drawio; keeping the legacy `pipe_dip_dashed` key for
   # stability even though it is no longer dashed).
-  pipe_dip_dashed:    "endArrow=none;html=1;strokeColor=#ef5350;strokeWidth=1.5;fontColor=#ef9a9a;fontSize=9;"
-  pipe_reservoir_return: "endArrow=classic;html=1;strokeColor=#ef9a9a;strokeWidth=1.5;fontColor=#ef9a9a;fontSize=9;"
+  pipe_dip_dashed:    "endArrow=none;html=1;strokeColor=#ef5350;strokeWidth=3;fontColor=#ef9a9a;fontSize=9;"
+  pipe_reservoir_return: "endArrow=classic;html=1;strokeColor=#ef9a9a;strokeWidth=3;fontColor=#ef9a9a;fontSize=9;"
   # Supply pipe without an end arrow — used where the pipe represents a
   # permanent passive connection rather than a directed flow.
-  pipe_supply_plain:  "endArrow=none;endFill=0;html=1;strokeColor=#42a5f5;strokeWidth=1.5;fontColor=#42a5f5;fontSize=9;"
+  pipe_supply_plain:  "endArrow=none;endFill=0;html=1;strokeColor=#42a5f5;strokeWidth=3;fontColor=#42a5f5;fontSize=9;"
 
 # ------------------------------------------------------------------------------
 # Theme overrides. The default (dark) theme uses the colors declared in the

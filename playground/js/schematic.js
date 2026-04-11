@@ -88,13 +88,18 @@ const BASE_CSS = `
 switch > image { display: none; }
 
 /*
- * Strip white label backgrounds. drawio gives pipe edge labels an inline
- * background-color: light-dark(#ffffff, …) so the label masks the pipe line
- * behind the text. With our color-scheme: light forcing the source colors,
- * that resolves to #ffffff — a jarring white rectangle behind the label on
- * our dark card. !important overrides the inline style.
+ * Recolor drawio's pipe-label backgrounds to match the card surface.
+ * drawio gives pipe edge labels an inline background-color that masks
+ * the pipe line behind the text. With our color-scheme: light it resolves
+ * to #ffffff — a jarring white rectangle on the dark card. Override to the
+ * card color (with a fallback) plus a little padding so the label reads as
+ * a subtle badge over the pipe. !important overrides the inline style.
  */
-foreignObject div[style*="background-color"] { background-color: transparent !important; }
+foreignObject div[style*="background-color"] {
+  background-color: var(--surface-container, #161a21) !important;
+  padding: 1px 5px !important;
+  border-radius: 3px !important;
+}
 `;
 
 /**
