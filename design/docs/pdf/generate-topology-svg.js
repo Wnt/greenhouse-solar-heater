@@ -31,25 +31,35 @@ const OUTPUT_SVG = path.join(__dirname, 'system-topology.svg');
 const DRAWIO_BIN = process.env.DRAWIO_BIN || '/opt/homebrew/bin/drawio';
 
 function main() {
+  const { theme, output } = parseArgs(process.argv.slice(2));
+  const targetSvg = output
+    ? path.resolve(process.cwd(), output)
+    : OUTPUT_SVG;
+
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'topology-svg-'));
-  const tmpDrawio = path.join(tmpDir, 'system-topology-light.drawio');
+  const tmpDrawio = path.join(tmpDir, `system-topology-${theme}.drawio`);
 
   try {
-    step(`generating light-theme drawio → ${rel(tmpDrawio)}`);
-    runChecked('node', [GENERATOR, '--theme', 'light', '--output', tmpDrawio]);
+    step(`generating ${theme}-theme drawio → ${rel(tmpDrawio)}`);
+    runChecked('node', [GENERATOR, '--theme', theme, '--output', tmpDrawio]);
 
-    step(`drawio CLI export → ${rel(OUTPUT_SVG)}`);
+    // drawio's --svg-theme flag controls how `light-dark()` CSS functions
+    // resolve in the exported SVG. Use "light" only for the light theme;
+    // every other theme (dark, playground, …) takes the dark branch.
+    const svgTheme = theme === 'light' ? 'light' : 'dark';
+
+    step(`drawio CLI export (--svg-theme ${svgTheme}) → ${rel(targetSvg)}`);
     runChecked(DRAWIO_BIN, [
       '--export',
       '--format', 'svg',
-      '--svg-theme', 'light',
-      '-o', OUTPUT_SVG,
+      '--svg-theme', svgTheme,
+      '-o', targetSvg,
       tmpDrawio,
     ]);
 
-    const stats = fs.statSync(OUTPUT_SVG);
+    const stats = fs.statSync(targetSvg);
     const sizeKB = (stats.size / 1024).toFixed(1);
-    console.log(`\n✓ wrote ${rel(OUTPUT_SVG)} (${sizeKB} KB)`);
+    console.log(`\n✓ wrote ${rel(targetSvg)} (${sizeKB} KB)`);
   } finally {
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -57,6 +67,18 @@ function main() {
       /* ignore */
     }
   }
+}
+
+function parseArgs(argv) {
+  var theme = 'light';
+  var output = null;
+  for (var i = 0; i < argv.length; i++) {
+    var a = argv[i];
+    if (a === '--theme') { theme = argv[++i]; continue; }
+    if (a === '--output') { output = argv[++i]; continue; }
+    throw new Error('Unknown argument: ' + a);
+  }
+  return { theme: theme, output: output };
 }
 
 function step(msg) {
