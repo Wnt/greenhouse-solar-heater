@@ -15,45 +15,43 @@ const PRESETS = {
   idle: {
     label: 'Idle',
     valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
-    pump: false, fan: false, space_heater: false,
+    pump: false, space_heater: false,
   },
   solar_charging: {
     label: 'Solar charging',
     valves: { vi_btm: true, vi_top: false, vi_coll: false, vo_coll: true, vo_rad: false, vo_tank: false, v_air: false },
-    pump: true, fan: false, space_heater: false,
+    pump: true, space_heater: false,
   },
   greenhouse_heating: {
     label: 'Greenhouse heating',
     valves: { vi_btm: false, vi_top: true, vi_coll: false, vo_coll: false, vo_rad: true, vo_tank: false, v_air: false },
-    pump: true, fan: true, space_heater: false,
+    pump: true, space_heater: false,
   },
   active_drain: {
     label: 'Active drain',
     valves: { vi_btm: false, vi_top: false, vi_coll: true, vo_coll: false, vo_rad: false, vo_tank: true, v_air: true },
-    pump: true, fan: false, space_heater: false,
+    pump: true, space_heater: false,
   },
   overheat_drain: {
     label: 'Overheat drain',
     valves: { vi_btm: false, vi_top: false, vi_coll: true, vo_coll: false, vo_rad: false, vo_tank: true, v_air: true },
-    pump: true, fan: false, space_heater: false,
+    pump: true, space_heater: false,
   },
   emergency_heating: {
     label: 'Emergency heating',
     valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
-    pump: false, fan: false, space_heater: true,
+    pump: false, space_heater: true,
   },
 };
 
 const ACTUATORS = [
   { key: 'pump', label: 'Pump' },
-  { key: 'fan', label: 'Fan' },
   { key: 'space_heater', label: 'Space heater' },
 ];
 
 const state = {
   valves: Object.fromEntries(VALVE_IDS.map((v) => [v, false])),
   pump: false,
-  fan: false,
   space_heater: false,
   sensors: {},
 };
@@ -105,6 +103,12 @@ function renderValveToggles() {
     });
     label.appendChild(cb);
     label.appendChild(document.createTextNode(vid));
+    if (vid === 'v_air') {
+      const note = document.createElement('span');
+      note.textContent = ' (no visual)';
+      note.style.opacity = '0.55';
+      label.appendChild(note);
+    }
     host.appendChild(label);
   }
 }
@@ -134,7 +138,6 @@ function applyPreset(key) {
     state.valves[vid] = !!p.valves[vid];
   }
   state.pump = !!p.pump;
-  state.fan = !!p.fan;
   state.space_heater = !!p.space_heater;
   syncCheckboxes();
   tick();
