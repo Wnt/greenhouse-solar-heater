@@ -162,8 +162,8 @@ function applyState(svgEl, state) {
 }
 
 function formatTemp(v) {
-  if (v == null || !Number.isFinite(v)) return '--\xB0C';
-  return v.toFixed(1) + '\xB0C';
+  if (v == null || !Number.isFinite(v)) return '--°C';
+  return v.toFixed(1) + '°C';
 }
 
 function updateSensorLabel(svgEl, cellId, text) {
