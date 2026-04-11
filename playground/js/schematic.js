@@ -14,7 +14,6 @@
  *   {
  *     valves: { vi_btm, vi_top, vi_coll, vo_coll, vo_rad, vo_tank, v_air },
  *     pump: boolean,
- *     fan: boolean,
  *     space_heater: boolean,
  *     sensors: { t_tank_top, t_tank_bottom, t_collector, t_greenhouse, t_outdoor },
  *   }
@@ -56,6 +55,13 @@ export function computeActivePipes(state, pipes) {
 const STYLE_TAG_ID = 'schematic-base-styles';
 
 const BASE_CSS = `
+/*
+ * Note: this <style> is injected into an SVG that was parsed via
+ * container.innerHTML, which makes it document-scoped, not SVG-scoped.
+ * Keep these selectors narrow to data-cell-id to avoid collisions
+ * with any future markup elsewhere on the page.
+ */
+
 /* Default: managed cells render dim until update() is called */
 [data-cell-id][data-active="false"] { opacity: 0.15; transition: opacity 180ms; }
 [data-cell-id][data-active="true"]  { opacity: 1.00; transition: opacity 180ms; }
