@@ -140,8 +140,9 @@ path[data-flow-overlay] {
 [data-cell-id^="pipe_"][data-flow-cold="true"] path[fill]:not([fill="none"]):not([data-flow-overlay]) {
   fill: #42a5f5 !important;
 }
+/* Hot pipes temporarily running cold lose the glow and get blue cores. */
 [data-cell-id^="pipe_"][data-flow-cold="true"] path[data-flow-overlay="glow"] {
-  stroke: #42a5f5 !important;
+  display: none !important;
 }
 [data-cell-id^="pipe_"][data-flow-cold="true"] path[data-flow-overlay="core"] {
   stroke: #bbdefb !important;
@@ -197,11 +198,16 @@ function installBaseStyles(svgEl) {
   svgEl.insertBefore(style, svgEl.firstChild);
 }
 
+// Both the default dark theme (#ef5350) and the playground theme
+// (#ee7d77 after substitution) use these colors for the "hot water" red.
+const HOT_PIPE_STROKES = new Set(['#ef5350', '#ee7d77']);
+
 function installFlowOverlays(svgEl) {
-  // Two-layer glow effect: a thicker blurred "glow" layer in the pipe's
-  // base color sits under a lighter-colored "core" layer. Both share the
-  // same dash pattern and animation, producing a pulse that reads as a
-  // bright core surrounded by a soft color halo.
+  // Every active pipe gets a "core" overlay — a dashed stroke in a lighter
+  // variant of the pipe color that animates via stroke-dashoffset to read
+  // as flowing water. Hot (red) pipes also get a "glow" layer underneath:
+  // a thicker, blurred stroke in the full red that produces a soft halo
+  // around the pulses. Cold (blue) pipes stay flat — no halo.
   const pipes = svgEl.querySelectorAll('[data-cell-id^="pipe_"]');
   for (const pipe of pipes) {
     if (pipe.querySelector('path[data-flow-overlay]')) continue;
@@ -209,21 +215,22 @@ function installFlowOverlays(svgEl) {
     if (!firstPath || !firstPath.parentElement) continue;
 
     const base = (firstPath.getAttribute('stroke') || '').toLowerCase();
-    const isHot = base === '#ef5350';
-    const glowColor = isHot ? '#ef5350' : '#42a5f5';
-    const coreColor = isHot ? '#ffcdd2' : '#bbdefb';
+    const isHot = HOT_PIPE_STROKES.has(base);
+    const coreColor = isHot ? '#ffb3b0' : '#bbdefb';
 
-    const glow = firstPath.cloneNode(false);
-    glow.setAttribute('data-flow-overlay', 'glow');
-    glow.removeAttribute('style');
-    glow.setAttribute('stroke', glowColor);
-    glow.setAttribute('stroke-width', '10');
-    glow.setAttribute('stroke-dasharray', '6 30');
-    glow.setAttribute('stroke-linecap', 'round');
-    glow.setAttribute('fill', 'none');
-    glow.setAttribute('opacity', '0.55');
-    glow.style.filter = 'blur(3px)';
-    firstPath.parentElement.appendChild(glow);
+    if (isHot) {
+      const glow = firstPath.cloneNode(false);
+      glow.setAttribute('data-flow-overlay', 'glow');
+      glow.removeAttribute('style');
+      glow.setAttribute('stroke', '#ef5350');
+      glow.setAttribute('stroke-width', '10');
+      glow.setAttribute('stroke-dasharray', '6 30');
+      glow.setAttribute('stroke-linecap', 'round');
+      glow.setAttribute('fill', 'none');
+      glow.setAttribute('opacity', '0.55');
+      glow.style.filter = 'blur(3px)';
+      firstPath.parentElement.appendChild(glow);
+    }
 
     const core = firstPath.cloneNode(false);
     core.setAttribute('data-flow-overlay', 'core');
