@@ -184,10 +184,10 @@ components:
   tank:
     label: "Energy Tank"
     style: tank
-    geometry: {x: 450, y: 128, width: 180, height: 317}
+    geometry: {x: 450, y: 128, width: 180, height: 330}
     ports:
-      dip_port:   {x: 0.25,  y: 0.99}   # rendered as red dot
-      btm_port:   {x: 0.65,  y: 0.99}   # rendered as blue dot
+      dip_port:   {x: 0.167, y: 0.968}  # rendered as red dot (20×21 child cell)
+      btm_port:   {x: 0.617, y: 0.968}  # rendered as blue dot (22×21 child cell)
       gas_out:    {x: 0.167, y: 0.032}  # top-of-gas-pocket exit point used by the gas-vent pipe to the reservoir
       supply_out: {x: 0.5,   y: 1.0}    # bottom-center outflow (pipe_tank_vibtm, cool water to VI-btm)
       rad_return: {x: 0.881, y: 1.0}    # bottom-right entry point (pipe_rad_return, radiator return)
@@ -326,7 +326,7 @@ pipes:
     style: pipe_hot_plain
     label: "dip tube port → reservoir"
     waypoints:
-      - {x: 476, y: 468}
+      - {x: 480, y: 470}
       - {x: 660, y: 468}
       - {x: 660, y: 78}
 
@@ -427,7 +427,7 @@ pipes:
     style: pipe_drain
     label: "drain → tank bottom"
     waypoints:
-      - {x: 567, y: 663}
+      - {x: 561, y: 663}
 
   # -- Radiator return → tank bottom port --------------------------------------
   - id: pipe_rad_return

@@ -424,30 +424,30 @@ function tankCells(id, tank, layout) {
   // parent's x/y when rendering).
   const child = (extras) => vertex({ parent: id, ...extras });
 
-  // Gas pocket (top strip)
+  // Gas pocket (rounded top strip)
   cells.push(
     child({
       id: `${id}_gas`,
       value: 'gas pocket',
       style:
-        'rounded=0;whiteSpace=wrap;html=1;fillColor=#90caf915;strokeColor=none;fontColor=#90caf9;fontSize=8;',
-      x: 4,
-      y: 4,
-      w: g.width - 14,
-      h: 14,
+        'rounded=1;whiteSpace=wrap;html=1;fillColor=#90caf915;strokeColor=none;fontColor=#90caf9;fontSize=8;glass=0;arcSize=50;',
+      x: 10,
+      y: 0,
+      w: g.width - 20,
+      h: 18,
     }),
   );
   // Hot zone
   cells.push(
     child({
       id: `${id}_hot`,
-      value: 'HOT (top)',
+      value: 'Hot',
       style:
         'rounded=0;whiteSpace=wrap;html=1;fillColor=#e5393515;strokeColor=none;fontColor=#ef9a9a;fontSize=11;',
       x: 4,
       y: 18,
       w: g.width - 4,
-      h: r(g.height * 0.3),
+      h: r(g.height * 0.288),
     }),
   );
   // Label in the middle of the tank
@@ -457,47 +457,50 @@ function tankCells(id, tank, layout) {
       value: tank.label || '',
       style: 'text;html=1;align=center;fontSize=13;fontStyle=1;fontColor=#90caf9;',
       x: 4,
-      y: r(g.height * 0.42),
+      y: r(g.height * 0.403),
       w: g.width - 8,
       h: 60,
     }),
   );
-  // Cool zone — spans full tank width (no left/right inset, matches the
-  // manually-tuned tank interior layout)
+  // Cool zone — rounded blue band anchored to the tank bottom
   cells.push(
     child({
       id: `${id}_cool`,
-      value: 'COOL (btm)',
+      value: 'Cool',
       style:
-        'rounded=0;whiteSpace=wrap;html=1;fillColor=#1565c025;strokeColor=none;fontColor=#64b5f6;fontSize=11;',
+        'rounded=1;whiteSpace=wrap;html=1;fillColor=#1565c025;strokeColor=none;fontColor=#64b5f6;fontSize=11;arcSize=38;',
       x: 0,
-      y: r(g.height * 0.79),
+      y: g.height - 80,
       w: g.width,
-      h: r(g.height * 0.19),
+      h: 80,
     }),
   );
-  // Dip tube port (red dot) — child of tank at fractional port coordinates
+  // Dip tube port (red dot, 20×21) — child of tank at fractional port coords
+  const dipW = 20;
+  const dipH = 21;
   cells.push(
     child({
       id: `${id}_dip_port`,
       value: '',
       style: 'ellipse;whiteSpace=wrap;html=1;fillColor=#e53935;strokeColor=#e53935;',
-      x: r(tank.ports.dip_port.x * g.width) - 5,
-      y: r(tank.ports.dip_port.y * g.height) - 5,
-      w: 10,
-      h: 10,
+      x: r(tank.ports.dip_port.x * g.width - dipW / 2),
+      y: r(tank.ports.dip_port.y * g.height - dipH / 2),
+      w: dipW,
+      h: dipH,
     }),
   );
-  // Bottom port (blue dot)
+  // Bottom port (blue dot, 22×21)
+  const btmW = 22;
+  const btmH = 21;
   cells.push(
     child({
       id: `${id}_btm_port`,
       value: '',
       style: 'ellipse;whiteSpace=wrap;html=1;fillColor=#1565c0;strokeColor=#1565c0;',
-      x: r(tank.ports.btm_port.x * g.width) - 5,
-      y: r(tank.ports.btm_port.y * g.height) - 5,
-      w: 10,
-      h: 10,
+      x: r(tank.ports.btm_port.x * g.width - btmW / 2),
+      y: r(tank.ports.btm_port.y * g.height - btmH / 2),
+      w: btmW,
+      h: btmH,
     }),
   );
   return cells;
