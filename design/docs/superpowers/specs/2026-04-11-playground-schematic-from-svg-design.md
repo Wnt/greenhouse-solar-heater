@@ -75,29 +75,36 @@ Add a `themes.playground` block alongside `themes.light`:
 ```yaml
 themes:
   playground:
-    canvas_background: "transparent"   # let the Stitch card surface show through
+    # Dark canvas matching Stitch --surface. Not transparent: drawio's CLI
+    # emits a <rect class="background"> at the SVG root, so we want it to
+    # match the card background rather than rely on container styling.
+    canvas_background: "#161a21"
     fill:
-      # Tint substitutions so the dark theme reads as the current playground palette
-      "#f9a82520": "#e9c34920"   # collector panel tint
-      "#4fc3f720": "#43aea420"   # pump fill tint (if any)
-      "#ef572220": "#ee7d7720"   # radiator panel tint
+      "#f9a825": "#e9c349"   # collector panels (alpha preserved by generator)
+      "#00695c": "#43aea4"   # pump fill tint
+      "#ff5722": "#ee7d77"   # radiator
+      "#f44336": "#ee7d77"   # space heater
+      "#ff9800": "#ee7d77"   # fan (if present)
     font:
-      "#f9a825": "#e9c349"       # collector labels
-      "#4fc3f7": "#43aea4"       # pump labels
-      "#ff5722": "#ee7d77"       # radiator labels
-      "#ff8a65": "#ee7d77"       # radiator accent
-      "#ef5350": "#ee7d77"       # hot-pipe labels
-      "#ef9a9a": "#ee7d77"       # hot-pipe accent
+      "#f9a825": "#e9c349"
+      "#4fc3f7": "#43aea4"
+      "#ff5722": "#ee7d77"
+      "#ff8a65": "#ee7d77"
+      "#ef5350": "#ee7d77"
+      "#ef9a9a": "#ee7d77"
     stroke:
       "#f9a825": "#e9c349"
       "#4fc3f7": "#43aea4"
       "#ff5722": "#ee7d77"
       "#ef5350": "#ee7d77"
+      "#f44336": "#ee7d77"
 ```
 
 `#42a5f5` (supply blue) and `#76ff03` (sensor green) are already correct for the
-playground palette and pass through unchanged. Canvas background is transparent
-so the SVG inherits the card surface (`var(--surface)` ≈ `#161a21`).
+playground palette and pass through unchanged. Substitution keys use base hex
+(no alpha) — the generator's `applyThemeToStyle` regex matches the base and
+preserves any alpha suffix, so a cell with `fillColor=#f9a82520` becomes
+`fillColor=#e9c34920` under the playground theme.
 
 ### `design/diagrams/generate-topology.js`
 
