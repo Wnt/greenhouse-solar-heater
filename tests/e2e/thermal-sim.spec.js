@@ -154,7 +154,9 @@ test.describe('Thermal Simulation UI', () => {
     expect(box.height).toBeGreaterThan(50);
 
     const sidebarLinks = page.locator('.sidebar-nav a');
-    await expect(sidebarLinks).toHaveCount(6); // status, components, schematic, controls, sensors, device (sensors+device hidden in sim mode)
+    // status, components, schematic, controls, sensors, device, settings
+    // (sensors+device are .live-only and hidden in sim mode, but still in DOM)
+    await expect(sidebarLinks).toHaveCount(7);
     await expect(page.locator('.sidebar-nav a.active')).toContainText('Status');
   });
 });

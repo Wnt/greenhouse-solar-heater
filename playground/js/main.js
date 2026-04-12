@@ -9,7 +9,7 @@ import { store, derived } from './app-state.js';
 import { initSubscriptions, setViewLifecycle } from './subscriptions.js';
 import { initNavigation } from './actions/navigation.js';
 import { initAuth } from './auth.js';
-import { captureInstallPrompt, triggerInstall, initNotifications, subscribePush, updateCategories, unsubscribePush, isSubscribed, isPushAvailable, getSelectedCategories } from './notifications.js';
+import { captureInstallPrompt, triggerInstall, wireInstallModal, initNotifications, subscribePush, updateCategories, unsubscribePush, isSubscribed, getSelectedCategories } from './notifications.js';
 import { buildSchematic as buildSchematicFromSvg } from './schematic.js';
 // connection.js actions will be used in later phases — import deferred to avoid name collisions
 // import { switchToLive, switchToSimulation, ... } from './actions/connection.js';
@@ -632,8 +632,14 @@ const MODE_INFO = {
 };
 
 // ── PWA + Notification UI wiring ──
+// The install button is always visible; when beforeinstallprompt is not
+// available (Safari/Firefox) the handler shows a platform-specific
+// instructions modal. The notifications section is also always visible;
+// if push isn't supported the toggle stays disabled with an explanation.
 
 function wireNotificationUI() {
+  wireInstallModal();
+
   var installBtn = document.getElementById('pwa-install-btn');
   if (installBtn) {
     installBtn.addEventListener('click', function () {
@@ -644,6 +650,7 @@ function wireNotificationUI() {
   var toggleBtn = document.getElementById('notif-toggle-btn');
   if (toggleBtn) {
     toggleBtn.addEventListener('click', function () {
+      if (toggleBtn.disabled) return;
       if (isSubscribed()) {
         unsubscribePush();
       } else {
@@ -662,12 +669,6 @@ function wireNotificationUI() {
       }
     });
   });
-
-  // Hide notification section if push is not available
-  var section = document.getElementById('notification-settings');
-  if (section && !isPushAvailable()) {
-    section.style.display = 'none';
-  }
 }
 
 // ── Init ──

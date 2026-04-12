@@ -61,54 +61,14 @@
         <span class="material-symbols-outlined">settings_remote</span>
         Device
       </a>
+      <a data-view="settings">
+        <span class="material-symbols-outlined">settings</span>
+        Settings
+      </a>
     </nav>
     <div class="controls-indicator" id="controls-indicator">
       <span class="material-symbols-outlined" style="font-size:14px;">shield</span>
       <span>Controls disabled</span>
-    </div>
-    <div class="pwa-actions" id="pwa-actions">
-      <button id="pwa-install-btn" class="auth-btn" type="button" style="display:none;">
-        <span class="material-symbols-outlined">install_mobile</span>
-        Install App
-      </button>
-      <div id="notification-settings" class="notif-settings">
-        <button id="notif-toggle-btn" class="auth-btn" type="button">
-          <span class="material-symbols-outlined">notifications</span>
-          Enable
-        </button>
-        <div id="notif-categories" class="notif-categories" style="display:none;">
-          <label class="notif-cat-label">
-            <input type="checkbox" id="notif-cat-evening_report" checked>
-            <span>Evening report</span>
-          </label>
-          <label class="notif-cat-label">
-            <input type="checkbox" id="notif-cat-noon_report" checked>
-            <span>Noon report</span>
-          </label>
-          <label class="notif-cat-label">
-            <input type="checkbox" id="notif-cat-overheat_warning" checked>
-            <span>Overheat warning</span>
-          </label>
-          <label class="notif-cat-label">
-            <input type="checkbox" id="notif-cat-freeze_warning" checked>
-            <span>Freeze warning</span>
-          </label>
-          <label class="notif-cat-label">
-            <input type="checkbox" id="notif-cat-offline_warning" checked>
-            <span>Controller offline</span>
-          </label>
-        </div>
-      </div>
-    </div>
-    <div class="auth-actions" id="auth-actions" hidden>
-      <button id="invite-btn" class="auth-btn auth-btn-primary" type="button">
-        <span class="material-symbols-outlined">add_to_home_screen</span>
-        Add Device
-      </button>
-      <button id="logout-btn" class="auth-btn" type="button">
-        <span class="material-symbols-outlined">logout</span>
-        Logout
-      </button>
     </div>
   </aside>
 
@@ -149,6 +109,10 @@
     <a data-view="device" class="live-only" style="display:none;">
       <span class="material-symbols-outlined">settings_remote</span>
       <span>Device</span>
+    </a>
+    <a data-view="settings">
+      <span class="material-symbols-outlined">settings</span>
+      <span>Settings</span>
     </a>
   </nav>
 
@@ -545,6 +509,77 @@
       </div>
     </section>
 
+    <!-- ═══ SETTINGS VIEW ═══ -->
+    <section id="view-settings" class="view">
+      <div class="view-header">
+        <h2>Settings &amp; account.</h2>
+        <p>Install to home screen, manage push notifications, and access account controls.</p>
+      </div>
+
+      <div class="settings-grid">
+        <!-- Install to home screen -->
+        <div class="card settings-card">
+          <h3>Install to home screen</h3>
+          <p class="settings-desc">Install Helios Canopy as an app for quick access and push notifications without opening the browser.</p>
+          <button id="pwa-install-btn" class="auth-btn auth-btn-primary settings-btn" type="button" title="Install as app on your home screen">
+            <span class="material-symbols-outlined">install_mobile</span>
+            <span class="auth-btn-label">Install App</span>
+          </button>
+        </div>
+
+        <!-- Push notifications -->
+        <div class="card settings-card">
+          <h3>Push notifications</h3>
+          <p class="settings-desc">Receive alerts when the controller detects unusual temperatures, goes offline, and daily reports about solar energy and heating.</p>
+          <button id="notif-toggle-btn" class="auth-btn settings-btn" type="button" title="Enable push notifications">
+            <span class="material-symbols-outlined">notifications</span>
+            <span class="auth-btn-label">Enable notifications</span>
+          </button>
+          <div id="notif-unavailable-msg" class="notif-unavailable" style="display:none;">
+            Push notifications require a secure connection and a supported browser.
+          </div>
+          <div id="notif-categories" class="notif-categories" style="display:none;">
+            <label class="notif-cat-label">
+              <input type="checkbox" id="notif-cat-evening_report" checked>
+              <span><strong>Evening report</strong> &mdash; daily solar energy summary</span>
+            </label>
+            <label class="notif-cat-label">
+              <input type="checkbox" id="notif-cat-noon_report" checked>
+              <span><strong>Noon report</strong> &mdash; overnight heating summary</span>
+            </label>
+            <label class="notif-cat-label">
+              <input type="checkbox" id="notif-cat-overheat_warning" checked>
+              <span><strong>Overheat warning</strong> &mdash; 15 min before drain</span>
+            </label>
+            <label class="notif-cat-label">
+              <input type="checkbox" id="notif-cat-freeze_warning" checked>
+              <span><strong>Freeze warning</strong> &mdash; 15 min before protection</span>
+            </label>
+            <label class="notif-cat-label">
+              <input type="checkbox" id="notif-cat-offline_warning" checked>
+              <span><strong>Controller offline</strong> &mdash; after 15 minutes</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Account (only shown when authenticated) -->
+        <div class="card settings-card" id="auth-actions" hidden>
+          <h3>Account</h3>
+          <p class="settings-desc">Share access by inviting a new device, or sign out of this session.</p>
+          <div class="settings-btn-stack">
+            <button id="invite-btn" class="auth-btn auth-btn-primary settings-btn" type="button">
+              <span class="material-symbols-outlined">add_to_home_screen</span>
+              <span class="auth-btn-label">Add Device</span>
+            </button>
+            <button id="logout-btn" class="auth-btn settings-btn" type="button">
+              <span class="material-symbols-outlined">logout</span>
+              <span class="auth-btn-label">Logout</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- ── Invitation modal (Add Device) ── -->
@@ -558,6 +593,17 @@
       <div id="invite-timer" class="invite-timer"></div>
       <div id="invite-error" class="invite-error" hidden></div>
       <button id="invite-close-btn" class="auth-btn" type="button" style="margin-top:20px;width:100%;justify-content:center;">Close</button>
+    </div>
+  </div>
+
+  <!-- ── Install instructions modal (PWA fallback for Safari/Firefox) ── -->
+  <div id="install-modal" class="invite-modal" hidden>
+    <div class="invite-modal-backdrop" id="install-modal-backdrop"></div>
+    <div class="invite-modal-content card">
+      <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;font-size:24px;color:var(--primary);margin-bottom:8px;letter-spacing:-0.01em;text-transform:none;">Install Helios Canopy</h3>
+      <p style="color:var(--on-surface-variant);font-size:14px;margin-bottom:20px;">Install this app to your home screen for quick access and push notifications.</p>
+      <div id="install-instructions" style="color:var(--on-surface);font-size:13px;line-height:1.6;"></div>
+      <button id="install-close-btn" class="auth-btn" type="button" style="margin-top:20px;width:100%;justify-content:center;">Close</button>
     </div>
   </div>
 

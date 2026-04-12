@@ -2,9 +2,12 @@
 import { test, expect } from './fixtures.js';
 
 /**
- * E2E tests for the sidebar auth actions (logout + "Add Device" invitation).
- * The playground calls GET /auth/status on init and shows the buttons when
- * authenticated. When auth is disabled (404) the buttons stay hidden.
+ * E2E tests for the Account card (logout + "Add Device" invitation).
+ *
+ * These controls live inside the Settings view (#view-settings). The
+ * playground calls GET /auth/status on init; when authenticated, the
+ * Account card (#auth-actions) un-hides. When auth is disabled (404)
+ * the card stays hidden.
  */
 
 async function mockAuthenticated(page) {
@@ -33,28 +36,35 @@ async function mockUnauthenticated(page) {
   );
 }
 
-test.describe('Auth actions (logout + Add Device)', () => {
-  test('auth actions are hidden when auth is disabled (404)', async ({ page }) => {
+// Navigate into the Settings view where the Account card lives.
+async function gotoSettings(page) {
+  await page.evaluate(() => { window.location.hash = 'settings'; });
+  await expect(page.locator('#view-settings')).toHaveClass(/active/);
+}
+
+test.describe('Account actions (logout + Add Device)', () => {
+  test('Account card is hidden when auth is disabled (404)', async ({ page }) => {
     await mockAuthDisabled(page);
     await page.goto('/playground/');
+    await gotoSettings(page);
 
-    const actions = page.locator('#auth-actions');
-    await expect(actions).toBeHidden();
+    await expect(page.locator('#auth-actions')).toBeHidden();
     await expect(page.locator('#logout-btn')).toBeHidden();
     await expect(page.locator('#invite-btn')).toBeHidden();
   });
 
-  test('auth actions are hidden when user is not authenticated', async ({ page }) => {
+  test('Account card is hidden when user is not authenticated', async ({ page }) => {
     await mockUnauthenticated(page);
     await page.goto('/playground/');
+    await gotoSettings(page);
 
-    const actions = page.locator('#auth-actions');
-    await expect(actions).toBeHidden();
+    await expect(page.locator('#auth-actions')).toBeHidden();
   });
 
-  test('auth actions are visible when user is authenticated', async ({ page }) => {
+  test('Account card is visible when user is authenticated', async ({ page }) => {
     await mockAuthenticated(page);
     await page.goto('/playground/');
+    await gotoSettings(page);
 
     await expect(page.locator('#auth-actions')).toBeVisible();
     await expect(page.locator('#logout-btn')).toBeVisible();
@@ -66,7 +76,6 @@ test.describe('Auth actions (logout + Add Device)', () => {
   test('clicking logout sends POST /auth/logout and redirects to login', async ({ page }) => {
     await mockAuthenticated(page);
 
-    // Capture the logout request and intercept navigation to login.html
     const logoutPromise = page.waitForRequest(req =>
       req.url().includes('/auth/logout') && req.method() === 'POST'
     );
@@ -77,18 +86,17 @@ test.describe('Auth actions (logout + Add Device)', () => {
         body: JSON.stringify({ ok: true }),
       })
     );
-    // Stub the login page to avoid a real navigation
     await page.route('**/login.html', route =>
       route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>login</body></html>' })
     );
 
     await page.goto('/playground/');
+    await gotoSettings(page);
     await page.locator('#logout-btn').click();
 
     const req = await logoutPromise;
     expect(req.method()).toBe('POST');
 
-    // After logout we navigate to /login.html
     await page.waitForURL(/\/login\.html$/, { timeout: 5000 });
   });
 
@@ -103,6 +111,7 @@ test.describe('Auth actions (logout + Add Device)', () => {
     );
 
     await page.goto('/playground/');
+    await gotoSettings(page);
     await page.locator('#invite-btn').click();
 
     const modal = page.locator('#invite-modal');
@@ -110,7 +119,6 @@ test.describe('Auth actions (logout + Add Device)', () => {
     await expect(page.locator('#invite-code')).toHaveText('123456');
     await expect(page.locator('#invite-timer')).toContainText('Expires in');
 
-    // QR canvas should have non-zero size after rendering
     const qrSize = await page.locator('#invite-qr').evaluate((el) => ({
       w: /** @type {HTMLCanvasElement} */ (el).width,
       h: /** @type {HTMLCanvasElement} */ (el).height,
@@ -130,6 +138,7 @@ test.describe('Auth actions (logout + Add Device)', () => {
     );
 
     await page.goto('/playground/');
+    await gotoSettings(page);
     await page.locator('#invite-btn').click();
     await expect(page.locator('#invite-modal')).toBeVisible();
 
@@ -148,6 +157,7 @@ test.describe('Auth actions (logout + Add Device)', () => {
     );
 
     await page.goto('/playground/');
+    await gotoSettings(page);
     await page.locator('#invite-btn').click();
 
     const err = page.locator('#invite-error');

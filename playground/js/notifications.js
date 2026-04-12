@@ -1,7 +1,7 @@
 /**
  * Client-side push notification management.
  * Handles service worker registration, push subscription,
- * and category preference UI.
+ * category preference UI, and PWA install prompt.
  */
 
 let swRegistration = null;
@@ -17,61 +17,163 @@ const CATEGORIES = [
   { id: 'offline_warning', label: 'Controller offline', desc: 'Offline/online after 15 min' },
 ];
 
+function $(id) {
+  return document.getElementById(id);
+}
+
+// Set only the label span inside a button, preserving the icon span.
+function setBtnLabel(btn, text) {
+  if (!btn) return;
+  const label = btn.querySelector('.auth-btn-label');
+  if (label) {
+    label.textContent = text;
+  } else {
+    // Fallback for buttons without a label span
+    btn.textContent = text;
+  }
+}
+
 // ── Install prompt ──
 
 export function captureInstallPrompt() {
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
-    showInstallButton(true);
   });
 
   window.addEventListener('appinstalled', () => {
     deferredInstallPrompt = null;
-    showInstallButton(false);
+    hideInstallButton();
   });
 
-  // Check if already installed (standalone mode)
+  // Hide install button if already running standalone (installed)
   if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
-    showInstallButton(false);
+    hideInstallButton();
   }
 }
 
-function showInstallButton(show) {
-  const btn = document.getElementById('pwa-install-btn');
-  if (btn) btn.style.display = show ? '' : 'none';
+function hideInstallButton() {
+  const btn = $('pwa-install-btn');
+  if (btn) btn.style.display = 'none';
 }
 
 export async function triggerInstall() {
-  if (!deferredInstallPrompt) return;
-  deferredInstallPrompt.prompt();
-  const result = await deferredInstallPrompt.userChoice;
-  if (result.outcome === 'accepted') {
-    deferredInstallPrompt = null;
-    showInstallButton(false);
+  // Preferred path: use the deferred beforeinstallprompt event (Chrome/Edge/Android)
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    const result = await deferredInstallPrompt.userChoice;
+    if (result.outcome === 'accepted') {
+      deferredInstallPrompt = null;
+      hideInstallButton();
+    }
+    return;
   }
+
+  // Fallback path: show platform-specific instructions
+  showInstallInstructions();
+}
+
+function detectPlatform() {
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  const isAndroid = /Android/.test(ua);
+  const isSafari = /Safari/.test(ua) && !/Chrome|CriOS|FxiOS/.test(ua);
+  const isFirefox = /Firefox|FxiOS/.test(ua);
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  return { isIOS, isAndroid, isSafari, isFirefox, isStandalone };
+}
+
+function showInstallInstructions() {
+  const modal = $('install-modal');
+  const body = $('install-instructions');
+  if (!modal || !body) return;
+
+  const p = detectPlatform();
+  let html;
+  if (p.isStandalone) {
+    html = '<p>The app is already installed and running.</p>';
+  } else if (p.isIOS) {
+    html = '<p>On iPhone / iPad:</p>' +
+           '<ol style="padding-left:20px;margin-top:8px;">' +
+           '<li>Tap the <strong>Share</strong> button in Safari\u2019s toolbar.</li>' +
+           '<li>Scroll and tap <strong>Add to Home Screen</strong>.</li>' +
+           '<li>Tap <strong>Add</strong> to confirm.</li>' +
+           '</ol>';
+  } else if (p.isFirefox && p.isAndroid) {
+    html = '<p>On Firefox for Android:</p>' +
+           '<ol style="padding-left:20px;margin-top:8px;">' +
+           '<li>Tap the <strong>\u22ee</strong> menu.</li>' +
+           '<li>Tap <strong>Install</strong> or <strong>Add to Home Screen</strong>.</li>' +
+           '</ol>';
+  } else if (p.isFirefox) {
+    html = '<p>Firefox on desktop does not support installing web apps.</p>' +
+           '<p style="margin-top:8px;">To install, please open this site in Chrome or Edge.</p>';
+  } else if (p.isAndroid) {
+    html = '<p>On Android (Chrome / Edge):</p>' +
+           '<ol style="padding-left:20px;margin-top:8px;">' +
+           '<li>Tap the <strong>\u22ee</strong> menu.</li>' +
+           '<li>Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>' +
+           '</ol>';
+  } else {
+    html = '<p>On Chrome / Edge desktop:</p>' +
+           '<ol style="padding-left:20px;margin-top:8px;">' +
+           '<li>Click the install icon in the address bar (next to the bookmark star), or</li>' +
+           '<li>Open the <strong>\u22ee</strong> menu and choose <strong>Install Helios Canopy</strong>.</li>' +
+           '</ol>' +
+           '<p style="margin-top:12px;color:var(--on-surface-variant);font-size:12px;">If neither is available, the browser may not consider this site installable yet. Try reloading after a moment.</p>';
+  }
+  body.innerHTML = html;
+  modal.hidden = false;
+}
+
+function closeInstallModal() {
+  const modal = $('install-modal');
+  if (modal) modal.hidden = true;
+}
+
+export function wireInstallModal() {
+  const backdrop = $('install-modal-backdrop');
+  const closeBtn = $('install-close-btn');
+  if (backdrop) backdrop.addEventListener('click', closeInstallModal);
+  if (closeBtn) closeBtn.addEventListener('click', closeInstallModal);
+  document.addEventListener('keydown', (e) => {
+    const modal = $('install-modal');
+    if (e.key === 'Escape' && modal && !modal.hidden) closeInstallModal();
+  });
 }
 
 // ── Service worker + push subscription ──
 
 export async function initNotifications() {
-  if (!('serviceWorker' in navigator)) return;
+  if (!('serviceWorker' in navigator)) {
+    showNotificationsUnavailable('Service workers are not supported by this browser.');
+    return;
+  }
 
   try {
     swRegistration = await navigator.serviceWorker.register('/sw.js');
   } catch (err) {
     console.error('[notifications] SW registration failed:', err);
+    showNotificationsUnavailable('Service worker registration failed.');
+    return;
+  }
+
+  if (!('PushManager' in window)) {
+    showNotificationsUnavailable('Push notifications are not supported by this browser.');
     return;
   }
 
   // Fetch VAPID key
   try {
     const res = await fetch('/api/push/vapid-key');
-    if (!res.ok) return;
+    if (!res.ok) {
+      showNotificationsUnavailable('Server has not configured push notifications.');
+      return;
+    }
     const data = await res.json();
     vapidPublicKey = data.publicKey;
   } catch (err) {
-    // Push not available (e.g. GitHub Pages, local dev)
+    showNotificationsUnavailable('Could not reach the server.');
     return;
   }
 
@@ -86,6 +188,21 @@ export async function initNotifications() {
   }
 
   updateNotificationUI();
+}
+
+function showNotificationsUnavailable(reason) {
+  const toggleBtn = $('notif-toggle-btn');
+  const msg = $('notif-unavailable-msg');
+  if (toggleBtn) {
+    toggleBtn.disabled = true;
+    toggleBtn.classList.add('notif-disabled');
+    toggleBtn.setAttribute('title', reason);
+    setBtnLabel(toggleBtn, 'Notifications unavailable');
+  }
+  if (msg) {
+    msg.textContent = reason;
+    msg.style.display = '';
+  }
 }
 
 async function syncCategories() {
@@ -118,21 +235,22 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
+function encodeKey(key) {
+  return btoa(String.fromCharCode.apply(null, new Uint8Array(key)));
+}
+
 export async function subscribePush(categories) {
   if (!swRegistration || !vapidPublicKey) return false;
 
   try {
-    // Request notification permission
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return false;
 
-    // Create push subscription
     currentSubscription = await swRegistration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
     });
 
-    // Send to server
     const res = await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -140,8 +258,8 @@ export async function subscribePush(categories) {
         subscription: {
           endpoint: currentSubscription.endpoint,
           keys: {
-            p256dh: btoa(String.fromCharCode.apply(null, new Uint8Array(currentSubscription.getKey('p256dh')))),
-            auth: btoa(String.fromCharCode.apply(null, new Uint8Array(currentSubscription.getKey('auth')))),
+            p256dh: encodeKey(currentSubscription.getKey('p256dh')),
+            auth: encodeKey(currentSubscription.getKey('auth')),
           },
         },
         categories: categories,
@@ -172,8 +290,8 @@ export async function updateCategories(categories) {
         subscription: {
           endpoint: currentSubscription.endpoint,
           keys: {
-            p256dh: btoa(String.fromCharCode.apply(null, new Uint8Array(currentSubscription.getKey('p256dh')))),
-            auth: btoa(String.fromCharCode.apply(null, new Uint8Array(currentSubscription.getKey('auth')))),
+            p256dh: encodeKey(currentSubscription.getKey('p256dh')),
+            auth: encodeKey(currentSubscription.getKey('auth')),
           },
         },
         categories: categories,
@@ -214,16 +332,15 @@ export async function unsubscribePush() {
 // ── UI updates ──
 
 function updateNotificationUI() {
-  const section = document.getElementById('notification-settings');
-  if (!section) return;
-
   const subscribed = !!currentSubscription;
-  const toggleBtn = document.getElementById('notif-toggle-btn');
-  const categoriesEl = document.getElementById('notif-categories');
+  const toggleBtn = $('notif-toggle-btn');
+  const categoriesEl = $('notif-categories');
 
   if (toggleBtn) {
-    toggleBtn.textContent = subscribed ? 'Disable' : 'Enable';
+    setBtnLabel(toggleBtn, subscribed ? 'Disable notifications' : 'Enable notifications');
     toggleBtn.classList.toggle('notif-active', subscribed);
+    toggleBtn.setAttribute('title',
+      subscribed ? 'Disable push notifications' : 'Enable push notifications');
   }
   if (categoriesEl) {
     categoriesEl.style.display = subscribed ? '' : 'none';
@@ -232,7 +349,7 @@ function updateNotificationUI() {
 
 function updateCategoryCheckboxes(enabledCategories) {
   for (const cat of CATEGORIES) {
-    const cb = document.getElementById('notif-cat-' + cat.id);
+    const cb = $('notif-cat-' + cat.id);
     if (cb) cb.checked = enabledCategories.indexOf(cat.id) >= 0;
   }
 }
@@ -240,7 +357,7 @@ function updateCategoryCheckboxes(enabledCategories) {
 function getSelectedCategories() {
   const selected = [];
   for (const cat of CATEGORIES) {
-    const cb = document.getElementById('notif-cat-' + cat.id);
+    const cb = $('notif-cat-' + cat.id);
     if (cb && cb.checked) selected.push(cat.id);
   }
   return selected;
