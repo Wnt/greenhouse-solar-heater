@@ -28,6 +28,29 @@ test.describe('Mobile: mode toggle visibility', () => {
     await page.goto('/playground/');
     await expect(page.locator('#connection-status')).toBeVisible();
   });
+
+  test('status bar does not obstruct page content on mobile', async ({ page }) => {
+    await page.setViewportSize(MOBILE);
+    await page.goto('/playground/');
+    // The status bar must be a compact strip, not covering a large portion of the viewport
+    const barBox = await page.locator('#status-bar').boundingBox();
+    expect(barBox).not.toBeNull();
+    // Height should be a thin strip — no more than 60px (padding + one row of controls)
+    expect(barBox.height).toBeLessThanOrEqual(60);
+    // Width must be full viewport width, not sidebar width
+    expect(barBox.width).toBeGreaterThanOrEqual(MOBILE.width - 1);
+  });
+
+  test('page content below status bar is interactable on mobile', async ({ page }) => {
+    await page.setViewportSize(MOBILE);
+    await page.goto('/playground/');
+    // Bottom nav links must be clickable without interception from the status bar
+    await page.locator('.bottom-nav [data-view="components"]').click();
+    await expect(page.locator('#view-components')).toHaveClass(/active/);
+    // Navigate back — confirms the nav is fully functional
+    await page.locator('.bottom-nav [data-view="status"]').click();
+    await expect(page.locator('#view-status')).toHaveClass(/active/);
+  });
 });
 
 test.describe('Mobile: Device view does not overflow horizontally', () => {

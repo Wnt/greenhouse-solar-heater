@@ -203,6 +203,16 @@ a:hover { color: var(--primary-dim); }
 /* Prevent form elements from overflowing their containers */
 select, input, textarea { max-width: 100%; }
 
+/* ── Status Bar (mode toggle + connection, outside sidebar for mobile access) ── */
+.status-bar {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  z-index: 40;
+  padding-bottom: 16px;
+}
+
 /* ── Views ── */
 .view { display: none; }
 .view.active { display: block; }
@@ -1266,17 +1276,6 @@ button.primary.disabled {
 
 .dc-try-anyway:hover {
   color: var(--primary);
-}
-
-/* ── Status Bar (mode toggle + connection, outside sidebar for mobile access) ── */
-
-.status-bar {
-  position: fixed;
-  left: 0;
-  bottom: 0;
-  width: var(--sidebar-width);
-  z-index: 40;
-  padding-bottom: 16px;
 }
 
 /* ── Mode Toggle ── */
