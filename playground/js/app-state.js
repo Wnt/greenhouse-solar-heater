@@ -63,6 +63,8 @@ export const derived = {
   },
 
   get connectionDisplay() {
+    if (store.get('phase') !== 'live') return 'active';
+
     const ws = store.get('wsStatus');
     const mqtt = store.get('mqttStatus');
     const hasData = store.get('hasReceivedData');

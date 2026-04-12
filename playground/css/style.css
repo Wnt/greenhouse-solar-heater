@@ -62,7 +62,7 @@ a:hover { color: var(--primary-dim); }
   background: var(--bg);
   display: flex;
   flex-direction: column;
-  padding: 32px 0;
+  padding: 32px 0 80px;
   z-index: 40;
 }
 
@@ -197,7 +197,11 @@ a:hover { color: var(--primary-dim); }
   margin-left: var(--sidebar-width);
   min-height: 100vh;
   padding: 32px;
+  overflow-x: hidden;
 }
+
+/* Prevent form elements from overflowing their containers */
+select, input, textarea { max-width: 100%; }
 
 /* ── Views ── */
 .view { display: none; }
@@ -1022,8 +1026,26 @@ button.primary:disabled {
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .sidebar { display: none; }
-  .main { margin-left: 0; padding: 24px 16px calc(100px + env(safe-area-inset-bottom, 0px)); }
+  .main { margin-left: 0; padding: 48px 16px calc(100px + env(safe-area-inset-bottom, 0px)); }
   .bottom-nav { display: flex; }
+  .status-bar {
+    position: fixed;
+    top: 0;
+    bottom: auto;
+    left: 0;
+    right: 0;
+    width: auto;
+    z-index: 55;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: rgba(12, 14, 18, 0.9);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+  .status-bar .mode-toggle { padding: 0; }
+  .status-bar .connection-status { padding: 0; }
   .bento-grid { grid-template-columns: 1fr; }
   .bento-span-2, .bento-span-3 { grid-column: span 1; }
   .components-grid { grid-template-columns: repeat(2, 1fr); }
@@ -1246,6 +1268,17 @@ button.primary.disabled {
   color: var(--primary);
 }
 
+/* ── Status Bar (mode toggle + connection, outside sidebar for mobile access) ── */
+
+.status-bar {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  z-index: 40;
+  padding-bottom: 16px;
+}
+
 /* ── Mode Toggle ── */
 
 .mode-toggle {
@@ -1364,6 +1397,8 @@ button.primary.disabled {
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   cursor: pointer;
+  max-width: 60%;
+  min-width: 0;
 }
 
 .device-select:focus { outline: 1px solid var(--secondary); }
