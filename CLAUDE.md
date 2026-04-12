@@ -21,12 +21,12 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `system.yaml` → authoritative specs (heights, valve states, modes, components)
 - `shelly/` → Shelly device scripts and deployment tooling
 - `shelly/lint/` → Shelly platform conformance linter (CLI, standalone package)
-- `playground/` → main web app SPA (single-page app with 5 views: Status, Components, Schematic, Controls, Device). Deep-linkable via URL hash fragments (`#status`, `#schematic`, etc.). Protected by passkey auth in cloud mode.
+- `playground/` → main web app SPA/PWA (single-page app with 5 views: Status, Components, Schematic, Controls, Device). Deep-linkable via URL hash fragments (`#status`, `#schematic`, etc.). Protected by passkey auth in cloud mode. Installable as PWA with push notification support.
 - `playground/login.html` → passkey login page (WebAuthn registration + authentication)
 - `playground/js/login.js` → passkey auth client-side logic
 - `playground/vendor/simplewebauthn-browser.mjs` → vendored @simplewebauthn/browser 13.3.0
 - `playground/vendor/qrcode-generator.mjs` → vendored qrcode-generator 2.0.4 (invitation QR codes)
-- `server/` → Node.js API server (serves playground, WebSocket, MQTT bridge, auth, device config, sensor config, history). All device communication flows through MQTT — no direct HTTP RPC to Shelly devices.
+- `server/` → Node.js API server (serves playground, WebSocket, MQTT bridge, auth, device config, sensor config, history, push notifications). All device communication flows through MQTT — no direct HTTP RPC to Shelly devices.
 - `server/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers, invitation-based registration)
 - `server/lib/logger.js` → structured JSON logger (used by server and auth modules)
 - `server/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
@@ -38,6 +38,13 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `server/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB, publishes config/discovery/apply/relay-command requests, correlates MQTT responses). Also enriches state broadcasts with `manual_override` field from device config.
 - `server/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push). Config includes `mo` field for manual override sessions (`{a: bool, ex: int, ss: bool}`).
 - `server/lib/sensor-config.js` → Sensor configuration store (S3/local persistence, sensor-to-role assignments, MQTT-based apply via controller, MQTT sensor config push)
+- `server/lib/push.js` → Push notification module (VAPID key management, subscription store with per-category opt-in, S3/local persistence, rate-limited sending via `web-push`). S3 key: `push-config.json`.
+- `server/lib/notifications.js` → Notification engine (evaluates MQTT state for alert conditions). Linear temperature extrapolation for pre-emergency warnings (overheat/freeze, 15 min horizon). Scheduled daily reports (evening solar summary, noon heating summary). Called from mqtt-bridge on each state update.
+- `playground/manifest.webmanifest` → PWA manifest (standalone display, Stitch dark theme colors)
+- `playground/sw.js` → Service worker for push notifications (no offline caching)
+- `playground/js/notifications.js` → Client-side push notification management (SW registration, VAPID subscription, category preference UI, install prompt handling)
+- `playground/assets/icon-{192,512}.svg` → PWA icons (SVG, solar+greenhouse motif)
+- `playground/assets/icon-512-maskable.svg` → PWA maskable icon
 - `deploy/` → cloud deployment infrastructure
 - `deploy/terraform/` → UpCloud Managed Kubernetes cluster, Managed Object Storage, Managed PostgreSQL, K8s Secrets/ConfigMaps, Helm releases, CI/CD deployer RBAC (Terraform)
 - `deploy/k8s/` → Kubernetes manifests: app Deployment (app + openvpn + mosquitto sidecar), Service, Ingress, deployer RBAC, kustomization.yaml
@@ -220,6 +227,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 - `tests/mqtt-bridge.test.js` — unit tests for MQTT bridge (state change detection, connection status)
 - `tests/device-config.test.js` — unit tests for device config store (default config, CRUD, persistence)
 - `tests/sensor-config.test.js` — unit tests for sensor config store (validation, compact format, assignments, persistence)
+- `tests/push.test.js` — unit tests for push notification module (VAPID keys, subscriptions, rate limiting, category filtering)
+- `tests/notifications.test.js` — unit tests for notification engine (temperature prediction, overheat/freeze warnings, report scheduling)
 - `tests/device-config-integration.test.js` — integration tests: UI config format → Shelly control-logic interpretation (staged deployment scenarios)
 - `tests/data-source.test.js` — unit tests for data source abstraction (state mapping, connection transitions)
 - `tests/version-check.test.js` — unit tests for /version endpoint hash computation (determinism, change detection)

@@ -9,6 +9,7 @@ import { store, derived } from './app-state.js';
 import { initSubscriptions, setViewLifecycle } from './subscriptions.js';
 import { initNavigation } from './actions/navigation.js';
 import { initAuth } from './auth.js';
+import { captureInstallPrompt, triggerInstall, initNotifications, subscribePush, updateCategories, unsubscribePush, isSubscribed, isPushAvailable, getSelectedCategories } from './notifications.js';
 import { buildSchematic as buildSchematicFromSvg } from './schematic.js';
 // connection.js actions will be used in later phases — import deferred to avoid name collisions
 // import { switchToLive, switchToSimulation, ... } from './actions/connection.js';
@@ -630,6 +631,45 @@ const MODE_INFO = {
   emergency_heating: { label: 'Emergency Heating', desc: 'Space heater active — tank too cold.', icon: 'local_fire_department', iconFill: true },
 };
 
+// ── PWA + Notification UI wiring ──
+
+function wireNotificationUI() {
+  var installBtn = document.getElementById('pwa-install-btn');
+  if (installBtn) {
+    installBtn.addEventListener('click', function () {
+      triggerInstall();
+    });
+  }
+
+  var toggleBtn = document.getElementById('notif-toggle-btn');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', function () {
+      if (isSubscribed()) {
+        unsubscribePush();
+      } else {
+        var cats = getSelectedCategories();
+        subscribePush(cats);
+      }
+    });
+  }
+
+  // Category checkboxes — update server on change
+  var checkboxes = document.querySelectorAll('[id^="notif-cat-"]');
+  checkboxes.forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      if (isSubscribed()) {
+        updateCategories(getSelectedCategories());
+      }
+    });
+  });
+
+  // Hide notification section if push is not available
+  var section = document.getElementById('notification-settings');
+  if (section && !isPushAvailable()) {
+    section.style.display = 'none';
+  }
+}
+
 // ── Init ──
 async function init() {
   try {
@@ -694,6 +734,14 @@ async function init() {
 
   // Initialize auth UI (logout + invite buttons) — noop when auth disabled
   initAuth();
+
+  // PWA install prompt capture (must be early, before beforeinstallprompt fires)
+  captureInstallPrompt();
+
+  // Initialize push notifications (service worker, VAPID key, existing subscription)
+  initNotifications().then(function () {
+    wireNotificationUI();
+  });
 
   // Start polling for JS source updates
   startVersionCheck();

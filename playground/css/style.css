@@ -1626,6 +1626,88 @@ button.scanning { opacity: 0.7; cursor: wait; }
   .sensor-select { min-width: unset; width: 100%; }
 }
 
+/* ── PWA install + notification settings (sidebar) ── */
+.pwa-actions {
+  padding: 8px 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notif-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notif-categories {
+  padding: 4px 0 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.notif-cat-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  padding: 3px 0;
+}
+
+.notif-cat-label input[type="checkbox"] {
+  accent-color: var(--secondary);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.notif-cat-label span {
+  user-select: none;
+}
+
+#notif-toggle-btn.notif-active {
+  color: var(--secondary);
+  background: rgba(67, 174, 164, 0.08);
+  border-color: rgba(67, 174, 164, 0.35);
+}
+
+#notif-toggle-btn.notif-active:hover {
+  background: rgba(67, 174, 164, 0.14);
+  border-color: var(--secondary);
+}
+
+@media (max-width: 768px) {
+  .pwa-actions {
+    position: fixed;
+    bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+    right: 16px;
+    z-index: 45;
+    padding: 0;
+    gap: 8px;
+  }
+  .pwa-actions .auth-btn {
+    background: rgba(37, 44, 57, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 8px 10px;
+    font-size: 0;
+    letter-spacing: 0;
+  }
+  .pwa-actions .auth-btn .material-symbols-outlined { font-size: 20px; }
+  .notif-categories {
+    background: rgba(37, 44, 57, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 10px;
+    padding: 10px;
+    border: 1px solid var(--outline-variant);
+  }
+  .notif-cat-label { font-size: 12px; }
+}
+
 /* ── Auth actions (sidebar + mobile) ── */
 .auth-actions {
   padding: 12px 24px 0;

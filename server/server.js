@@ -17,6 +17,7 @@ const deviceConfig = require('./lib/device-config');
 const otelApi = require('@opentelemetry/api');
 
 const sensorConfig = require('./lib/sensor-config');
+const push = require('./lib/push');
 
 const log = createLogger('server');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
@@ -249,6 +250,65 @@ function handleSensorDiscovery(req, res, body) {
   });
 }
 
+// ── Push subscription handlers ──
+
+function handlePushSubscribe(req, res, body) {
+  var parsed;
+  try { parsed = JSON.parse(body); } catch (e) {
+    jsonResponse(res, 400, { error: 'Invalid JSON' });
+    return;
+  }
+  if (!parsed.subscription || !parsed.subscription.endpoint || !parsed.subscription.keys) {
+    jsonResponse(res, 400, { error: 'Missing subscription object (endpoint + keys)' });
+    return;
+  }
+  var categories = Array.isArray(parsed.categories) ? parsed.categories : [];
+  push.addSubscription(parsed.subscription, categories, function (err) {
+    if (err) {
+      jsonResponse(res, 500, { error: 'Failed to save subscription' });
+      return;
+    }
+    jsonResponse(res, 200, { ok: true });
+  });
+}
+
+function handlePushUnsubscribe(req, res, body) {
+  var parsed;
+  try { parsed = JSON.parse(body); } catch (e) {
+    jsonResponse(res, 400, { error: 'Invalid JSON' });
+    return;
+  }
+  if (!parsed.endpoint) {
+    jsonResponse(res, 400, { error: 'Missing endpoint' });
+    return;
+  }
+  push.removeSubscription(parsed.endpoint, function (err) {
+    if (err) {
+      jsonResponse(res, 500, { error: 'Failed to remove subscription' });
+      return;
+    }
+    jsonResponse(res, 200, { ok: true });
+  });
+}
+
+function handlePushGetSubscription(req, res, body) {
+  var parsed;
+  try { parsed = JSON.parse(body); } catch (e) {
+    jsonResponse(res, 400, { error: 'Invalid JSON' });
+    return;
+  }
+  if (!parsed.endpoint) {
+    jsonResponse(res, 400, { error: 'Missing endpoint' });
+    return;
+  }
+  var sub = push.getSubscription(parsed.endpoint);
+  if (!sub) {
+    jsonResponse(res, 200, { subscribed: false, categories: [] });
+    return;
+  }
+  jsonResponse(res, 200, { subscribed: true, categories: sub.categories });
+}
+
 // ── HTTP route detection (for OTel span naming) ──
 
 function resolveRoute(urlPath, method) {
@@ -261,6 +321,7 @@ function resolveRoute(urlPath, method) {
   if (urlPath === '/api/sensor-discovery') return '/api/sensor-discovery';
   if (urlPath === '/api/history') return '/api/history';
   if (urlPath === '/api/events') return '/api/events';
+  if (urlPath.startsWith('/api/push/')) return '/api/push/*';
   if (urlPath === '/ws') return '/ws';
   return urlPath;
 }
@@ -301,6 +362,17 @@ var server = http.createServer(function (req, res) {
   // Login page and its assets — accessible without auth
   if (urlPath === '/login.html' || urlPath === '/js/login.js' || urlPath === '/vendor/simplewebauthn-browser.mjs' || urlPath === '/vendor/qrcode-generator.mjs') {
     serveStatic(req, res);
+    return;
+  }
+
+  // Push VAPID public key — unauthenticated (needed to create PushSubscription)
+  if (urlPath === '/api/push/vapid-key' && req.method === 'GET') {
+    var vapidKey = push.getPublicKey();
+    if (!vapidKey) {
+      jsonResponse(res, 503, { error: 'Push not configured' });
+    } else {
+      jsonResponse(res, 200, { publicKey: vapidKey });
+    }
     return;
   }
 
@@ -364,6 +436,18 @@ var server = http.createServer(function (req, res) {
     } else {
       jsonResponse(res, 405, { error: 'Method not allowed' });
     }
+  } else if (urlPath === '/api/push/subscribe' && req.method === 'POST') {
+    readBody(req, function (body) {
+      handlePushSubscribe(req, res, body);
+    });
+  } else if (urlPath === '/api/push/unsubscribe' && req.method === 'POST') {
+    readBody(req, function (body) {
+      handlePushUnsubscribe(req, res, body);
+    });
+  } else if (urlPath === '/api/push/subscription' && req.method === 'POST') {
+    readBody(req, function (body) {
+      handlePushGetSubscription(req, res, body);
+    });
   } else if (urlPath === '/api/history') {
     handleHistoryApi(req, res);
   } else if (urlPath === '/api/events') {
@@ -626,6 +710,7 @@ function startMqttBridge() {
     wsServer: ws,
     db: db,
     deviceConfig: deviceConfig,
+    push: push,
   });
 
   log.info('MQTT bridge started', { host: MQTT_HOST });
@@ -637,6 +722,8 @@ function startServer() {
     if (err) log.error('device config load failed', { error: err.message });
     sensorConfig.load(function (err) {
       if (err) log.error('sensor config load failed', { error: err.message });
+      push.init(function (err) {
+        if (err) log.error('push init failed', { error: err.message });
 
       initServices(function () {
         server.listen(PORT, '0.0.0.0', function () {
@@ -644,6 +731,7 @@ function startServer() {
           log.info('server started', { port: PORT, auth: AUTH_ENABLED, mqtt: !!MQTT_HOST, db: !!db });
           startMqttBridge();
         });
+      });
       });
     });
   });

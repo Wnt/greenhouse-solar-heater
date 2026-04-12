@@ -3,6 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0c0e12">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icon-192.svg">
   <title>Helios Canopy — Thermal Simulation</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -60,6 +65,36 @@
     <div class="controls-indicator" id="controls-indicator">
       <span class="material-symbols-outlined" style="font-size:14px;">shield</span>
       <span>Controls disabled</span>
+    </div>
+    <div class="pwa-actions" id="pwa-actions">
+      <button id="pwa-install-btn" class="auth-btn" type="button" style="display:none;">
+        <span class="material-symbols-outlined">install_mobile</span>
+        Install App
+      </button>
+      <div id="notification-settings" class="notif-settings">
+        <button id="notif-toggle-btn" class="auth-btn" type="button">
+          <span class="material-symbols-outlined">notifications</span>
+          Enable
+        </button>
+        <div id="notif-categories" class="notif-categories" style="display:none;">
+          <label class="notif-cat-label">
+            <input type="checkbox" id="notif-cat-evening_report" checked>
+            <span>Evening report</span>
+          </label>
+          <label class="notif-cat-label">
+            <input type="checkbox" id="notif-cat-noon_report" checked>
+            <span>Noon report</span>
+          </label>
+          <label class="notif-cat-label">
+            <input type="checkbox" id="notif-cat-overheat_warning" checked>
+            <span>Overheat warning</span>
+          </label>
+          <label class="notif-cat-label">
+            <input type="checkbox" id="notif-cat-freeze_warning" checked>
+            <span>Freeze warning</span>
+          </label>
+        </div>
+      </div>
     </div>
     <div class="auth-actions" id="auth-actions" hidden>
       <button id="invite-btn" class="auth-btn auth-btn-primary" type="button">

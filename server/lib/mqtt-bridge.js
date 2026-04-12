@@ -9,10 +9,13 @@ var log = createLogger('mqtt-bridge');
 var { trace } = require('@opentelemetry/api');
 var tracer = trace.getTracer('mqtt-bridge');
 
+var notifications = require('./notifications');
+
 var mqttClient = null;
 var wsServer = null;
 var db = null;
 var deviceConfigRef = null;
+var pushRef = null;
 var previousState = null;
 var connectionStatus = 'disconnected';
 
@@ -21,6 +24,9 @@ function start(options) {
   db = options.db || null;
   wsServer = options.wsServer || null;
   deviceConfigRef = options.deviceConfig || null;
+  pushRef = options.push || null;
+
+  notifications.init({ push: pushRef, deviceConfig: deviceConfigRef });
 
   var host = options.mqttHost || process.env.MQTT_HOST || '127.0.0.1';
   var port = options.mqttPort || process.env.MQTT_PORT || 1883;
@@ -105,6 +111,13 @@ function handleStateMessage(payload) {
   }
 
   previousState = payload;
+
+  // Evaluate notification conditions (pre-emergency alerts, scheduled reports)
+  if (pushRef) {
+    try { notifications.evaluate(payload); } catch (e) {
+      log.error('notification evaluate failed', { error: e.message });
+    }
+  }
 
   // Broadcast to WebSocket clients
   broadcastState(payload);
@@ -331,8 +344,10 @@ module.exports = {
     wsServer = null;
     db = null;
     deviceConfigRef = null;
+    pushRef = null;
     previousState = null;
     connectionStatus = 'disconnected';
+    notifications._reset();
     // Clear any pending requests
     for (var id in pendingRequests) {
       clearTimeout(pendingRequests[id].timer);
