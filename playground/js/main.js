@@ -684,6 +684,7 @@ async function init() {
   })();
   setupInspector();
   setupLogsScrollLoader();
+  setupCopyLogsButton();
   updateDisplay(model.getState(), { mode: 'idle', valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false }, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
 
   // Initialize live/simulation mode toggle
@@ -978,6 +979,151 @@ function setupLogsScrollLoader() {
   });
 }
 
+// ── Copy System Logs ──
+// Builds a plain-text diagnostic snapshot of the system and copies it to the
+// clipboard. Content varies by mode:
+//   Simulation — all sim parameters + all transition log entries (up to 24h sim time)
+//   Live       — sensor readings at 20-min resolution for the past 24h + all transition log entries
+function setupCopyLogsButton() {
+  const btn = document.getElementById('copy-logs-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const text = buildLogsClipboardText();
+    navigator.clipboard.writeText(text).then(() => {
+      btn.classList.add('copied');
+      const icon = btn.querySelector('.material-symbols-outlined');
+      if (icon) icon.textContent = 'check';
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        if (icon) icon.textContent = 'content_copy';
+      }, 2000);
+    });
+  });
+}
+
+function buildLogsClipboardText() {
+  const isLive = store.get('phase') === 'live';
+  const lines = [];
+
+  // Header
+  lines.push('=== Greenhouse Solar Heater — System Logs ===');
+  lines.push('Mode: ' + (isLive ? 'Live' : 'Simulation'));
+  lines.push('Exported: ' + new Date().toISOString());
+  lines.push('');
+
+  if (isLive) {
+    // Live: include 24h sensor readings at 20-min resolution from timeSeriesStore
+    lines.push('--- Sensor Readings (24h, 20-min resolution) ---');
+    lines.push('Time                  Collector  Tank Top  Tank Btm  Greenhouse  Outdoor  Mode');
+    const readings = downsampleHistory(1200); // 20 minutes = 1200 seconds
+    for (let i = 0; i < readings.length; i++) {
+      const r = readings[i];
+      const ts = new Date(r.time * 1000).toISOString().replace('T', ' ').slice(0, 19);
+      lines.push(
+        ts + '  ' +
+        fmtTempCol(r.t_collector) + '  ' +
+        fmtTempCol(r.t_tank_top) + '  ' +
+        fmtTempCol(r.t_tank_bottom) + '  ' +
+        fmtTempCol(r.t_greenhouse) + '  ' +
+        fmtTempCol(r.t_outdoor) + '  ' +
+        (r.mode || 'idle')
+      );
+    }
+    if (readings.length === 0) lines.push('(no history data available)');
+  } else {
+    // Simulation: include all parameters
+    lines.push('--- Simulation Parameters ---');
+    lines.push('Outdoor Temp:       ' + params.t_outdoor + ' °C');
+    lines.push('Solar Irradiance:   ' + params.irradiance + ' W/m²');
+    lines.push('Tank Top:           ' + params.t_tank_top + ' °C');
+    lines.push('Tank Bottom:        ' + params.t_tank_bottom + ' °C');
+    lines.push('Greenhouse:         ' + params.t_greenhouse + ' °C');
+    lines.push('GH Thermal Mass:    ' + params.gh_thermal_mass + ' J/K');
+    lines.push('GH Heat Loss:       ' + params.gh_heat_loss + ' W/K');
+    lines.push('Sim Speed:          ' + params.sim_speed + '×');
+    lines.push('Day/Night Cycle:    ' + (params.day_night_cycle ? 'on' : 'off'));
+    if (model) {
+      lines.push('Sim Time:           ' + formatTimeOfDay(model.state.simTime) +
+        ' (' + Math.floor(model.state.simTime / 3600) + 'h ' +
+        Math.floor((model.state.simTime % 3600) / 60) + 'm elapsed)');
+    }
+    lines.push('');
+
+    // Simulation: include sensor history at 20-min sim-time resolution
+    lines.push('--- Sensor History (20-min resolution) ---');
+    lines.push('SimTime   Collector  Tank Top  Tank Btm  Greenhouse  Outdoor  Mode');
+    const readings = downsampleHistory(1200);
+    for (let i = 0; i < readings.length; i++) {
+      const r = readings[i];
+      lines.push(
+        formatTimeOfDay(r.time) + '     ' +
+        fmtTempCol(r.t_collector) + '  ' +
+        fmtTempCol(r.t_tank_top) + '  ' +
+        fmtTempCol(r.t_tank_bottom) + '  ' +
+        fmtTempCol(r.t_greenhouse) + '  ' +
+        fmtTempCol(r.t_outdoor) + '  ' +
+        (r.mode || 'idle')
+      );
+    }
+    if (readings.length === 0) lines.push('(no history data available)');
+  }
+
+  lines.push('');
+
+  // Transition log — all entries
+  lines.push('--- Transition Log ---');
+  if (transitionLog.length === 0) {
+    lines.push('(no transitions recorded)');
+  } else {
+    for (let i = 0; i < transitionLog.length; i++) {
+      const t = transitionLog[i];
+      const mi = MODE_INFO[t.mode] || MODE_INFO.idle;
+      const timeLabel = t.kind === 'live'
+        ? new Date(t.ts).toISOString().replace('T', ' ').slice(0, 19)
+        : formatTimeOfDay(t.time);
+      lines.push(timeLabel + '  ' + mi.label + '  ' + (t.text || ''));
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// Format a temperature value as a right-aligned string for the clipboard table.
+function fmtTempCol(v) {
+  if (typeof v !== 'number' || Number.isNaN(v)) return '    —   ';
+  return String(v.toFixed(1)).padStart(8);
+}
+
+// Down-sample timeSeriesStore to a given interval (in seconds).
+// Returns an array of { time, t_collector, t_tank_top, t_tank_bottom, t_greenhouse, t_outdoor, mode }.
+function downsampleHistory(intervalSec) {
+  const out = [];
+  const store_ = timeSeriesStore;
+  if (store_.times.length === 0) return out;
+
+  // Walk through the store, picking one sample per interval bucket
+  let nextBucket = store_.times[0];
+  for (let i = 0; i < store_.times.length; i++) {
+    if (store_.times[i] >= nextBucket) {
+      const v = store_.values[i];
+      out.push({
+        time: store_.times[i],
+        t_collector: v.t_collector,
+        t_tank_top: v.t_tank_top,
+        t_tank_bottom: v.t_tank_bottom,
+        t_greenhouse: v.t_greenhouse,
+        t_outdoor: v.t_outdoor,
+        mode: store_.modes[i],
+      });
+      nextBucket = store_.times[i] + intervalSec;
+    }
+  }
+  return out;
+}
+
+// Expose for testing
+window.__buildLogsClipboardText = function () { return buildLogsClipboardText(); };
+
 function setupTimeRangePills() {
   document.getElementById('time-range-pills').addEventListener('click', (e) => {
     const btn = e.target.closest('button');
@@ -1173,6 +1319,16 @@ function simLoop(timestamp) {
 
     if (result.transition) {
       transitionLog.unshift({ kind: 'sim', time: model.state.simTime, text: result.transition, mode: result.mode });
+      // Prune sim entries older than 24h of simulated time
+      const SIM_LOG_HORIZON = 86400; // 24h in seconds
+      while (transitionLog.length > 0) {
+        const oldest = transitionLog[transitionLog.length - 1];
+        if (oldest.kind === 'sim' && (model.state.simTime - oldest.time) > SIM_LOG_HORIZON) {
+          transitionLog.pop();
+        } else {
+          break;
+        }
+      }
     }
 
     model.step(DT, env, result.actuators, result.mode);

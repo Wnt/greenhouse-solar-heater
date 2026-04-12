@@ -688,6 +688,26 @@ select, input, textarea { max-width: 100%; }
 }
 
 /* ── System Logs ── */
+.copy-logs-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.copy-logs-btn:hover { background: var(--surface-container-highest); color: var(--on-surface); }
+.copy-logs-btn.copied {
+  background: var(--secondary);
+  color: var(--surface-container-lowest);
+}
+
 .logs-list {
   display: flex;
   flex-direction: column;
