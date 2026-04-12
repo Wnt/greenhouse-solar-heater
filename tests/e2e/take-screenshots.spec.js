@@ -90,6 +90,10 @@ test.describe('Generate Screenshots (24h simulation)', () => {
     await page.waitForFunction(() => document.fonts.ready.then(() => true), { timeout: 15000 });
     await page.waitForTimeout(500);
 
+    // Switch to simulation mode (localhost starts in live mode where Controls view is unavailable)
+    await page.locator('#mode-toggle-switch').click();
+    await page.waitForTimeout(200);
+
     // ── Run 24h simulation at desktop size ──
     await page.setViewportSize(DESKTOP);
     await goToView(page, 'controls');
