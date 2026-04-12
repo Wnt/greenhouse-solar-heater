@@ -347,13 +347,22 @@ describe('priority and preemption', () => {
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
 
-  it('overheat triggers ACTIVE_DRAIN when tank_top > 85', () => {
+  it('overheat triggers ACTIVE_DRAIN when collector > 95 during solar charging', () => {
     const result = evaluate(makeState({
-      temps: { collector: 90, tank_top: 86, tank_bottom: 70, greenhouse: 25, outdoor: 30 },
+      temps: { collector: 96, tank_top: 86, tank_bottom: 70, greenhouse: 25, outdoor: 30 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 1000
     }), null);
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+
+  it('hot collector forces solar charging to circulate and cool', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 96, tank_top: 86, tank_bottom: 70, greenhouse: 25, outdoor: 30 },
+      currentMode: MODES.IDLE,
+      modeEnteredAt: 0, now: 1000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
 });
 
@@ -581,13 +590,22 @@ describe('independent emergency heating overlay', () => {
 });
 
 describe('edge cases', () => {
-  it('overheat during active charging triggers drain', () => {
+  it('overheat during active charging triggers drain when collector > 95', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 96, tank_top: 86, tank_bottom: 70, greenhouse: 25, outdoor: 30 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 1000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+  });
+
+  it('collector at 90 during solar charging does not drain (below 95 threshold)', () => {
     const result = evaluate(makeState({
       temps: { collector: 90, tank_top: 86, tank_bottom: 70, greenhouse: 25, outdoor: 30 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 1000
     }), null);
-    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
 
   it('boot during freeze: first eval triggers drain if not drained', () => {
@@ -907,7 +925,8 @@ describe('hard safety overrides bypass device config', () => {
 
   it('overheat drain with ce=false returns ACTIVE_DRAIN, not suppressed, safetyOverride=true', () => {
     const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 90, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 96, tank_top: 90, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING, modeEnteredAt: 0, now: 1000,
     }), null, disabledConfig);
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
     assert.strictEqual(result.suppressed, false);
@@ -916,7 +935,8 @@ describe('hard safety overrides bypass device config', () => {
 
   it('overheat drain with am=["I"] (excluding AD) still returns ACTIVE_DRAIN', () => {
     const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 90, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 96, tank_top: 90, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING, modeEnteredAt: 0, now: 1000,
     }), null, { ...allEnabled, am: ['I'] });
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
     assert.strictEqual(result.safetyOverride, true);
@@ -968,7 +988,8 @@ describe('manual override safety interaction', () => {
 
   it('evaluate() still returns safetyOverride=true during overheat even with mo set', () => {
     const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 90, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 96, tank_top: 90, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING, modeEnteredAt: 0, now: 1000,
     }), null, overrideConfig);
     assert.strictEqual(result.safetyOverride, true);
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);

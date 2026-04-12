@@ -119,7 +119,10 @@ export class ControlStateMachine {
       return `${from} → emergency_heating | T_gh=${s.t_greenhouse.toFixed(1)}°C < 9°C, T_top=${s.t_tank_top.toFixed(1)}°C < T_gh+5°C (no useful tank) | ${sensorStr}`;
     }
     if (to === 'active_drain') {
-      return `${from} → active_drain | T_out=${s.t_outdoor.toFixed(1)}°C < 2°C | ${sensorStr}`;
+      if (s.t_collector > 95) {
+        return `${from} → active_drain | T_coll=${s.t_collector.toFixed(1)}°C > 95°C (overheat) | ${sensorStr}`;
+      }
+      return `${from} → active_drain | T_out=${s.t_outdoor.toFixed(1)}°C < 2°C (freeze) | ${sensorStr}`;
     }
     if (from === 'active_drain' && to === 'idle') {
       return `active_drain → idle | drain complete | ${sensorStr}`;

@@ -92,7 +92,7 @@ var DEFAULT_CONFIG = {
   emergencyEnterTemp: 9,
   emergencyExitTemp: 12,
   freezeDrainTemp: 2,
-  overheatDrainTemp: 85,
+  overheatDrainTemp: 95,
   overheatResumeTemp: 75,
   minModeDuration: 300,
   minRunTimeAfterRefill: 600,
@@ -230,10 +230,12 @@ function evaluate(state, config, deviceConfig) {
     return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true);
   }
 
-  // Overheat protection — preempts immediately
+  // Collector overheat protection — drain only as a last resort.
+  // If already circulating (solar charging) and collector still exceeds the
+  // threshold, circulation can't keep up — drain to prevent boiling.
   // safetyOverride=true: MUST NOT be suppressed by device config
-  if (t.tank_top !== null && t.tank_top > cfg.overheatDrainTemp &&
-      !state.collectorsDrained) {
+  if (t.collector !== null && t.collector > cfg.overheatDrainTemp &&
+      state.currentMode === MODES.SOLAR_CHARGING && !state.collectorsDrained) {
     return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true);
   }
 
@@ -305,6 +307,14 @@ function evaluate(state, config, deviceConfig) {
                t.tank_top > t.greenhouse + cfg.greenhouseMinTankDelta) {
       pumpMode = MODES.GREENHOUSE_HEATING;
     }
+  }
+
+  // ── Collector overheat: force solar charging to circulate and cool ──
+  // Overrides greenhouse heating or idle when collector is dangerously hot.
+  // If circulation can't keep up, the preemption above will trigger drain.
+  if (t.collector !== null && t.collector > cfg.overheatDrainTemp &&
+      !state.collectorsDrained && pumpMode !== MODES.SOLAR_CHARGING) {
+    pumpMode = MODES.SOLAR_CHARGING;
   }
 
   // ── Forced mode override (for staged deployment / manual testing) ──
