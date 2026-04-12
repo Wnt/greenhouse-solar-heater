@@ -21,7 +21,7 @@ const DEFAULTS = {
   collector_plate_mass_cp: 20000, // J/K (absorber plate thermal capacity)
   tank_volume: 0.300,           // m³ (300L)
   tank_UA: 3.0,                 // W/K tank heat loss (insulated)
-  greenhouse_UA: 25.0,          // W/K greenhouse envelope loss
+  greenhouse_UA: 100.0,         // W/K greenhouse envelope loss
   greenhouse_thermal_mass: 250000, // J/K (air + soil + structure)
   greenhouse_glazing_area: 4.0,  // m² effective south-facing glazing
   greenhouse_solar_transmittance: 0.15, // fraction of solar radiation transmitted
