@@ -33,6 +33,17 @@ function hideMessages() {
   elInfo.style.display = 'none';
 }
 
+// Update only the label span inside a button, preserving the icon span.
+// textContent on the button itself would wipe out the icon.
+function setBtnLabel(btn, text) {
+  var label = btn.querySelector('.login-btn-label');
+  if (label) {
+    label.textContent = text;
+  } else {
+    btn.textContent = text;
+  }
+}
+
 async function checkStatus() {
   try {
     var res = await fetch('/auth/status');
@@ -68,7 +79,7 @@ async function checkStatus() {
 async function doLogin() {
   hideMessages();
   elLoginBtn.disabled = true;
-  elLoginBtn.textContent = 'Authenticating...';
+  setBtnLabel(elLoginBtn, 'Authenticating\u2026');
 
   try {
     var optionsRes = await fetch('/auth/login/options', { method: 'POST' });
@@ -101,14 +112,14 @@ async function doLogin() {
     }
   } finally {
     elLoginBtn.disabled = false;
-    elLoginBtn.textContent = 'Sign in with Passkey';
+    setBtnLabel(elLoginBtn, 'Sign in with passkey');
   }
 }
 
 async function doRegister() {
   hideMessages();
   elRegisterBtn.disabled = true;
-  elRegisterBtn.textContent = 'Registering...';
+  setBtnLabel(elRegisterBtn, 'Registering\u2026');
 
   try {
     var optionsRes = await fetch('/auth/register/options', { method: 'POST' });
@@ -142,7 +153,7 @@ async function doRegister() {
     }
   } finally {
     elRegisterBtn.disabled = false;
-    elRegisterBtn.textContent = 'Register Passkey';
+    setBtnLabel(elRegisterBtn, 'Register passkey');
   }
 }
 
@@ -168,7 +179,7 @@ async function doInviteRegister() {
   }
 
   elInviteRegisterBtn.disabled = true;
-  elInviteRegisterBtn.textContent = 'Validating...';
+  setBtnLabel(elInviteRegisterBtn, 'Validating\u2026');
 
   try {
     // Step 1: Validate the code
@@ -187,7 +198,7 @@ async function doInviteRegister() {
       return;
     }
 
-    elInviteRegisterBtn.textContent = 'Registering...';
+    setBtnLabel(elInviteRegisterBtn, 'Registering\u2026');
 
     // Step 2: Get registration options with invitation code
     var optionsRes = await fetch('/auth/register/options', {
@@ -232,7 +243,7 @@ async function doInviteRegister() {
     }
   } finally {
     elInviteRegisterBtn.disabled = false;
-    elInviteRegisterBtn.textContent = 'Register with Code';
+    setBtnLabel(elInviteRegisterBtn, 'Register with code');
   }
 }
 

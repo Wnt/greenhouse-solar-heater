@@ -365,6 +365,19 @@ var server = http.createServer(function (req, res) {
     return;
   }
 
+  // PWA static assets — accessible without auth.
+  // Chrome fetches the manifest and icons with `credentials: 'omit'` by
+  // default, so they must be reachable without a session cookie or the
+  // install flow breaks (Chrome receives the 302→login.html and tries to
+  // parse the HTML as JSON, failing installability). These files contain
+  // no sensitive data — just brand metadata, icons, and the service
+  // worker script — so exempting them from auth is standard practice
+  // for auth-gated PWAs (Slack, Discord, Notion, etc.).
+  if (urlPath === '/sw.js' || urlPath === '/manifest.webmanifest' || urlPath.startsWith('/assets/icon-')) {
+    serveStatic(req, res);
+    return;
+  }
+
   // Push VAPID public key — unauthenticated (needed to create PushSubscription)
   if (urlPath === '/api/push/vapid-key' && req.method === 'GET') {
     var vapidKey = push.getPublicKey();
