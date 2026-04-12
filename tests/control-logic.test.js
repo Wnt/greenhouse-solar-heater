@@ -372,7 +372,7 @@ describe('speculative refill', () => {
 
   it('does not refill when outdoor too cold', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 4 },
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
       collectorsDrained: true,
       lastRefillAttempt: 0,
       now: 2000

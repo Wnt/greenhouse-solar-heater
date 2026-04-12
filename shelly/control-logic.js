@@ -295,7 +295,7 @@ function evaluate(state, config, deviceConfig) {
     } else {
       // Speculative refill — collectors drained, conditions suggest daylight
       if (t.collector > t.tank_bottom + cfg.solarEnterDelta &&
-          t.outdoor !== null && t.outdoor > cfg.freezeDrainTemp + 3) {
+          t.outdoor !== null && t.outdoor >= cfg.freezeDrainTemp) {
         if (state.now - state.lastRefillAttempt > cfg.refillRetryCooldown) {
           flags.collectorsDrained = false;
           flags.lastRefillAttempt = state.now;
