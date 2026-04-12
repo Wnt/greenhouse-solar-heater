@@ -19,8 +19,8 @@ window.__triggerVersionCheck = triggerVersionCheck;
 // Detect deployment context: GitHub Pages = simulation only, deployed app = live capable
 const isGitHubPages = location.hostname.endsWith('.github.io');
 const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-const forceSimulation = new URLSearchParams(location.search).get('mode') === 'sim';
-const isLiveCapable = !isGitHubPages && !forceSimulation;
+const isLiveCapable = !isGitHubPages;
+const urlModePreference = new URLSearchParams(location.search).get('mode'); // 'sim' | 'live' | null
 store.set('isLiveCapable', isLiveCapable);
 
 // activeSource is eliminated — use store.get('phase') instead
@@ -185,8 +185,12 @@ function initModeToggle() {
   }
 
   toggle.classList.add('visible');
-  // Default to live mode on deployed app
-  switchToLive();
+  // Respect URL mode preference, default to live on deployed app
+  if (urlModePreference === 'sim') {
+    switchToSimulation();
+  } else {
+    switchToLive();
+  }
 
   sw.addEventListener('click', function () {
     if (store.get('phase') === 'live') {
@@ -195,6 +199,18 @@ function initModeToggle() {
       switchToLive();
     }
   });
+}
+
+function persistModeInUrl(mode) {
+  var params = new URLSearchParams(location.search);
+  if (mode === 'live') {
+    params.delete('mode');
+  } else {
+    params.set('mode', mode);
+  }
+  var qs = params.toString();
+  var url = location.pathname + (qs ? '?' + qs : '') + location.hash;
+  history.replaceState(null, '', url);
 }
 
 function updateModeToggleUI(isLive) {
@@ -254,6 +270,7 @@ function stopStalenessTimer() {
 function switchToLive() {
   store.set('phase', 'live');
   updateModeToggleUI(true);
+  persistModeInUrl('live');
   ensureLiveSource();
   running = false;
   fetchLiveHistory(graphRange);
@@ -298,6 +315,7 @@ function clearLiveDisplay() {
 function switchToSimulation() {
   store.set('phase', 'simulation');
   updateModeToggleUI(false);
+  persistModeInUrl('sim');
   if (liveSource) liveSource.stop();
   updateConnectionUI('disconnected');
   liveHistoryData = null;
