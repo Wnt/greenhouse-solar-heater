@@ -145,4 +145,73 @@ describe('push', () => {
       ]);
     });
   });
+
+  describe('buildMockPayload', () => {
+    it('returns a payload for each valid category', () => {
+      push.VALID_CATEGORIES.forEach((cat) => {
+        const payload = push.buildMockPayload(cat);
+        assert.ok(payload, `expected payload for ${cat}`);
+        assert.match(payload.title, /\[Test\]/);
+        assert.ok(payload.body && payload.body.length > 0);
+        assert.ok(payload.tag && payload.tag.indexOf('test-') === 0);
+        assert.strictEqual(payload.url, '/#status');
+      });
+    });
+
+    it('returns null for unknown categories', () => {
+      assert.strictEqual(push.buildMockPayload('bogus'), null);
+      assert.strictEqual(push.buildMockPayload(''), null);
+      assert.strictEqual(push.buildMockPayload(null), null);
+    });
+
+    it('each mock body mentions plausible data for its category', () => {
+      assert.match(push.buildMockPayload('evening_report').body, /kWh|Wh/);
+      assert.match(push.buildMockPayload('noon_report').body, /heating/);
+      assert.match(push.buildMockPayload('overheat_warning').body, /\u00b0C/);
+      assert.match(push.buildMockPayload('freeze_warning').body, /\u00b0C/);
+      assert.match(push.buildMockPayload('offline_warning').body, /offline|no data|minutes/i);
+    });
+  });
+
+  describe('sendTestToEndpoint', () => {
+    beforeEach((t, done) => {
+      push.init(done);
+    });
+
+    it('returns "Subscription not found" when endpoint is unknown', (t, done) => {
+      push.sendTestToEndpoint('https://push.example.com/unknown', { title: 'x', body: 'y' }, (err) => {
+        assert.ok(err);
+        assert.strictEqual(err.message, 'Subscription not found');
+        done();
+      });
+    });
+
+    it('returns "No subscriptions" when push data is empty', (t, done) => {
+      push._setPushData(null);
+      push.sendTestToEndpoint('https://push.example.com/any', { title: 'x' }, (err) => {
+        assert.ok(err);
+        assert.strictEqual(err.message, 'No subscriptions');
+        done();
+      });
+    });
+
+    it('does not consume the rate limit slot', (t, done) => {
+      // Even if we "sent" a test (which will fail with an unreachable mock
+      // endpoint), the rate limit map must remain empty — tests should be
+      // runnable back-to-back.
+      const sub = {
+        endpoint: 'https://push.example.com/rl',
+        keys: { p256dh: 'abc', auth: 'def' },
+      };
+      push.addSubscription(sub, ['evening_report'], (err) => {
+        assert.ifError(err);
+        push.sendTestToEndpoint(sub.endpoint, { title: 'test', body: 'body' }, () => {
+          // We don't care if the mock send succeeded — just that rate limit
+          // wasn't touched.
+          assert.deepStrictEqual(push._getLastSentAt(), {});
+          done();
+        });
+      });
+    });
+  });
 });

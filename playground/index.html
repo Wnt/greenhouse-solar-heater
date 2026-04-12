@@ -539,26 +539,52 @@
             Push notifications require a secure connection and a supported browser.
           </div>
           <div id="notif-categories" class="notif-categories" style="display:none;">
-            <label class="notif-cat-label">
-              <input type="checkbox" id="notif-cat-evening_report" checked>
-              <span><strong>Evening report</strong> &mdash; daily solar energy summary</span>
-            </label>
-            <label class="notif-cat-label">
-              <input type="checkbox" id="notif-cat-noon_report" checked>
-              <span><strong>Noon report</strong> &mdash; overnight heating summary</span>
-            </label>
-            <label class="notif-cat-label">
-              <input type="checkbox" id="notif-cat-overheat_warning" checked>
-              <span><strong>Overheat warning</strong> &mdash; 15 min before drain</span>
-            </label>
-            <label class="notif-cat-label">
-              <input type="checkbox" id="notif-cat-freeze_warning" checked>
-              <span><strong>Freeze warning</strong> &mdash; 15 min before protection</span>
-            </label>
-            <label class="notif-cat-label">
-              <input type="checkbox" id="notif-cat-offline_warning" checked>
-              <span><strong>Controller offline</strong> &mdash; after 15 minutes</span>
-            </label>
+            <div class="notif-cat-row">
+              <label class="notif-cat-label">
+                <input type="checkbox" id="notif-cat-evening_report" checked>
+                <span><strong>Evening report</strong> &mdash; daily solar energy summary</span>
+              </label>
+              <button class="notif-test-btn" type="button" data-test-category="evening_report" title="Send test notification">
+                <span class="material-symbols-outlined">send</span>
+              </button>
+            </div>
+            <div class="notif-cat-row">
+              <label class="notif-cat-label">
+                <input type="checkbox" id="notif-cat-noon_report" checked>
+                <span><strong>Noon report</strong> &mdash; overnight heating summary</span>
+              </label>
+              <button class="notif-test-btn" type="button" data-test-category="noon_report" title="Send test notification">
+                <span class="material-symbols-outlined">send</span>
+              </button>
+            </div>
+            <div class="notif-cat-row">
+              <label class="notif-cat-label">
+                <input type="checkbox" id="notif-cat-overheat_warning" checked>
+                <span><strong>Overheat warning</strong> &mdash; 15 min before drain</span>
+              </label>
+              <button class="notif-test-btn" type="button" data-test-category="overheat_warning" title="Send test notification">
+                <span class="material-symbols-outlined">send</span>
+              </button>
+            </div>
+            <div class="notif-cat-row">
+              <label class="notif-cat-label">
+                <input type="checkbox" id="notif-cat-freeze_warning" checked>
+                <span><strong>Freeze warning</strong> &mdash; 15 min before protection</span>
+              </label>
+              <button class="notif-test-btn" type="button" data-test-category="freeze_warning" title="Send test notification">
+                <span class="material-symbols-outlined">send</span>
+              </button>
+            </div>
+            <div class="notif-cat-row">
+              <label class="notif-cat-label">
+                <input type="checkbox" id="notif-cat-offline_warning" checked>
+                <span><strong>Controller offline</strong> &mdash; after 15 minutes</span>
+              </label>
+              <button class="notif-test-btn" type="button" data-test-category="offline_warning" title="Send test notification">
+                <span class="material-symbols-outlined">send</span>
+              </button>
+            </div>
+            <p class="notif-test-hint">Tap <span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px;">send</span> to preview how a notification in that category looks on this device.</p>
           </div>
         </div>
 

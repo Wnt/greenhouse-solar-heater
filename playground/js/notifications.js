@@ -305,6 +305,28 @@ export async function updateCategories(categories) {
   }
 }
 
+// Send a one-off test notification of the given category to the current
+// subscription. Used by the Settings view's per-category test buttons so
+// users can preview how each notification renders without waiting for a
+// real trigger. Bypasses rate limiting on the server side.
+export async function sendTest(category) {
+  if (!currentSubscription) return false;
+  try {
+    const res = await fetch('/api/push/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: currentSubscription.endpoint,
+        category: category,
+      }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.error('[notifications] sendTest error:', err);
+    return false;
+  }
+}
+
 export async function unsubscribePush() {
   if (!currentSubscription) return;
 

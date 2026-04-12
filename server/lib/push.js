@@ -262,6 +262,86 @@ function getSubscriptionCount() {
   return pushData && pushData.subscriptions ? pushData.subscriptions.length : 0;
 }
 
+// ── Mock payloads for the "send test notification" feature ──
+// Used by /api/push/test so users can preview how each category looks
+// without waiting for a real event. Titles are prefixed with "[Test]"
+// so the user immediately recognizes them as manually-triggered.
+
+function buildMockPayload(category) {
+  if (category === 'evening_report') {
+    return {
+      title: '[Test] Daily Solar Report',
+      body: 'Today your collectors gathered approximately 8.5 kWh (8524 Wh) of thermal energy.',
+      tag: 'test-evening-report',
+      url: '/#status',
+    };
+  }
+  if (category === 'noon_report') {
+    return {
+      title: '[Test] Overnight Heating Report',
+      body: 'Overnight the greenhouse heating ran for 4h 12min.',
+      tag: 'test-noon-report',
+      url: '/#status',
+    };
+  }
+  if (category === 'overheat_warning') {
+    return {
+      title: '[Test] Overheat Warning',
+      body: 'Tank temperature is 82.4\u00b0C and rising. Overheat drain may activate at 85\u00b0C.',
+      tag: 'test-overheat-warning',
+      url: '/#status',
+    };
+  }
+  if (category === 'freeze_warning') {
+    return {
+      title: '[Test] Freeze Warning',
+      body: 'Outdoor temperature is 2.8\u00b0C and falling. Freeze drain may activate at 2\u00b0C.',
+      tag: 'test-freeze-warning',
+      url: '/#status',
+    };
+  }
+  if (category === 'offline_warning') {
+    return {
+      title: '[Test] Controller Offline',
+      body: 'No data received from the greenhouse controller for 15 minutes.',
+      tag: 'test-offline-warning',
+      url: '/#status',
+    };
+  }
+  return null;
+}
+
+// Send a one-off notification to a single subscription endpoint, bypassing
+// both rate limiting and subscription category filtering. Used only by
+// the /api/push/test endpoint so a user can preview how their chosen
+// categories render on their own device.
+function sendTestToEndpoint(endpoint, payload, callback) {
+  if (!pushData || !pushData.subscriptions) {
+    callback(new Error('No subscriptions'));
+    return;
+  }
+  var sub = null;
+  for (var i = 0; i < pushData.subscriptions.length; i++) {
+    if (pushData.subscriptions[i].endpoint === endpoint) {
+      sub = pushData.subscriptions[i];
+      break;
+    }
+  }
+  if (!sub) {
+    callback(new Error('Subscription not found'));
+    return;
+  }
+  var wp = ensureWebPush();
+  var pushSub = { endpoint: sub.endpoint, keys: sub.keys };
+  wp.sendNotification(pushSub, JSON.stringify(payload)).then(function () {
+    log.info('test notification sent', { endpoint: endpoint.slice(-20), tag: payload.tag });
+    callback(null);
+  }).catch(function (err) {
+    log.error('test notification failed', { error: err.message, statusCode: err.statusCode });
+    callback(err);
+  });
+}
+
 // ── Sending notifications ──
 
 function isRateLimited(type) {
@@ -392,6 +472,8 @@ module.exports = {
   getSubscriptionCount: getSubscriptionCount,
   isRateLimited: isRateLimited,
   sendNotification: sendNotification,
+  buildMockPayload: buildMockPayload,
+  sendTestToEndpoint: sendTestToEndpoint,
   _reset: _reset,
   _getLastSentAt: _getLastSentAt,
   _setLastSentAt: _setLastSentAt,

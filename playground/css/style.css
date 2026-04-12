@@ -1680,6 +1680,74 @@ button.scanning { opacity: 0.7; cursor: wait; }
   gap: 4px;
 }
 
+.notif-cat-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.notif-cat-row .notif-cat-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.notif-test-btn {
+  background: none;
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-top: 4px;
+  transition: color 0.2s, background 0.2s, border-color 0.2s, transform 0.15s;
+  font-family: inherit;
+}
+
+.notif-test-btn:hover {
+  color: var(--secondary);
+  border-color: var(--secondary);
+  background: rgba(67, 174, 164, 0.08);
+}
+
+.notif-test-btn:active {
+  transform: scale(0.94);
+}
+
+.notif-test-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.notif-test-btn[data-testing="sent"] {
+  color: var(--secondary);
+  background: rgba(67, 174, 164, 0.18);
+  border-color: var(--secondary);
+}
+
+.notif-test-btn[data-testing="error"] {
+  color: var(--error);
+  background: rgba(238, 125, 119, 0.12);
+  border-color: var(--error);
+}
+
+.notif-test-btn .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.notif-test-hint {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--outline-variant);
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  line-height: 1.5;
+}
+
 .notif-cat-label {
   display: flex;
   align-items: flex-start;

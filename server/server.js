@@ -309,6 +309,34 @@ function handlePushGetSubscription(req, res, body) {
   jsonResponse(res, 200, { subscribed: true, categories: sub.categories });
 }
 
+// Send a mock notification of the given category to the caller's
+// subscription. Bypasses rate limiting and category filtering so the
+// user can preview how each notification type renders on their device.
+function handlePushTest(req, res, body) {
+  var parsed;
+  try { parsed = JSON.parse(body); } catch (e) {
+    jsonResponse(res, 400, { error: 'Invalid JSON' });
+    return;
+  }
+  if (!parsed.endpoint || !parsed.category) {
+    jsonResponse(res, 400, { error: 'Missing endpoint or category' });
+    return;
+  }
+  var payload = push.buildMockPayload(parsed.category);
+  if (!payload) {
+    jsonResponse(res, 400, { error: 'Unknown category: ' + parsed.category });
+    return;
+  }
+  push.sendTestToEndpoint(parsed.endpoint, payload, function (err) {
+    if (err) {
+      var status = err.message === 'Subscription not found' ? 404 : 500;
+      jsonResponse(res, status, { error: err.message });
+      return;
+    }
+    jsonResponse(res, 200, { ok: true });
+  });
+}
+
 // ── HTTP route detection (for OTel span naming) ──
 
 function resolveRoute(urlPath, method) {
@@ -460,6 +488,10 @@ var server = http.createServer(function (req, res) {
   } else if (urlPath === '/api/push/subscription' && req.method === 'POST') {
     readBody(req, function (body) {
       handlePushGetSubscription(req, res, body);
+    });
+  } else if (urlPath === '/api/push/test' && req.method === 'POST') {
+    readBody(req, function (body) {
+      handlePushTest(req, res, body);
     });
   } else if (urlPath === '/api/history') {
     handleHistoryApi(req, res);

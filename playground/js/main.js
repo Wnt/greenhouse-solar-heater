@@ -9,7 +9,7 @@ import { store, derived } from './app-state.js';
 import { initSubscriptions, setViewLifecycle } from './subscriptions.js';
 import { initNavigation } from './actions/navigation.js';
 import { initAuth } from './auth.js';
-import { captureInstallPrompt, triggerInstall, wireInstallModal, initNotifications, subscribePush, updateCategories, unsubscribePush, isSubscribed, getSelectedCategories } from './notifications.js';
+import { captureInstallPrompt, triggerInstall, wireInstallModal, initNotifications, subscribePush, updateCategories, unsubscribePush, isSubscribed, getSelectedCategories, sendTest } from './notifications.js';
 import { buildSchematic as buildSchematicFromSvg } from './schematic.js';
 // connection.js actions will be used in later phases — import deferred to avoid name collisions
 // import { switchToLive, switchToSimulation, ... } from './actions/connection.js';
@@ -669,6 +669,34 @@ function wireNotificationUI() {
       }
     });
   });
+
+  // Per-category test buttons — send a mock notification of the
+  // selected category to this device's subscription.
+  var testButtons = document.querySelectorAll('[data-test-category]');
+  testButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (btn.disabled) return;
+      if (!isSubscribed()) {
+        flashTestBtn(btn, 'error');
+        return;
+      }
+      var category = btn.dataset.testCategory;
+      btn.disabled = true;
+      sendTest(category).then(function (ok) {
+        flashTestBtn(btn, ok ? 'sent' : 'error');
+      }).catch(function () {
+        flashTestBtn(btn, 'error');
+      });
+    });
+  });
+}
+
+function flashTestBtn(btn, state) {
+  btn.dataset.testing = state;
+  setTimeout(function () {
+    btn.dataset.testing = '';
+    btn.disabled = false;
+  }, state === 'sent' ? 1500 : 2500);
 }
 
 // ── Init ──

@@ -183,5 +183,13 @@ describe('server PWA public routes (AUTH_ENABLED=true)', () => {
       const body = JSON.parse(res.body);
       assert.ok(body.error);
     });
+
+    it('POST /api/push/test without session → 401', async () => {
+      const res = await request('/api/push/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      assert.strictEqual(res.status, 401);
+    });
   });
 });

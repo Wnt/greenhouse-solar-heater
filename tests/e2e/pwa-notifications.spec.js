@@ -131,6 +131,21 @@ test.describe('Settings view — desktop', () => {
       await expect(page.locator('#' + id)).toHaveCount(1);
     }
   });
+
+  test('a test button exists for each of the five categories', async ({ page }) => {
+    const cats = [
+      'evening_report',
+      'noon_report',
+      'overheat_warning',
+      'freeze_warning',
+      'offline_warning',
+    ];
+    for (const cat of cats) {
+      const btn = page.locator('[data-test-category="' + cat + '"]');
+      await expect(btn).toHaveCount(1);
+      await expect(btn.locator('.material-symbols-outlined')).toHaveText('send');
+    }
+  });
 });
 
 test.describe('PWA installability criteria', () => {
