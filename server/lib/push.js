@@ -29,7 +29,7 @@ var lastSentAt = {};
 
 var RATE_LIMIT_MS = 3600000; // 1 hour
 
-var VALID_CATEGORIES = ['evening_report', 'noon_report', 'overheat_warning', 'freeze_warning'];
+var VALID_CATEGORIES = ['evening_report', 'noon_report', 'overheat_warning', 'freeze_warning', 'offline_warning'];
 
 var S3_KEY = 'push-config.json';
 var LOCAL_PATH = process.env.PUSH_CONFIG_PATH || path.join(__dirname, '..', 'push-config.json');

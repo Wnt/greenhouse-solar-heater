@@ -317,6 +317,7 @@ function publishDiscoveryRequest(hosts, options) {
 }
 
 function stop(callback) {
+  notifications.stop();
   if (!mqttClient) { if (callback) callback(); return; }
   mqttClient.end(false, {}, function () {
     mqttClient = null;

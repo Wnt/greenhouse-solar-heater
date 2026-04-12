@@ -14,6 +14,7 @@ const CATEGORIES = [
   { id: 'noon_report', label: 'Noon report', desc: 'Overnight heating summary' },
   { id: 'overheat_warning', label: 'Overheat warning', desc: '15 min before overheat drain' },
   { id: 'freeze_warning', label: 'Freeze warning', desc: '15 min before freeze protection' },
+  { id: 'offline_warning', label: 'Controller offline', desc: 'Offline/online after 15 min' },
 ];
 
 // ── Install prompt ──

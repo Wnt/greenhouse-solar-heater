@@ -74,6 +74,24 @@ describe('notifications', () => {
     });
   });
 
+  describe('isDataFresh', () => {
+    it('returns false when no data has been received', () => {
+      assert.strictEqual(notifications.isDataFresh(), false);
+    });
+
+    it('returns true immediately after evaluate()', () => {
+      var mockPush = { sendNotification: function () {} };
+      notifications.init({ push: mockPush, deviceConfig: null });
+      notifications.evaluate({ temps: {}, mode: 'IDLE' });
+      assert.strictEqual(notifications.isDataFresh(), true);
+    });
+
+    it('returns false when data is older than DATA_STALE_MS', () => {
+      notifications._setLastEvaluateTs(Date.now() - notifications.DATA_STALE_MS - 1);
+      assert.strictEqual(notifications.isDataFresh(), false);
+    });
+  });
+
   describe('evaluate with mock push', () => {
     let sentNotifications;
     let mockPush;
@@ -90,17 +108,6 @@ describe('notifications', () => {
 
     it('sends overheat warning when tank temp trending toward 85', () => {
       var now = Date.now();
-      // Simulate rising temperature: 1 degree/min from 78 over 5 minutes
-      for (var i = 0; i <= 5; i++) {
-        notifications._setTankHistory([]);
-        var history = notifications._getTankHistory();
-        // Build history up to this point
-        for (var j = 0; j <= i; j++) {
-          notifications.addSample(history, now - (5 - j) * 60000, 78 + j);
-        }
-      }
-
-      // Now evaluate with temp at 83 and history showing 1 deg/min rise
       var tankHistory = [];
       for (var k = 0; k <= 5; k++) {
         notifications.addSample(tankHistory, now - (5 - k) * 60000, 78 + k);
@@ -144,18 +151,14 @@ describe('notifications', () => {
 
     it('sends freeze warning when outdoor temp trending toward 2', () => {
       var now = Date.now();
-      // Simulate falling temp: -0.5 degree/min from 5 over 6 minutes
       var history = [];
       for (var i = 0; i <= 6; i++) {
         notifications.addSample(history, now - (6 - i) * 60000, 5 - i * 0.5);
       }
       notifications._setOutdoorHistory(history);
 
-      notifications.evaluate({ temps: { tank_top: 50, outdoor: 2.0 + 0.1 }, mode: 'IDLE' });
+      notifications.evaluate({ temps: { tank_top: 50, outdoor: 2.1 }, mode: 'IDLE' });
 
-      // At 2.1C and falling at 0.5/min, in 15 min it would be ~-5.4
-      // But current > threshold (2) is checked first, and 2.1 > 2 so it should pass
-      // Also current <= freeze + 5 → 2.1 <= 7 → true
       var freezeNotifs = sentNotifications.filter(function (n) { return n.type === 'freeze_warning'; });
       assert.strictEqual(freezeNotifs.length, 1);
     });
@@ -175,18 +178,177 @@ describe('notifications', () => {
     });
 
     it('tracks energy during solar charging', () => {
-      var now = Date.now();
-      // First call establishes mode
       notifications.evaluate({ temps: { tank_top: 50, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
-
-      // Mock timestamp advance by 30 minutes by resetting internal state
-      // We can't easily mock time, but we can check the accumulation logic
-      // indirectly by checking the energy counter after evaluate
       assert.strictEqual(notifications._getDailyEnergyWh(), 0);
     });
 
     it('tracks night heating minutes', () => {
       assert.strictEqual(notifications._getNightHeatingMinutes(), 0);
+    });
+  });
+
+  describe('no spurious notifications', () => {
+    let sentNotifications;
+    let mockPush;
+
+    beforeEach(() => {
+      sentNotifications = [];
+      mockPush = {
+        sendNotification: function (type, payload) {
+          sentNotifications.push({ type: type, payload: payload });
+        },
+      };
+      notifications.init({ push: mockPush, deviceConfig: null });
+      // Suppress scheduled reports (which would fire if test runs at 12:00 or 20:00)
+      var today = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+      notifications._setLastEveningReport(today);
+      notifications._setLastNoonReport(today);
+    });
+
+    it('does not send any notification for normal temperatures', () => {
+      for (var i = 0; i < 10; i++) {
+        notifications.evaluate({ temps: { tank_top: 50, outdoor: 10 }, mode: 'IDLE' });
+      }
+      assert.strictEqual(sentNotifications.length, 0);
+    });
+  });
+
+  describe('offline/online detection', () => {
+    let sentNotifications;
+    let mockPush;
+
+    beforeEach(() => {
+      sentNotifications = [];
+      mockPush = {
+        sendNotification: function (type, payload) {
+          sentNotifications.push({ type: type, payload: payload });
+        },
+      };
+      notifications.init({ push: mockPush, deviceConfig: null });
+      // Suppress scheduled reports (which would fire if test runs at 12:00 or 20:00)
+      var today = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+      notifications._setLastEveningReport(today);
+      notifications._setLastNoonReport(today);
+    });
+
+    it('does not send offline notification before 15 minutes', () => {
+      var now = Date.now();
+      // Simulate: last data arrived 10 min ago
+      notifications._setLastEvaluateTs(now - 10 * 60000);
+
+      notifications.tick();
+
+      var offlineNotifs = sentNotifications.filter(function (n) { return n.type === 'offline_warning'; });
+      assert.strictEqual(offlineNotifs.length, 0);
+    });
+
+    it('sends offline notification after 15 minutes of no data', () => {
+      var now = Date.now();
+      // Simulate: last data arrived 16 min ago
+      notifications._setLastEvaluateTs(now - 16 * 60000);
+
+      // First tick detects staleness and sets offlineSince
+      notifications.tick();
+      // offlineSince is now set to lastEvaluateTs (16 min ago), which is already > 15 min
+      // so offline notification should fire on this first tick
+
+      var offlineNotifs = sentNotifications.filter(function (n) { return n.type === 'offline_warning'; });
+      assert.strictEqual(offlineNotifs.length, 1);
+      assert.ok(offlineNotifs[0].payload.title.indexOf('Offline') >= 0);
+    });
+
+    it('sends offline notification only once', () => {
+      var now = Date.now();
+      notifications._setLastEvaluateTs(now - 20 * 60000);
+
+      notifications.tick();
+      notifications.tick();
+      notifications.tick();
+
+      var offlineNotifs = sentNotifications.filter(function (n) { return n.type === 'offline_warning'; });
+      assert.strictEqual(offlineNotifs.length, 1);
+    });
+
+    it('sends online recovery notification after 15 min of steady data', () => {
+      var now = Date.now();
+
+      // Simulate: controller was offline for 20 min, then came back 16 min ago
+      notifications._setLastEvaluateTs(now); // data is arriving now
+      notifications._setOfflineSince(now - 36 * 60000); // went offline 36 min ago
+      notifications._setOfflineNotified(true); // we already sent offline notif
+      notifications._setOnlineSince(now - 16 * 60000); // data resumed 16 min ago
+      notifications._setOnlineNotified(false);
+
+      notifications.tick();
+
+      var onlineNotifs = sentNotifications.filter(function (n) {
+        return n.type === 'offline_warning' && n.payload.title.indexOf('Back Online') >= 0;
+      });
+      assert.strictEqual(onlineNotifs.length, 1);
+    });
+
+    it('does not send online notification before 15 min of steady data', () => {
+      var now = Date.now();
+
+      // Simulate: controller came back 5 min ago (not 15 yet)
+      notifications._setLastEvaluateTs(now);
+      notifications._setOfflineSince(now - 25 * 60000);
+      notifications._setOfflineNotified(true);
+      notifications._setOnlineSince(now - 5 * 60000);
+      notifications._setOnlineNotified(false);
+
+      notifications.tick();
+
+      var onlineNotifs = sentNotifications.filter(function (n) {
+        return n.type === 'offline_warning' && n.payload.title.indexOf('Back Online') >= 0;
+      });
+      assert.strictEqual(onlineNotifs.length, 0);
+    });
+
+    it('resets offline tracking after online recovery is confirmed', () => {
+      var now = Date.now();
+
+      notifications._setLastEvaluateTs(now);
+      notifications._setOfflineSince(now - 36 * 60000);
+      notifications._setOfflineNotified(true);
+      notifications._setOnlineSince(now - 16 * 60000);
+      notifications._setOnlineNotified(false);
+
+      notifications.tick();
+
+      // After recovery notification, offline state should be cleared
+      assert.strictEqual(notifications._getOfflineSince(), 0);
+      assert.strictEqual(notifications._getOfflineNotified(), false);
+      assert.strictEqual(notifications._getOnlineSince(), 0);
+    });
+
+    it('cancels offline state if data arrives before 15-min threshold', () => {
+      var now = Date.now();
+
+      // Simulate: data stopped 5 min ago, offlineSince was set
+      notifications._setLastEvaluateTs(now - 5 * 60000);
+      notifications.tick(); // this sets offlineSince
+      assert.ok(notifications._getOfflineSince() > 0, 'offlineSince should be set');
+
+      // Now data arrives again — evaluate() should cancel the offline state
+      notifications.evaluate({ temps: { tank_top: 50, outdoor: 10 }, mode: 'IDLE' });
+
+      assert.strictEqual(notifications._getOfflineSince(), 0);
+      assert.strictEqual(sentNotifications.length, 0);
+    });
+
+    it('evaluate() starts recovery tracking when data resumes after offline notification', () => {
+      var now = Date.now();
+
+      // Simulate: we already sent offline notification
+      notifications._setOfflineSince(now - 20 * 60000);
+      notifications._setOfflineNotified(true);
+      notifications._setOnlineSince(0);
+
+      // Data arrives
+      notifications.evaluate({ temps: { tank_top: 50, outdoor: 10 }, mode: 'IDLE' });
+
+      assert.ok(notifications._getOnlineSince() > 0, 'onlineSince should be set');
     });
   });
 });
