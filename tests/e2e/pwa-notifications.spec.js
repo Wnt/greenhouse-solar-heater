@@ -133,6 +133,60 @@ test.describe('Settings view — desktop', () => {
   });
 });
 
+test.describe('PWA installability criteria', () => {
+  // These tests verify the static assets needed for Chrome to actually
+  // fire `beforeinstallprompt` on Android. Without a PNG icon and a
+  // service worker with a fetch handler, the browser silently refuses
+  // to show the install prompt and users only see our fallback modal.
+
+  test('manifest declares at least one PNG icon with size 192 or 512', async ({ page }) => {
+    const res = await page.request.get('/playground/manifest.webmanifest');
+    expect(res.ok()).toBe(true);
+    const manifest = await res.json();
+    expect(Array.isArray(manifest.icons)).toBe(true);
+    const pngIcon = manifest.icons.find(i =>
+      i.type === 'image/png' &&
+      /(^|[^0-9])(192|512)([^0-9]|$)/.test(i.sizes || '')
+    );
+    expect(pngIcon, 'manifest must include at least one PNG 192 or 512').toBeTruthy();
+  });
+
+  test('manifest has standalone display and start_url', async ({ page }) => {
+    const res = await page.request.get('/playground/manifest.webmanifest');
+    const manifest = await res.json();
+    expect(manifest.display).toBe('standalone');
+    expect(manifest.start_url).toBeTruthy();
+    expect(manifest.name).toBeTruthy();
+  });
+
+  test('PNG icons are served with image/png content-type', async ({ page }) => {
+    for (const size of [192, 512]) {
+      const res = await page.request.get(`/playground/assets/icon-${size}.png`);
+      expect(res.ok(), `/playground/assets/icon-${size}.png must exist`).toBe(true);
+      const body = await res.body();
+      // PNG magic bytes: 89 50 4E 47
+      expect(body[0]).toBe(0x89);
+      expect(body[1]).toBe(0x50);
+      expect(body[2]).toBe(0x4e);
+      expect(body[3]).toBe(0x47);
+    }
+  });
+
+  test('service worker has a fetch event handler', async ({ page }) => {
+    const res = await page.request.get('/playground/sw.js');
+    expect(res.ok()).toBe(true);
+    const body = await res.text();
+    // Chrome requires a `fetch` event listener on the SW for install
+    expect(body).toMatch(/addEventListener\s*\(\s*['"]fetch['"]/);
+  });
+
+  test('index.html links to the manifest', async ({ page }) => {
+    await page.goto('/playground/');
+    const href = await page.locator('link[rel="manifest"]').getAttribute('href');
+    expect(href).toMatch(/manifest\.webmanifest$/);
+  });
+});
+
 test.describe('Settings view — mobile viewport', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 

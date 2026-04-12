@@ -1,7 +1,15 @@
 /**
  * Service worker for Helios Canopy PWA.
- * Handles push notifications — no offline caching (the app requires
- * a live server connection to be useful).
+ *
+ * This SW has two jobs:
+ *  1. Receive and display web-push notifications
+ *  2. Satisfy Chrome's PWA installability criteria (which require a
+ *     `fetch` event handler to be registered — even a pass-through is
+ *     enough)
+ *
+ * The app requires a live server connection to be useful, so there's
+ * no offline caching. The fetch handler simply falls through to the
+ * network.
  */
 
 /* eslint-env serviceworker */
@@ -13,6 +21,16 @@ self.addEventListener('install', function () {
 
 self.addEventListener('activate', function (event) {
   event.waitUntil(self.clients.claim());
+});
+
+// Minimal fetch handler — required by Chrome's PWA installability
+// criteria (https://web.dev/install-criteria/). Not used for caching;
+// we just pass through to the network so online behavior is unchanged.
+self.addEventListener('fetch', function (event) {
+  // Respond only to same-origin GETs to avoid interfering with cross-
+  // origin requests or non-idempotent methods we don't care about.
+  if (event.request.method !== 'GET') return;
+  event.respondWith(fetch(event.request));
 });
 
 // ── Push notifications ──
@@ -28,8 +46,8 @@ self.addEventListener('push', function (event) {
   var title = data.title || 'Helios Canopy';
   var options = {
     body: data.body || '',
-    icon: 'assets/icon-192.svg',
-    badge: 'assets/icon-192.svg',
+    icon: 'assets/icon-192.png',
+    badge: 'assets/icon-192.png',
     tag: data.tag || 'default',
     data: { url: data.url || '/' },
   };

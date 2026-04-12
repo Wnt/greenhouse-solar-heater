@@ -43,8 +43,8 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `playground/manifest.webmanifest` → PWA manifest (standalone display, Stitch dark theme colors)
 - `playground/sw.js` → Service worker for push notifications (no offline caching)
 - `playground/js/notifications.js` → Client-side push notification management (SW registration, VAPID subscription, category preference UI, install prompt handling)
-- `playground/assets/icon-{192,512}.svg` → PWA icons (SVG, solar+greenhouse motif)
-- `playground/assets/icon-512-maskable.svg` → PWA maskable icon
+- `playground/assets/icon-{192,512}.png` → PWA icons referenced by `manifest.webmanifest` (PNG is required by Chrome's installability criteria). SVG sources in the same directory are the authoring format. Regenerate PNGs from SVGs via `node scripts/svg-to-png.mjs` (uses Playwright/Chromium, no extra dependencies).
+- `playground/assets/icon-512-maskable.png` → PWA maskable icon (PNG, with SVG source)
 - `deploy/` → cloud deployment infrastructure
 - `deploy/terraform/` → UpCloud Managed Kubernetes cluster, Managed Object Storage, Managed PostgreSQL, K8s Secrets/ConfigMaps, Helm releases, CI/CD deployer RBAC (Terraform)
 - `deploy/k8s/` → Kubernetes manifests: app Deployment (app + openvpn + mosquitto sidecar), Service, Ingress, deployer RBAC, kustomization.yaml
