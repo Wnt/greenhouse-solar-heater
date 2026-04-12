@@ -262,26 +262,13 @@ function evaluate(state, config, deviceConfig) {
     }
   }
 
-  // ── Pump mode selection (greenhouse heating > solar > idle) ──
+  // ── Pump mode selection (solar > greenhouse heating > idle) ──
+  // Solar charging has priority: free energy, time-limited (daylight only).
+  // Greenhouse heating uses stored energy and can run any time.
   var pumpMode = MODES.IDLE;
 
-  // Greenhouse heating — use tank when it has useful delta over greenhouse
-  // Exit when tank < greenhouse + 2°C to avoid cooling via radiator
-  if (t.greenhouse !== null && t.tank_top !== null) {
-    if (state.currentMode === MODES.GREENHOUSE_HEATING) {
-      if (t.greenhouse <= cfg.greenhouseExitTemp &&
-          t.tank_top >= t.greenhouse + cfg.greenhouseExitTankDelta) {
-        pumpMode = MODES.GREENHOUSE_HEATING;
-      }
-      // Above exit temp or tank too close to greenhouse, fall through
-    } else if (t.greenhouse < cfg.greenhouseEnterTemp &&
-               t.tank_top > t.greenhouse + cfg.greenhouseMinTankDelta) {
-      pumpMode = MODES.GREENHOUSE_HEATING;
-    }
-  }
-
-  // Solar charging (only if not greenhouse heating)
-  if (pumpMode === MODES.IDLE && t.collector !== null && t.tank_bottom !== null) {
+  // Solar charging — capture free energy first
+  if (t.collector !== null && t.tank_bottom !== null) {
     if (state.currentMode === MODES.SOLAR_CHARGING) {
       if (t.collector >= t.tank_bottom + cfg.solarExitDelta) {
         pumpMode = MODES.SOLAR_CHARGING;
@@ -302,6 +289,21 @@ function evaluate(state, config, deviceConfig) {
           pumpMode = MODES.SOLAR_CHARGING;
         }
       }
+    }
+  }
+
+  // Greenhouse heating — use tank when no solar available
+  // Exit when tank < greenhouse + 2°C to avoid cooling via radiator
+  if (pumpMode === MODES.IDLE && t.greenhouse !== null && t.tank_top !== null) {
+    if (state.currentMode === MODES.GREENHOUSE_HEATING) {
+      if (t.greenhouse <= cfg.greenhouseExitTemp &&
+          t.tank_top >= t.greenhouse + cfg.greenhouseExitTankDelta) {
+        pumpMode = MODES.GREENHOUSE_HEATING;
+      }
+      // Above exit temp or tank too close to greenhouse, fall through
+    } else if (t.greenhouse < cfg.greenhouseEnterTemp &&
+               t.tank_top > t.greenhouse + cfg.greenhouseMinTankDelta) {
+      pumpMode = MODES.GREENHOUSE_HEATING;
     }
   }
 

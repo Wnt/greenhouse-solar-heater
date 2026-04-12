@@ -340,11 +340,11 @@ describe('priority and preemption', () => {
     assert.strictEqual(result.flags.emergencyHeatingActive, true);
   });
 
-  it('concurrent solar + greenhouse triggers: greenhouse wins', () => {
+  it('concurrent solar + greenhouse triggers: solar wins (free energy priority)', () => {
     const result = evaluate(makeState({
       temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 }
     }), null);
-    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
 
   it('overheat triggers ACTIVE_DRAIN when tank_top > 85', () => {
