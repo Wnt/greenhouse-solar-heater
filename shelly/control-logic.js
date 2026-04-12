@@ -83,8 +83,8 @@ var VALVE_TIMING = {
 };
 
 var DEFAULT_CONFIG = {
-  solarEnterDelta: 7,
-  solarExitDelta: 3,
+  solarEnterDelta: 10,
+  solarExitDelta: 2,
   greenhouseEnterTemp: 10,
   greenhouseExitTemp: 12,
   greenhouseMinTankDelta: 5,

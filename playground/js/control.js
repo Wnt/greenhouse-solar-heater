@@ -110,7 +110,7 @@ export class ControlStateMachine {
     const delta = (s.t_collector - s.t_tank_bottom).toFixed(1);
 
     if (to === 'solar_charging') {
-      return `${from} → solar_charging | delta=${delta}°C > 7°C threshold | ${sensorStr}`;
+      return `${from} → solar_charging | delta=${delta}°C > 10°C threshold | ${sensorStr}`;
     }
     if (to === 'greenhouse_heating') {
       return `${from} → greenhouse_heating | T_gh=${s.t_greenhouse.toFixed(1)}°C < 10°C, T_top=${s.t_tank_top.toFixed(1)}°C > T_gh+5°C | ${sensorStr}`;
@@ -134,7 +134,7 @@ export class ControlStateMachine {
       return `greenhouse_heating → idle | T_gh=${s.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;
     }
     if (from === 'solar_charging' && to === 'idle') {
-      return `solar_charging → idle | delta=${delta}°C < 3°C threshold | ${sensorStr}`;
+      return `solar_charging → idle | delta=${delta}°C < 2°C threshold | ${sensorStr}`;
     }
     if (from === 'emergency_heating' && to === 'idle') {
       return `emergency_heating → idle | T_gh=${s.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;

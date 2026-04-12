@@ -205,7 +205,7 @@ describe('playground ControlStateMachine — shared logic integration', () => {
   it('uses real Shelly MODE_VALVES for output', () => {
     // Enter solar charging
     const r = controller.evaluate(
-      makeSensors({ t_collector: 40, t_tank_top: 40, t_tank_bottom: 30, t_greenhouse: 15, t_outdoor: 10 }),
+      makeSensors({ t_collector: 41, t_tank_top: 40, t_tank_bottom: 30, t_greenhouse: 15, t_outdoor: 10 }),
       0
     );
     assert.strictEqual(r.mode, 'solar_charging');

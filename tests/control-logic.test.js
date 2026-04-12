@@ -26,9 +26,9 @@ describe('mode evaluation', () => {
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
-  it('enters SOLAR_CHARGING when collector > tank_bottom + 7', () => {
+  it('enters SOLAR_CHARGING when collector > tank_bottom + 10', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
@@ -67,32 +67,32 @@ describe('mode evaluation', () => {
 });
 
 describe('hysteresis', () => {
-  it('enters solar charging at collector > tank_bottom + 7', () => {
+  it('enters solar charging at collector > tank_bottom + 10', () => {
     const result = evaluate(makeState({
-      temps: { collector: 38, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
 
-  it('does not enter solar at collector = tank_bottom + 7 (needs strictly greater)', () => {
+  it('does not enter solar at collector = tank_bottom + 10 (needs strictly greater)', () => {
     const result = evaluate(makeState({
-      temps: { collector: 37, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
-  it('stays in solar at exact exit threshold (collector = tank_bottom + 3)', () => {
+  it('stays in solar at exact exit threshold (collector = tank_bottom + 2)', () => {
     const result = evaluate(makeState({
-      temps: { collector: 33, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 32, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 2000
     }), null);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
 
-  it('exits solar when collector < tank_bottom + 3', () => {
+  it('exits solar when collector < tank_bottom + 2', () => {
     const result = evaluate(makeState({
-      temps: { collector: 32, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 31, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 2000
     }), null);
@@ -209,7 +209,7 @@ describe('minimum duration', () => {
 
   it('allows exit after minimum duration', () => {
     const result = evaluate(makeState({
-      temps: { collector: 32, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 31, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 1000  // 1000s elapsed > 300 min
     }), null);
@@ -218,7 +218,7 @@ describe('minimum duration', () => {
 
   it('ACTIVE_DRAIN preempts immediately regardless of minimum duration', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 990, now: 1000  // only 10s elapsed
     }), null);
@@ -252,7 +252,7 @@ describe('valve and actuator mapping', () => {
 
   it('SOLAR_CHARGING: vi_btm + vo_coll open, v_air closed, pump on', () => {
     const r = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null);
     assert.strictEqual(r.valves.vi_btm, true);
     assert.strictEqual(r.valves.vo_coll, true);
@@ -320,7 +320,7 @@ describe('valve and actuator mapping', () => {
 describe('priority and preemption', () => {
   it('ACTIVE_DRAIN preempts SOLAR_CHARGING when outdoor drops', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 1000
     }), null);
@@ -342,7 +342,7 @@ describe('priority and preemption', () => {
 
   it('concurrent solar + greenhouse triggers: solar wins (free energy priority)', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 }
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
@@ -369,7 +369,7 @@ describe('priority and preemption', () => {
 describe('speculative refill', () => {
   it('attempts refill when drained + solar delta met + warm outdoor', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       collectorsDrained: true,
       lastRefillAttempt: 0,
       now: 2000
@@ -381,7 +381,7 @@ describe('speculative refill', () => {
 
   it('does not refill when outdoor too cold', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
       collectorsDrained: true,
       lastRefillAttempt: 0,
       now: 2000
@@ -391,7 +391,7 @@ describe('speculative refill', () => {
 
   it('respects retry cooldown', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       collectorsDrained: true,
       lastRefillAttempt: 500, now: 1000  // only 500s, cooldown is 1800
     }), null);
@@ -400,7 +400,7 @@ describe('speculative refill', () => {
 
   it('allows refill after cooldown expires', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       collectorsDrained: true,
       lastRefillAttempt: 500, now: 2500  // 2000s > 1800 cooldown
     }), null);
@@ -427,7 +427,7 @@ describe('sensor failure', () => {
 
   it('stays in mode when sensors are fresh', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 2000,
       sensorAge: { collector: 10, tank_top: 10, tank_bottom: 10, greenhouse: 10, outdoor: 10 }
@@ -803,14 +803,14 @@ describe('config-gated actuator behavior', () => {
 
   it('returns suppressed flag when controls are disabled', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
     }), null, disabledConfig);
     assert.strictEqual(result.suppressed, true);
   });
 
   it('still computes correct mode when controls disabled', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
     }), null, disabledConfig);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
@@ -826,7 +826,7 @@ describe('config-gated actuator behavior', () => {
 
   it('keeps pump on when enabled in partial config', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
     }), null, partialConfig);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
     assert.strictEqual(result.actuators.pump, true);
@@ -836,7 +836,7 @@ describe('config-gated actuator behavior', () => {
   it('disables valves when valve bit is off', () => {
     const noValvesConfig = { ce: true, ea: 2 | 4 | 8 | 16, v: 3 }; // everything except valves
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
     }), null, noValvesConfig);
     for (const key in result.valves) {
       assert.strictEqual(result.valves[key], false, key + ' should be closed');
@@ -845,7 +845,7 @@ describe('config-gated actuator behavior', () => {
 
   it('works without deviceConfig (backward compatible)', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
     }), null);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
     assert.strictEqual(result.suppressed, false);
@@ -873,7 +873,7 @@ describe('config-gated actuator behavior', () => {
 
   it('allowed_modes permits allowed modes', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
     }), null, { ...allEnabled, am: ['I', 'SC'] });
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
@@ -952,7 +952,7 @@ describe('hard safety overrides bypass device config', () => {
 
   it('normal solar charging with ce=false is still suppressed', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
     }), null, disabledConfig);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
     assert.strictEqual(result.suppressed, true);
@@ -997,7 +997,7 @@ describe('manual override safety interaction', () => {
 
   it('evaluate() works normally with mo field in config (mo is I/O concern)', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
     }), null, overrideConfig);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
     assert.strictEqual(result.suppressed, false);
@@ -1014,7 +1014,7 @@ describe('manual override safety interaction', () => {
 
   it('ce=false with mo set still returns suppressed (controls gate takes priority)', () => {
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
     }), null, { ce: false, ea: 0, v: 1, mo: { a: true, ex: 9999999999, ss: false } });
     assert.strictEqual(result.suppressed, true);
   });
