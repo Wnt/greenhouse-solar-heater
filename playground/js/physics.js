@@ -22,7 +22,7 @@ const DEFAULTS = {
   tank_volume: 0.300,           // m³ (300L)
   tank_UA: 3.0,                 // W/K tank heat loss (insulated)
   greenhouse_UA: 25.0,          // W/K greenhouse envelope loss
-  greenhouse_thermal_mass: 50000, // J/K (air + soil + structure)
+  greenhouse_thermal_mass: 250000, // J/K (air + soil + structure)
   greenhouse_glazing_area: 4.0,  // m² effective south-facing glazing
   greenhouse_solar_transmittance: 0.15, // fraction of solar radiation transmitted
   radiator_UA: 150.0,           // W/K radiator transfer coefficient

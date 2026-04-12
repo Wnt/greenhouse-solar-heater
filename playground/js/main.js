@@ -584,9 +584,9 @@ let lastLiveMode = null;      // last observed live mode (change detector)
 
 // ── Scenario presets ──
 const PRESETS = {
-  spring_fall:   { label: 'Spring / Fall',      t_outdoor: 10,   irradiance: 500, t_tank_top: 12, t_tank_bottom: 9,  t_greenhouse: 11 },
-  summer_peak:   { label: 'Summer Peak Heat',   t_outdoor: 26,   irradiance: 500, t_tank_top: 88, t_tank_bottom: 85, t_greenhouse: 11 },
-  early_late:    { label: 'Late / Early Season', t_outdoor: -5.5, irradiance: 240, t_tank_top: 13, t_tank_bottom: 13, t_greenhouse: 5 },
+  spring_fall:   { label: 'Spring / Fall',      t_outdoor: 10,   irradiance: 500, t_tank_top: 12, t_tank_bottom: 9,  t_greenhouse: 11, gh_thermal_mass: 250000, gh_heat_loss: 25 },
+  summer_peak:   { label: 'Summer Peak Heat',   t_outdoor: 26,   irradiance: 500, t_tank_top: 88, t_tank_bottom: 85, t_greenhouse: 11, gh_thermal_mass: 250000, gh_heat_loss: 25 },
+  early_late:    { label: 'Late / Early Season', t_outdoor: -5.5, irradiance: 240, t_tank_top: 13, t_tank_bottom: 13, t_greenhouse: 5,  gh_thermal_mass: 250000, gh_heat_loss: 25 },
 };
 
 // ── Input parameters ──
@@ -598,6 +598,8 @@ const params = {
   t_greenhouse: 11,
   sim_speed: 3000,
   day_night_cycle: true,
+  gh_thermal_mass: 250000,
+  gh_heat_loss: 25,
 };
 
 // ── Mode metadata ──
@@ -619,7 +621,10 @@ async function init() {
   }
 
   await initControlLogic();
-  model = new ThermalModel();
+  model = new ThermalModel({
+    greenhouse_thermal_mass: params.gh_thermal_mass,
+    greenhouse_UA: params.gh_heat_loss,
+  });
   controller = new ControlStateMachine(config.modes);
 
   // Set up view lifecycle callbacks for the store-driven navigation
@@ -983,6 +988,8 @@ function setupControls() {
     { id: 'tank-top', label: 'Tank Top', min: 5, max: 95, step: 1, value: params.t_tank_top, unit: '°C', key: 't_tank_top' },
     { id: 'tank-bot', label: 'Tank Bottom', min: 5, max: 95, step: 1, value: params.t_tank_bottom, unit: '°C', key: 't_tank_bottom' },
     { id: 'greenhouse', label: 'Greenhouse', min: -10, max: 40, step: 0.5, value: params.t_greenhouse, unit: '°C', key: 't_greenhouse' },
+    { id: 'gh-thermal-mass', label: 'GH Thermal Mass', min: 10000, max: 500000, value: params.gh_thermal_mass, unit: ' J/K', key: 'gh_thermal_mass', log: true },
+    { id: 'gh-heat-loss', label: 'GH Night Heat Loss', min: 5, max: 100, step: 1, value: params.gh_heat_loss, unit: ' W/K', key: 'gh_heat_loss' },
     { id: 'speed', label: 'Sim Speed', min: 1, max: 10000, step: 1, value: params.sim_speed, unit: '×', key: 'sim_speed',
       steps: [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 3000, 5000, 10000] },
   ];
@@ -996,6 +1003,9 @@ function setupControls() {
         if (model && running && liveStateKeys[s.key]) {
           model.state[liveStateKeys[s.key]] = v;
         }
+        // Physics params: push into model immediately
+        if (model && s.key === 'gh_thermal_mass') model.p.greenhouse_thermal_mass = v;
+        if (model && s.key === 'gh_heat_loss') model.p.greenhouse_UA = v;
         // Tank top must be >= tank bottom
         if (s.key === 't_tank_bottom' && v > params.t_tank_top) {
           params.t_tank_top = v;
@@ -1046,6 +1056,8 @@ function setupControls() {
 }
 
 function resetSim() {
+  model.p.greenhouse_thermal_mass = params.gh_thermal_mass;
+  model.p.greenhouse_UA = params.gh_heat_loss;
   model.reset({
     t_tank_top: params.t_tank_top,
     t_tank_bottom: params.t_tank_bottom,
@@ -1071,7 +1083,7 @@ function resetSim() {
 function applyPreset(key) {
   const preset = PRESETS[key];
   if (!preset) return;
-  const keys = ['t_outdoor', 'irradiance', 't_tank_top', 't_tank_bottom', 't_greenhouse'];
+  const keys = ['t_outdoor', 'irradiance', 't_tank_top', 't_tank_bottom', 't_greenhouse', 'gh_thermal_mass', 'gh_heat_loss'];
   for (const k of keys) {
     params[k] = preset[k];
     if (sliderRefs[k]) sliderRefs[k].update(preset[k]);
