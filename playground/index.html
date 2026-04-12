@@ -518,13 +518,22 @@
 
       <div class="settings-grid">
         <!-- Install to home screen -->
-        <div class="card settings-card">
-          <h3>Install to home screen</h3>
-          <p class="settings-desc">Install Helios Canopy as an app for quick access and push notifications without opening the browser.</p>
-          <button id="pwa-install-btn" class="auth-btn auth-btn-primary settings-btn" type="button" title="Install as app on your home screen">
-            <span class="material-symbols-outlined">install_mobile</span>
-            <span class="auth-btn-label">Install App</span>
-          </button>
+        <div class="card settings-card" id="pwa-install-card">
+          <div id="pwa-install-idle">
+            <h3>Install to home screen</h3>
+            <p class="settings-desc">Install Helios Canopy as an app for quick access and push notifications without opening the browser.</p>
+            <button id="pwa-install-btn" class="auth-btn auth-btn-primary settings-btn" type="button" title="Install as app on your home screen">
+              <span class="material-symbols-outlined">install_mobile</span>
+              <span class="auth-btn-label">Install App</span>
+            </button>
+          </div>
+          <div id="pwa-install-standalone" hidden>
+            <h3>
+              <span class="material-symbols-outlined" style="font-size:20px;vertical-align:-4px;color:var(--secondary);">check_circle</span>
+              Running as installed app
+            </h3>
+            <p class="settings-desc" id="pwa-uninstall-desc">You're using Helios Canopy as an installed app.</p>
+          </div>
         </div>
 
         <!-- Push notifications -->

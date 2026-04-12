@@ -148,6 +148,93 @@ test.describe('Settings view — desktop', () => {
   });
 });
 
+test.describe('Install card state when running standalone', () => {
+  // When the PWA is launched from the home screen Chrome reports
+  // display-mode: standalone. The Install card should swap to an
+  // "already installed" variant with uninstall instructions and hide
+  // the install button entirely.
+
+  test('idle card is shown by default (browser mode)', async ({ page }) => {
+    await mockPushApi(page);
+    await page.goto('/playground/?mode=sim');
+    await expect(page.locator('#fab-play')).toBeVisible();
+    await page.evaluate(() => { window.location.hash = 'settings'; });
+    await expect(page.locator('#view-settings')).toHaveClass(/active/);
+
+    await expect(page.locator('#pwa-install-idle')).toBeVisible();
+    await expect(page.locator('#pwa-install-standalone')).toBeHidden();
+    await expect(page.locator('#pwa-install-btn')).toBeVisible();
+  });
+
+  test('standalone card is shown when display-mode is standalone', async ({ page }) => {
+    // Emulate PWA launch context BEFORE navigation so the
+    // matchMedia('(display-mode: standalone)') check on page load
+    // sees standalone and swaps the card.
+    await page.emulateMedia({ media: 'screen', colorScheme: 'dark' });
+    await page.addInitScript(() => {
+      const orig = window.matchMedia.bind(window);
+      window.matchMedia = function (q) {
+        if (typeof q === 'string' && q.indexOf('display-mode: standalone') !== -1) {
+          return {
+            matches: true,
+            media: q,
+            onchange: null,
+            addListener: function () {},
+            removeListener: function () {},
+            addEventListener: function () {},
+            removeEventListener: function () {},
+            dispatchEvent: function () { return true; },
+          };
+        }
+        return orig(q);
+      };
+    });
+
+    await mockPushApi(page);
+    await page.goto('/playground/?mode=sim');
+    await expect(page.locator('#fab-play')).toBeVisible();
+    await page.evaluate(() => { window.location.hash = 'settings'; });
+    await expect(page.locator('#view-settings')).toHaveClass(/active/);
+
+    await expect(page.locator('#pwa-install-idle')).toBeHidden();
+    await expect(page.locator('#pwa-install-standalone')).toBeVisible();
+    await expect(page.locator('#pwa-install-btn')).toBeHidden();
+  });
+
+  test('standalone card contains platform-specific uninstall guidance', async ({ page }) => {
+    // Force standalone AND pretend to be Android Chrome for the UA branch
+    await page.addInitScript(() => {
+      const orig = window.matchMedia.bind(window);
+      window.matchMedia = function (q) {
+        if (typeof q === 'string' && q.indexOf('display-mode: standalone') !== -1) {
+          return { matches: true, media: q, onchange: null,
+            addListener: function () {}, removeListener: function () {},
+            addEventListener: function () {}, removeEventListener: function () {},
+            dispatchEvent: function () { return true; } };
+        }
+        return orig(q);
+      };
+      Object.defineProperty(navigator, 'userAgent', {
+        get: function () {
+          return 'Mozilla/5.0 (Linux; Android 14; SM-S938B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36';
+        },
+      });
+    });
+
+    await mockPushApi(page);
+    await page.goto('/playground/?mode=sim');
+    await expect(page.locator('#fab-play')).toBeVisible();
+    await page.evaluate(() => { window.location.hash = 'settings'; });
+
+    const desc = page.locator('#pwa-uninstall-desc');
+    await expect(desc).toBeVisible();
+    const text = await desc.textContent();
+    // Should mention uninstall steps relevant to Android
+    expect(text.toLowerCase()).toMatch(/uninstall|remove/);
+    expect(text.toLowerCase()).toMatch(/long-press|settings|home screen/);
+  });
+});
+
 test.describe('PWA installability criteria', () => {
   // These tests verify the static assets needed for Chrome to actually
   // fire `beforeinstallprompt` on Android. Without a PNG icon and a

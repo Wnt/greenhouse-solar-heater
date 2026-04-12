@@ -43,18 +43,43 @@ export function captureInstallPrompt() {
 
   window.addEventListener('appinstalled', () => {
     deferredInstallPrompt = null;
-    hideInstallButton();
+    showStandaloneState();
   });
 
-  // Hide install button if already running standalone (installed)
+  // Show the "already installed" card state when running standalone
   if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
-    hideInstallButton();
+    showStandaloneState();
   }
 }
 
-function hideInstallButton() {
-  const btn = $('pwa-install-btn');
-  if (btn) btn.style.display = 'none';
+// Swap the Install card into its "installed" variant and fill in
+// platform-specific uninstall instructions. There is no Web API to
+// trigger an uninstall — PWAs are always removed by the user via the
+// OS (long-press icon, chrome://apps, Settings → Apps), so the best
+// we can do is tell them where to look.
+function showStandaloneState() {
+  const idle = $('pwa-install-idle');
+  const standalone = $('pwa-install-standalone');
+  if (idle) idle.hidden = true;
+  if (standalone) standalone.hidden = false;
+
+  const desc = $('pwa-uninstall-desc');
+  if (desc) desc.textContent = getUninstallInstructions();
+}
+
+function getUninstallInstructions() {
+  const p = detectPlatform();
+  if (p.isIOS) {
+    return "You're using Helios Canopy as an installed app. To remove it, long-press the app icon on your home screen and tap Remove App \u2192 Delete App.";
+  }
+  if (p.isAndroid) {
+    return "You're using Helios Canopy as an installed app. To uninstall, long-press the app icon on your home screen and tap Uninstall, or open Settings \u2192 Apps \u2192 Helios Canopy \u2192 Uninstall.";
+  }
+  if (p.isFirefox) {
+    return "You're using Helios Canopy as an installed app. To remove it, open your browser's app management and uninstall Helios Canopy.";
+  }
+  // Chrome / Edge / other desktop
+  return "You're using Helios Canopy as an installed app. To uninstall, open the \u22ee menu in the app window and choose Uninstall Helios Canopy, or visit chrome://apps.";
 }
 
 export async function triggerInstall() {
