@@ -1,422 +1,159 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code working in this repository. Keep this file short — anything derivable from the code belongs in the code, not here.
 
-## Project Overview
+## Project
 
-Solar thermal greenhouse heating system for Southwest Finland. The repo contains system specifications, Shelly control scripts, interactive browser-based simulators (playground), a Shelly platform linter, and documentation/diagrams.
-
-## Mandatory: Keep CLAUDE.md Up to Date
-
-**Before finishing any work in this repo, review this file and update it if your changes affect the project structure, file relationships, conventions, commands, or workflows described here.** This ensures CLAUDE.md remains an accurate guide for future sessions. If you added new directories, scripts, tools, tests, CI workflows, or conventions — document them here.
+Solar thermal greenhouse heating system for Southwest Finland. Shelly-controlled, unpressurized drainback design. The repo contains `system.yaml` (hardware spec), Shelly device scripts, a monitoring/control web app (playground), a Node.js server, and deployment infrastructure.
 
 ## Source of Truth
 
-For the hardware system `system.yaml` is the **single authoritative source** for all specifications: component dimensions, heights, valve states, operating modes, sensor assignments, and Shelly relay mappings. All other documentation and diagrams are derived views of this file.
+`system.yaml` is the **single authoritative source** for all hardware specs: component dimensions, heights, valve states, operating modes, sensor assignments, Shelly relay mappings. All other docs and diagrams are derived views. **Update `system.yaml` first**, then propagate to affected diagrams/docs.
 
-When making changes, **update system.yaml first**, then propagate to affected docs and diagrams.
+## Keep This File Current
 
-## File Relationships
+**Before finishing any work, review this file and update it if your changes affect project structure, conventions, commands, or workflows described here.** Stale guidance is worse than none. Add new rules here; don't re-describe files that are self-explanatory from their path and content.
 
-- `system.yaml` → authoritative specs (heights, valve states, modes, components)
-- `shelly/` → Shelly device scripts and deployment tooling
-- `shelly/lint/` → Shelly platform conformance linter (CLI, standalone package)
-- `playground/` → main web app SPA/PWA (single-page app with 5 views: Status, Components (merged system schematic + valve/sensor/actuator details), Controls, Device (merged sensor assignment + Shelly runtime config), Settings). Deep-linkable via URL hash fragments (`#status`, `#components`, etc.). Legacy `#schematic` and `#sensors` hashes still resolve to `#components` and `#device` respectively via aliases in `js/actions/navigation.js`. Protected by passkey auth in cloud mode. Installable as PWA with push notification support.
-- `playground/login.html` → passkey login page (WebAuthn registration + authentication)
-- `playground/js/login.js` → passkey auth client-side logic
-- `playground/vendor/simplewebauthn-browser.mjs` → vendored @simplewebauthn/browser 13.3.0
-- `playground/vendor/qrcode-generator.mjs` → vendored qrcode-generator 2.0.4 (invitation QR codes)
-- `server/` → Node.js API server (serves playground, WebSocket, MQTT bridge, auth, device config, sensor config, history, push notifications). All device communication flows through MQTT — no direct HTTP RPC to Shelly devices.
-- `server/auth/` → WebAuthn passkey authentication: multi-user credential store with role-based access (`admin`, `readonly`), session management, WebAuthn handlers, invitation-based registration. Read-only users can browse the playground but are blocked from every mutating endpoint (PUT device-config, PUT sensor-config, sensor-config/apply, sensor-discovery, WebSocket override/relay commands). The credential store auto-migrates the legacy single-user `{user: {...}}` JSON shape to the new `{users: [...]}` shape on first load. User management API (admin only): `GET /auth/users` (list, any authenticated user), `PATCH /auth/users/:id` (rename + role change, refuses duplicate names, self-demotion, and last-admin demotion; `PUT` accepted as alias), `DELETE /auth/users/:id` (refuses self-delete and last-admin removal). The `POST /auth/invite/create` endpoint requires a name and accepts a `role` field (`admin` | `readonly`); the role + name are stored on the invitation and the new device inherits them on registration. `GET /auth/status` exposes `role` + `name`.
-- `server/lib/logger.js` → structured JSON logger (used by server and auth modules)
-- `server/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
-- `server/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload openvpn.conf)
-- `server/lib/db.js` → PostgreSQL/TimescaleDB module (schema init, sensor readings, state events, history queries). Resolves DATABASE_URL from env or S3 (`database-url.json`)
-- `server/lib/db-config.js` → Database URL S3 persistence CLI (store/load DATABASE_URL in object storage)
-- `server/lib/nr-config.js` → New Relic license key S3 persistence CLI (store/load license key in object storage)
-- `server/lib/tracing.js` → OpenTelemetry SDK initialization (loaded via `--require`, no-op when `NEW_RELIC_LICENSE_KEY` not set)
-- `server/lib/mqtt-bridge.js` → MQTT-to-WebSocket bridge (subscribes greenhouse/state, broadcasts to WS clients, persists to DB, publishes config/discovery/apply/relay-command requests, correlates MQTT responses). Also enriches state broadcasts with `manual_override` field from device config.
-- `server/lib/device-config.js` → Device configuration store (S3/local persistence, GET/PUT API, MQTT config push). Config includes `mo` field for manual override sessions (`{a: bool, ex: int, ss: bool}`).
-- `server/lib/sensor-config.js` → Sensor configuration store (S3/local persistence, sensor-to-role assignments, MQTT-based apply via controller, MQTT sensor config push)
-- `server/lib/push.js` → Push notification module (VAPID key management, subscription store with per-category opt-in, S3/local persistence, rate-limited sending via `web-push`). S3 key: `push-config.json`.
-- `server/lib/notifications.js` → Notification engine (evaluates MQTT state for alert conditions). Linear temperature extrapolation for pre-emergency warnings (overheat/freeze, 15 min horizon). Scheduled daily reports (evening solar summary, noon heating summary). Called from mqtt-bridge on each state update.
-- `playground/manifest.webmanifest` → PWA manifest (standalone display, Stitch dark theme colors)
-- `playground/sw.js` → Service worker for push notifications (no offline caching)
-- `playground/js/notifications.js` → Client-side push notification management (SW registration, VAPID subscription, category preference UI, install prompt handling)
-- `playground/assets/icon-{192,512}.png` → PWA app icons referenced by `manifest.webmanifest`. Rounded-square Material Symbols `solar_power` glyph in gold on the dark app background — matches the sidebar brand icon.
-- `playground/assets/icon-512-maskable.png` → PWA maskable icon (safe-zone padding for Android adaptive rounding)
-- `playground/assets/badge-72.png` → Android status-bar silhouette used as `badge` in `showNotification()`. Must be monochrome white on transparent — Android masks to the alpha channel.
-- `playground/assets/notif-{evening,noon,overheat,freeze,offline}.png` → per-category notification icons (wb_sunny / bedtime / local_fire_department / ac_unit / cloud_off) used as `icon` in `showNotification()`. The server picks one based on category and passes the path in the push payload so the SW doesn't need a mapping.
-- `scripts/make-icons.mjs` → single source of truth for all PWA + notification icons. Renders each glyph from the vendored Material Symbols font via Playwright/Chromium and writes PNGs into `playground/assets/`. Run `node scripts/make-icons.mjs` after changing any icon glyph, color, or size. No npm deps beyond the already-installed Playwright.
-- `playground/assets/liquid-glass-{displacement,specular}.png` → Pre-baked SVG displacement-map + specular rim-light PNGs used by the mobile bottom nav's Liquid Glass effect (Chromium-only via `backdrop-filter: url(...)`). Baked for a 360×72 pill with radius 36, bezel 28, thickness 140. Regenerate via `node scripts/generate-liquid-glass.mjs` if dimensions change. `playground/assets/liquid-glass.json` records the generator config + computed `maxDisplacement` (use as `feDisplacementMap scale`).
-- `playground/liquid-glass-test.html` → Standalone test page for iterating on the Liquid Glass effect in isolation (colorful tile background + a floating pill, with an A/B "toggle plain" button). Not linked from the main SPA. Reached by direct URL. Used as the scratchpad for tuning `thickness`/`bezelWidth` before baking assets for the real bottom nav.
-- `scripts/generate-liquid-glass.mjs` → Playwright-based generator. Takes a `config` constant (width, height, radius, bezelWidth, thickness, refractive index, light direction, specular power), computes the refraction displacement field from first principles (surface function → Snell's law → pre-computed radial magnitude LUT → SDF-based 2D field), and writes two PNGs into `playground/assets/` plus a `liquid-glass.json` metadata file with `maxDisplacement`. The pair is consumed by a single `<filter id="liquid-glass-bottom-nav">` block embedded inline in `playground/index.html`.
-- `deploy/` → cloud deployment infrastructure
-- `deploy/terraform/` → UpCloud Managed Kubernetes cluster, Managed Object Storage, Managed PostgreSQL, K8s Secrets/ConfigMaps, Helm releases, CI/CD deployer RBAC (Terraform)
-- `deploy/k8s/` → Kubernetes manifests: app Deployment (app + openvpn + mosquitto sidecar), Service, Ingress, deployer RBAC, kustomization.yaml
-- `deploy/docker/` → App Dockerfile only
-- `deploy/openvpn/` → OpenVPN sidecar: Dockerfile (Alpine + openvpn)
-- `design/docs/` → prose docs: design.md, bom.md, commissioning-guide.md, ideas/, superpowers/
-- `design/docs/pdf/` → PDF generation for commissioning guide (`node design/docs/pdf/generate-pdf.js` or `./generate-pdf.sh`). Uses Playwright to render styled HTML to A4 PDF with Stitch dark theme.
-- `design/diagrams/` → hand-authored SVG with `data-` attributes + Mermaid control logic
-- `design/construction/` → physical build instructions
-- `design/photos/` → reference photos of owned components
-- `tests/` → unit, simulation, auth, and e2e tests
-- `.github/workflows/` → CI (test suite, GitHub Pages deploy, Shelly lint, CD deploy)
-- `IDEAS.md` → raw ideas / wishlist
+## Repository Layout
 
-## Documentation Formats
+- `system.yaml` — authoritative hardware spec
+- `shelly/` — device scripts (`control.js`, `control-logic.js`, `telemetry.js`, `deploy.sh`)
+- `shelly/lint/` — Shelly platform conformance linter (standalone Node.js CLI, Acorn-based)
+- `playground/` — SPA/PWA: 5 hash-routed views (`#status`, `#components`, `#controls`, `#device`, `#settings`). Passkey-protected in cloud mode. Legacy `#schematic` → `#components` and `#sensors` → `#device` aliases live in `js/actions/navigation.js`.
+- `playground/vendor/` — vendored third-party libraries (see Critical Rules)
+- `server/` — Node.js API: HTTP + WebSocket + MQTT bridge + auth + device/sensor config + history + push notifications
+- `server/auth/` — WebAuthn passkey auth (multi-user, role-based: `admin` / `readonly`)
+- `server/lib/` — shared modules: `mqtt-bridge`, `device-config`, `sensor-config`, `db` (PostgreSQL/TimescaleDB), `s3-storage`, `notifications`, `push`, `tracing`, `logger`, config CLI helpers
+- `deploy/terraform/` — UpCloud K8s + PostgreSQL + Object Storage (Terraform)
+- `deploy/k8s/` — K8s manifests (Deployment with openvpn + mosquitto sidecars, Ingress, RBAC)
+- `deploy/docker/`, `deploy/openvpn/` — Dockerfiles
+- `design/` — prose docs, hand-authored SVG diagrams, Mermaid control logic, construction notes
+- `tests/` — unit + simulation + auth + e2e (Playwright)
+- `scripts/` — generators: `generate-bootstrap-history.mjs`, `make-icons.mjs`, `generate-liquid-glass.mjs`
+- `.github/workflows/` — CI (test), CD (deploy to K8s + Shelly), GitHub Pages, Shelly lint
 
-- **YAML** for machine-readable specs — validate changes against this
-- **Mermaid** for control logic (state machines, sequences) — renderable by GitHub
-- **SVG** for physical layout — hand-crafted with height coordinates and `data-component`/`data-height` attributes; these are NOT generated, they are authored directly
+File-level details are discoverable by reading the file. Don't re-document here.
 
 ## Key Architecture Concepts
 
-- **Unpressurized system**: Jäspi tank is sealed but vented via an open reservoir connected to the dip tube port. The reservoir acts as an air separator — gas from the tank vents to atmosphere through the open reservoir top.
-- **Communicating vessels**: Water level in reservoir equals water level at the dip tube opening inside the tank (~197cm). Gas is trapped above this level in the sealed tank.
-- **Valve manifold**: 7 motorized on/off DN15 valves in input/output manifolds around a single pump. Three input valves (VI-btm, VI-top, VI-coll), three output valves (VO-coll, VO-rad, VO-tank), plus one at collector top (V_air) with a passive T joint permanently connecting the collector-top pipe to the reservoir (terminates below water line so the siphon cannot ingest air).
-- **Three operating modes**: Solar Charging (Mode 1), Greenhouse Heating (Mode 2), Active Drain (Mode 3). Each mode opens a specific subset of valves — see the `modes` section in system.yaml.
-- **Safety rule**: Always stop pump BEFORE switching valves.
+Physical facts about the hardware that are NOT discoverable from code:
 
-## Shelly Control Scripts
+- **Unpressurized system.** The Jäspi tank is sealed but vented via an open reservoir connected to the dip tube port. The reservoir acts as an air separator — gas vents to atmosphere through its open top.
+- **Communicating vessels.** Water level in the reservoir equals water level at the dip tube opening inside the tank (~197 cm). Gas is trapped above this level in the sealed tank.
+- **Valve manifold.** 7 motorized on/off DN15 valves around a single pump: 3 input (VI-btm, VI-top, VI-coll), 3 output (VO-coll, VO-rad, VO-tank), plus V_air at the collector top with a passive T joint permanently connecting the collector-top pipe to the reservoir (terminated below the water line so the siphon cannot ingest air).
+- **Operating modes** (plus `idle`): `solar_charging`, `greenhouse_heating`, `active_drain`. Each opens a specific subset of valves — see the `modes` section in `system.yaml`.
+- **Hardware**: Shelly Pro 4PM main controller, 3× Pro 2PM for valves, Plus 1 with Add-on for sensors.
 
-The `shelly/` directory contains the actual device scripts deployed to Shelly hardware:
+## Critical Rules
 
-- `shelly/control-logic.js` — Pure decision logic (ES5-compatible). Exports `evaluate(state, config, deviceConfig)` for mode decisions, plus `planValveTransition(target, current, openSince, opening, now, cfg)` for staged-open scheduling (023: 24 V PSU slot budget + 60 s min-open hold), `VALVE_TIMING` constants, `toSchedulerView`/`fromSchedulerView` for v_air polarity inversion, `buildSnapshotFromState` for the telemetry snapshot shape, and `runBoundedPool` for bounded concurrent valve actuation. All functions are pure — no side effects, no Shelly APIs. This is the testable core.
-- `shelly/control.js` — Shelly shell script that handles timers, RPC, relays, KVS, sensors, config guards, state event emission, and MQTT command execution (sensor config apply, sensor discovery, relay commands). Imports `control-logic.js` (concatenated at deploy time). Reads device config from KVS. Supports manual override mode (`deviceConfig.mo`): when active, skips evaluate() and processes direct relay commands; checks TTL expiry on each control loop iteration (device-side enforcement, works offline). Processes pending MQTT commands (discovery, config apply) after each control cycle. Mode transitions flow through a SCHEDULE loop (`transitionTo` → `scheduleStep` → `resumeTransition`) that calls `planValveTransition` and honors the PSU concurrent-open limit (2) and the min-open hold (60 s) via an in-memory `valveOpenSince`/`valveOpening` map and a single transition-scoped `state.transitionTimer`. Both normal mode transitions and safety overrides (freeze/overheat drain) use the same path; `stopDrain` routes through `transitionTo` to the IDLE target. Valve actuation is capped at 4 concurrent HTTP calls via `runBoundedPool`.
-- `shelly/telemetry.js` — Separate Shelly script for MQTT publish/subscribe, config bootstrap (HTTP GET on boot), KVS config persistence, and inter-script events. Publishes state snapshots to `greenhouse/state`, subscribes to `greenhouse/config`, `greenhouse/sensor-config`, `greenhouse/sensor-config-apply`, `greenhouse/discover-sensors`, and `greenhouse/relay-command`. Forwards MQTT commands to the control script and publishes results back.
-- `shelly/deploy.sh` — Deploys scripts to the Shelly Pro 4PM via HTTP RPC. Deploys both control script (slot 1) and telemetry script (slot 3). Supports `DEPLOY_VIA_VPN=true` for VPN deployment. Can configure MQTT on the device via `MQTT_BROKER_HOST`.
-- `shelly/devices.conf` — DHCP-reserved IP addresses for all Shelly devices. Includes `PRO4PM_VPN` for VPN-routable access.
+### Safety: stop pump BEFORE switching valves
 
-**Shelly scripting constraints**: Scripts must use ES5-compatible JavaScript — no `const`/`let`, no arrow functions, no destructuring, no template literals, no ES6 classes. The linter enforces these rules.
+Generally true, enforced by `transitionTo()` in `shelly/control.js` (stops pump/fan/heaters, then actuates valves). A few specific sequences intentionally deviate — don't simplify the transition scheduler assuming pump-first is always safe.
 
-## Shelly Linter
+### Only edit `shelly/control-logic.js` for control decisions
 
-- **CLI tool**: `shelly/lint/` — standalone Node.js CLI (`node shelly/lint/bin/shelly-lint.js`). Uses Acorn for AST parsing. Has its own `package.json` with acorn and js-yaml dependencies.
-- **CI**: `.github/workflows/lint-shelly.yml` runs the CLI linter on push/PR when `shelly/` files change.
+`shelly/control-logic.js` is pure ES5 decision logic (no side effects, no Shelly APIs). It runs on the device AND in the browser — the playground simulator loads it via `playground/js/control-logic-loader.js` with a CommonJS shim. When changing control logic, **edit this file only** — the playground picks it up automatically, and the bootstrap-history drift test ensures the pre-baked snapshot stays in sync.
 
-## SVG Diagram Conventions
+### Shelly Espruino runtime constraints
 
-Static SVGs in `design/diagrams/` use a dark background (#0d1117). Playground inline SVGs use the Stitch dark theme (see Playground Architecture). Color coding for static diagrams:
-- Blue (#42a5f5, #1565c0) = supply/cool water, tank
-- Red (#ef5350, #e53935) = hot water, dip tube path
-- Yellow (#f9a825) = solar collectors
-- Green (#76ff03) = sensors, active/ON states
-- Purple (#e040fb) = motorized valves
-- Orange (#ff9800) = drain mode, service valves
+Shelly runs a restricted Espruino runtime. The linter (`shelly/lint/`) enforces:
 
-Height scales in SVGs are approximate — `system-height-layout.svg` is the most precise for physical positioning.
+- **Errors**: `class`, `async`/`await`, `Promise`/`.then`/`.catch`, `fetch`/`XMLHttpRequest`/`WebSocket`/`Worker`/`localStorage`, `Array.{shift,unshift,splice,sort,flat,flatMap,findLast,findLastIndex}`, script > 16 KB, resource limits (5 timers, 5 event handlers, 5 concurrent RPC calls)
+- **Warnings**: template literals, destructuring, spread/rest, arrow functions with implicit return
 
-## drawio Topology Diagram
+Convention (not linter-enforced): use `var`, not `const`/`let`. The `SH-014` array-method list is **empirical** — each banned method has a device-crash incident comment. Add to the list if you hit another missing method on-device and document the incident.
 
-`design/diagrams/system-topology.drawio` is **generated**, not hand-edited. Edit the source files instead, then regenerate:
+### All device communication flows through MQTT
 
-- `design/diagrams/topology-layout.yaml` — declarative layout rules: canvas, styles, `themes.light` color overrides, component positions + ports, manifolds, valves, sensors, and the pipe list (each pipe declares `from`/`to` as `{component|valve, port}` references, optional label, optional waypoints).
-- `design/diagrams/generate-topology.js` — Node.js generator. Reads `system.yaml` (for advisory validation that the layout covers everything) + `topology-layout.yaml` and emits `system-topology.drawio`. Supports `--theme <dark|light>` and `--output <path>` flags; default `dark` produces the committed drift-checked file.
+No direct HTTP RPC to Shelly from the server. The `mqtt-bridge` routes state, config pushes, sensor discovery/apply, and relay commands through `greenhouse/*` topics. Adding a new device operation = new MQTT topic, not a new HTTP endpoint.
 
-Regenerate with `npm run diagram` (or `node design/diagrams/generate-topology.js`).
+### Vendored dependencies must stay vendored
 
-### Light-theme PDF
+`playground/vendor/` contains `js-yaml.mjs`, `simplewebauthn-browser.mjs`, `qrcode-generator.mjs`, `material-symbols.css`, `material-symbols-outlined.woff2`. Importmaps in each HTML file point at `./vendor/...`. **Do not replace with CDN URLs.** To upgrade: `npm pack <package>`, extract, copy dist files.
 
-A printable, WCAG-AA-contrast-compliant PDF of the topology diagram is generated from the same source via `npm run topology-pdf`. The underlying script `design/docs/pdf/generate-topology-pdf.js`:
-1. Generates a light-theme drawio variant to a temp file via `generate-topology.js --theme light`
-2. Exports an SVG via the `drawio` CLI (`/opt/homebrew/bin/drawio` by default, override with `DRAWIO_BIN` env var) with `--svg-theme light`
-3. Renders an A4 landscape PDF via Playwright (with `color-scheme: light` emulation so drawio's `light-dark()` CSS resolves to the light branch)
-4. Writes `design/docs/pdf/system-topology.pdf`
+### Readonly role blocks every mutating endpoint
 
-`npm run topology-svg` does only steps 1 and 2 (via `design/docs/pdf/generate-topology-svg.js`) and writes `design/docs/pdf/system-topology.svg` — useful when you need the vector source without wrapping it in an A4 page. **Do not confuse this with `design/diagrams/system-topology.svg`, which is a separate, hand-authored SVG (height-layout illustration).**
+Users with role `readonly` can browse but the following must reject with 403. Server uses `isAdminOrReject()` in `server.js`; WebSocket uses the `ws._role` check in `handleWsCommand()`.
 
-`npm run topology-contrast` runs `design/docs/pdf/check-contrast.js` against the committed drawio and prints a WCAG contrast audit — it parses each `mxCell` with a `fontColor`, resolves the effective background (own fillColor > parent fillColor > smallest containing vertex > canvas), alpha-blends over white, and flags anything below AA normal (4.5:1). Exits non-zero when any cell fails; pass a different path to audit a different file (e.g. `node design/docs/pdf/check-contrast.js /tmp/light.drawio`).
+- PUT `/api/device-config`
+- PUT `/api/sensor-config`
+- POST `/api/sensor-config/apply` and `/api/sensor-config/apply/:id`
+- POST `/api/sensor-discovery`
+- WebSocket `override-enter` / `override-exit` / `override-update` / `relay-command`
 
-Light theme color overrides live in `topology-layout.yaml` under `themes.light.{fill,font,stroke}` — hex → hex substitution maps. Add or change entries there to update the light palette without touching the generator.
-
-### Playground-theme SVG
-
-The playground's Schematic view is driven by `playground/assets/system-topology.svg`,
-a playground-themed SVG generated from the same topology source. It uses the Stitch
-dark palette (gold collectors, teal pump, coral radiator) and renders on a dark
-card background.
-
-Regenerate via:
-- `npm run topology-drawio-playground` — writes `playground/assets/system-topology.drawio`
-- `npm run topology-svg-playground`    — writes `playground/assets/system-topology.svg`
-
-Drift check: `tests/topology-diagram.test.js` also byte-compares the playground-theme
-drawio intermediate against the committed copy. The SVG itself is not byte-checked
-(drawio CLI output varies across versions) — only the drawio file.
-
-The playground-theme color substitutions live in `topology-layout.yaml` under
-`themes.playground.{fill,font,stroke}`.
-
-**Drift check in CI**: `tests/topology-diagram.test.js` runs as part of `npm run test:unit` (and therefore the full CI test suite). It calls `generateTopology()` and byte-compares the result to the committed `system-topology.drawio`. If you edit `system.yaml` or `topology-layout.yaml` without regenerating, the test fails with an error pointing at the first differing line and the `npm run diagram` fix command.
-
-## Bootstrap History Snapshot
-
-`playground/assets/bootstrap-history.json` is **generated**, not hand-edited. It is the pre-baked 12-hour thermal-simulation snapshot the playground loads on first paint when `isLiveCapable === false` (e.g. the GitHub Pages deploy) so the dashboard is populated immediately instead of empty.
-
-The snapshot is generated by `scripts/generate-bootstrap-history.mjs`, which:
-1. Loads `shelly/control-logic.js` via Function-shim (CommonJS export path).
-2. Wraps it in the playground `ControlStateMachine` (loaded the same way as `tests/playground-control.test.js`) so the transition log text matches what the browser would produce.
-3. Runs `bootstrapSimulation()` for 12 h of sim time using the default scenario params declared in the script (must match `playground/js/main.js` `params`).
-4. Downsamples to 1 sample per 60 s, rounds floats to 4 decimal places, and writes a deterministic JSON file (no `Date.now`, no `Math.random` — byte-stable across runs).
-
-Regenerate with `npm run bootstrap-history`.
-
-**Drift check in CI**: `tests/bootstrap-history-drift.test.js` runs as part of `npm run test:unit`. It re-runs `generate()` in-process and byte-compares against the committed JSON. If you change a temperature threshold (e.g. `solarEnterDelta` in `shelly/control-logic.js`), a thermal model parameter, or the default scenario params, the test fails with the first diverging line and the `npm run bootstrap-history` fix command. **Always commit the regenerated snapshot in the same change as the logic edit** so reviewers see the dashboard impact alongside the threshold tweak.
-
-The runtime restore path lives in `playground/js/main.js` `loadBootstrapSnapshotAndAutoStart()`. It fetches the snapshot, restores `model.state` + the controller instance fields from `final_model_state` / `final_controller_state`, pushes points/logs into the UI stores, then calls `togglePlay()` so simLoop continues seamlessly. If the fetch fails (e.g. running locally without the file) it falls back to an empty-history auto-start.
-
-The generator produces a drawio file where:
-- **Pipe endpoints are attached** to their component/valve cells via `source`/`target` refs + `exitX/exitY/entryX/entryY` style attributes. Moving a component in diagrams.net drags every connected pipe along with it.
-- **Pipe labels are attached** to the edge cell's `value` attribute and render at the edge midpoint.
-- **Sensor labels are attached** to the sensor dot via drawio's `labelPosition=right|left;align=left|right;verticalLabelPosition=middle` style — the label is part of the same cell and follows the dot.
-- **Tank interior** (gas pocket, HOT/COOL zones, heater, dip/bottom port dots, ports label) are drawio children of the tank vertex, so dragging the tank moves the whole composite — and every pipe connected to the port dots follows.
-
-`system.yaml` parses strictly in Node's js-yaml 4.x except for the `shopping_list.electronics` section (mixed map + sequence). The generator tolerates this: if parsing fails, it warns and skips cross-validation but still emits the diagram.
-
-js-yaml dependency resolution: the generator tries `require('js-yaml')` first and falls back to `shelly/lint/node_modules/js-yaml` (already installed via `shelly/lint/package.json`) so no extra install is needed.
-
-## Playground Architecture
-
-The `playground/` directory is the main web application — a solar heating monitoring and control system. Dark editorial theme based on the Stitch "Digital Sanctuary" design system (`design/Stitch/`): dark backgrounds (#0c0e12), gold primary (#e9c349), teal secondary (#43aea4), Newsreader serif headings, Manrope sans-serif body, tonal layering (no border lines for structure). Responsive: desktop sidebar nav (256px), mobile (<768px) glassmorphic bottom nav. Single HTML file with 5 hash-routed views, `<script type="importmap">` for ES modules. Deep-linkable via URL fragments (`#status`, `#components`, `#schematic`, `#controls`, `#device`).
-
-- `playground/index.html` — single-page app: Status (default, bento grid dashboard), Components (sensors/valves/actuators), Schematic (SVG system visualization), Controls (sliders, reset), Device (runtime Shelly config with explanations). Floating play/pause FAB.
-- `playground/login.html` — passkey login page (moved from monitor/)
-- `playground/js/` — ES modules: physics, control (wrapper), control-logic-loader (ESM adapter for Shelly logic), data-source (LiveSource/SimulationSource abstraction with sendCommand() for WebSocket commands and onCommandResponse() for override ack/error handling), UI, yaml-loader, login (passkey auth), auth (sidebar logout + "Add Device" invitation modal, noop when auth disabled), version-check (polls /version endpoint, shows update toast), sensors (sensor discovery, assignment, apply configuration)
-- `playground/js/sim-bootstrap.js` → pure fast-forward helper. Exports `bootstrapSimulation({model, controller, durationSeconds, dt, getEnv})` which advances a `ThermalModel` in place and returns the recorded points + transition log entries. Also exports `SIM_START_HOUR` and `getDayNightEnv` — the single source of truth used by both `main.js`'s simLoop and the bootstrap snapshot generator, so the day/night curve cannot drift between the live sim and the pre-baked history. Unit-tested by `tests/sim-bootstrap.test.js`.
-- `playground/assets/bootstrap-history.json` → **generated, drift-checked.** Pre-baked 12 h thermal-simulation snapshot loaded by `main.js` when `isLiveCapable === false` (the GitHub Pages deploy) so the dashboard is populated on first paint. Contains `meta`, `points` (sampled every 60 s), `log_entries` (all mode transitions), `final_model_state`, and `final_controller_state` so the runtime simLoop can resume seamlessly. Generated by `scripts/generate-bootstrap-history.mjs` (run `npm run bootstrap-history`). A drift test (`tests/bootstrap-history-drift.test.js`) byte-compares the committed file against the generator output and fails the build if a control-logic threshold change isn't accompanied by a regenerated snapshot.
-- `scripts/generate-bootstrap-history.mjs` → Node ESM generator. Loads `shelly/control-logic.js` via Function-shim (same trick as `tests/playground-control.test.js`), wraps it in the playground `ControlStateMachine`, runs `bootstrapSimulation()` with the default scenario params for 12 h, and writes a deterministic JSON snapshot. Exports `generate()`, `serialize()`, and `OUTPUT_PATH` so the drift test can re-run it in-process. Floats are rounded to 4 decimal places for stable diffs across V8 versions. **No `Date.now`, no `Math.random`** — the output is byte-stable.
-- `playground/js/main.js` `loadBootstrapSnapshotAndAutoStart()` → fetches `bootstrap-history.json`, restores `model.state` + `controller` instance vars from `final_model_state` / `final_controller_state`, pushes the points into `timeSeriesStore` and the log entries into `transitionLog`, then calls `togglePlay()`. On fetch failure (e.g. running locally without the file) it logs a warning and starts the run loop with empty history rather than crashing. The `window.__simulateGitHubPagesDeploy` flag is a Playwright-only test hatch that flips `isLiveCapable` so the e2e suite (`tests/e2e/auto-bootstrap.spec.js`) can exercise the GH Pages code path on localhost.
-- `playground/js/schematic.js` → schematic rendering module: fetches the generated topology SVG, installs highlighting CSS, exposes `buildSchematic({container, svgUrl}) → { update, destroy }`. Pure helper `computeActivePipes(state, pipes)` is unit-tested
-- `playground/js/schematic-topology.js` → PIPES data: per-pipe activation rules consumed by `computeActivePipes`
-- `playground/js/schematic-tester.js` + `playground/schematic-tester.html` → standalone component tester with mode presets and per-valve/actuator toggles. Not linked from SPA nav, reached by direct URL
-- `playground/assets/system-topology.svg` + `.drawio` → generated playground-theme topology (via `npm run topology-svg-playground` / `topology-drawio-playground`)
-- `playground/css/style.css` — shared styles
-- `design/Stitch/` — Stitch UI design mockups (desktop + mobile) with DESIGN.md spec and code.html references
-
-### Shared Control Logic
-
-The playground simulator uses the **real Shelly control logic** (`shelly/control-logic.js`) at runtime. The file `playground/js/control-logic-loader.js` fetches the ES5 Shelly script via HTTP, evaluates it with a CommonJS `module` shim, and exposes the exports as an ES module. The `ControlStateMachine` class in `playground/js/control.js` is a thin stateful wrapper that translates playground sensor names to the Shelly state format and maintains transition logs — all mode decisions are delegated to the shared `evaluate()` function. This ensures the simulator always runs the exact same logic as the deployed hardware. **When changing control logic, only edit `shelly/control-logic.js`** — the playground picks it up automatically.
-
-### Vendored Dependencies
-
-All third-party libraries are vendored locally in `playground/vendor/` to avoid CDN/CORS issues in restricted environments (e.g. Claude Code web runtime, CI, offline):
-
-- `playground/vendor/js-yaml.mjs` — js-yaml 4.1.0 (ESM), used by all playground pages
-- `playground/vendor/simplewebauthn-browser.mjs` — @simplewebauthn/browser 13.3.0 (ESM, for passkey auth)
-- `playground/vendor/qrcode-generator.mjs` — qrcode-generator 2.0.4 (ESM, for invitation QR codes)
-
-**Do NOT replace these with CDN URLs.** The importmaps in each HTML file point to `./vendor/...` paths. If upgrading a dependency, download via `npm pack`, extract the dist files, and copy to `playground/vendor/`.
-
-## Server
-
-The `server/` directory contains the Node.js API server that serves the playground app, bridges MQTT to WebSocket, and provides authentication, device config, sensor config, sensor discovery, history, and events APIs. All device communication flows through MQTT — no direct HTTP RPC to Shelly devices.
-
-- `server/server.js` — HTTP server: serves playground at `/`, auth middleware (when `AUTH_ENABLED=true`), WebSocket (bidirectional: broadcasts state, receives commands for manual override and relay toggling), device-config API, sensor-config API, sensor-discovery API, history API, events API (`GET /api/events?type=mode&limit=10&before=<unix_ms>` — paginated newest-first state-events feed for the System Logs UI), health endpoint
-- `server/auth/` — WebAuthn passkey auth: `credentials.js` (S3-backed store), `session.js` (HMAC cookies), `webauthn.js` (handlers), `invitations.js` (registration invitations)
-- `server/lib/` — Shared libraries: logger, S3 storage adapter, database module, MQTT bridge, device config, sensor config, tracing, config CLIs (vpn-config, db-config, nr-config)
-
-**Local mode**: `node server/server.js` — no auth, direct LAN access to Shelly devices.
-**Cloud mode**: `AUTH_ENABLED=true RPID=domain ORIGIN=https://domain node server/server.js` — passkey auth required, VPN tunnel to reach devices.
+When adding a new mutating endpoint, add the same guard.
 
 ## Testing Policy
 
-**Bug fixes follow test-first workflow:**
+**Bug fixes and behavior changes follow test-first:**
 
-1. **Write a failing test first** — an e2e or integration test that reproduces the bug
-2. **Run it to confirm it fails** — this verifies you understood the problem correctly
-3. **Implement the fix**
-4. **Run the test again to confirm it passes**
-5. **Commit both the test and the fix**
+1. Write a failing test that reproduces the bug or asserts the new behavior.
+2. Run it — confirm it fails.
+3. Implement the fix.
+4. Run it — confirm it passes.
+5. Commit test + fix together.
 
-This applies to behavior changes too (e.g. removing auto-polling, changing error messages) — write the test for the new expected behavior first. Do not commit fixes without accompanying test additions — treat missing tests as an incomplete fix.
+Missing tests = incomplete fix. Applies to behavior changes too (e.g. removing auto-polling, changing error messages).
 
-## Running Tests
+## Commands
 
 ```bash
-npm test              # all tests: unit + simulation + e2e
-npm run test:unit     # unit + simulation tests only (fast, no browser)
-npm run test:e2e      # Playwright e2e tests only (requires Chromium)
-npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 min)
+npm test                           # unit + simulation + e2e
+npm run test:unit                  # fast, no browser
+npm run test:e2e                   # Playwright (Chromium)
+npm run screenshots                # regenerate screenshots (runs 24 h sim, ~1–2 min)
+npm run diagram                    # regenerate system-topology.drawio (dark theme)
+npm run topology-pdf               # printable light-theme PDF of the topology
+npm run topology-svg               # light-theme SVG
+npm run topology-drawio-playground # playground-theme drawio
+npm run topology-svg-playground    # playground-theme SVG (dashboard)
+npm run topology-contrast          # WCAG audit of topology drawio
+npm run bootstrap-history          # regenerate pre-baked 12 h sim snapshot
+node scripts/make-icons.mjs        # regenerate PWA + notification icons
+node scripts/generate-liquid-glass.mjs  # regenerate bottom-nav glass PNGs
 ```
 
-### Test Structure
+## Generated Files & Drift Checks
 
-- `tests/control-logic.test.js` — unit tests for the pure control logic (`shelly/control-logic.js`)
-- `tests/playground-control.test.js` — unit tests for the playground control state machine (`playground/js/control.js`)
-- `tests/auth.test.js` — unit tests for auth modules (session signing, multi-user credential store, role-aware invitations, legacy single-user store migration)
-- `tests/user-management.test.js` — unit tests for the role-enforcing webauthn handlers (`GET /auth/status`, `GET /auth/users`, `PATCH /auth/users/:id`, `DELETE /auth/users/:id`, `POST /auth/invite/create`, `POST /auth/invite/validate`, `requireAdmin`/`requireUser` helpers)
-- `tests/s3-storage.test.js` — unit tests for S3 storage adapter (local fallback mode, S3 detection)
-- `tests/vpn-config.test.js` — unit tests for VPN config S3 persistence helper
-- `tests/db.test.js` — unit tests for PostgreSQL/TimescaleDB module (schema init, inserts, queries)
-- `tests/tracing.test.js` — unit tests for OpenTelemetry tracing initialization, graceful no-op, MQTT spans, log trace context injection, nr-config S3 helper
-- `tests/mqtt-bridge.test.js` — unit tests for MQTT bridge (state change detection, connection status)
-- `tests/device-config.test.js` — unit tests for device config store (default config, CRUD, persistence)
-- `tests/sensor-config.test.js` — unit tests for sensor config store (validation, compact format, assignments, persistence)
-- `tests/push.test.js` — unit tests for push notification module (VAPID keys, subscriptions, rate limiting, category filtering)
-- `tests/notifications.test.js` — unit tests for notification engine (temperature prediction, overheat/freeze warnings, report scheduling)
-- `tests/device-config-integration.test.js` — integration tests: UI config format → Shelly control-logic interpretation (staged deployment scenarios)
-- `tests/data-source.test.js` — unit tests for data source abstraction (state mapping, connection transitions)
-- `tests/version-check.test.js` — unit tests for /version endpoint hash computation (determinism, change detection)
-- `tests/schematic.test.js` — unit tests for the pure `computeActivePipes` helper (solar/greenhouse/drain modes + pump-off edge cases)
-- `tests/sim-bootstrap.test.js` — unit tests for the `bootstrapSimulation()` fast-forward helper (simTime advancement, point/log shape, day-night transitions)
-- `tests/bootstrap-history-drift.test.js` — drift check: re-runs `scripts/generate-bootstrap-history.mjs` in-process and byte-compares against the committed `playground/assets/bootstrap-history.json`. Fails with a "run `npm run bootstrap-history`" message if a control-logic threshold change wasn't accompanied by a regenerated snapshot. Same shape as `tests/topology-diagram.test.js`, which guards the topology drawio.
-- `tests/simulation/` — thermal model and simulation scenario tests (`simulation.test.js`, `thermal-model.test.js`, `scenarios.js`, `simulator.js`, `thermal-model.js`)
-- `tests/e2e/fixtures.js` — shared Playwright fixture: blocks Google Fonts for offline environments. **All e2e tests must import from this file, not from `@playwright/test`.**
-- `tests/e2e/thermal-sim.spec.js` — Playwright e2e tests for the playground thermal simulation
-- `tests/e2e/device-config.spec.js` — Playwright e2e tests for the Device config UI (toggle switches, dropdowns, checkboxes → compact JSON format)
-- `tests/e2e/sensor-config.spec.js` — Playwright e2e tests for the Sensors config UI (detection, assignment, apply with mocked RPC)
-- `tests/e2e/live-mode.spec.js` — Playwright e2e tests for live mode toggle, WebSocket connection, simulation fallback
-- `tests/e2e/auto-bootstrap.spec.js` — Playwright e2e tests for the GitHub Pages auto-bootstrap path: forces `isLiveCapable=false` via the `window.__simulateGitHubPagesDeploy` test hatch and asserts the simulation auto-starts with 12 h of pre-rolled history visible in the System Logs card and history graph on first paint
-- `tests/e2e/live-display.spec.js` — Playwright e2e tests verifying that the schematic view and status history graph render real values from the live data source (not simulation defaults or empty state)
-- `tests/e2e/live-logs.spec.js` — Playwright e2e tests verifying that the System Logs card is backed by the `/api/events` state-events feed, lazy-loads older entries on scroll, and prepends new entries when the live mode changes
-- `tests/e2e/version-check.spec.js` — Playwright e2e tests for JS version check toast (appearance, editorial copy, dismiss, silent failure)
-- `tests/e2e/auth-actions.spec.js` — Playwright e2e tests for the sidebar logout + Add Device invitation flow (visibility based on `/auth/status`, logout POST, invite modal with QR code, error handling)
-- `tests/e2e/schematic-tester.spec.js` — Playwright e2e tests for the standalone component tester at `/playground/schematic-tester.html` (preset buttons + per-valve toggles)
-- `tests/e2e/take-screenshots.spec.js` — Screenshot generator: runs 24h simulation, captures all views (excluded from normal test runs via `testIgnore` in `playwright.config.js`, uses separate `playwright.screenshots.config.js`)
+These files are **generated, not hand-edited**. Regenerate and commit in the **same change** as the source edit — CI will fail otherwise.
 
-### Test Setup Notes
+| Generated file | Source | Regenerate | Drift test |
+|---|---|---|---|
+| `design/diagrams/system-topology.drawio` | `system.yaml` + `design/diagrams/topology-layout.yaml` | `npm run diagram` | `tests/topology-diagram.test.js` |
+| `playground/assets/system-topology.drawio` | same, playground theme | `npm run topology-drawio-playground` | `tests/topology-diagram.test.js` (drawio only; SVG not byte-compared) |
+| `playground/assets/bootstrap-history.json` | `shelly/control-logic.js` thresholds + generator defaults | `npm run bootstrap-history` | `tests/bootstrap-history-drift.test.js` |
 
-- **Playwright version**: Must match the cached Chromium browser revision. Currently `@playwright/test@1.56.0` matches `chromium-1194`. If you see "browser not found" errors, check `~/.cache/ms-playwright/` for available revisions and install the matching Playwright version.
-- **Static server**: Tests use `npx serve` on port 3210 to serve the playground. The Playwright config auto-starts this server.
-- **No `-s` flag on serve**: Do NOT use `serve -s` (SPA mode) — it breaks direct HTML file access by redirecting all routes.
-- **Shared fixtures**: All e2e tests import `{ test, expect }` from `./fixtures.js` (NOT from `@playwright/test`). The fixture blocks Google Fonts requests to prevent page load hanging in offline/restricted environments. Always use `import { test, expect } from './fixtures.js'` when adding new e2e test files.
-- Individual test timeouts are 30s. E2e tests verify the 2D SVG schematic and simulation behavior.
+A threshold change in `control-logic.js` without a regenerated snapshot fails CI with a pointer to the first diverging line and the fix command. Topology palette overrides live in `topology-layout.yaml` under `themes.{light,playground}.{fill,font,stroke}`.
 
-## CI / GitHub Actions
+## Test Setup Gotchas
 
-- `.github/workflows/ci.yml` — runs the full test suite (unit, simulation, auth, e2e) on every push. Triggers on `push` only (not `pull_request`) so tests run exactly once — opening a PR from an already-pushed branch does not re-trigger.
-- `.github/workflows/deploy.yml` — CD pipeline: test → build app + openvpn images → push to GHCR → `kubectl set image` rolling update on UKS cluster → deploy Shelly scripts via `kubectl exec`. Triggers on push to main/master. Requires `KUBE_CONFIG_DATA` GitHub secret (base64-encoded deployer kubeconfig from Terraform output). The deployer ServiceAccount RBAC: can patch the `app` Deployment and exec into pods (for Shelly script deployment). The Shelly deploy step is non-fatal — failures don't block the pipeline.
-- `.github/workflows/deploy-pages.yml` — deploys playground to GitHub Pages on push to main/master
-- `.github/workflows/lint-shelly.yml` — runs Shelly linter on push/PR when `shelly/` files change
+- **`import { test, expect } from './fixtures.js'`** for all e2e tests — NOT from `@playwright/test`. The fixture blocks Google Fonts so page loads don't hang in offline environments.
+- **Playwright version must match the cached Chromium revision.** Currently `@playwright/test@1.56.0` ↔ `chromium-1194`. On "browser not found" errors, check `~/.cache/ms-playwright/` and pin Playwright to match.
+- **Use plain `serve`, NOT `serve -s`.** SPA mode rewrites `/schematic-tester.html` → `/schematic-tester` → `index.html`, so standalone pages (schematic-tester, liquid-glass-test) become unreachable. Playwright config auto-starts plain `serve` on port 3210.
 
-## Active Technologies
-- Node.js 20 LTS (existing `server.js` uses CommonJS `http` module) + @simplewebauthn/server, @simplewebauthn/browser (vendored), Caddy (reverse proxy) (001-deploy-web-ui-cloud)
-- JSON file for passkey credentials and sessions (single-user, no database) (001-deploy-web-ui-cloud)
-- Node.js 20 LTS (CommonJS), Terraform >= 1.5 (HCL), Docker Compose v2 + @aws-sdk/client-s3 (new, for S3 persistence), Caddy 2-alpine, OpenVPN (Alpine, optional) (002-containerize-upcloud-deploy)
-- UpCloud Managed Object Storage (S3-compatible, €5/month, 250GB min) (002-containerize-upcloud-deploy)
-- Shell (deploy script), HCL (Terraform), YAML (cloud-init, compose), Dockerfile + `docker:cli` base image (Alpine + Docker CLI), Docker Compose v2, systemd (003-deployer-container-config)
-- UpCloud Managed Object Storage (existing, for app credentials) (003-deployer-container-config)
-- Node.js 20 LTS (CommonJS), POSIX shell (deployer) + `@aws-sdk/client-s3` (already in app image) (004-vpn-key-persistence)
-- UpCloud Managed Object Storage (S3-compatible, existing bucket) (004-vpn-key-persistence)
-- JavaScript ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + None new — uses existing auth endpoints and vendored libs (004-add-logout-feature)
-- N/A (sessions already managed by existing credential store) (004-add-logout-feature)
-- Node.js 20 LTS (CommonJS) + ES6+ browser modules + `web-push` (new, v3.6.7) + existing `@aws-sdk/client-s3`, `@simplewebauthn/server` (004-pwa-push-notifications)
-- S3-compatible object storage (UpCloud Managed Object Storage) — two new keys: `push-config.json`, `push-subscriptions.json` (004-pwa-push-notifications)
-- HCL (Terraform >= 1.5), POSIX shell (deployer), YAML (cloud-init, docker-compose) + UpCloud Terraform provider ~> 5.0, Docker Compose v2, systemd (005-fix-vpn-immutable-config)
-- UpCloud Managed Object Storage (S3-compatible) for VPN config and credentials (005-fix-vpn-immutable-config)
-- JavaScript ES5 (Shelly), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + @simplewebauthn/server, @aws-sdk/client-s3, web-push, Playwright, Acorn (linter) (006-organize-repo-structure)
-- S3-compatible object storage (UpCloud), local filesystem fallback (006-organize-repo-structure)
-- POSIX shell (setup script, deployer), HCL (Terraform >= 1.5), Node.js 20 LTS (vpn-config.js), YAML (docker-compose) + OpenVPN (Alpine package), Docker Compose v2, @aws-sdk/client-s3 (existing) (007-switch-to-openvpn)
-- UpCloud Managed Object Storage (S3-compatible) for VPN config persistence (007-switch-to-openvpn)
-- Node.js 20 LTS (CommonJS server-side), ES6+ browser modules + `@simplewebauthn/server` (existing), `@simplewebauthn/browser` (vendored, existing), `qrcode` (new, vendored browser bundle for QR generation) (008-add-passkey-registration)
-- S3-compatible object storage for credentials (existing, unchanged schema); in-memory for invitations and rate limits (008-add-passkey-registration)
-- JavaScript ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + None new — extends existing service worker and manifest (009-add-home-screen-support)
-- N/A — no new persistent data (009-add-home-screen-support)
-- JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `better-sqlite3` (SQLite), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push` (010-live-system-playground)
-- SQLite via `better-sqlite3` (in-process, WAL mode) + S3 backup for durability (010-live-system-playground)
-- JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `pg` (node-postgres), `mqtt` (MQTT client), `ws` (WebSocket server), Mosquitto 2.x (broker), existing: `@simplewebauthn/server`, `@aws-sdk/client-s3`, `web-push` (010-live-system-playground)
-- UpCloud Managed PostgreSQL with TimescaleDB extension (plan `1x1xCPU-2GB-25GB`, zone `fi-hel1`), provisioned via Terraform (010-live-system-playground)
-- Node.js 20 LTS (CommonJS server, ES6+ browser modules) + `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/exporter-metrics-otlp-http`, `@opentelemetry/exporter-logs-otlp-http` (011-newrelic-observability)
-- UpCloud S3-compatible Object Storage (license key persistence), UpCloud Managed PostgreSQL with TimescaleDB (011-newrelic-observability)
-- JavaScript — Node.js 20 LTS (CommonJS server), ES6+ (browser modules) + Node.js `http` module (server), browser `fetch` API (client). No new dependencies. (012-secure-rpc-api)
-- N/A — no data model changes (012-secure-rpc-api)
-- JavaScript ES6+ (browser modules), Node.js 20 LTS (CommonJS server), ES5 (Shelly scripts), POSIX shell (deploy scripts) + `ws` (WebSocket), `mqtt` (MQTT client), `pg` (PostgreSQL), `@aws-sdk/client-s3`, `@opentelemetry/*`, `@simplewebauthn/server` — removed `web-push` (013-remove-monitor-app)
-- PostgreSQL/TimescaleDB (sensor history), UpCloud S3-compatible Object Storage (config persistence) (013-remove-monitor-app)
-- HCL (Terraform >= 1.5), YAML (Kubernetes manifests), POSIX shell (CI scripts), Node.js 20 LTS (app, unchanged) + UpCloud Terraform provider ~> 5.0, Kubernetes provider ~> 2.24, Helm provider ~> 2.12, kubectl, cert-manager, NGINX Ingress controller (014-migrate-upcloud-kubernetes)
-- UpCloud Managed PostgreSQL with TimescaleDB (unchanged), UpCloud Managed Object Storage (unchanged) (014-migrate-upcloud-kubernetes)
-- JavaScript ES6+ (browser modules), CSS3 + Playwright 1.56.0 (e2e tests), `npx serve` (static server for tests) (015-fix-padding-status-display)
-- N/A (client-side only) (015-fix-padding-status-display)
-- JavaScript ES6+ (browser modules), Node.js 20 LTS (CommonJS server) + None new — uses existing `server/server.js` HTTP handler and browser `fetch` API (016-js-reload-prompt)
-- N/A — version hash is computed on-the-fly from file contents (016-js-reload-prompt)
-- Node.js 20 LTS (CommonJS) + `pg` (PostgreSQL driver), `@simplewebauthn/server`, native `http`/`crypto` (017-architecture-code-review)
-- PostgreSQL with TimescaleDB (sensor data), S3-compatible object storage (credentials) (017-architecture-code-review)
-- JavaScript ES5 (Shelly scripts), Node.js 20 LTS (tests) + Shelly scripting runtime, node:test (testing) (017-review-hardware-architecture)
-- Shelly KVS (device config), MQTT (telemetry) (017-review-hardware-architecture)
-- YAML (GitHub Actions), HCL (Terraform), Bash + kubectl, GitHub Actions, Kubernetes RBAC (018-cd-shelly-deploy)
-- JavaScript ES5 (Shelly scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + Existing — `ws`, `mqtt`, `pg`, `@aws-sdk/client-s3`, `@simplewebauthn/server`. No new dependencies. (018-configure-sensor-connectors)
-- S3-compatible object storage (UpCloud) / local filesystem fallback (sensor-config.json). Shelly KVS for device-side config. (018-configure-sensor-connectors)
-- JavaScript ES5 (Shelly device scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `mqtt` (MQTT client), `ws` (WebSocket server), `pg` (PostgreSQL), `@aws-sdk/client-s3`, Mosquitto 2.x (sidecar broker) (019-mqtt-only-shelly-api)
-- PostgreSQL/TimescaleDB (sensor history, state events), S3-compatible object storage (config persistence), Shelly KVS (device-side config, 256-byte limit per key) (019-mqtt-only-shelly-api)
-- JavaScript ES6+ (browser modules), HTML5, CSS3 + None new — vanilla ES modules only. Existing vendored: js-yaml 4.1.0 (021-reactive-state-ui)
-- N/A (client-side only; server APIs unchanged) (021-reactive-state-ui)
-- JavaScript ES5 (Shelly device scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `ws` (WebSocket), `mqtt` (MQTT client), `pg` (PostgreSQL) — all existing (022-relay-toggle-ui)
-- Device config in S3/local JSON (existing), override state transient in device config `mo` field (022-relay-toggle-ui)
-- JavaScript ES5 (Shelly device scripts), Node.js 20 LTS (server + tests, CommonJS), ES6+ (browser modules) + Existing — `mqtt` (MQTT client), `ws` (WebSocket), `pg` (PostgreSQL), `node:test` (unit tests), Playwright 1.56.0 (e2e). No new dependencies. (023-limit-valve-operations)
-- Valve open-since timestamps and the staged-opening state machine are in-memory on the Shelly device (non-persisted across reboot by design, see FR-015). The concurrent-open limit, opening-window duration, and minimum-open-hold are defined as named constants in `shelly/control-logic.js` so they can be adjusted without code hunting. (023-limit-valve-operations)
-- JavaScript ES5 (Shelly device scripts, constrained by Espruino runtime — no `const`/`let`, no arrow functions, no `Array.sort`/`.shift`/`.findLast`, enforced by `shelly/lint/`), ES6+ browser modules (playground), Node.js 20 LTS (server + tests, CommonJS), POSIX shell (deploy scripts), YAML (`system.yaml`, `topology-layout.yaml`), Mermaid (`control-states.mmd`), SVG (hand-authored). + `mqtt`, `ws`, `pg`, `@aws-sdk/client-s3`, `@simplewebauthn/server` (all existing, unchanged); `acorn` + `js-yaml` (linter + topology generator); `node:test` (unit tests); Playwright 1.56.0 + `npx serve` (e2e tests). No new dependencies. (024-remove-vret-valve)
-- `system.yaml` + `topology-layout.yaml` (authored files, checked into git); `design/diagrams/system-topology.drawio` (generated, drift-checked); Shelly KVS (device-config JSON with compact keys, valve-agnostic — no migration); PostgreSQL/TimescaleDB (sensor history, valve-agnostic rows); S3 `device-config.json` (valve-agnostic). No schema changes. (024-remove-vret-valve)
+## Cloud Deployment
 
-## Cloud Deployment Architecture
-
-```
-Internet → Worker Node :80/:443 (hostNetwork)
-  → NGINX Ingress Controller (cert-manager TLS)
-    → K8s Service → Pod: app + openvpn (sidecar) + mosquitto (sidecar)
-                          ↕ VPN tunnel
-                     Shelly devices (LAN)
-```
-
-- **Infrastructure**: UpCloud Managed Kubernetes (UKS) development plan (free control plane) + 1x DEV-1xCPU-1GB worker node (fi-hel1) + Managed Object Storage (europe-1) + Managed PostgreSQL (TimescaleDB), provisioned via Terraform
-- **Pod architecture**: Single Deployment with 3 containers sharing the network namespace: app (Node.js :3000), openvpn (sidecar, VPN tunnel), mosquitto (sidecar, MQTT :1883). The app reaches Mosquitto on `localhost:1883` and has VPN access through the openvpn sidecar.
-- **TLS termination**: NGINX Ingress controller (DaemonSet, `hostNetwork: true`) binds to ports 80/443 on the worker node's public IP. cert-manager with Let's Encrypt HTTP-01 challenge for automatic TLS certificates. No managed load balancer.
-- **Container hardening**: App runs with read-only root filesystem, non-root user (1000). Mosquitto runs as non-root (1883). OpenVPN needs NET_ADMIN capability and /dev/net/tun hostPath access (not privileged mode).
-- **Persistence**: UpCloud Managed Object Storage (S3-compatible) — stores WebAuthn credentials (`credentials.json`) and VPN config (`openvpn.conf`). UpCloud Managed PostgreSQL with TimescaleDB for sensor history.
-- **VPN networking**: The openvpn sidecar container shares the pod's network namespace with the app. This gives the app direct access to the VPN tunnel, allowing it to proxy RPC requests to Shelly devices on the home LAN. OpenVPN uses static key (PSK) mode for compatibility with UniFi site-to-site VPN.
-- **Auth**: WebAuthn passkeys via @simplewebauthn, HMAC-signed session cookies (30-day expiry)
-- **CD**: GitHub Actions → GHCR (app + openvpn images) → `kubectl set image` rolling update on the K8s cluster. Uses a scoped deployer ServiceAccount (can only patch the `app` Deployment) — no UpCloud API token stored in GitHub. Kubeconfig generated by Terraform and stored as `KUBE_CONFIG_DATA` GitHub secret. Recreate strategy (brief downtime) required because the openvpn sidecar uses hostPort 1194.
-
-### Configuration Management
-
-Server environment is delivered via Kubernetes-native mechanisms, managed by Terraform:
-
-- **`kubernetes_secret/app-secrets`** — sensitive values: `DATABASE_URL`, `SESSION_SECRET`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `NEW_RELIC_LICENSE_KEY`. Populated from Terraform resource outputs and variables.
-- **`kubernetes_config_map/app-config`** — non-secret service config: `PORT`, `AUTH_ENABLED`, `RPID`, `ORIGIN`, `DOMAIN`, `GITHUB_REPO`, `VPN_CHECK_HOST`, `VPN_CONFIG_KEY`, `SETUP_WINDOW_MINUTES`, `NODE_ENV`, `MQTT_HOST`, `SENSOR_HOST_IPS`, `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`
-- **`kubernetes_secret/openvpn-config`** — VPN configuration file
-- **`kubernetes_config_map/mosquitto-config`** — Mosquitto listener configuration
+- **Infrastructure**: UpCloud Managed Kubernetes (free control plane) + 1× worker node + Managed Object Storage + Managed PostgreSQL/TimescaleDB. All via Terraform in `deploy/terraform/`.
+- **Pod shape**: single Deployment, 3 containers sharing the network namespace — `app` (Node.js :3000), `openvpn` sidecar (VPN to home LAN), `mosquitto` sidecar (MQTT :1883). The app reaches Mosquitto on `localhost:1883` and Shelly devices through the VPN tunnel.
+- **VPN/MQTT firewall**: an init container sets iptables rules restricting UDP 1194 to whitelisted CIDRs and TCP 1883 to localhost + `192.168.0.0/16`. Kernel-level because CiliumNetworkPolicy does not reliably filter `hostPort`. Details in `deploy/k8s/app-deployment.yaml`.
+- **TLS**: NGINX Ingress (DaemonSet, `hostNetwork: true`) + cert-manager with Let's Encrypt HTTP-01. No managed load balancer.
+- **Deployment strategy**: `Recreate` (brief downtime) because the openvpn sidecar uses `hostPort: 1194` — two pods can't bind the same hostPort on one node.
+- **Config delivery**: `kubernetes_secret/app-secrets` (DATABASE_URL, SESSION_SECRET, S3 creds, NEW_RELIC_LICENSE_KEY) + `kubernetes_config_map/app-config` (PORT, AUTH_ENABLED, RPID, ORIGIN, DOMAIN, MQTT_HOST, OTEL_*). Managed by Terraform — read the .tf files for the full list.
+- **CD**: push to main → GitHub Actions → GHCR (app + openvpn images) → `kubectl set image` rolling update → `kubectl exec` runs `shelly/deploy.sh`. The Shelly deploy step is non-fatal. Requires `KUBE_CONFIG_DATA` GitHub secret (scoped deployer ServiceAccount — can only patch the `app` Deployment and exec into pods).
 
 ## Observability (New Relic)
 
-The app supports optional New Relic observability via OpenTelemetry. All telemetry is disabled by default (zero overhead) and activates only when a license key is configured.
+Optional OpenTelemetry → New Relic. Disabled by default (zero overhead). `server/lib/tracing.js` is loaded via `--require` before `server.js` and no-ops when `NEW_RELIC_LICENSE_KEY` is unset.
 
-### Enabling
-
+Enable:
 ```bash
 cd deploy/terraform
 terraform apply -var="new_relic_license_key=NRAK-..."
 ```
 
-Terraform stores the key in the `app-secrets` Kubernetes Secret. Redeploy to activate.
+`server/lib/logger.js` injects `trace.id` / `span.id` into JSON log entries. MQTT operations have manual spans in `server/lib/mqtt-bridge.js`. HTTP, `pg`, and AWS SDK calls are auto-instrumented. The license-key region selects the OTLP endpoint (EU vs US) automatically.
 
-### Architecture
+## Run Modes
 
-- **`server/lib/tracing.js`** — OTel SDK init, loaded via `--require` before server.js. No-op when `NEW_RELIC_LICENSE_KEY` is unset.
-- **`server/lib/nr-config.js`** — S3 persistence helper for the license key (same pattern as `db-config.js`). S3 key: `newrelic-config.json`.
-- **`server/lib/logger.js`** — Injects `trace.id` and `span.id` into JSON log entries for trace-log correlation.
-- **`server/lib/mqtt-bridge.js`** — Manual MQTT spans (`mqtt.message`, `mqtt.publish`) via `@opentelemetry/api`.
-- **Monitoring agents** — New Relic Infrastructure and nri-postgresql can be deployed as separate K8s workloads when needed.
-
-### Environment Variables
-
-| Variable | Source | Purpose |
-|----------|--------|---------|
-| `NEW_RELIC_LICENSE_KEY` | K8s Secret (via Terraform) | Ingest license key. Empty = telemetry disabled. |
-| `NRIA_LICENSE_KEY` | K8s Secret (if infra agent deployed) | Same key, for infra agent. |
-| `OTEL_SERVICE_NAME` | K8s ConfigMap (via Terraform) | Service name in New Relic (default: `greenhouse-monitor`). |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | config.env | OTLP endpoint (auto-detected from license key region: EU `https://otlp.eu01.nr-data.net`, US `https://otlp.nr-data.net`). |
-
-### What Gets Traced
-
-- HTTP requests (incoming + outgoing Shelly proxy) — auto-instrumented
-- PostgreSQL queries — auto-instrumented via `pg` driver
-- S3 operations — auto-instrumented via AWS SDK
-- MQTT operations (connect, subscribe, publish, message) — manual spans
-- Node.js runtime metrics (heap, GC, event loop) — auto-instrumented
-- Host/container metrics — via New Relic Infrastructure agent
-- PostgreSQL health — via nri-postgresql integration
-
-## Recent Changes
-- 024-remove-vret-valve: Added JavaScript ES5 (Shelly device scripts, constrained by Espruino runtime — no `const`/`let`, no arrow functions, no `Array.sort`/`.shift`/`.findLast`, enforced by `shelly/lint/`), ES6+ browser modules (playground), Node.js 20 LTS (server + tests, CommonJS), POSIX shell (deploy scripts), YAML (`system.yaml`, `topology-layout.yaml`), Mermaid (`control-states.mmd`), SVG (hand-authored). + `mqtt`, `ws`, `pg`, `@aws-sdk/client-s3`, `@simplewebauthn/server` (all existing, unchanged); `acorn` + `js-yaml` (linter + topology generator); `node:test` (unit tests); Playwright 1.56.0 + `npx serve` (e2e tests). No new dependencies.
-- 023-limit-valve-operations: Added JavaScript ES5 (Shelly device scripts), Node.js 20 LTS (server + tests, CommonJS), ES6+ (browser modules) + Existing — `mqtt` (MQTT client), `ws` (WebSocket), `pg` (PostgreSQL), `node:test` (unit tests), Playwright 1.56.0 (e2e). No new dependencies.
-- 022-relay-toggle-ui: Added JavaScript ES5 (Shelly device scripts), ES6+ (browser modules), Node.js 20 LTS (server, CommonJS) + `ws` (WebSocket), `mqtt` (MQTT client), `pg` (PostgreSQL) — all existing
+- **Local**: `node server/server.js` — no auth, direct LAN access to Shelly devices.
+- **Cloud**: `AUTH_ENABLED=true RPID=<domain> ORIGIN=https://<domain> node server/server.js` — passkey auth, VPN tunnel to reach devices.
