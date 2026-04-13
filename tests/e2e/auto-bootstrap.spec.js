@@ -3,12 +3,18 @@
  * E2E coverage for the GitHub-Pages auto-bootstrap behavior.
  *
  * On deploys without live mode (isLiveCapable === false), the playground
- * pre-rolls 12 h of simulation history and starts the run loop immediately
- * so the dashboard is populated on first paint.
+ * fetches the pre-baked snapshot at `/playground/assets/bootstrap-history.json`,
+ * restores 12 h of model state into the dashboard, and starts the run
+ * loop — so the user lands on a populated view instead of an empty one.
  *
- * The test forces the page to look like a GitHub Pages deploy by
- * monkey-patching `Location.prototype.hostname` via addInitScript before
+ * The test forces the page to look like a GitHub Pages deploy by setting
+ * `window.__simulateGitHubPagesDeploy = true` via addInitScript before
  * main.js evaluates its `isGitHubPages` check.
+ *
+ * The fixture also installs a `page.route` interceptor that records every
+ * request to the snapshot file, so the tests can assert that main.js
+ * actually fetched the pre-baked JSON (not silently fell back to an
+ * empty start).
  */
 import { test, expect } from './fixtures.js';
 
@@ -35,33 +41,46 @@ test.describe('GitHub Pages auto-bootstrap', () => {
     await expect(fabIcon).toHaveText('pause');
   });
 
+  test('main.js fetches the pre-baked bootstrap snapshot', async ({ page }) => {
+    // Track the snapshot fetch. main.js must request this exact file
+    // — falling back to the empty-history path silently would mean the
+    // build artifact got wired up wrong.
+    /** @type {{ url: string, status: number }[]} */
+    const snapshotRequests = [];
+    page.on('response', (res) => {
+      if (res.url().endsWith('/playground/assets/bootstrap-history.json')) {
+        snapshotRequests.push({ url: res.url(), status: res.status() });
+      }
+    });
+
+    await page.goto('/playground/');
+    // Wait for the FAB to flip — that's a deterministic signal that
+    // loadBootstrapSnapshotAndAutoStart() has finished its async work.
+    await expect(page.locator('#fab-play .material-symbols-outlined')).toHaveText('pause');
+
+    expect(snapshotRequests.length).toBeGreaterThanOrEqual(1);
+    expect(snapshotRequests[0].status).toBe(200);
+  });
+
   test('history graph and System Logs are pre-populated on first paint', async ({ page }) => {
     await page.goto('/playground/');
+    // Wait for auto-start to flip the FAB so we know the snapshot
+    // restore + render has run.
+    await expect(page.locator('#fab-play .material-symbols-outlined')).toHaveText('pause');
 
-    // The bootstrap pushes 12 h × (1 sample / 5 s) ≈ 8640 points into the
-    // time series store synchronously during init(). By the time the
-    // page is interactive, the store should already be populated.
-    const storeSize = await page.evaluate(async () => {
-      // Wait a single rAF tick to make sure init() has finished its
-      // synchronous work and the dashboard has rendered.
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      // The store lives inside the main.js module scope. We can't read it
-      // directly, so instead we count the rendered .log-item elements
-      // and check the canvas has been painted.
+    const dashboardState = await page.evaluate(() => {
       const logsList = document.getElementById('logs-list');
       const logItems = logsList ? logsList.querySelectorAll('.log-item').length : 0;
       const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('chart'));
-      // A populated canvas has been drawn at least once and has non-zero
-      // backing dimensions.
       const canvasPainted = !!canvas && canvas.width > 0 && canvas.height > 0;
       return { logItems, canvasPainted };
     });
 
-    // Bootstrap runs the day/night cycle for 12 h, which is guaranteed
-    // to produce at least one mode transition (sun rises → solar_charging)
-    // and therefore at least one rendered log entry.
-    expect(storeSize.logItems).toBeGreaterThanOrEqual(1);
-    expect(storeSize.canvasPainted).toBe(true);
+    // The pre-baked snapshot covers 12 h of day/night cycle, which the
+    // current control logic turns into at least one solar_charging
+    // transition. The drift test guarantees this stays true.
+    expect(dashboardState.logItems).toBeGreaterThanOrEqual(1);
+    expect(dashboardState.canvasPainted).toBe(true);
   });
 
   test('phase is set to simulation', async ({ page }) => {
@@ -70,5 +89,20 @@ test.describe('GitHub Pages auto-bootstrap', () => {
     // Sidebar subtitle reads "Simulating..." once the run loop is going.
     const subtitle = page.locator('#sidebar-subtitle');
     await expect(subtitle).toHaveText('Simulating...');
+  });
+
+  test('falls back to empty-history auto-start if the snapshot fetch fails', async ({ page }) => {
+    // Force the snapshot fetch to fail. main.js should log a warning
+    // and start with an empty history rather than crashing the page.
+    await page.route('**/playground/assets/bootstrap-history.json', (route) =>
+      route.fulfill({ status: 404, body: 'not found' })
+    );
+
+    await page.goto('/playground/');
+    // Auto-start should still happen — togglePlay() runs even when the
+    // snapshot is unavailable.
+    await expect(page.locator('#fab-play .material-symbols-outlined')).toHaveText('pause');
+    // Sidebar still reads "Simulating..." because the run loop is going.
+    await expect(page.locator('#sidebar-subtitle')).toHaveText('Simulating...');
   });
 });

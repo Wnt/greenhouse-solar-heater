@@ -6,22 +6,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 
-import { bootstrapSimulation } from '../playground/js/sim-bootstrap.js';
+import { bootstrapSimulation, getDayNightEnv } from '../playground/js/sim-bootstrap.js';
 import { ThermalModel } from '../playground/js/physics.js';
-
-const SIM_START_HOUR = 8;
-
-// Mirrors playground/js/main.js getDayNightEnv so the test's environment
-// matches what the production bootstrap call passes in.
-function getDayNightEnv(simTime, baseOutdoor, peakIrradiance) {
-  const hour = (SIM_START_HOUR + simTime / 3600) % 24;
-  let irradiance = 0;
-  if (hour >= 6 && hour <= 20) {
-    irradiance = peakIrradiance * Math.sin((hour - 6) / 14 * Math.PI);
-  }
-  const t_outdoor = baseOutdoor + 5 * Math.cos((hour - 15) / 24 * 2 * Math.PI);
-  return { t_outdoor, irradiance };
-}
 
 // Stub controller that flips between idle and solar_charging based on
 // the same delta rule the real Shelly logic uses (≥7°C trigger, ≤3°C

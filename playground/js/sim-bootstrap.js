@@ -9,8 +9,32 @@
  * advances the model in place, and returns the recorded points and log
  * entries — which the caller is responsible for pushing into the
  * UI-side stores. This separation keeps the function unit-testable
- * without a DOM.
+ * without a DOM and reusable from a Node generator script.
+ *
+ * Single source of truth for `SIM_START_HOUR` and `getDayNightEnv`:
+ * both `playground/js/main.js` (for simLoop after auto-start) and
+ * `scripts/generate-bootstrap-history.mjs` (for baking the snapshot)
+ * import them here, so a change to the day/night curve cannot drift
+ * between the live sim and the pre-baked history.
  */
+
+// Sim time t=0 maps to this hour-of-day on the simulated clock.
+export const SIM_START_HOUR = 8;
+
+/**
+ * Smooth day/night cycle for the standalone simulation. Mirrors the
+ * curve simLoop uses so the resumed runtime continues seamlessly from
+ * the pre-baked bootstrap snapshot.
+ */
+export function getDayNightEnv(simTime, baseOutdoor, peakIrradiance) {
+  const hour = (SIM_START_HOUR + simTime / 3600) % 24;
+  let irradiance = 0;
+  if (hour >= 6 && hour <= 20) {
+    irradiance = peakIrradiance * Math.sin((hour - 6) / 14 * Math.PI);
+  }
+  const t_outdoor = baseOutdoor + 5 * Math.cos((hour - 15) / 24 * 2 * Math.PI);
+  return { t_outdoor, irradiance };
+}
 
 /**
  * @param {object} opts
