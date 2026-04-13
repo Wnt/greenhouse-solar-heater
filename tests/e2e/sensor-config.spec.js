@@ -71,17 +71,15 @@ test.describe('Sensor Configuration View', () => {
     await page.goto('/playground/');
     // Wait for the app to initialize
     await page.waitForSelector('.sidebar-nav');
-    // Make live-only elements visible and navigate
+    // The sensor-config UI is now part of the merged Device view.
     await page.evaluate(() => {
       document.querySelectorAll('.live-only').forEach(el => el.style.display = '');
-      // Directly activate the sensors view since navigateToView may have already run
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-      var sensorsView = document.getElementById('view-sensors');
-      if (sensorsView) sensorsView.classList.add('active');
+      var deviceView = document.getElementById('view-device');
+      if (deviceView) deviceView.classList.add('active');
       document.querySelectorAll('[data-view]').forEach(l => l.classList.remove('active'));
-      document.querySelectorAll('[data-view="sensors"]').forEach(l => l.classList.add('active'));
-      // Trigger the sensors init
-      window.location.hash = 'sensors';
+      document.querySelectorAll('[data-view="device"]').forEach(l => l.classList.add('active'));
+      window.location.hash = 'device';
     });
     await page.waitForSelector('#sensors-content .card', { timeout: 15000 });
   }

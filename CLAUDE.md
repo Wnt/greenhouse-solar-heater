@@ -21,7 +21,7 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `system.yaml` → authoritative specs (heights, valve states, modes, components)
 - `shelly/` → Shelly device scripts and deployment tooling
 - `shelly/lint/` → Shelly platform conformance linter (CLI, standalone package)
-- `playground/` → main web app SPA/PWA (single-page app with 5 views: Status, Components, Schematic, Controls, Device). Deep-linkable via URL hash fragments (`#status`, `#schematic`, etc.). Protected by passkey auth in cloud mode. Installable as PWA with push notification support.
+- `playground/` → main web app SPA/PWA (single-page app with 5 views: Status, Components (merged system schematic + valve/sensor/actuator details), Controls, Device (merged sensor assignment + Shelly runtime config), Settings). Deep-linkable via URL hash fragments (`#status`, `#components`, etc.). Legacy `#schematic` and `#sensors` hashes still resolve to `#components` and `#device` respectively via aliases in `js/actions/navigation.js`. Protected by passkey auth in cloud mode. Installable as PWA with push notification support.
 - `playground/login.html` → passkey login page (WebAuthn registration + authentication)
 - `playground/js/login.js` → passkey auth client-side logic
 - `playground/vendor/simplewebauthn-browser.mjs` → vendored @simplewebauthn/browser 13.3.0

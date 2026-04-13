@@ -57,9 +57,11 @@ export const derived = {
 
   get availableViews() {
     const phase = store.get('phase');
-    if (phase === 'live' || phase === 'init') return ['status', 'components', 'schematic', 'sensors', 'device', 'settings'];
-    if (phase === 'simulation') return ['status', 'components', 'schematic', 'controls', 'settings'];
-    return ['status', 'components', 'schematic', 'settings'];
+    // 'components' is now the merged System view (schematic + sensors/valves/actuators).
+    // 'device' is the merged Device view (sensor assignment + controller runtime config).
+    if (phase === 'live' || phase === 'init') return ['status', 'components', 'device', 'settings'];
+    if (phase === 'simulation') return ['status', 'components', 'controls', 'settings'];
+    return ['status', 'components', 'settings'];
   },
 
   get connectionDisplay() {

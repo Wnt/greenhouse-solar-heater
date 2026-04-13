@@ -129,14 +129,16 @@ test.describe('Components View Screenshots', () => {
   });
 });
 
-// ─── Schematic View ─────────────────────────────────────────────────────
+// ─── Schematic (now part of the merged Components view) ───────────────────
 
 test.describe('Schematic View Screenshots', () => {
   test.beforeEach(async ({ page }) => {
 
     await page.goto('/playground/?mode=sim');
-    await page.locator('[data-view="schematic"]').first().click();
-    await expect(page.locator('#view-schematic')).toBeVisible();
+    // Schematic is now rendered inside the merged Components view.
+    await page.locator('[data-view="components"]').first().click();
+    await expect(page.locator('#view-components')).toBeVisible();
+    await expect(page.locator('#schematic svg')).toBeVisible();
   });
 
   test('desktop', async ({ page }) => {

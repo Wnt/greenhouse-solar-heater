@@ -10,18 +10,18 @@ const sensorConfigResponse = {
   version: 0,
 };
 
-// Helper: navigate to sensors view
+// Helper: navigate to the Device view (contains the merged sensors section)
 async function goToSensors(page) {
   await page.goto('/playground/');
   await page.waitForSelector('.sidebar-nav');
   await page.evaluate(() => {
     document.querySelectorAll('.live-only').forEach(el => el.style.display = '');
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    var sensorsView = document.getElementById('view-sensors');
-    if (sensorsView) sensorsView.classList.add('active');
+    var deviceView = document.getElementById('view-device');
+    if (deviceView) deviceView.classList.add('active');
     document.querySelectorAll('[data-view]').forEach(l => l.classList.remove('active'));
-    document.querySelectorAll('[data-view="sensors"]').forEach(l => l.classList.add('active'));
-    window.location.hash = 'sensors';
+    document.querySelectorAll('[data-view="device"]').forEach(l => l.classList.add('active'));
+    window.location.hash = 'device';
   });
   await page.waitForSelector('#sensors-content .card', { timeout: 15000 });
 }
@@ -356,20 +356,19 @@ test.describe('Sensor discovery no response for a host', () => {
 });
 
 test.describe('Sensor view hash navigation on reload', () => {
-  test('navigating directly to #sensors shows the sensors view', async ({ page }) => {
+  test('navigating directly to #sensors shows the device view (legacy alias)', async ({ page }) => {
     await page.route('**/api/sensor-config', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
     });
 
-    // Navigate directly with #sensors hash (simulates browser reload)
+    // Navigate with legacy #sensors hash — routed through HASH_ALIASES to the
+    // merged Device view that now hosts sensor configuration.
     await page.goto('/playground/#sensors');
     await page.waitForSelector('#sensors-content .card', { timeout: 15000 });
 
-    // Sensors view should be active, not status
-    const sensorsView = page.locator('#view-sensors');
-    await expect(sensorsView).toHaveClass(/active/);
+    const deviceView = page.locator('#view-device');
+    await expect(deviceView).toHaveClass(/active/);
 
-    // Status view should NOT be active
     const statusView = page.locator('#view-status');
     await expect(statusView).not.toHaveClass(/active/);
   });
