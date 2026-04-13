@@ -57,11 +57,17 @@ export const derived = {
 
   get availableViews() {
     const phase = store.get('phase');
-    // 'components' is now the merged System view (schematic + sensors/valves/actuators).
+    // 'components' is the merged System view (schematic + sensors/valves/actuators).
     // 'device' is the merged Device view (sensor assignment + controller runtime config).
-    if (phase === 'live' || phase === 'init') return ['status', 'components', 'device', 'settings'];
-    if (phase === 'simulation') return ['status', 'components', 'controls', 'settings'];
-    return ['status', 'components', 'settings'];
+    // Settings (PWA install, notifications, account) only makes sense when the
+    // app is backed by a real server — on GH Pages (isLiveCapable=false) it
+    // has nothing to configure, so we hide it.
+    const hasSettings = store.get('isLiveCapable');
+    const views = ['status', 'components'];
+    if (phase === 'live' || phase === 'init') views.push('device');
+    if (phase === 'simulation') views.push('controls');
+    if (hasSettings) views.push('settings');
+    return views;
   },
 
   get connectionDisplay() {
