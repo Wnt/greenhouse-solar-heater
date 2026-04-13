@@ -16,6 +16,7 @@ var wsServer = null;
 var db = null;
 var deviceConfigRef = null;
 var pushRef = null;
+var anomalyManagerRef = null;
 var previousState = null;
 var connectionStatus = 'disconnected';
 
@@ -25,6 +26,7 @@ function start(options) {
   wsServer = options.wsServer || null;
   deviceConfigRef = options.deviceConfig || null;
   pushRef = options.push || null;
+  anomalyManagerRef = options.anomalyManager || null;
 
   notifications.init({ push: pushRef, deviceConfig: deviceConfigRef });
 
@@ -44,6 +46,9 @@ function start(options) {
     log.info('MQTT connected');
     mqttClient.subscribe('greenhouse/state', { qos: 1 }, function (err) {
       if (err) log.error('subscribe failed', { error: err.message });
+    });
+    mqttClient.subscribe('greenhouse/watchdog/event', { qos: 1 }, function (err) {
+      if (err) log.error('subscribe watchdog/event failed', { error: err.message });
     });
     subscribeResponseTopics();
     republishDeviceConfig();
@@ -74,6 +79,21 @@ function start(options) {
   mqttClient.on('message', function (topic, message) {
     if (topic === 'greenhouse/sensor-config-result' || topic === 'greenhouse/discover-sensors-result') {
       handleResponseMessage(topic, message);
+      return;
+    }
+    if (topic === 'greenhouse/watchdog/event') {
+      var wdMsg;
+      try {
+        wdMsg = JSON.parse(message.toString());
+      } catch (e) {
+        log.warn('invalid JSON on watchdog/event', { error: e.message });
+        return;
+      }
+      if (anomalyManagerRef && typeof anomalyManagerRef.handleDeviceEvent === 'function') {
+        Promise.resolve(anomalyManagerRef.handleDeviceEvent(wdMsg)).catch(function (err) {
+          log.error('anomaly handleDeviceEvent failed', { error: err.message });
+        });
+      }
       return;
     }
     if (topic !== 'greenhouse/state') return;
@@ -255,6 +275,17 @@ function publishRelayCommand(relay, on) {
   return true;
 }
 
+function publishWatchdogCmd(cmd) {
+  if (!mqttClient || !mqttClient.connected) {
+    log.warn('cannot publish watchdog cmd: MQTT not connected');
+    return false;
+  }
+  var span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': 'greenhouse/watchdog/cmd' } });
+  mqttClient.publish('greenhouse/watchdog/cmd', JSON.stringify(cmd), { qos: 1, retain: false });
+  span.end();
+  return true;
+}
+
 // ── MQTT request/response helpers ──
 
 var pendingRequests = {};
@@ -335,6 +366,7 @@ module.exports = {
   publishConfig: publishConfig,
   publishSensorConfig: publishSensorConfig,
   publishRelayCommand: publishRelayCommand,
+  publishWatchdogCmd: publishWatchdogCmd,
   publishSensorConfigApply: publishSensorConfigApply,
   publishDiscoveryRequest: publishDiscoveryRequest,
   handleStateMessage: handleStateMessage,
