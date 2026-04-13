@@ -15,6 +15,39 @@ test.describe('Simulation-only mode overlays (GitHub Pages context)', () => {
   });
 });
 
+test.describe('Settings visibility on GitHub Pages', () => {
+  test('Settings nav is hidden when isLiveCapable is false', async ({ page }) => {
+    await page.goto('/playground/');
+    await page.waitForSelector('.sidebar-nav');
+    // We can't fake location.hostname reliably across browsers, so stub the
+    // store value after boot and re-fire the phase subscription to refresh
+    // nav visibility. Setting phase to the same value is a no-op in the
+    // store, so toggle through a throwaway value first.
+    await page.evaluate(async () => {
+      const { store } = await import('/playground/js/app-state.js');
+      store.set('isLiveCapable', false);
+      const phase = store.get('phase');
+      store.set('phase', '__refresh__');
+      store.set('phase', phase);
+    });
+    await page.waitForTimeout(200);
+    // The Settings anchor stays in the DOM (HTML unchanged) but must be hidden
+    await expect(page.locator('.sidebar-nav [data-view="settings"]')).toBeHidden();
+    await expect(page.locator('.bottom-nav [data-view="settings"]')).toBeHidden();
+    // Navigating directly via hash falls back to status
+    await page.evaluate(() => { window.location.hash = 'settings'; });
+    await page.waitForTimeout(200);
+    await expect(page.locator('#view-status')).toHaveClass(/active/);
+  });
+
+  test('Settings nav is visible on localhost (live-capable)', async ({ page }) => {
+    await page.goto('/playground/');
+    await page.waitForSelector('.sidebar-nav');
+    await page.waitForTimeout(200);
+    await expect(page.locator('.sidebar-nav [data-view="settings"]')).toBeVisible();
+  });
+});
+
 test.describe('Mobile: mode toggle visibility', () => {
   test('mode toggle is visible at mobile viewport width', async ({ page }) => {
     await page.setViewportSize(MOBILE);

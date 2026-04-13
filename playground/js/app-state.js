@@ -57,9 +57,15 @@ export const derived = {
 
   get availableViews() {
     const phase = store.get('phase');
-    if (phase === 'live' || phase === 'init') return ['status', 'components', 'schematic', 'sensors', 'device', 'settings'];
-    if (phase === 'simulation') return ['status', 'components', 'schematic', 'controls', 'settings'];
-    return ['status', 'components', 'schematic', 'settings'];
+    // Settings (PWA install, notifications, account) only makes sense when the
+    // app is backed by a real server. On GH Pages (isLiveCapable=false) there
+    // is nothing to configure, so we hide it.
+    const hasSettings = store.get('isLiveCapable');
+    const views = ['status', 'components', 'schematic'];
+    if (phase === 'live' || phase === 'init') views.push('sensors', 'device');
+    if (phase === 'simulation') views.push('controls');
+    if (hasSettings) views.push('settings');
+    return views;
   },
 
   get connectionDisplay() {
