@@ -11,6 +11,7 @@ import { initNavigation } from './actions/navigation.js';
 import { initAuth } from './auth.js';
 import { captureInstallPrompt, triggerInstall, wireInstallModal, initNotifications, subscribePush, updateCategories, unsubscribePush, isSubscribed, getSelectedCategories, sendTest } from './notifications.js';
 import { buildSchematic as buildSchematicFromSvg } from './schematic.js';
+import { bootstrapSimulation } from './sim-bootstrap.js';
 // connection.js actions will be used in later phases — import deferred to avoid name collisions
 // import { switchToLive, switchToSimulation, ... } from './actions/connection.js';
 // Expose for e2e testing
@@ -18,7 +19,11 @@ window.__triggerVersionCheck = triggerVersionCheck;
 
 // ── Data Source ──
 // Detect deployment context: GitHub Pages = simulation only, deployed app = live capable
-const isGitHubPages = location.hostname.endsWith('.github.io');
+// `window.__simulateGitHubPagesDeploy` is a test-only hatch (set via
+// Playwright's addInitScript) — it lets the e2e suite exercise the
+// pages-mode auto-bootstrap path without needing a real github.io URL.
+const isGitHubPages = window.__simulateGitHubPagesDeploy === true
+  || location.hostname.endsWith('.github.io');
 const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 const isLiveCapable = !isGitHubPages;
 const urlModePreference = new URLSearchParams(location.search).get('mode'); // 'sim' | 'live' | null
@@ -763,6 +768,13 @@ async function init() {
   initDeviceConfig();
   initRelayBoard();
 
+  // On deploys without live mode (e.g. GitHub Pages) start the
+  // simulation with 12 h of pre-rolled history so the dashboard is
+  // populated on first paint instead of empty.
+  if (!isLiveCapable) {
+    bootstrapAndAutoStartSimulation(12 * 3600);
+  }
+
   // Initialize auth UI (logout + invite buttons) — noop when auth disabled
   initAuth();
 
@@ -1321,6 +1333,65 @@ function resetSim() {
   document.getElementById('sim-status-text').textContent = 'Ready — press play to start';
   updateSidebarSubtitle();
   updateDisplay(model.getState(), { mode: 'idle', valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false }, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
+}
+
+// Pre-roll the simulation forward by `durationSeconds` of simulated time
+// using the current default params, so the history graph and System
+// Logs card already have content the moment the page renders.
+//
+// Caller invariant: model + controller must already be reset (use
+// resetSim() first). After the call, the model's simTime is at
+// `durationSeconds`, which prevents togglePlay() from re-resetting it.
+function bootstrapSimulationHistory(durationSeconds) {
+  if (!model || !controller) return;
+
+  const result = bootstrapSimulation({
+    model,
+    controller,
+    durationSeconds,
+    dt: DT,
+    getEnv: function (simTime) {
+      return params.day_night_cycle
+        ? getDayNightEnv(simTime, params.t_outdoor, params.irradiance)
+        : { t_outdoor: params.t_outdoor, irradiance: params.irradiance };
+    },
+  });
+
+  // Push points into the time-series store in chronological order.
+  for (let i = 0; i < result.points.length; i++) {
+    const p = result.points[i];
+    timeSeriesStore.addPoint(p.time, p.values, p.mode);
+  }
+
+  // Mirror simLoop's newest-first ordering by unshifting in chronological order.
+  for (let i = 0; i < result.logEntries.length; i++) {
+    transitionLog.unshift(result.logEntries[i]);
+  }
+}
+
+// Bootstrap the simulation with N hours of history and start the run
+// loop. Used on deploys where live mode is unavailable (GitHub Pages),
+// so the user lands on a populated dashboard instead of an empty one.
+function bootstrapAndAutoStartSimulation(historySeconds) {
+  // resetSim() leaves the model at simTime=0 with default initial temps,
+  // which is exactly what bootstrap needs to start from.
+  resetSim();
+  bootstrapSimulationHistory(historySeconds);
+
+  // Re-render the now-populated UI with the current bootstrapped state.
+  // We synthesise an idle/no-op result for updateDisplay — togglePlay()
+  // will immediately step the simLoop and overwrite this with a real one.
+  const idleResult = {
+    mode: controller.currentMode || 'idle',
+    actuators: { pump: false, fan: false, space_heater: false },
+    valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
+    transition: null,
+  };
+  updateDisplay(model.getState(), idleResult);
+
+  // Auto-start the run loop. togglePlay() preserves simTime since it's
+  // non-zero after the bootstrap, so our pre-rolled history is kept.
+  togglePlay();
 }
 
 function applyPreset(key) {
