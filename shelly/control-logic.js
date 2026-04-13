@@ -159,6 +159,16 @@ function expandModeCode(code) {
   return MODE_CODE[code] || code.toUpperCase();
 }
 
+// Map a full mode name back to its short code for wb ban lookup.
+function shortCodeOf(mode) {
+  if (mode === "IDLE") return "I";
+  if (mode === "SOLAR_CHARGING") return "SC";
+  if (mode === "GREENHOUSE_HEATING") return "GH";
+  if (mode === "ACTIVE_DRAIN") return "AD";
+  if (mode === "EMERGENCY_HEATING") return "EH";
+  return null;
+}
+
 function makeResult(mode, flags, deviceConfig, safetyOverride) {
   var valves = {};
   var actuators = {};
@@ -397,6 +407,21 @@ function evaluate(state, config, deviceConfig) {
     flags.solarChargePeakTankTopAt = 0;
   }
 
+  // ── Unified mode ban check (wb) — strict: fm and mo.ss do NOT bypass ──
+  // Replaces the legacy am filter. Runs BEFORE the fm early-return so
+  // that forced mode cannot override a ban. Sentinel 9999999999 is a
+  // user-set permanent ban; any other positive value is a watchdog
+  // temporary ban that will be lazy-pruned on the device at tick time
+  // once it has expired.
+  if (dc && dc.wb && dc.fm) {
+    var fmCode = dc.fm;
+    if (dc.wb[fmCode] && dc.wb[fmCode] > state.now) {
+      flags.solarChargePeakTankTop = null;
+      flags.solarChargePeakTankTopAt = 0;
+      return makeResult(MODES.IDLE, flags, dc);
+    }
+  }
+
   // ── Forced mode override (for staged deployment / manual testing) ──
   if (dc && dc.fm) {
     var forcedMode = expandModeCode(dc.fm);
@@ -413,6 +438,11 @@ function evaluate(state, config, deviceConfig) {
 
   // ── Combine pump mode + emergency overlay ──
   if (flags.emergencyHeatingActive && pumpMode === MODES.IDLE) {
+    // Emergency heating is also subject to wb
+    if (dc && dc.wb && dc.wb.EH && dc.wb.EH > state.now) {
+      flags.emergencyHeatingActive = false;
+      return makeResult(MODES.IDLE, flags, dc);
+    }
     return makeResult(MODES.EMERGENCY_HEATING, flags, dc);
   }
 
@@ -421,16 +451,12 @@ function evaluate(state, config, deviceConfig) {
     result.actuators.space_heater = true;
   }
 
-  // ── Allowed modes filter (for staged deployment) ──
-  if (dc && dc.am && dc.am.length > 0) {
-    var allowed = false;
-    for (var ami = 0; ami < dc.am.length; ami++) {
-      if (expandModeCode(dc.am[ami]) === result.nextMode) {
-        allowed = true;
-        break;
-      }
-    }
-    if (!allowed) {
+  // ── Natural-mode ban check (post-evaluation) ──
+  // Blocks the mode that the physics evaluation chose if its wb entry
+  // is still active. Returns IDLE instead.
+  if (dc && dc.wb && result.nextMode !== MODES.IDLE) {
+    var natCode = shortCodeOf(result.nextMode);
+    if (natCode && dc.wb[natCode] && dc.wb[natCode] > state.now) {
       flags.solarChargePeakTankTop = null;
       flags.solarChargePeakTankTopAt = 0;
       return makeResult(MODES.IDLE, flags, dc);
