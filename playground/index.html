@@ -613,11 +613,37 @@
         <div class="card settings-card" id="users-card" data-admin-only>
           <div class="users-header">
             <h3>Users</h3>
-            <button id="users-refresh-btn" class="auth-btn users-refresh-btn" type="button" title="Refresh users list">
-              <span class="material-symbols-outlined">refresh</span>
-            </button>
+            <div class="users-header-actions">
+              <button id="users-new-btn" class="auth-btn" type="button" title="Create an empty user for passkey transfers">
+                <span class="material-symbols-outlined">person_add</span>
+                <span class="auth-btn-label">New User</span>
+              </button>
+              <button id="users-refresh-btn" class="auth-btn users-refresh-btn" type="button" title="Refresh users list">
+                <span class="material-symbols-outlined">refresh</span>
+              </button>
+            </div>
           </div>
-          <p class="settings-desc">Manage who can sign in. Read-only users can monitor the system but cannot change controls, push device config, or operate relays.</p>
+          <p class="settings-desc">Manage who can sign in. Each passkey is shown as its own device, with last seen network details. Create an empty user first when you want to move an existing passkey into its own account.</p>
+          <div id="users-feedback" class="users-feedback" hidden></div>
+          <div id="users-create-form" class="users-inline-editor" hidden>
+            <div class="users-inline-grid">
+              <label class="users-field">
+                <span>Name</span>
+                <input type="text" id="users-create-name" class="invite-text-input" placeholder="e.g. Alice’s phone" maxlength="64" autocomplete="off">
+              </label>
+              <label class="users-field">
+                <span>Role</span>
+                <select id="users-create-role" class="invite-select">
+                  <option value="readonly">Read-only</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </label>
+            </div>
+            <div class="users-inline-actions">
+              <button id="users-create-save-btn" class="auth-btn auth-btn-primary" type="button">Create User</button>
+              <button id="users-create-cancel-btn" class="auth-btn" type="button">Cancel</button>
+            </div>
+          </div>
           <div id="users-list" class="users-list">
             <div class="users-loading">Loading…</div>
           </div>

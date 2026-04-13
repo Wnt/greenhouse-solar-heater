@@ -135,6 +135,17 @@ describe('user management API', function () {
   it('GET /auth/users lists all users with role + isCurrent flag', function () {
     var admin = createAdminAndSession('alice');
     credStore.createUser('bob', 'readonly');
+    credStore.addCredential({
+      id: 'alice-cred',
+      userId: admin.user.id,
+      publicKey: 'pk',
+      counter: 0,
+      transports: [],
+      label: 'MacBook',
+      lastIp: '203.0.113.10',
+      lastUserAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15',
+      lastUsedAt: '2026-04-13T09:00:00.000Z',
+    });
     var req = reqWithSession('GET', '/auth/users', admin.sessionToken);
     var res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users', '');
@@ -149,6 +160,21 @@ describe('user management API', function () {
     assert.strictEqual(bob.role, 'readonly');
     assert.strictEqual(alice.isCurrent, true);
     assert.strictEqual(bob.isCurrent, false);
+    assert.strictEqual(alice.passkeys.length, 1);
+    assert.strictEqual(alice.passkeys[0].label, 'MacBook');
+    assert.strictEqual(alice.passkeys[0].lastIp, '203.0.113.10');
+  });
+
+  it('POST /auth/users creates an empty user for passkey transfers', function () {
+    var admin = createAdminAndSession('alice');
+    var req = reqWithSession('POST', '/auth/users', admin.sessionToken);
+    var res = mockRes();
+    webauthn.handleRequest(req, res, '/auth/users', JSON.stringify({ name: 'tablet', role: 'readonly' }));
+    assert.strictEqual(res.statusCode, 200);
+    var body = jsonBody(res);
+    assert.strictEqual(body.user.name, 'tablet');
+    assert.strictEqual(body.user.credentialCount, 0);
+    assert.strictEqual(credStore.findUserByName('tablet').role, 'readonly');
   });
 
   it('GET /auth/users is also accessible to read-only users', function () {
@@ -316,6 +342,39 @@ describe('user management API', function () {
     webauthn.handleRequest(req, res, '/auth/users/' + target.id, JSON.stringify({ name: 'bobby' }));
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(credStore.getUserById(target.id).name, 'bobby');
+  });
+
+  it('PATCH /auth/passkeys/:id updates label and owner', function () {
+    var admin = createAdminAndSession('alice');
+    var targetUser = credStore.createUser('tablet-owner', 'readonly');
+    credStore.addCredential({ id: 'alice-cred', userId: admin.user.id, publicKey: 'pk', counter: 0, transports: [] });
+
+    var req = reqWithSession('PATCH', '/auth/passkeys/alice-cred', admin.sessionToken);
+    var res = mockRes();
+    webauthn.handleRequest(req, res, '/auth/passkeys/alice-cred', JSON.stringify({
+      label: 'iPad',
+      userId: targetUser.id,
+    }));
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(credStore.getCredentialById('alice-cred').label, 'iPad');
+    assert.strictEqual(credStore.getCredentialById('alice-cred').userId, targetUser.id);
+  });
+
+  it('DELETE /auth/passkeys/:id revokes only that device and its sessions', function () {
+    var admin = createAdminAndSession('alice');
+    credStore.addCredential({ id: 'keep', userId: admin.user.id, publicKey: 'pk1', counter: 0, transports: [] });
+    credStore.addCredential({ id: 'remove', userId: admin.user.id, publicKey: 'pk2', counter: 0, transports: [] });
+    var keepSession = credStore.createSession(admin.user.id, 'keep');
+    var removeSession = credStore.createSession(admin.user.id, 'remove');
+
+    var req = reqWithSession('DELETE', '/auth/passkeys/remove', admin.sessionToken);
+    var res = mockRes();
+    webauthn.handleRequest(req, res, '/auth/passkeys/remove', '');
+    assert.strictEqual(res.statusCode, 200);
+    assert.ok(credStore.getCredentialById('keep'));
+    assert.strictEqual(credStore.getCredentialById('remove'), null);
+    assert.ok(credStore.validateSession(keepSession.token));
+    assert.strictEqual(credStore.validateSession(removeSession.token), null);
   });
 
   // ── POST /auth/invite/create ──

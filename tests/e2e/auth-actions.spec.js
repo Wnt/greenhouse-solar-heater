@@ -243,9 +243,10 @@ test.describe('Account actions (logout + Add Device)', () => {
     const list = page.locator('#users-list');
     await expect(list).toContainText('bob');
 
-    // Stub window.prompt to return the new name without UI interaction
-    await page.evaluate(() => { window.prompt = () => 'bobby'; });
-    await list.locator('.user-edit-btn').nth(1).click();
+    const bobCard = list.locator('.user-card').filter({ hasText: 'bob' });
+    await bobCard.locator('.user-edit-btn').click();
+    await bobCard.locator('[data-field="name"]').fill('bobby');
+    await bobCard.locator('[data-action="save"]').click();
 
     const req = await patchPromise;
     expect(JSON.parse(req.postData() || '{}')).toEqual({ name: 'bobby' });
@@ -295,9 +296,9 @@ test.describe('Account actions (logout + Add Device)', () => {
     await expect(list.locator('.user-role-admin').first()).toHaveText('Admin');
     await expect(list.locator('.user-role-readonly').first()).toHaveText('Read-only');
 
-    // Stub the confirm dialog so the click proceeds without user interaction
-    page.on('dialog', d => d.accept());
-    await list.locator('.user-delete-btn').first().click();
+    const bobCard = list.locator('.user-card').filter({ hasText: 'bob' });
+    await bobCard.locator('.user-delete-btn').click();
+    await bobCard.getByRole('button', { name: 'Confirm' }).click();
 
     await expect(list).not.toContainText('bob', { timeout: 5000 });
   });

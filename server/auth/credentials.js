@@ -10,6 +10,7 @@
 const crypto = require('crypto');
 const createLogger = require('../lib/logger');
 const storage = require('../lib/s3-storage');
+const { buildDeviceDetails } = require('./device-info');
 
 const log = createLogger('credentials');
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -28,6 +29,33 @@ function emptyStore() {
   };
 }
 
+function normalizeCredential(cred) {
+  if (!cred) return cred;
+  if (!cred.createdAt) cred.createdAt = new Date().toISOString();
+  if (!Array.isArray(cred.transports)) cred.transports = [];
+  if (typeof cred.label !== 'string') cred.label = '';
+  if (!cred.lastUsedAt) cred.lastUsedAt = null;
+  if (!cred.lastIp) cred.lastIp = null;
+  if (typeof cred.lastUserAgent !== 'string') cred.lastUserAgent = '';
+  if (!cred.device || typeof cred.device !== 'object') {
+    cred.device = buildDeviceDetails(cred.lastUserAgent);
+  } else {
+    var rebuilt = buildDeviceDetails(cred.lastUserAgent);
+    cred.device.browser = cred.device.browser || rebuilt.browser;
+    cred.device.os = cred.device.os || rebuilt.os;
+    cred.device.deviceType = cred.device.deviceType || rebuilt.deviceType;
+    cred.device.deviceName = cred.device.deviceName || rebuilt.deviceName;
+    cred.device.summary = cred.device.summary || rebuilt.summary;
+  }
+  return cred;
+}
+
+function normalizeSession(sess) {
+  if (!sess) return sess;
+  if (!sess.credentialId) sess.credentialId = null;
+  return sess;
+}
+
 // Migrate the legacy single-user shape ({user: {...}}) to the new
 // multi-user shape ({users: [...]}). Existing credentials and sessions
 // are linked to the migrated admin user.
@@ -39,6 +67,8 @@ function migrate(data) {
       if (!u.role) u.role = ROLES.ADMIN;
       if (!u.createdAt) u.createdAt = new Date().toISOString();
     });
+    (data.credentials || []).forEach(normalizeCredential);
+    (data.sessions || []).forEach(normalizeSession);
     // Ensure every credential and session has a userId (legacy stores
     // that were never migrated may have them undefined).
     if (data.users.length > 0) {
@@ -68,10 +98,10 @@ function migrate(data) {
     };
     migrated.users.push(legacy);
     migrated.credentials = (data.credentials || []).map(function (c) {
-      return Object.assign({}, c, { userId: legacy.id });
+      return normalizeCredential(Object.assign({}, c, { userId: legacy.id }));
     });
     migrated.sessions = (data.sessions || []).map(function (s) {
-      return Object.assign({}, s, { userId: legacy.id });
+      return normalizeSession(Object.assign({}, s, { userId: legacy.id }));
     });
     log.info('migrated legacy single-user store to multi-user', { user: legacy.name });
   } else {
@@ -294,14 +324,19 @@ function getCredentialById(credentialId) {
 function addCredential(cred) {
   if (!cred.userId) throw new Error('credential requires userId');
   var s = getStore();
-  s.credentials.push({
+  s.credentials.push(normalizeCredential({
     id: cred.id,
     userId: cred.userId,
     publicKey: cred.publicKey,
     counter: cred.counter,
     transports: cred.transports || [],
     createdAt: new Date().toISOString(),
-  });
+    label: cred.label || '',
+    lastUsedAt: cred.lastUsedAt || null,
+    lastIp: cred.lastIp || null,
+    lastUserAgent: cred.lastUserAgent || '',
+    device: cred.device || null,
+  }));
   save();
   log.info('credential added', { id: cred.id, userId: cred.userId });
 }
@@ -314,22 +349,84 @@ function updateCredentialCounter(credentialId, newCounter) {
   }
 }
 
+function updateCredential(credentialId, updates) {
+  var cred = getCredentialById(credentialId);
+  if (!cred) throw new Error('Passkey not found');
+  if (!updates || typeof updates !== 'object') return cred;
+
+  if (typeof updates.label === 'string') {
+    var trimmed = updates.label.trim();
+    if (trimmed.length > 80) throw new Error('Passkey label is too long (max 80 chars)');
+    cred.label = trimmed;
+  }
+
+  if (typeof updates.userId === 'string' && updates.userId && updates.userId !== cred.userId) {
+    if (!getUserById(updates.userId)) throw new Error('Target user not found');
+    cred.userId = updates.userId;
+    removeSessionsForCredential(credentialId);
+  }
+
+  if (typeof updates.lastUsedAt === 'string' || updates.lastUsedAt === null) {
+    cred.lastUsedAt = updates.lastUsedAt;
+  }
+  if (typeof updates.lastIp === 'string' || updates.lastIp === null) {
+    cred.lastIp = updates.lastIp;
+  }
+  if (typeof updates.lastUserAgent === 'string') {
+    cred.lastUserAgent = updates.lastUserAgent;
+    cred.device = buildDeviceDetails(updates.lastUserAgent);
+  } else if (updates.device && typeof updates.device === 'object') {
+    cred.device = updates.device;
+  }
+
+  save();
+  log.info('credential updated', { id: cred.id, userId: cred.userId });
+  return cred;
+}
+
+function touchCredential(credentialId, metadata) {
+  return updateCredential(credentialId, {
+    lastUsedAt: metadata && metadata.lastUsedAt || new Date().toISOString(),
+    lastIp: metadata && metadata.lastIp || null,
+    lastUserAgent: metadata && metadata.lastUserAgent || '',
+  });
+}
+
+function deleteCredential(credentialId) {
+  var s = getStore();
+  var idx = -1;
+  for (var i = 0; i < s.credentials.length; i++) {
+    if (s.credentials[i].id === credentialId) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx < 0) return false;
+  var removed = s.credentials[idx];
+  s.credentials.splice(idx, 1);
+  s.sessions = s.sessions.filter(function (sess) { return sess.credentialId !== credentialId; });
+  save();
+  log.info('credential deleted', { id: removed.id, userId: removed.userId });
+  return true;
+}
+
 // ── Sessions ──
 
-function createSession(userId) {
+function createSession(userId, credentialId) {
   if (!userId) throw new Error('createSession requires userId');
   var s = getStore();
   var token = crypto.randomBytes(32).toString('hex');
   var now = new Date();
-  var session = {
+  var session = normalizeSession({
     token: token,
     userId: userId,
+    credentialId: credentialId || null,
     createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + SESSION_MAX_AGE_MS).toISOString(),
-  };
+  });
   s.sessions.push(session);
   save();
-  log.info('session created', { userId: userId });
+  log.info('session created', { userId: userId, credentialId: session.credentialId });
   return session;
 }
 
@@ -349,6 +446,15 @@ function removeSession(token) {
   var s = getStore();
   s.sessions = s.sessions.filter(function (sess) { return sess.token !== token; });
   save();
+}
+
+function removeSessionsForCredential(credentialId) {
+  var s = getStore();
+  var before = s.sessions.length;
+  s.sessions = s.sessions.filter(function (sess) { return sess.credentialId !== credentialId; });
+  if (s.sessions.length !== before) {
+    save();
+  }
 }
 
 function expireSessions() {
@@ -432,9 +538,13 @@ module.exports = {
   getCredentialById: getCredentialById,
   addCredential: addCredential,
   updateCredentialCounter: updateCredentialCounter,
+  updateCredential: updateCredential,
+  touchCredential: touchCredential,
+  deleteCredential: deleteCredential,
   createSession: createSession,
   validateSession: validateSession,
   removeSession: removeSession,
+  removeSessionsForCredential: removeSessionsForCredential,
   expireSessions: expireSessions,
   getSetupState: getSetupState,
   initSetup: initSetup,

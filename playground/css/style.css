@@ -1971,13 +1971,57 @@ button.scanning { opacity: 0.7; cursor: wait; }
   padding: 0;
   justify-content: center;
 }
+.users-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .users-refresh-btn .material-symbols-outlined {
   font-size: 18px;
+}
+.users-feedback {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  border: 1px solid var(--outline-variant);
+  background: rgba(67, 174, 164, 0.08);
+  color: var(--secondary);
+}
+.users-feedback.users-feedback-error {
+  color: var(--error);
+  background: rgba(238, 125, 119, 0.08);
+  border-color: rgba(238, 125, 119, 0.3);
+}
+.users-inline-editor {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.users-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.users-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+.users-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
 }
 .users-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 .users-loading,
 .users-empty,
@@ -1987,14 +2031,17 @@ button.scanning { opacity: 0.7; cursor: wait; }
   padding: 8px 0;
 }
 .users-error { color: var(--error); }
+.user-card {
+  border: 1px solid var(--outline-variant);
+  border-radius: 14px;
+  background: var(--surface-container);
+  overflow: hidden;
+}
 .user-row {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  background: var(--surface-container);
-  border: 1px solid var(--outline-variant);
-  border-radius: 10px;
 }
 .user-info {
   flex: 1;
@@ -2063,6 +2110,86 @@ button.scanning { opacity: 0.7; cursor: wait; }
 }
 .user-role-clickable:hover {
   filter: brightness(1.15);
+}
+.user-devices {
+  padding: 0 14px 14px;
+}
+.user-devices-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--on-surface-variant);
+  margin: 2px 0 10px;
+}
+.user-inline-editor {
+  margin: 0 14px 14px;
+}
+.inline-danger-row {
+  margin: 0 14px 14px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(238, 125, 119, 0.3);
+  background: rgba(238, 125, 119, 0.08);
+}
+.inline-danger-row p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--on-surface);
+}
+.passkey-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 12px;
+  background: rgba(12, 14, 18, 0.26);
+}
+.passkey-info {
+  flex: 1;
+  min-width: 0;
+}
+.passkey-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+.passkey-subtitle,
+.passkey-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+.passkey-actions {
+  display: flex;
+  gap: 8px;
+}
+.passkey-empty {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  padding: 4px 0 0;
+}
+.inline-passkey-editor {
+  margin-top: 8px;
+}
+.user-edit-btn:disabled,
+.user-delete-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+@media (max-width: 768px) {
+  .users-inline-grid {
+    grid-template-columns: 1fr;
+  }
+  .user-row,
+  .passkey-row {
+    flex-wrap: wrap;
+  }
+  .passkey-actions,
+  .users-header-actions {
+    width: 100%;
+  }
 }
 
 /* Hide admin-only elements when the body is in read-only mode. The

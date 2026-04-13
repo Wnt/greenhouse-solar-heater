@@ -232,6 +232,37 @@ describe('credential store', function () {
     assert.strictEqual(store.getCredentialById('cred-1').counter, 10);
   });
 
+  it('updateCredential stores label and device metadata', function () {
+    var store = require('../server/auth/credentials');
+    store.load();
+    var user = store.createUser('admin');
+    store.addCredential({ id: 'cred-1', userId: user.id, publicKey: 'pk', counter: 5, transports: [] });
+    store.updateCredential('cred-1', {
+      label: 'Office Mac',
+      lastIp: '203.0.113.44',
+      lastUsedAt: '2026-04-13T09:00:00.000Z',
+      lastUserAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15',
+    });
+    var cred = store.getCredentialById('cred-1');
+    assert.strictEqual(cred.label, 'Office Mac');
+    assert.strictEqual(cred.lastIp, '203.0.113.44');
+    assert.strictEqual(cred.device.browser, 'Safari');
+    assert.strictEqual(cred.device.os, 'macOS');
+  });
+
+  it('deleteCredential removes only matching sessions', function () {
+    var store = require('../server/auth/credentials');
+    store.load();
+    var user = store.createUser('admin');
+    store.addCredential({ id: 'cred-1', userId: user.id, publicKey: 'pk1', counter: 0, transports: [] });
+    store.addCredential({ id: 'cred-2', userId: user.id, publicKey: 'pk2', counter: 0, transports: [] });
+    var keep = store.createSession(user.id, 'cred-1');
+    var remove = store.createSession(user.id, 'cred-2');
+    store.deleteCredential('cred-2');
+    assert.ok(store.validateSession(keep.token));
+    assert.strictEqual(store.validateSession(remove.token), null);
+  });
+
   it('createSession requires userId and ties session to user', function () {
     var store = require('../server/auth/credentials');
     store.load();

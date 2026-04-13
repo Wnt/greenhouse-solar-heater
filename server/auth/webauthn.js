@@ -19,6 +19,7 @@ const credStore = require('./credentials');
 const session = require('./session');
 const invitations = require('./invitations');
 const createLogger = require('../lib/logger');
+const { buildDeviceDetails } = require('./device-info');
 
 const log = createLogger('webauthn');
 
@@ -59,6 +60,39 @@ function getClientIp(req) {
   var forwarded = req.headers['x-forwarded-for'];
   if (forwarded) return forwarded.split(',')[0].trim();
   return req.socket && req.socket.remoteAddress || 'unknown';
+}
+
+function getClientUserAgent(req) {
+  return req && req.headers ? (req.headers['user-agent'] || '') : '';
+}
+
+function buildCredentialMetadata(req) {
+  var userAgent = getClientUserAgent(req);
+  var device = buildDeviceDetails(userAgent);
+  return {
+    lastUsedAt: new Date().toISOString(),
+    lastIp: getClientIp(req),
+    lastUserAgent: userAgent,
+    device: device,
+    label: device.deviceName || device.summary || '',
+  };
+}
+
+function serializeCredential(cred, currentCredentialId) {
+  return {
+    id: cred.id,
+    userId: cred.userId,
+    label: cred.label || '',
+    createdAt: cred.createdAt || null,
+    lastUsedAt: cred.lastUsedAt || null,
+    lastIp: cred.lastIp || null,
+    browser: cred.device && cred.device.browser || null,
+    os: cred.device && cred.device.os || null,
+    deviceType: cred.device && cred.device.deviceType || null,
+    deviceName: cred.device && cred.device.deviceName || null,
+    deviceSummary: cred.device && cred.device.summary || 'Unknown device',
+    isCurrent: cred.id === currentCredentialId,
+  };
 }
 
 // Resolve the current authenticated user for a request, or null.
@@ -116,10 +150,16 @@ function handleRequest(req, res, urlPath, body) {
     handleInviteValidate(req, res, body);
   } else if (req.method === 'GET' && urlPath === '/auth/users') {
     handleListUsers(req, res);
+  } else if (req.method === 'POST' && urlPath === '/auth/users') {
+    handleCreateUser(req, res, body);
   } else if (req.method === 'DELETE' && urlPath.indexOf('/auth/users/') === 0) {
     handleDeleteUser(req, res, urlPath);
   } else if ((req.method === 'PATCH' || req.method === 'PUT') && urlPath.indexOf('/auth/users/') === 0) {
     handleUpdateUser(req, res, urlPath, body);
+  } else if ((req.method === 'PATCH' || req.method === 'PUT') && urlPath.indexOf('/auth/passkeys/') === 0) {
+    handleUpdatePasskey(req, res, urlPath, body);
+  } else if (req.method === 'DELETE' && urlPath.indexOf('/auth/passkeys/') === 0) {
+    handleDeletePasskey(req, res, urlPath);
   } else {
     jsonResponse(res, 404, { error: 'Not found' });
   }
@@ -192,6 +232,8 @@ function handleInviteValidate(req, res, body) {
 function handleListUsers(req, res) {
   var caller = requireUser(req, res);
   if (!caller) return;
+  var sess = session.validateRequest(req);
+  var currentCredentialId = sess && sess.credentialId || null;
 
   var users = credStore.getUsers().map(function (u) {
     var creds = credStore.getCredentialsForUser(u.id);
@@ -202,9 +244,47 @@ function handleListUsers(req, res) {
       createdAt: u.createdAt || null,
       credentialCount: creds.length,
       isCurrent: u.id === caller.id,
+      passkeys: creds.map(function (cred) {
+        return serializeCredential(cred, currentCredentialId);
+      }),
     };
   });
   jsonResponse(res, 200, { users: users });
+}
+
+// ── POST /auth/users ──
+
+function handleCreateUser(req, res, body) {
+  var caller = requireAdmin(req, res);
+  if (!caller) return;
+
+  var parsed = {};
+  try {
+    parsed = body ? JSON.parse(body) : {};
+  } catch (e) {
+    jsonResponse(res, 400, { error: 'Invalid JSON body' });
+    return;
+  }
+
+  var name = typeof parsed.name === 'string' ? parsed.name : '';
+  var role = typeof parsed.role === 'string' ? parsed.role : 'readonly';
+  try {
+    var user = credStore.createUser(name, role);
+    jsonResponse(res, 200, {
+      ok: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        createdAt: user.createdAt,
+        credentialCount: 0,
+        isCurrent: false,
+        passkeys: [],
+      },
+    });
+  } catch (err) {
+    jsonResponse(res, 400, { error: err.message });
+  }
 }
 
 // ── PATCH /auth/users/:id ──
@@ -280,6 +360,64 @@ function handleDeleteUser(req, res, urlPath) {
   } catch (err) {
     jsonResponse(res, 400, { error: err.message });
   }
+}
+
+// ── PATCH /auth/passkeys/:id ──
+
+function handleUpdatePasskey(req, res, urlPath, body) {
+  var caller = requireAdmin(req, res);
+  if (!caller) return;
+
+  var credentialId = urlPath.substring('/auth/passkeys/'.length);
+  if (!credentialId) {
+    jsonResponse(res, 400, { error: 'Missing passkey id' });
+    return;
+  }
+  var cred = credStore.getCredentialById(credentialId);
+  if (!cred) {
+    jsonResponse(res, 404, { error: 'Passkey not found' });
+    return;
+  }
+
+  var parsed = {};
+  try {
+    parsed = body ? JSON.parse(body) : {};
+  } catch (e) {
+    jsonResponse(res, 400, { error: 'Invalid JSON body' });
+    return;
+  }
+
+  var updates = {};
+  if (typeof parsed.label === 'string') updates.label = parsed.label;
+  if (typeof parsed.userId === 'string') updates.userId = parsed.userId;
+
+  try {
+    var updated = credStore.updateCredential(credentialId, updates);
+    jsonResponse(res, 200, { ok: true, passkey: serializeCredential(updated, null) });
+  } catch (err) {
+    var status = /not found/i.test(err.message) ? 404 : 400;
+    jsonResponse(res, status, { error: err.message });
+  }
+}
+
+// ── DELETE /auth/passkeys/:id ──
+
+function handleDeletePasskey(req, res, urlPath) {
+  var caller = requireAdmin(req, res);
+  if (!caller) return;
+
+  var credentialId = urlPath.substring('/auth/passkeys/'.length);
+  if (!credentialId) {
+    jsonResponse(res, 400, { error: 'Missing passkey id' });
+    return;
+  }
+  var cred = credStore.getCredentialById(credentialId);
+  if (!cred) {
+    jsonResponse(res, 404, { error: 'Passkey not found' });
+    return;
+  }
+  credStore.deleteCredential(credentialId);
+  jsonResponse(res, 200, { ok: true });
 }
 
 // ── POST /auth/register/options ──
@@ -428,12 +566,18 @@ async function handleRegisterVerify(req, res, body) {
     }
 
     var info = verification.registrationInfo;
+    var metadata = buildCredentialMetadata(req);
     credStore.addCredential({
       id: info.credential.id,
       userId: newUser.id,
       publicKey: Buffer.from(info.credential.publicKey).toString('base64url'),
       counter: info.credential.counter,
       transports: attestation.response.transports || [],
+      label: metadata.label,
+      lastUsedAt: metadata.lastUsedAt,
+      lastIp: metadata.lastIp,
+      lastUserAgent: metadata.lastUserAgent,
+      device: metadata.device,
     });
 
     // Consume invitation if used
@@ -446,7 +590,7 @@ async function handleRegisterVerify(req, res, body) {
     credStore.closeRegistration();
 
     // Create session for the freshly registered user
-    var newSession = credStore.createSession(newUser.id);
+    var newSession = credStore.createSession(newUser.id, info.credential.id);
     session.setSessionCookie(res, newSession.token);
 
     log.info('passkey registered', { user: newUser.name, role: newUser.role });
@@ -520,8 +664,9 @@ async function handleLoginVerify(req, res, body) {
     }
 
     credStore.updateCredentialCounter(cred.id, verification.authenticationInfo.newCounter);
+    credStore.touchCredential(cred.id, buildCredentialMetadata(req));
 
-    var newSession = credStore.createSession(cred.userId);
+    var newSession = credStore.createSession(cred.userId, cred.id);
     session.setSessionCookie(res, newSession.token);
 
     var user = credStore.getUserById(cred.userId);
@@ -547,6 +692,8 @@ function handleStatus(req, res) {
     registrationOpen: regOpen || (!!sess && user && user.role === credStore.ROLES.ADMIN),
     role: user ? user.role : null,
     name: user ? user.name : null,
+    userId: user ? user.id : null,
+    credentialId: sess ? sess.credentialId || null : null,
   });
 }
 
