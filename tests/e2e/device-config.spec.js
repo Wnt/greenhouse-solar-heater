@@ -9,7 +9,8 @@ import { test, expect } from './fixtures.js';
  * requests to verify the UI produces the correct compact config format.
  */
 
-const DEFAULT_CONFIG = { ce: false, ea: 0, fm: null, am: null, v: 1 };
+const DEFAULT_CONFIG = { ce: false, ea: 0, fm: null, we: {}, wz: {}, wb: {}, v: 1 };
+const WB_PERMANENT_SENTINEL = 9999999999;
 
 /** Mock WebSocket so the app sees a stable live connection with state data. */
 async function mockLiveConnection(page) {
@@ -61,11 +62,33 @@ async function setupDeviceView(page, initialConfig) {
     } else if (method === 'PUT') {
       const body = route.request().postDataJSON();
       putRequests.push(body);
-      // Simulate server: merge fields, bump version
+      // Simulate server: merge fields, bump version. Partial-update
+      // semantics for wb/we/wz match server/lib/device-config.js.
       if (body.ce !== undefined) savedConfig.ce = body.ce;
       if (body.ea !== undefined) savedConfig.ea = body.ea;
       if (body.fm !== undefined) savedConfig.fm = body.fm;
-      if (body.am !== undefined) savedConfig.am = body.am;
+      if (body.wb !== undefined) {
+        savedConfig.wb = savedConfig.wb || {};
+        if (body.wb === null) savedConfig.wb = {};
+        else for (const k of Object.keys(body.wb)) {
+          const v = body.wb[k];
+          if (v === 0 || v === null) delete savedConfig.wb[k];
+          else savedConfig.wb[k] = v;
+        }
+      }
+      if (body.we !== undefined) {
+        if (body.we === null) savedConfig.we = {};
+        else savedConfig.we = { ...savedConfig.we, ...body.we };
+      }
+      if (body.wz !== undefined) {
+        savedConfig.wz = savedConfig.wz || {};
+        if (body.wz === null) savedConfig.wz = {};
+        else for (const k of Object.keys(body.wz)) {
+          const v = body.wz[k];
+          if (v === 0 || v === null) delete savedConfig.wz[k];
+          else savedConfig.wz[k] = v;
+        }
+      }
       savedConfig.v = (savedConfig.v || 0) + 1;
       await route.fulfill({
         status: 200,
@@ -150,7 +173,7 @@ async function setupRelayView(page, stateOverrides) {
   await page.route('**/api/device-config', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify({ ce: true, ea: 31, fm: null, am: null, v: 1 }),
+        body: JSON.stringify({ ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1 }),
       });
     } else {
       await route.continue();
@@ -500,10 +523,11 @@ test.describe('Device config UI', () => {
     // Forced mode should be "Automatic"
     await expect(page.locator('#dc-fm')).toHaveValue('');
 
-    // All allowed modes checkboxes should be checked (am: null = all)
-    for (const code of ['I', 'SC', 'GH', 'AD', 'EH']) {
-      await expect(page.locator('#dc-am-' + code)).toBeChecked();
-    }
+    // Mode enablement card: with empty wb, all 5 modes show as "allowed"
+    const rows = page.locator('.mode-enablement-row');
+    await expect(rows).toHaveCount(5);
+    const allowedCells = page.locator('.mode-allowed');
+    await expect(allowedCells).toHaveCount(5);
 
     // Version display
     await expect(page.locator('#dc-version')).toHaveText('1');
@@ -514,7 +538,12 @@ test.describe('Device config UI', () => {
       ce: true,
       ea: 3, // valves + pump
       fm: 'SC',
-      am: ['I', 'SC'],
+      // GH, AD, EH permanently disabled via wb sentinel
+      wb: {
+        GH: WB_PERMANENT_SENTINEL,
+        AD: WB_PERMANENT_SENTINEL,
+        EH: WB_PERMANENT_SENTINEL,
+      },
       v: 5,
     });
 
@@ -525,11 +554,9 @@ test.describe('Device config UI', () => {
     await expect(page.locator('#dc-ea-sh')).not.toHaveClass(/active/);
     await expect(page.locator('#dc-ea-ih')).not.toHaveClass(/active/);
     await expect(page.locator('#dc-fm')).toHaveValue('SC');
-    await expect(page.locator('#dc-am-I')).toBeChecked();
-    await expect(page.locator('#dc-am-SC')).toBeChecked();
-    await expect(page.locator('#dc-am-GH')).not.toBeChecked();
-    await expect(page.locator('#dc-am-AD')).not.toBeChecked();
-    await expect(page.locator('#dc-am-EH')).not.toBeChecked();
+    // I and SC show as allowed; GH/AD/EH show as disabled-by-user
+    await expect(page.locator('.mode-allowed')).toHaveCount(2);
+    await expect(page.locator('.mode-disabled')).toHaveCount(3);
     await expect(page.locator('#dc-version')).toHaveText('5');
   });
 
@@ -550,7 +577,9 @@ test.describe('Device config UI', () => {
     expect(putRequests[0].ce).toBe(true);
     expect(putRequests[0].ea).toBe(7); // 1 + 2 + 4
     expect(putRequests[0].fm).toBeNull();
-    expect(putRequests[0].am).toBeNull(); // all checked = null
+    // am is no longer sent from the Save button — mode bans live
+    // exclusively in wb, edited via the Mode Enablement card.
+    expect(putRequests[0].am).toBeUndefined();
   });
 
   test('all actuators toggled = ea 31', async ({ page }) => {
@@ -593,32 +622,36 @@ test.describe('Device config UI', () => {
     expect(putRequests[0].fm).toBeNull();
   });
 
-  test('unchecking allowed modes sends array of checked codes', async ({ page }) => {
+  test('Disable button on Mode Enablement card sends wb sentinel', async ({ page }) => {
     const { putRequests } = await setupDeviceView(page);
 
-    // Uncheck GH, AD, EH — leaving only I and SC
-    await page.locator('#dc-am-GH').uncheck();
-    await page.locator('#dc-am-AD').uncheck();
-    await page.locator('#dc-am-EH').uncheck();
+    // Click the Disable button on the GREENHOUSE_HEATING row
+    const ghRow = page.locator('.mode-enablement-row').filter({ hasText: 'GREENHOUSE_HEATING' });
+    await ghRow.locator('button').click();
 
-    await page.locator('#dc-save').click();
-    await expect(page.locator('#dc-status')).toContainText('Saved');
-
-    expect(putRequests[0].am).toEqual(['I', 'SC']);
+    // Wait for the PUT to complete
+    await expect.poll(() => putRequests.length).toBeGreaterThan(0);
+    const body = putRequests[0];
+    expect(body.wb).toBeDefined();
+    expect(body.wb.GH).toBe(WB_PERMANENT_SENTINEL);
   });
 
-  test('all modes checked sends null (unrestricted)', async ({ page }) => {
-    const { putRequests } = await setupDeviceView(page, { am: ['I', 'SC'] });
+  test('Re-enable button removes wb sentinel', async ({ page }) => {
+    const { putRequests } = await setupDeviceView(page, {
+      wb: { GH: WB_PERMANENT_SENTINEL }
+    });
 
-    // Re-check all the unchecked modes (GH, AD, EH were unchecked in initial config)
-    await page.locator('#dc-am-GH').check();
-    await page.locator('#dc-am-AD').check();
-    await page.locator('#dc-am-EH').check();
+    // Wait for the Mode Enablement card to show GH as disabled
+    await expect(page.locator('.mode-disabled')).toHaveCount(1);
 
-    await page.locator('#dc-save').click();
-    await expect(page.locator('#dc-status')).toContainText('Saved');
+    // Click the Re-enable button on the GH row
+    const ghRow = page.locator('.mode-enablement-row').filter({ hasText: 'GREENHOUSE_HEATING' });
+    await ghRow.locator('button').click();
 
-    expect(putRequests[0].am).toBeNull();
+    await expect.poll(() => putRequests.length).toBeGreaterThan(0);
+    const body = putRequests[0];
+    expect(body.wb).toBeDefined();
+    expect(body.wb.GH).toBe(0); // 0 means "remove this entry"
   });
 
   test('full scenario: staged deployment step 5 config', async ({ page }) => {
@@ -629,12 +662,9 @@ test.describe('Device config UI', () => {
     // Enable valves + pump only
     await page.locator('#dc-ea-v').click();
     await page.locator('#dc-ea-p').click();
-    // Allow only Idle + Solar Charging
-    await page.locator('#dc-am-GH').uncheck();
-    await page.locator('#dc-am-AD').uncheck();
-    await page.locator('#dc-am-EH').uncheck();
     // No forced mode (leave as Automatic)
 
+    // Save — ce/ea/fm only. Mode bans are edited separately.
     await page.locator('#dc-save').click();
     await expect(page.locator('#dc-status')).toContainText('Saved');
 
@@ -642,11 +672,12 @@ test.describe('Device config UI', () => {
     expect(sent.ce).toBe(true);
     expect(sent.ea).toBe(3); // valves(1) + pump(2)
     expect(sent.fm).toBeNull();
-    expect(sent.am).toEqual(['I', 'SC']);
+    // am is no longer sent from Save
+    expect(sent.am).toBeUndefined();
 
-    // Verify it fits in KVS
+    // Verify the saved config still fits in KVS (256-byte limit)
     const size = JSON.stringify(sent).length;
-    expect(size).toBeLessThanOrEqual(64);
+    expect(size).toBeLessThanOrEqual(256);
   });
 
   test('version and size update after save', async ({ page }) => {
