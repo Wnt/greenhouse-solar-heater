@@ -84,7 +84,13 @@ var VALVE_TIMING = {
 
 var DEFAULT_CONFIG = {
   solarEnterDelta: 10,
-  solarExitDelta: 2,
+  // Solar charging exits when the tank has stopped accepting heat:
+  //   - tank_top has not risen for solarExitStallSeconds, OR
+  //   - tank_top has dropped solarExitTankDrop °C from the session peak
+  // This replaces the old collector/tank_bottom delta exit so we keep
+  // pumping until the tank itself signals diminishing returns.
+  solarExitTankDrop: 2,
+  solarExitStallSeconds: 300,
   greenhouseEnterTemp: 10,
   greenhouseExitTemp: 12,
   greenhouseMinTankDelta: 5,
@@ -205,12 +211,42 @@ function evaluate(state, config, deviceConfig) {
   var flags = {
     collectorsDrained: state.collectorsDrained,
     lastRefillAttempt: state.lastRefillAttempt,
-    emergencyHeatingActive: state.emergencyHeatingActive || false
+    emergencyHeatingActive: state.emergencyHeatingActive || false,
+    // Solar-charging tank-rise tracking. Carried forward only while we
+    // remain in SOLAR_CHARGING — cleared whenever pumpMode ends up
+    // anything else (see end of function).
+    solarChargePeakTankTop: null,
+    solarChargePeakTankTopAt: 0
   };
+
+  // Carry forward and update peak tank_top while in SOLAR_CHARGING. We
+  // do this before the min-duration hold so peakAt advances during the
+  // hold — otherwise the stall counter would fire the instant the hold
+  // expires.
+  if (state.currentMode === MODES.SOLAR_CHARGING) {
+    var carriedPeak = (state.solarChargePeakTankTop !== undefined &&
+                       state.solarChargePeakTankTop !== null)
+      ? state.solarChargePeakTankTop
+      : null;
+    var carriedPeakAt = state.solarChargePeakTankTopAt || 0;
+    if (t.tank_top !== null) {
+      if (carriedPeak === null || t.tank_top > carriedPeak) {
+        carriedPeak = t.tank_top;
+        carriedPeakAt = state.now;
+      } else if (carriedPeakAt === 0) {
+        // First eval after entry where peak wasn't seeded — anchor now
+        carriedPeakAt = state.now;
+      }
+    }
+    flags.solarChargePeakTankTop = carriedPeak;
+    flags.solarChargePeakTankTopAt = carriedPeakAt;
+  }
 
   // Sensor staleness — any sensor stale triggers IDLE, emergency off
   if (anySensorStale(state.sensorAge, cfg.sensorStaleThreshold)) {
     flags.emergencyHeatingActive = false;
+    flags.solarChargePeakTankTop = null;
+    flags.solarChargePeakTankTopAt = 0;
     return makeResult(MODES.IDLE, flags, dc);
   }
 
@@ -227,6 +263,8 @@ function evaluate(state, config, deviceConfig) {
   // safetyOverride=true: MUST NOT be suppressed by device config
   if (t.outdoor !== null && t.outdoor < cfg.freezeDrainTemp &&
       !state.collectorsDrained) {
+    flags.solarChargePeakTankTop = null;
+    flags.solarChargePeakTankTopAt = 0;
     return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true);
   }
 
@@ -236,6 +274,8 @@ function evaluate(state, config, deviceConfig) {
   // safetyOverride=true: MUST NOT be suppressed by device config
   if (t.collector !== null && t.collector > cfg.overheatDrainTemp &&
       state.currentMode === MODES.SOLAR_CHARGING && !state.collectorsDrained) {
+    flags.solarChargePeakTankTop = null;
+    flags.solarChargePeakTankTopAt = 0;
     return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true);
   }
 
@@ -272,14 +312,35 @@ function evaluate(state, config, deviceConfig) {
   // Solar charging — capture free energy first
   if (t.collector !== null && t.tank_bottom !== null) {
     if (state.currentMode === MODES.SOLAR_CHARGING) {
-      if (t.collector >= t.tank_bottom + cfg.solarExitDelta) {
+      // Stay in solar charging until the tank stops accepting heat.
+      // We keep pumping even when collector ≈ tank_bottom because the
+      // collector continues absorbing irradiance while flow is on, and
+      // the tank itself is the most direct signal of whether we are
+      // still gaining energy. Two exit conditions:
+      //   1. tank_top has not exceeded the session peak for the past
+      //      cfg.solarExitStallSeconds seconds (stall), OR
+      //   2. tank_top has dropped >= cfg.solarExitTankDrop °C from the
+      //      session peak (we're actively cooling the tank).
+      var stalled = false;
+      var droppedFromPeak = false;
+      if (t.tank_top !== null && flags.solarChargePeakTankTop !== null) {
+        droppedFromPeak =
+          (flags.solarChargePeakTankTop - t.tank_top) >= cfg.solarExitTankDrop;
+        stalled =
+          (state.now - flags.solarChargePeakTankTopAt) >= cfg.solarExitStallSeconds;
+      }
+      if (!stalled && !droppedFromPeak) {
         pumpMode = MODES.SOLAR_CHARGING;
       }
-      // Below exit delta, fall through to IDLE
+      // Otherwise fall through to IDLE / other modes
     } else if (!state.collectorsDrained) {
-      // Normal solar entry
+      // Normal solar entry — collector clearly hotter than tank bottom
       if (t.collector > t.tank_bottom + cfg.solarEnterDelta) {
         pumpMode = MODES.SOLAR_CHARGING;
+        if (t.tank_top !== null) {
+          flags.solarChargePeakTankTop = t.tank_top;
+          flags.solarChargePeakTankTopAt = state.now;
+        }
       }
     } else {
       // Speculative refill — collectors drained, conditions suggest daylight
@@ -289,6 +350,10 @@ function evaluate(state, config, deviceConfig) {
           flags.collectorsDrained = false;
           flags.lastRefillAttempt = state.now;
           pumpMode = MODES.SOLAR_CHARGING;
+          if (t.tank_top !== null) {
+            flags.solarChargePeakTankTop = t.tank_top;
+            flags.solarChargePeakTankTopAt = state.now;
+          }
         }
       }
     }
@@ -315,6 +380,16 @@ function evaluate(state, config, deviceConfig) {
   if (t.collector !== null && t.collector > cfg.overheatDrainTemp &&
       !state.collectorsDrained && pumpMode !== MODES.SOLAR_CHARGING) {
     pumpMode = MODES.SOLAR_CHARGING;
+    if (t.tank_top !== null && flags.solarChargePeakTankTop === null) {
+      flags.solarChargePeakTankTop = t.tank_top;
+      flags.solarChargePeakTankTopAt = state.now;
+    }
+  }
+
+  // Clear peak tracking if we are not staying in / entering SOLAR_CHARGING
+  if (pumpMode !== MODES.SOLAR_CHARGING) {
+    flags.solarChargePeakTankTop = null;
+    flags.solarChargePeakTankTopAt = 0;
   }
 
   // ── Forced mode override (for staged deployment / manual testing) ──
@@ -323,6 +398,10 @@ function evaluate(state, config, deviceConfig) {
     if (MODES[forcedMode]) {
       pumpMode = MODES[forcedMode];
       flags.emergencyHeatingActive = false;
+      if (pumpMode !== MODES.SOLAR_CHARGING) {
+        flags.solarChargePeakTankTop = null;
+        flags.solarChargePeakTankTopAt = 0;
+      }
       return makeResult(pumpMode, flags, dc);
     }
   }
@@ -347,6 +426,8 @@ function evaluate(state, config, deviceConfig) {
       }
     }
     if (!allowed) {
+      flags.solarChargePeakTankTop = null;
+      flags.solarChargePeakTankTopAt = 0;
       return makeResult(MODES.IDLE, flags, dc);
     }
   }

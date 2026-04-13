@@ -34,6 +34,12 @@ export class ControlStateMachine {
     this.collectorsDrained = false;
     this.lastRefillAttempt = 0;
     this.emergencyHeatingActive = false;
+    // Solar-charging tank-rise tracking (mirrors evaluate() flags).
+    // Reset each time we leave SOLAR_CHARGING; carried across ticks
+    // while we are in solar charging so the no-rise-for-5-min and
+    // tank-dropped-2°C exit conditions can fire.
+    this.solarChargePeakTankTop = null;
+    this.solarChargePeakTankTopAt = 0;
     this.transitionLog = [];
   }
 
@@ -58,6 +64,8 @@ export class ControlStateMachine {
       collectorsDrained: this.collectorsDrained,
       lastRefillAttempt: this.lastRefillAttempt,
       emergencyHeatingActive: this.emergencyHeatingActive,
+      solarChargePeakTankTop: this.solarChargePeakTankTop,
+      solarChargePeakTankTopAt: this.solarChargePeakTankTopAt,
       sensorAge: { collector: 0, tank_top: 0, tank_bottom: 0, greenhouse: 0, outdoor: 0 },
     };
   }
@@ -72,6 +80,9 @@ export class ControlStateMachine {
     const prevMode = this.currentMode;
     const sensorStr = this._sensorSummary(sensors);
     const shellyState = this._buildShellyState(sensors, simTime);
+    // Snapshot peak before evaluate() resets it so the transition log
+    // can describe the session that just ended.
+    const prevPeak = this.solarChargePeakTankTop;
 
     // Delegate decision to the real Shelly control logic
     const result = _evaluate(shellyState, null);
@@ -81,11 +92,13 @@ export class ControlStateMachine {
     this.collectorsDrained = result.flags.collectorsDrained;
     this.lastRefillAttempt = result.flags.lastRefillAttempt;
     this.emergencyHeatingActive = result.flags.emergencyHeatingActive;
+    this.solarChargePeakTankTop = result.flags.solarChargePeakTankTop;
+    this.solarChargePeakTankTopAt = result.flags.solarChargePeakTankTopAt;
 
     // Build transition log entry
     let transition = null;
     if (nextMode !== prevMode) {
-      transition = this._describeTransition(prevMode, nextMode, sensors, sensorStr);
+      transition = this._describeTransition(prevMode, nextMode, sensors, sensorStr, prevPeak);
       this.currentMode = nextMode;
       this.modeStartTime = simTime;
       this.transitionLog.push({ time: simTime, transition });
@@ -105,7 +118,7 @@ export class ControlStateMachine {
   }
 
   /** Human-readable transition description for the log panel */
-  _describeTransition(from, to, sensors, sensorStr) {
+  _describeTransition(from, to, sensors, sensorStr, prevSolarPeak) {
     const s = sensors;
     const delta = (s.t_collector - s.t_tank_bottom).toFixed(1);
 
@@ -134,7 +147,12 @@ export class ControlStateMachine {
       return `greenhouse_heating → idle | T_gh=${s.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;
     }
     if (from === 'solar_charging' && to === 'idle') {
-      return `solar_charging → idle | delta=${delta}°C < 2°C threshold | ${sensorStr}`;
+      const peak = (typeof prevSolarPeak === 'number') ? prevSolarPeak : null;
+      if (peak !== null) {
+        const drop = (peak - s.t_tank_top).toFixed(1);
+        return `solar_charging → idle | tank stopped rising (peak T_top=${peak.toFixed(1)}°C, now ${s.t_tank_top.toFixed(1)}°C, drop ${drop}°C) | ${sensorStr}`;
+      }
+      return `solar_charging → idle | tank stopped rising | ${sensorStr}`;
     }
     if (from === 'emergency_heating' && to === 'idle') {
       return `emergency_heating → idle | T_gh=${s.t_greenhouse.toFixed(1)}°C > 12°C | ${sensorStr}`;
@@ -148,6 +166,8 @@ export class ControlStateMachine {
     this.collectorsDrained = false;
     this.lastRefillAttempt = 0;
     this.emergencyHeatingActive = false;
+    this.solarChargePeakTankTop = null;
+    this.solarChargePeakTankTopAt = 0;
     this.transitionLog = [];
   }
 }

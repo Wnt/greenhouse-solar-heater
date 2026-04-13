@@ -81,22 +81,104 @@ describe('hysteresis', () => {
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
-  it('stays in solar at exact exit threshold (collector = tank_bottom + 2)', () => {
+  it('stays in solar even when collector falls below tank_bottom + 2 if tank still rising', () => {
+    // New exit criteria: stay in solar until tank_top stops rising for 5 min
+    // or drops 2°C from peak — NOT based on collector/tank_bottom delta.
+    // Here the collector is barely warmer than tank_bottom but tank_top just
+    // rose, so we keep harvesting.
     const result = evaluate(makeState({
-      temps: { collector: 32, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 31, tank_top: 41, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
-      modeEnteredAt: 0, now: 2000
+      modeEnteredAt: 0, now: 2000,
+      solarChargePeakTankTop: 40,
+      solarChargePeakTankTopAt: 1500
     }), null);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
 
-  it('exits solar when collector < tank_bottom + 2', () => {
+  it('exits solar when tank_top has not risen for 5 minutes', () => {
+    // Peak was set 5 minutes ago and tank_top has not exceeded it since
     const result = evaluate(makeState({
-      temps: { collector: 31, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
-      modeEnteredAt: 0, now: 2000
+      modeEnteredAt: 0, now: 2000,
+      solarChargePeakTankTop: 40,
+      solarChargePeakTankTopAt: 1700  // 300s ago
     }), null);
     assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('exits solar when tank_top dropped 2°C from session peak', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 50, tank_top: 38, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 2000,
+      solarChargePeakTankTop: 40,
+      solarChargePeakTankTopAt: 1900  // recent — stall not yet triggered
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('stays in solar when tank_top has not stalled and has not dropped 2°C', () => {
+    // Tank dropped 1.5°C — under threshold; stall not yet 5 min
+    const result = evaluate(makeState({
+      temps: { collector: 18, tank_top: 38.5, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 2000,
+      solarChargePeakTankTop: 40,
+      solarChargePeakTankTopAt: 1850  // 150s ago
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+  });
+
+  it('records peak tank_top on solar entry', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.IDLE,
+      now: 2000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.flags.solarChargePeakTankTop, 40);
+    assert.strictEqual(result.flags.solarChargePeakTankTopAt, 2000);
+  });
+
+  it('updates peak tank_top during a session as tank rises', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 50, tank_top: 42, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 2000,
+      solarChargePeakTankTop: 40,
+      solarChargePeakTankTopAt: 1500
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.flags.solarChargePeakTankTop, 42);
+    assert.strictEqual(result.flags.solarChargePeakTankTopAt, 2000);
+  });
+
+  it('keeps peak unchanged if tank_top did not rise', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 50, tank_top: 39.5, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 2000,
+      solarChargePeakTankTop: 40,
+      solarChargePeakTankTopAt: 1900
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.flags.solarChargePeakTankTop, 40);
+    assert.strictEqual(result.flags.solarChargePeakTankTopAt, 1900);
+  });
+
+  it('clears peak tracking when leaving solar charging', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 50, tank_top: 38, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 2000,
+      solarChargePeakTankTop: 40,
+      solarChargePeakTankTopAt: 1900
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+    assert.strictEqual(result.flags.solarChargePeakTankTop, null);
+    assert.strictEqual(result.flags.solarChargePeakTankTopAt, 0);
   });
 
   it('enters greenhouse heating at greenhouse < 10 with hot tank', () => {
@@ -199,19 +281,25 @@ describe('hysteresis', () => {
 
 describe('minimum duration', () => {
   it('holds mode for minimum time even if exit conditions met', () => {
+    // Tank dropped 2°C from peak — would normally trigger exit, but min hold blocks it
     const result = evaluate(makeState({
-      temps: { collector: 32, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 18, tank_top: 38, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
-      modeEnteredAt: 900, now: 1000  // only 100s elapsed, min is 300
+      modeEnteredAt: 900, now: 1000,  // only 100s elapsed, min is 300
+      solarChargePeakTankTop: 40,
+      solarChargePeakTankTopAt: 950
     }), null);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
 
   it('allows exit after minimum duration', () => {
+    // Tank dropped 2°C from peak — exit allowed since min duration elapsed
     const result = evaluate(makeState({
-      temps: { collector: 31, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 18, tank_top: 38, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
-      modeEnteredAt: 0, now: 1000  // 1000s elapsed > 300 min
+      modeEnteredAt: 0, now: 1000,  // 1000s elapsed > 300 min
+      solarChargePeakTankTop: 40,
+      solarChargePeakTankTopAt: 800
     }), null);
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });

@@ -8,6 +8,18 @@ describe('notifications', () => {
     delete require.cache[require.resolve('../server/lib/notifications.js')];
     notifications = require('../server/lib/notifications.js');
     notifications._reset();
+    // Suppress scheduled noon (12:00 EE[S]T) and evening (20:00 EE[S]T)
+    // reports for every subsuite. CI runs at the top of the noon hour
+    // every day, which would otherwise cause checkNoonReport() to fire
+    // a 'noon_report' inside any test that calls evaluate(). The
+    // overheat/freeze tests filter by notification type so the extra
+    // entry is harmless there, but it has been the source of repeated
+    // CI flakes (see commit 0478d16) and any future spurious-count
+    // assertion would be silently broken. Mark today as already-sent so
+    // the gate `day === lastNoonReport` returns early.
+    var today = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+    notifications._setLastEveningReport(today);
+    notifications._setLastNoonReport(today);
   });
 
   describe('predictValue (linear extrapolation)', () => {
@@ -212,10 +224,6 @@ describe('notifications', () => {
         },
       };
       notifications.init({ push: mockPush, deviceConfig: null });
-      // Suppress scheduled reports (which would fire if test runs at 12:00 or 20:00)
-      var today = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
-      notifications._setLastEveningReport(today);
-      notifications._setLastNoonReport(today);
     });
 
     it('does not send any notification for normal temperatures', () => {
@@ -241,10 +249,6 @@ describe('notifications', () => {
         },
       };
       notifications.init({ push: mockPush, deviceConfig: null });
-      // Suppress scheduled reports (which would fire if test runs at 12:00 or 20:00)
-      var today = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
-      notifications._setLastEveningReport(today);
-      notifications._setLastNoonReport(today);
     });
 
     it('does not send offline notification before 15 minutes', () => {
