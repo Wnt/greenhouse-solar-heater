@@ -11,6 +11,8 @@ var DISCOVER_TOPIC = "greenhouse/discover-sensors";
 var DISCOVER_RESULT_TOPIC = "greenhouse/discover-sensors-result";
 var RELAY_COMMAND_TOPIC = "greenhouse/relay-command";
 var STATE_TOPIC = "greenhouse/state";
+var WATCHDOG_EVENT_TOPIC = "greenhouse/watchdog/event";
+var WATCHDOG_CMD_TOPIC = "greenhouse/watchdog/cmd";
 var CONFIG_KVS_KEY = "config";
 var SENSOR_CONFIG_KVS_KEY = "sensor_config";
 var CONFIG_URL = "";  // Set via KVS "config_url" or default
@@ -44,7 +46,7 @@ function isSafetyCritical(oldCfg, newCfg) {
   if (oldCfg.ce !== newCfg.ce) return true;
   if (oldCfg.ea !== newCfg.ea) return true;
   if (oldCfg.fm !== newCfg.fm) return true;
-  if (JSON.stringify(oldCfg.am) !== JSON.stringify(newCfg.am)) return true;
+  if (JSON.stringify(oldCfg.wb) !== JSON.stringify(newCfg.wb)) return true;
   return false;
 }
 
@@ -176,6 +178,15 @@ function setupMqttSubscription() {
       }
     } catch(e) {}
   });
+  safeSubscribe(WATCHDOG_CMD_TOPIC, function(topic, message) {
+    if (topic !== WATCHDOG_CMD_TOPIC) return;
+    try {
+      var cmd = JSON.parse(message);
+      if (cmd && typeof cmd.t === "string") {
+        Shelly.emitEvent("watchdog_cmd", cmd);
+      }
+    } catch(e) {}
+  });
 }
 
 // ── MQTT state publishing ──
@@ -195,6 +206,10 @@ Shelly.addEventHandler(function(ev) {
     var discResult = ev.info.data;
     if (!discResult || !MQTT.isConnected()) return;
     MQTT.publish(DISCOVER_RESULT_TOPIC, JSON.stringify(discResult), 1, false);
+  } else if (ev.info.event === "watchdog_event") {
+    var wdPayload = ev.info.data;
+    if (!wdPayload || !MQTT.isConnected()) return;
+    MQTT.publish(WATCHDOG_EVENT_TOPIC, JSON.stringify(wdPayload), 1, false);
   }
 });
 

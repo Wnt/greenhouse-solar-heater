@@ -9,6 +9,10 @@ var SHELL_CFG = {
   DRAIN_POWER_THRESHOLD: 20,
 };
 
+// Watchdog id → mode short code. Used by applyBanAndShutdown to
+// translate a watchdog id to the mode code stored in wb.
+var WATCHDOG_MODE = { sng: "SC", scs: "SC", ggr: "GH" };
+
 var VALVES = {
   vi_btm:  {ip: "192.168.30.11", id: 0},
   vi_top:  {ip: "192.168.30.11", id: 1},
@@ -27,11 +31,22 @@ var VALVES = {
 // Sensor config from KVS (null = skip polling, safe IDLE default)
 var sensorConfig = null;
 // Device config from KVS
-var deviceConfig = { ce: false, ea: 0, fm: null, am: null, v: 0 };
+var deviceConfig = { ce: false, ea: 0, fm: null, we: {}, wz: {}, wb: {}, v: 0 };
 
 var state = {
   mode: MODES.IDLE,
   mode_start: 0,
+  // Watchdog baseline: captured at every mode entry; lost on reboot.
+  // Used by detectAnomaly() each tick to check if the expected
+  // temperature delta materialized within the per-watchdog window.
+  watchdog_baseline: null,
+  // Pending watchdog fire: { id, firedAt }. Null when no fire is in
+  // flight. Auto-shutdown fires at firedAt + 300s (5 min) from the
+  // 30s controlLoop tick (no new Timer.set).
+  watchdogPending: null,
+  // Previous mo.ss value used to detect transitions from
+  // suppressSafety=true → false so we can re-capture the baseline.
+  prev_ss: false,
   temps: {
     collector: null, tank_top: null, tank_bottom: null,
     greenhouse: null, outdoor: null,
@@ -179,6 +194,7 @@ function setValves(pairs, idx, cb) {
       setPump(false);
       state.mode = MODES.IDLE;
       state.mode_start = Date.now();
+      captureWatchdogBaseline();
       state.transitioning = false;
       if (cb) cb(false);
       return;
@@ -312,6 +328,98 @@ function applyFlags(flags) {
   state.solar_charge_peak_tank_top_at = flags.solarChargePeakTankTopAt || 0;
 }
 
+// ── Watchdog helpers ──
+
+// Snapshot sensor values at mode-entry so detectAnomaly() can compare
+// the current readings against the baseline every tick. Called at
+// every state.mode_start = Date.now() site to piggyback on existing
+// mode-transition points. Clears any in-flight pending, because a
+// mode transition terminates the current watchdog window.
+function captureWatchdogBaseline() {
+  state.watchdog_baseline = {
+    at: Math.floor(Date.now() / 1000),
+    tankTop: state.temps.tank_top,
+    collector: state.temps.collector,
+    greenhouse: state.temps.greenhouse
+  };
+  state.watchdogPending = null;
+}
+
+// Publish a watchdog event via the telemetry script. Events are sent
+// as Shelly.emitEvent and the telemetry.js handler forwards them to
+// MQTT. Silently dropped if the event system is not ready.
+function publishWatchdogEvent(payload) {
+  Shelly.emitEvent("watchdog_event", payload);
+}
+
+// ── Watchdog resolution handlers ──
+
+function applyBanAndShutdown(id, how) {
+  var modeCode = WATCHDOG_MODE[id];
+  if (!modeCode) return;
+  var nowSec = Math.floor(Date.now() / 1000);
+  var banTtl = deviceConfig.watchdogBanSeconds || 14400;
+  var newUntil = nowSec + banTtl;
+
+  deviceConfig.wb = deviceConfig.wb || {};
+  var existing = deviceConfig.wb[modeCode] || 0;
+  // max() so a permanent ban (sentinel 9999999999) is never downgraded
+  deviceConfig.wb[modeCode] = (existing > newUntil) ? existing : newUntil;
+
+  Shelly.call("KVS.Set", {
+    key: "config",
+    value: JSON.stringify(deviceConfig)
+  });
+
+  state.watchdogPending = null;
+  // Compute an IDLE result and run a full transition so pump/fan/valves
+  // go through the staged scheduler rather than abrupt relay changes.
+  var idleResult = {
+    nextMode: MODES.IDLE,
+    valves: MODE_VALVES[MODES.IDLE],
+    actuators: MODE_ACTUATORS[MODES.IDLE],
+    flags: {
+      collectorsDrained: state.collectors_drained,
+      lastRefillAttempt: state.last_refill_attempt / 1000,
+      emergencyHeatingActive: false,
+      solarChargePeakTankTop: null,
+      solarChargePeakTankTopAt: 0
+    },
+    suppressed: false,
+    safetyOverride: false
+  };
+  transitionTo(idleResult);
+  publishWatchdogEvent({ t: "resolved", id: id, how: how, ts: nowSec });
+}
+
+function autoShutdown(id) {
+  applyBanAndShutdown(id, "shutdown_auto");
+}
+
+function onWatchdogShutdownNow(id) {
+  if (!state.watchdogPending || state.watchdogPending.id !== id) return;
+  applyBanAndShutdown(id, "shutdown_user");
+}
+
+function onWatchdogAck(msg) {
+  // msg = { t:"ack", id:"ggr", u:<unix seconds> }
+  if (!state.watchdogPending || state.watchdogPending.id !== msg.id) return;
+  deviceConfig.wz = deviceConfig.wz || {};
+  deviceConfig.wz[msg.id] = msg.u;
+  Shelly.call("KVS.Set", {
+    key: "config",
+    value: JSON.stringify(deviceConfig)
+  });
+  state.watchdogPending = null;
+  publishWatchdogEvent({
+    t: "resolved",
+    id: msg.id,
+    how: "snoozed",
+    ts: Math.floor(Date.now() / 1000)
+  });
+  // NOTE: mode is NOT transitioned — snooze keeps it running
+}
+
 // ── Staged transitions (023-limit-valve-operations) ──
 //
 // The staged transition is a small state machine:
@@ -358,6 +466,7 @@ function finalizeTransitionOK(result) {
   Timer.set(SHELL_CFG.PUMP_PRIME_MS, false, function() {
     state.mode = result.nextMode;
     state.mode_start = Date.now();
+    captureWatchdogBaseline();
     state.transitioning = false;
     state.transition_step = null;
     state.targetValves = null;
@@ -394,6 +503,7 @@ function finalizeTransitionFail() {
   setPump(false);
   state.mode = MODES.IDLE;
   state.mode_start = Date.now();
+  captureWatchdogBaseline();
   state.transitioning = false;
   state.transition_step = null;
   emitStateUpdate();
@@ -745,10 +855,79 @@ function controlLoop() {
         emitStateUpdate();
       }
 
+      // ── Watchdog tick block ──
+      watchdogTick();
+
       // Process pending MQTT commands after control cycle completes
       processPendingCommands();
     });
   });
+}
+
+// Watchdog per-tick block: lazy-prune expired bans, reset baseline on
+// override exit, check pending or run detection. Three mutually
+// exclusive branches so the tick cost is bounded at O(1) even when
+// all three watchdogs are enabled.
+function watchdogTick() {
+  var nowSec = Math.floor(Date.now() / 1000);
+
+  // (a) Lazy prune of expired wb entries
+  if (deviceConfig.wb) {
+    var wbChanged = false;
+    for (var m in deviceConfig.wb) {
+      if (deviceConfig.wb[m] <= nowSec) {
+        delete deviceConfig.wb[m];
+        wbChanged = true;
+      }
+    }
+    if (wbChanged) {
+      Shelly.call("KVS.Set", {
+        key: "config",
+        value: JSON.stringify(deviceConfig)
+      });
+    }
+  }
+
+  // (b) Override-exit baseline reset
+  var ssNow = !!(deviceConfig.mo && deviceConfig.mo.a && deviceConfig.mo.ss);
+  if (state.prev_ss && !ssNow && state.watchdog_baseline) {
+    captureWatchdogBaseline();
+  }
+  state.prev_ss = ssNow;
+
+  // (c) Pending check OR detection — mutually exclusive
+  if (state.watchdogPending) {
+    if (nowSec - state.watchdogPending.firedAt >= 300) {
+      autoShutdown(state.watchdogPending.id);
+    }
+  } else if (state.watchdog_baseline) {
+    var entry = {
+      mode: state.mode,
+      at: state.watchdog_baseline.at,
+      tankTop: state.watchdog_baseline.tankTop,
+      collector: state.watchdog_baseline.collector,
+      greenhouse: state.watchdog_baseline.greenhouse
+    };
+    var sensors = {
+      collector: state.temps.collector,
+      tank_top: state.temps.tank_top,
+      greenhouse: state.temps.greenhouse
+    };
+    var fired = detectAnomaly(entry, nowSec, sensors, deviceConfig);
+    if (fired) {
+      state.watchdogPending = { id: fired, firedAt: nowSec };
+      publishWatchdogEvent({
+        t: "fired",
+        id: fired,
+        mode: entry.mode,
+        el: nowSec - entry.at,
+        dT: state.temps.tank_top - entry.tankTop,
+        dC: entry.collector - state.temps.collector,
+        dG: state.temps.greenhouse - entry.greenhouse,
+        ts: nowSec
+      });
+    }
+  }
 }
 
 // ── MQTT command queue (sensor config apply + discovery) ──
@@ -885,6 +1064,15 @@ Shelly.addEventHandler(function(ev) {
     if (relayData && typeof relayData.relay === "string" && typeof relayData.on === "boolean") {
       handleRelayCommand(relayData.relay, relayData.on);
     }
+  } else if (ev.info.event === "watchdog_cmd") {
+    var wdCmd = ev.info.data;
+    if (wdCmd && typeof wdCmd.t === "string") {
+      if (wdCmd.t === "ack" && typeof wdCmd.id === "string" && typeof wdCmd.u === "number") {
+        onWatchdogAck(wdCmd);
+      } else if (wdCmd.t === "shutdownnow" && typeof wdCmd.id === "string") {
+        onWatchdogShutdownNow(wdCmd.id);
+      }
+    }
   }
 });
 
@@ -926,6 +1114,7 @@ function bootCloseValves() {
 
             pollAllSensors(function() {
               state.mode_start = Date.now();
+              captureWatchdogBaseline();
               Timer.set(SHELL_CFG.POLL_INTERVAL, true, controlLoop);
               controlLoop();
             });
