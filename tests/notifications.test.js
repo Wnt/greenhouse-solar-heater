@@ -80,7 +80,14 @@ describe('notifications', () => {
     });
 
     it('returns true immediately after evaluate()', () => {
-      var mockPush = { sendNotification: function () {} };
+      // Mock must include iconFor — checkNoonReport / checkEveningReport
+      // call pushRef.iconFor() when the test happens to run at the
+      // scheduled hour (12:00 or 20:00 Finnish time). Without it, this
+      // test fails on a noon-time CI run with "iconFor is not a function".
+      var mockPush = {
+        sendNotification: function () {},
+        iconFor: function (type) { return 'assets/notif-' + type + '.png'; },
+      };
       notifications.init({ push: mockPush, deviceConfig: null });
       notifications.evaluate({ temps: {}, mode: 'IDLE' });
       assert.strictEqual(notifications.isDataFresh(), true);
