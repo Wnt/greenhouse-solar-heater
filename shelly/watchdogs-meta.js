@@ -1,0 +1,50 @@
+// shelly/watchdogs-meta.js
+//
+// Watchdog metadata — shared between server and playground simulator.
+// NOT concatenated into the device script by deploy.sh. The device
+// only carries the three watchdog short ids (sng/scs/ggr) and a
+// mapping to mode codes; all human-readable labels and TTLs live here.
+
+var WATCHDOGS = [
+  {
+    id: "sng",
+    mode: "SOLAR_CHARGING",
+    label: "No tank gain",
+    shortLabel: "Tank not heating",
+    windowSeconds: 600,
+    snoozeTtlSeconds: 7200
+  },
+  {
+    id: "scs",
+    mode: "SOLAR_CHARGING",
+    label: "Collector stuck",
+    shortLabel: "Collector flow stuck",
+    windowSeconds: 300,
+    snoozeTtlSeconds: 3600
+  },
+  {
+    id: "ggr",
+    mode: "GREENHOUSE_HEATING",
+    label: "No greenhouse rise",
+    shortLabel: "Greenhouse not warming",
+    windowSeconds: 900,
+    snoozeTtlSeconds: 43200
+  }
+];
+
+var WATCHDOG_IDS = ["sng", "scs", "ggr"];
+
+function getWatchdog(id) {
+  for (var i = 0; i < WATCHDOGS.length; i++) {
+    if (WATCHDOGS[i].id === id) return WATCHDOGS[i];
+  }
+  return null;
+}
+
+if (typeof module !== "undefined") {
+  module.exports = {
+    WATCHDOGS: WATCHDOGS,
+    WATCHDOG_IDS: WATCHDOG_IDS,
+    getWatchdog: getWatchdog
+  };
+}
