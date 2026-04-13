@@ -20,7 +20,8 @@ Solar thermal greenhouse heating system for Southwest Finland. Shelly-controlled
 - `shelly/` — device scripts (`control.js`, `control-logic.js`, `telemetry.js`, `deploy.sh`)
 - `shelly/lint/` — Shelly platform conformance linter (standalone Node.js CLI, Acorn-based)
 - `playground/` — SPA/PWA: 5 hash-routed views (`#status`, `#components`, `#controls`, `#device`, `#settings`). Passkey-protected in cloud mode. Legacy `#schematic` → `#components` and `#sensors` → `#device` aliases live in `js/actions/navigation.js`.
-- `playground/vendor/` — vendored third-party libraries (see Critical Rules)
+- `playground/public/` — assets served without auth (login page, shared CSS/font, libraries needed by unauthenticated views). The server whitelists `/public/*`, so anything placed here is reachable without a session — do not put sensitive data here.
+- `playground/vendor/` — vendored third-party libraries for authed views (see Critical Rules)
 - `server/` — Node.js API: HTTP + WebSocket + MQTT bridge + auth + device/sensor config + history + push notifications
 - `server/auth/` — WebAuthn passkey auth (multi-user, role-based: `admin` / `readonly`)
 - `server/lib/` — shared modules: `mqtt-bridge`, `device-config`, `sensor-config`, `db` (PostgreSQL/TimescaleDB), `s3-storage`, `notifications`, `push`, `tracing`, `logger`, config CLI helpers
@@ -69,7 +70,7 @@ No direct HTTP RPC to Shelly from the server. The `mqtt-bridge` routes state, co
 
 ### Vendored dependencies must stay vendored
 
-`playground/vendor/` contains `js-yaml.mjs`, `simplewebauthn-browser.mjs`, `qrcode-generator.mjs`, `material-symbols.css`, `material-symbols-outlined.woff2`. Importmaps in each HTML file point at `./vendor/...`. **Do not replace with CDN URLs.** To upgrade: `npm pack <package>`, extract, copy dist files.
+`playground/vendor/` contains `js-yaml.mjs` (authed-only). `playground/public/` contains `simplewebauthn-browser.mjs`, `qrcode-generator.mjs`, `material-symbols.css`, `material-symbols-outlined.woff2`, plus the shared `style.css`. Importmaps in each HTML file point at `./vendor/...` or `./public/...`. **Do not replace with CDN URLs.** To upgrade: `npm pack <package>`, extract, copy dist files.
 
 ### Readonly role blocks every mutating endpoint
 

@@ -29,9 +29,9 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const assetDir = path.join(repoRoot, 'playground', 'assets');
-const fontPath = path.join(repoRoot, 'playground', 'vendor', 'material-symbols-outlined.woff2');
+const fontPath = path.join(repoRoot, 'playground', 'public', 'material-symbols-outlined.woff2');
 
-// Stitch theme tokens (kept in sync with playground/css/style.css).
+// Stitch theme tokens (kept in sync with playground/public/style.css).
 const DARK_BG = '#0c0e12';
 const GOLD = '#e9c349';
 const CORAL = '#ee7d77';

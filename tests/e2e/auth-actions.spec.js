@@ -116,7 +116,7 @@ test.describe('Account actions (logout + Add Device)', () => {
         body: JSON.stringify({ ok: true }),
       })
     );
-    await page.route('**/login.html', route =>
+    await page.route('**/public/login.html', route =>
       route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>login</body></html>' })
     );
 

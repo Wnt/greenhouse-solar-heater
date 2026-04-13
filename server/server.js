@@ -382,8 +382,12 @@ var server = http.createServer(function (req, res) {
     return;
   }
 
-  // Login page and its assets — accessible without auth
-  if (urlPath === '/login.html' || urlPath === '/js/login.js' || urlPath === '/vendor/simplewebauthn-browser.mjs' || urlPath === '/vendor/qrcode-generator.mjs') {
+  // /public/* — accessible without auth. Everything the login page and
+  // any other unauthenticated view needs (HTML, CSS, JS, fonts) lives
+  // under playground/public/ so this single prefix check covers them
+  // all. Keep the directory public-by-convention: do not put anything
+  // sensitive there.
+  if (urlPath.startsWith('/public/')) {
     serveStatic(req, res);
     return;
   }
@@ -391,8 +395,8 @@ var server = http.createServer(function (req, res) {
   // PWA static assets — accessible without auth.
   // Chrome fetches the manifest and icons with `credentials: 'omit'` by
   // default, so they must be reachable without a session cookie or the
-  // install flow breaks (Chrome receives the 302→login.html and tries to
-  // parse the HTML as JSON, failing installability). These files contain
+  // install flow breaks (Chrome receives the 302 to the login page and
+  // tries to parse the HTML as JSON, failing installability). These files contain
   // no sensitive data — just brand metadata, icons, and the service
   // worker script — so exempting them from auth is standard practice
   // for auth-gated PWAs (Slack, Discord, Notion, etc.).
@@ -448,7 +452,7 @@ var server = http.createServer(function (req, res) {
       if (urlPath.startsWith('/api/')) {
         jsonResponse(res, 401, { error: 'Not authenticated' });
       } else {
-        res.writeHead(302, { 'Location': '/login.html' });
+        res.writeHead(302, { 'Location': '/public/login.html' });
         res.end();
       }
       return;

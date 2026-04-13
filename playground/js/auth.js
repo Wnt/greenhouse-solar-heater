@@ -130,7 +130,7 @@ async function doLogout() {
   try {
     const res = await fetch('/auth/logout', { method: 'POST' });
     if (res.ok || res.status === 401) {
-      window.location.href = '/login.html';
+      window.location.href = '/public/login.html';
       return;
     }
     console.error('Logout failed:', res.status);
@@ -256,7 +256,7 @@ function renderInvite(code, expiresInSeconds) {
 
   // Build QR pointing at the invitation URL
   const qr = qrcode(0, 'M');
-  qr.addData(window.location.origin + '/login.html?invite=' + code);
+  qr.addData(window.location.origin + '/public/login.html?invite=' + code);
   qr.make();
   const cellSize = 4;
   const margin = 8;

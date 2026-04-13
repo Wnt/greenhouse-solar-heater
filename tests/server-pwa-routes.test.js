@@ -159,15 +159,15 @@ describe('server PWA public routes (AUTH_ENABLED=true)', () => {
     });
   });
 
-  describe('Login page assets remain public', () => {
-    it('GET /login.html → 200', async () => {
-      const res = await request('/login.html');
+  describe('Login page assets are public under /public/', () => {
+    it('GET /public/login.html → 200', async () => {
+      const res = await request('/public/login.html');
       assert.strictEqual(res.status, 200);
       assert.match(res.body, /Helios Canopy/);
     });
 
     it('login.html references the current manifest and icon paths', async () => {
-      const res = await request('/login.html');
+      const res = await request('/public/login.html');
       assert.match(res.body, /manifest\.webmanifest/, 'login.html must link the current manifest');
       assert.match(res.body, /assets\/icon-192\.png/, 'login.html must use the current icon path');
       assert.doesNotMatch(res.body, /manifest\.json/, 'login.html must not reference the old manifest.json path');
@@ -175,21 +175,61 @@ describe('server PWA public routes (AUTH_ENABLED=true)', () => {
     });
 
     it('login.html theme-color is the Stitch dark value', async () => {
-      const res = await request('/login.html');
+      const res = await request('/public/login.html');
       assert.match(res.body, /theme-color" content="#0c0e12"/);
+    });
+
+    it('GET /public/style.css → 200 with CSS body (not the login HTML)', async () => {
+      const res = await request('/public/style.css');
+      assert.strictEqual(res.status, 200, 'expected 200, got ' + res.status);
+      assert.match(res.headers['content-type'] || '', /text\/css/);
+      assert.match(res.body, /--primary:\s*#e9c349/);
+      assert.doesNotMatch(res.body, /<!DOCTYPE html>/);
+    });
+
+    it('GET /public/material-symbols.css → 200 with CSS body', async () => {
+      const res = await request('/public/material-symbols.css');
+      assert.strictEqual(res.status, 200, 'expected 200, got ' + res.status);
+      assert.match(res.headers['content-type'] || '', /text\/css/);
+      assert.match(res.body, /@font-face/);
+    });
+
+    it('GET /public/material-symbols-outlined.woff2 → 200 with woff2', async () => {
+      const res = await request('/public/material-symbols-outlined.woff2');
+      assert.strictEqual(res.status, 200, 'expected 200, got ' + res.status);
+      assert.match(res.headers['content-type'] || '', /font\/woff2|application\/octet-stream/);
+    });
+
+    it('GET /public/login.js → 200 with JS body', async () => {
+      const res = await request('/public/login.js');
+      assert.strictEqual(res.status, 200);
+      assert.match(res.headers['content-type'] || '', /javascript/);
+    });
+
+    it('GET /public/simplewebauthn-browser.mjs → 200 with JS body', async () => {
+      const res = await request('/public/simplewebauthn-browser.mjs');
+      assert.strictEqual(res.status, 200);
+      assert.match(res.headers['content-type'] || '', /javascript/);
     });
   });
 
   describe('Protected routes still require auth', () => {
-    it('GET / → 302 redirect to login.html', async () => {
+    it('GET / → 302 redirect to /public/login.html', async () => {
       const res = await request('/');
       assert.strictEqual(res.status, 302);
-      assert.match(res.headers.location || '', /login\.html/);
+      assert.strictEqual(res.headers.location, '/public/login.html');
     });
 
-    it('GET /index.html → 302 redirect to login.html', async () => {
+    it('GET /index.html → 302 redirect to /public/login.html', async () => {
       const res = await request('/index.html');
       assert.strictEqual(res.status, 302);
+      assert.strictEqual(res.headers.location, '/public/login.html');
+    });
+
+    it('GET /login.html (old path) → 302 redirect (no longer served)', async () => {
+      const res = await request('/login.html');
+      assert.strictEqual(res.status, 302);
+      assert.strictEqual(res.headers.location, '/public/login.html');
     });
 
     it('GET /api/history → 401 JSON error', async () => {
