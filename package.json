@@ -13,7 +13,8 @@
     "topology-svg": "node design/docs/pdf/generate-topology-svg.js",
     "topology-contrast": "node design/docs/pdf/check-contrast.js design/diagrams/system-topology.drawio",
     "topology-svg-playground": "node design/docs/pdf/generate-topology-svg.js --theme playground --output playground/assets/system-topology.svg",
-    "topology-drawio-playground": "node design/diagrams/generate-topology.js --theme playground --output playground/assets/system-topology.drawio"
+    "topology-drawio-playground": "node design/diagrams/generate-topology.js --theme playground --output playground/assets/system-topology.drawio",
+    "bootstrap-history": "node scripts/generate-bootstrap-history.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",

@@ -11,6 +11,7 @@ import { initNavigation } from './actions/navigation.js';
 import { initAuth } from './auth.js';
 import { captureInstallPrompt, triggerInstall, wireInstallModal, initNotifications, subscribePush, updateCategories, unsubscribePush, isSubscribed, getSelectedCategories, sendTest } from './notifications.js';
 import { buildSchematic as buildSchematicFromSvg } from './schematic.js';
+import { SIM_START_HOUR, getDayNightEnv } from './sim-bootstrap.js';
 // connection.js actions will be used in later phases — import deferred to avoid name collisions
 // import { switchToLive, switchToSimulation, ... } from './actions/connection.js';
 // Expose for e2e testing
@@ -18,7 +19,11 @@ window.__triggerVersionCheck = triggerVersionCheck;
 
 // ── Data Source ──
 // Detect deployment context: GitHub Pages = simulation only, deployed app = live capable
-const isGitHubPages = location.hostname.endsWith('.github.io');
+// `window.__simulateGitHubPagesDeploy` is a test-only hatch (set via
+// Playwright's addInitScript) — it lets the e2e suite exercise the
+// pages-mode auto-bootstrap path without needing a real github.io URL.
+const isGitHubPages = window.__simulateGitHubPagesDeploy === true
+  || location.hostname.endsWith('.github.io');
 const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 const isLiveCapable = !isGitHubPages;
 const urlModePreference = new URLSearchParams(location.search).get('mode'); // 'sim' | 'live' | null
@@ -763,6 +768,18 @@ async function init() {
   initDeviceConfig();
   initRelayBoard();
 
+  // On deploys without live mode (e.g. GitHub Pages) load the
+  // pre-baked simulation snapshot so the dashboard is populated on
+  // first paint instead of empty. The snapshot is generated at build
+  // time by `scripts/generate-bootstrap-history.mjs` and a drift test
+  // in `tests/bootstrap-history-drift.test.js` ensures it stays in
+  // sync with the current control logic + thermal model.
+  if (!isLiveCapable) {
+    // Fire-and-forget — async fetch + render. init() doesn't await it
+    // so the rest of the page stays interactive.
+    loadBootstrapSnapshotAndAutoStart();
+  }
+
   // Initialize auth UI (logout + invite buttons) — noop when auth disabled
   initAuth();
 
@@ -1323,6 +1340,82 @@ function resetSim() {
   updateDisplay(model.getState(), { mode: 'idle', valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false }, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
 }
 
+// Restore the model + controller from a pre-baked snapshot. Used by
+// the auto-bootstrap path on deploys where live mode is unavailable
+// (GitHub Pages) — the snapshot is generated at build time by
+// `scripts/generate-bootstrap-history.mjs` and lives at
+// `playground/assets/bootstrap-history.json`. A drift test
+// (`tests/bootstrap-history-drift.test.js`) ensures the snapshot is
+// regenerated whenever the control logic or thermal model changes.
+function restoreBootstrapSnapshot(snapshot) {
+  // Re-init the model with default params, then overwrite the state
+  // wholesale. Doing it via `model.reset()` plus direct assignment
+  // (rather than constructing a new model) keeps the same instance
+  // ref so simLoop keeps working.
+  resetSim();
+
+  const fms = snapshot.final_model_state;
+  model.state.t_tank_top = fms.t_tank_top;
+  model.state.t_tank_bottom = fms.t_tank_bottom;
+  model.state.t_collector = fms.t_collector;
+  model.state.t_greenhouse = fms.t_greenhouse;
+  model.state.t_outdoor = fms.t_outdoor;
+  model.state.irradiance = fms.irradiance;
+  model.state.simTime = fms.simTime;
+
+  const fcs = snapshot.final_controller_state;
+  controller.currentMode = fcs.currentMode;
+  controller.modeStartTime = fcs.modeStartTime;
+  controller.collectorsDrained = fcs.collectorsDrained;
+  controller.lastRefillAttempt = fcs.lastRefillAttempt;
+  controller.emergencyHeatingActive = fcs.emergencyHeatingActive;
+
+  // Push the historical points + log entries into the UI stores.
+  // resetSim() already cleared both, so we can just append.
+  for (let i = 0; i < snapshot.points.length; i++) {
+    const p = snapshot.points[i];
+    timeSeriesStore.addPoint(p.time, p.values, p.mode);
+  }
+  for (let i = 0; i < snapshot.log_entries.length; i++) {
+    transitionLog.unshift(snapshot.log_entries[i]);
+  }
+}
+
+// Fetch the pre-baked bootstrap snapshot, restore it into the model,
+// repaint the UI, and start the run loop. Used on deploys where live
+// mode is unavailable so the user lands on a populated dashboard
+// instead of an empty placeholder.
+async function loadBootstrapSnapshotAndAutoStart() {
+  let snapshot = null;
+  try {
+    const response = await fetch('./assets/bootstrap-history.json', { cache: 'no-store' });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    snapshot = await response.json();
+  } catch (err) {
+    console.warn('[bootstrap] Failed to load bootstrap-history.json, starting empty:', err);
+  }
+
+  if (snapshot) {
+    restoreBootstrapSnapshot(snapshot);
+  }
+
+  // Re-render with a synthesised idle result. togglePlay() immediately
+  // steps the simLoop and overwrites this with a real result.
+  const idleResult = {
+    mode: (controller && controller.currentMode) || 'idle',
+    actuators: { pump: false, fan: false, space_heater: false },
+    valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
+    transition: null,
+  };
+  updateDisplay(model.getState(), idleResult);
+
+  // Auto-start the run loop. togglePlay() preserves simTime since it's
+  // non-zero after the snapshot restore, so our pre-rolled history is
+  // kept. (And if the fetch failed, simTime is still 0 and togglePlay
+  // will reset cleanly — the dashboard just starts with empty history.)
+  togglePlay();
+}
+
 function applyPreset(key) {
   const preset = PRESETS[key];
   if (!preset) return;
@@ -1342,23 +1435,14 @@ function updatePresetHighlight(activeKey) {
 }
 
 // ── Day/Night ──
-const SIM_START_HOUR = 8;
+// SIM_START_HOUR + getDayNightEnv live in sim-bootstrap.js so the
+// pre-baked snapshot generator and simLoop share one source of truth.
 
 function formatTimeOfDay(simSeconds) {
   const totalHours = SIM_START_HOUR + simSeconds / 3600;
   const h = Math.floor(totalHours % 24);
   const m = Math.floor((totalHours * 60) % 60);
   return h.toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0');
-}
-
-function getDayNightEnv(simTime, baseOutdoor, peakIrradiance) {
-  const hour = (SIM_START_HOUR + simTime / 3600) % 24;
-  let irradiance = 0;
-  if (hour >= 6 && hour <= 20) {
-    irradiance = peakIrradiance * Math.sin((hour - 6) / 14 * Math.PI);
-  }
-  const t_outdoor = baseOutdoor + 5 * Math.cos((hour - 15) / 24 * 2 * Math.PI);
-  return { t_outdoor, irradiance };
 }
 
 function getTimeOfDay(simTime) {
