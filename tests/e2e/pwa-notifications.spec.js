@@ -282,6 +282,24 @@ test.describe('PWA installability criteria', () => {
     expect(body).toMatch(/addEventListener\s*\(\s*['"]fetch['"]/);
   });
 
+  test('service worker uses badge-72.png as badge icon', async ({ page }) => {
+    // The Android status-bar badge MUST be a monochrome transparent PNG.
+    // If we pass the opaque app icon as badge, Android masks the whole
+    // rectangle white and users see a blank white square next to the
+    // clock. Regression guard for that specific symptom.
+    const res = await page.request.get('/playground/sw.js');
+    const body = await res.text();
+    expect(body).toMatch(/badge:\s*['"]assets\/badge-72\.png['"]/);
+  });
+
+  test('service worker reads icon from push payload data', async ({ page }) => {
+    // The SW should use data.icon when present so the server can pick a
+    // per-category glyph instead of the generic app icon.
+    const res = await page.request.get('/playground/sw.js');
+    const body = await res.text();
+    expect(body).toMatch(/data\.icon/);
+  });
+
   test('index.html links to the manifest', async ({ page }) => {
     await page.goto('/playground/');
     const href = await page.locator('link[rel="manifest"]').getAttribute('href');

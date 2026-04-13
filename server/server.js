@@ -401,7 +401,22 @@ var server = http.createServer(function (req, res) {
   // no sensitive data — just brand metadata, icons, and the service
   // worker script — so exempting them from auth is standard practice
   // for auth-gated PWAs (Slack, Discord, Notion, etc.).
-  if (urlPath === '/sw.js' || urlPath === '/manifest.webmanifest' || urlPath.startsWith('/assets/icon-')) {
+  //
+  // Paths covered:
+  //   /sw.js                  — service worker script
+  //   /manifest.webmanifest   — PWA manifest
+  //   /assets/icon-*.png      — app icons listed in the manifest
+  //   /assets/badge-*.png     — Android status-bar silhouette used as
+  //                             `badge` in showNotification()
+  //   /assets/notif-*.png     — per-category notification icons sent by
+  //                             the SW via event.data.icon
+  if (
+    urlPath === '/sw.js' ||
+    urlPath === '/manifest.webmanifest' ||
+    urlPath.startsWith('/assets/icon-') ||
+    urlPath.startsWith('/assets/badge-') ||
+    urlPath.startsWith('/assets/notif-')
+  ) {
     serveStatic(req, res);
     return;
   }

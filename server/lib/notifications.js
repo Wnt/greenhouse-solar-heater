@@ -212,6 +212,7 @@ function tick() {
         title: 'Controller Offline',
         body: 'No data received from the greenhouse controller for ' + offlineMin + ' minutes.',
         tag: 'offline-warning',
+        icon: pushRef.iconFor('offline_warning'),
         url: '/#status',
       });
       log.info('sent offline notification', { offlineMinutes: offlineMin });
@@ -229,6 +230,7 @@ function tick() {
         title: 'Controller Back Online',
         body: 'The greenhouse controller is back online after ' + offlineDuration + ' minutes.',
         tag: 'online-recovery',
+        icon: pushRef.iconFor('offline_warning'),
         url: '/#status',
       });
       log.info('sent online recovery notification', { offlineMinutes: offlineDuration });
@@ -257,6 +259,7 @@ function checkOverheatWarning(temps) {
       body: 'Tank temperature is ' + current.toFixed(1) + '\u00b0C and rising. ' +
             'Overheat drain may activate at ' + thresholds.overheat + '\u00b0C.',
       tag: 'overheat-warning',
+      icon: pushRef.iconFor('overheat_warning'),
       url: '/#status',
     });
   }
@@ -279,6 +282,7 @@ function checkFreezeWarning(temps) {
       body: 'Outdoor temperature is ' + current.toFixed(1) + '\u00b0C and falling. ' +
             'Freeze drain may activate at ' + thresholds.freeze + '\u00b0C.',
       tag: 'freeze-warning',
+      icon: pushRef.iconFor('freeze_warning'),
       url: '/#status',
     });
   }
@@ -302,6 +306,7 @@ function checkEveningReport() {
     body: 'Today your collectors gathered approximately ' + kwh + ' kWh' +
           ' (' + energy + ' Wh) of thermal energy.',
     tag: 'evening-report',
+    icon: pushRef.iconFor('evening_report'),
     url: '/#status',
   });
 
@@ -335,6 +340,7 @@ function checkNoonReport() {
     title: 'Overnight Heating Report',
     body: body,
     tag: 'noon-report',
+    icon: pushRef.iconFor('noon_report'),
     url: '/#status',
   });
 

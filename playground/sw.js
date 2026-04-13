@@ -44,10 +44,17 @@ self.addEventListener('push', function (event) {
   }
 
   var title = data.title || 'Helios Canopy';
+  // `icon` is the large image shown in the notification tray. The server
+  // picks a category-specific glyph (wb_sunny / bedtime / local_fire /
+  // ac_unit / cloud_off) and passes the path in `data.icon`; fall back
+  // to the app icon if absent.
+  // `badge` is the monochrome silhouette shown in the Android status bar
+  // next to the clock — Android masks it to white, so it MUST be a
+  // transparent PNG (otherwise the whole rectangle renders white).
   var options = {
     body: data.body || '',
-    icon: 'assets/icon-192.png',
-    badge: 'assets/icon-192.png',
+    icon: data.icon || 'assets/icon-192.png',
+    badge: 'assets/badge-72.png',
     tag: data.tag || 'default',
     data: { url: data.url || '/' },
   };

@@ -171,6 +171,35 @@ describe('push', () => {
       assert.match(push.buildMockPayload('freeze_warning').body, /\u00b0C/);
       assert.match(push.buildMockPayload('offline_warning').body, /offline|no data|minutes/i);
     });
+
+    it('every mock payload carries a per-category icon path', () => {
+      push.VALID_CATEGORIES.forEach((cat) => {
+        const payload = push.buildMockPayload(cat);
+        assert.ok(payload.icon, `expected icon for ${cat}`);
+        assert.match(payload.icon, /^assets\/notif-.*\.png$/, `icon path for ${cat} must be assets/notif-*.png (got ${payload.icon})`);
+      });
+    });
+  });
+
+  describe('iconFor / CATEGORY_ICONS', () => {
+    it('maps every valid category to a PNG under assets/', () => {
+      push.VALID_CATEGORIES.forEach((cat) => {
+        assert.match(push.iconFor(cat), /^assets\/notif-.*\.png$/);
+      });
+    });
+
+    it('returns the generic app icon for unknown categories', () => {
+      assert.strictEqual(push.iconFor('bogus'), 'assets/icon-192.png');
+      assert.strictEqual(push.iconFor(null), 'assets/icon-192.png');
+    });
+
+    it('uses distinct icons for each category', () => {
+      const seen = new Set();
+      push.VALID_CATEGORIES.forEach((cat) => {
+        seen.add(push.iconFor(cat));
+      });
+      assert.strictEqual(seen.size, push.VALID_CATEGORIES.length);
+    });
   });
 
   describe('sendTestToEndpoint', () => {

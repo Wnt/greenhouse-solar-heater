@@ -262,6 +262,24 @@ function getSubscriptionCount() {
   return pushData && pushData.subscriptions ? pushData.subscriptions.length : 0;
 }
 
+// ── Category icon paths ──
+// Each notification category gets its own Material Symbols glyph
+// rendered as a PNG by scripts/make-icons.mjs. The SW uses these as
+// the `icon` property on showNotification() so the notification tray
+// icon matches the alert type.
+
+var CATEGORY_ICONS = {
+  evening_report:   'assets/notif-evening.png',
+  noon_report:      'assets/notif-noon.png',
+  overheat_warning: 'assets/notif-overheat.png',
+  freeze_warning:   'assets/notif-freeze.png',
+  offline_warning:  'assets/notif-offline.png',
+};
+
+function iconFor(category) {
+  return CATEGORY_ICONS[category] || 'assets/icon-192.png';
+}
+
 // ── Mock payloads for the "send test notification" feature ──
 // Used by /api/push/test so users can preview how each category looks
 // without waiting for a real event. Titles are prefixed with "[Test]"
@@ -273,6 +291,7 @@ function buildMockPayload(category) {
       title: '[Test] Daily Solar Report',
       body: 'Today your collectors gathered approximately 8.5 kWh (8524 Wh) of thermal energy.',
       tag: 'test-evening-report',
+      icon: iconFor(category),
       url: '/#status',
     };
   }
@@ -281,6 +300,7 @@ function buildMockPayload(category) {
       title: '[Test] Overnight Heating Report',
       body: 'Overnight the greenhouse heating ran for 4h 12min.',
       tag: 'test-noon-report',
+      icon: iconFor(category),
       url: '/#status',
     };
   }
@@ -289,6 +309,7 @@ function buildMockPayload(category) {
       title: '[Test] Overheat Warning',
       body: 'Tank temperature is 82.4\u00b0C and rising. Overheat drain may activate at 85\u00b0C.',
       tag: 'test-overheat-warning',
+      icon: iconFor(category),
       url: '/#status',
     };
   }
@@ -297,6 +318,7 @@ function buildMockPayload(category) {
       title: '[Test] Freeze Warning',
       body: 'Outdoor temperature is 2.8\u00b0C and falling. Freeze drain may activate at 2\u00b0C.',
       tag: 'test-freeze-warning',
+      icon: iconFor(category),
       url: '/#status',
     };
   }
@@ -305,6 +327,7 @@ function buildMockPayload(category) {
       title: '[Test] Controller Offline',
       body: 'No data received from the greenhouse controller for 15 minutes.',
       tag: 'test-offline-warning',
+      icon: iconFor(category),
       url: '/#status',
     };
   }
@@ -474,6 +497,8 @@ module.exports = {
   sendNotification: sendNotification,
   buildMockPayload: buildMockPayload,
   sendTestToEndpoint: sendTestToEndpoint,
+  iconFor: iconFor,
+  CATEGORY_ICONS: CATEGORY_ICONS,
   _reset: _reset,
   _getLastSentAt: _getLastSentAt,
   _setLastSentAt: _setLastSentAt,

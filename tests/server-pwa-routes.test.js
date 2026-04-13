@@ -142,6 +142,21 @@ describe('server PWA public routes (AUTH_ENABLED=true)', () => {
       const res = await request('/assets/icon-512-maskable.png');
       assert.strictEqual(res.status, 200, 'expected 200, got ' + res.status);
     });
+
+    it('GET /assets/badge-72.png → 200 (Android status-bar silhouette)', async () => {
+      const res = await request('/assets/badge-72.png');
+      assert.strictEqual(res.status, 200, 'expected 200, got ' + res.status);
+      assert.match(res.headers['content-type'] || '', /image\/png/);
+    });
+
+    it('each per-category notification icon is served as PNG', async () => {
+      const slugs = ['evening', 'noon', 'overheat', 'freeze', 'offline'];
+      for (const slug of slugs) {
+        const res = await request('/assets/notif-' + slug + '.png');
+        assert.strictEqual(res.status, 200, 'expected 200 for notif-' + slug + '.png, got ' + res.status);
+        assert.match(res.headers['content-type'] || '', /image\/png/);
+      }
+    });
   });
 
   describe('Login page assets remain public', () => {

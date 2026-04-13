@@ -43,8 +43,11 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `playground/manifest.webmanifest` → PWA manifest (standalone display, Stitch dark theme colors)
 - `playground/sw.js` → Service worker for push notifications (no offline caching)
 - `playground/js/notifications.js` → Client-side push notification management (SW registration, VAPID subscription, category preference UI, install prompt handling)
-- `playground/assets/icon-{192,512}.png` → PWA icons referenced by `manifest.webmanifest` (PNG is required by Chrome's installability criteria). SVG sources in the same directory are the authoring format. Regenerate PNGs from SVGs via `node scripts/svg-to-png.mjs` (uses Playwright/Chromium, no extra dependencies).
-- `playground/assets/icon-512-maskable.png` → PWA maskable icon (PNG, with SVG source)
+- `playground/assets/icon-{192,512}.png` → PWA app icons referenced by `manifest.webmanifest`. Rounded-square Material Symbols `solar_power` glyph in gold on the dark app background — matches the sidebar brand icon.
+- `playground/assets/icon-512-maskable.png` → PWA maskable icon (safe-zone padding for Android adaptive rounding)
+- `playground/assets/badge-72.png` → Android status-bar silhouette used as `badge` in `showNotification()`. Must be monochrome white on transparent — Android masks to the alpha channel.
+- `playground/assets/notif-{evening,noon,overheat,freeze,offline}.png` → per-category notification icons (wb_sunny / bedtime / local_fire_department / ac_unit / cloud_off) used as `icon` in `showNotification()`. The server picks one based on category and passes the path in the push payload so the SW doesn't need a mapping.
+- `scripts/make-icons.mjs` → single source of truth for all PWA + notification icons. Renders each glyph from the vendored Material Symbols font via Playwright/Chromium and writes PNGs into `playground/assets/`. Run `node scripts/make-icons.mjs` after changing any icon glyph, color, or size. No npm deps beyond the already-installed Playwright.
 - `deploy/` → cloud deployment infrastructure
 - `deploy/terraform/` → UpCloud Managed Kubernetes cluster, Managed Object Storage, Managed PostgreSQL, K8s Secrets/ConfigMaps, Helm releases, CI/CD deployer RBAC (Terraform)
 - `deploy/k8s/` → Kubernetes manifests: app Deployment (app + openvpn + mosquitto sidecar), Service, Ingress, deployer RBAC, kustomization.yaml

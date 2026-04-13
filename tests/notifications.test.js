@@ -102,6 +102,9 @@ describe('notifications', () => {
         sendNotification: function (type, payload) {
           sentNotifications.push({ type: type, payload: payload });
         },
+        iconFor: function (type) {
+          return 'assets/notif-' + type + '.png';
+        },
       };
       notifications.init({ push: mockPush, deviceConfig: null });
     });
@@ -197,6 +200,9 @@ describe('notifications', () => {
         sendNotification: function (type, payload) {
           sentNotifications.push({ type: type, payload: payload });
         },
+        iconFor: function (type) {
+          return 'assets/notif-' + type + '.png';
+        },
       };
       notifications.init({ push: mockPush, deviceConfig: null });
       // Suppress scheduled reports (which would fire if test runs at 12:00 or 20:00)
@@ -222,6 +228,9 @@ describe('notifications', () => {
       mockPush = {
         sendNotification: function (type, payload) {
           sentNotifications.push({ type: type, payload: payload });
+        },
+        iconFor: function (type) {
+          return 'assets/notif-' + type + '.png';
         },
       };
       notifications.init({ push: mockPush, deviceConfig: null });
