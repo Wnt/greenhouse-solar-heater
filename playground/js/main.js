@@ -714,9 +714,11 @@ async function init() {
   });
   controller = new ControlStateMachine(config.modes);
 
-  // Set up view lifecycle callbacks for the store-driven navigation
+  // Set up view lifecycle callbacks for the store-driven navigation.
+  // Sensor discovery UI lives inside the merged Device view, so it mounts
+  // when currentView === 'device'.
   setViewLifecycle({
-    sensors: {
+    device: {
       mount: (container, s) => {
         initSensorsView();
         return () => destroySensorsView();

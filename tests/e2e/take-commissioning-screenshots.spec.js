@@ -22,14 +22,19 @@ async function setSlider(page, id, value) {
   }, [id, value]);
 }
 
+// Legacy names that were merged into other views. Screenshots still use the
+// old names so the doc filenames stay stable.
+const HASH_ALIASES = { schematic: 'components', sensors: 'device' };
+
 /** Navigate via hash to avoid sidebar/bottom-nav visibility issues */
 async function navTo(page, viewName) {
+  const resolved = HASH_ALIASES[viewName] || viewName;
   await page.evaluate((v) => {
     window.location.hash = v;
     window.dispatchEvent(new HashChangeEvent('hashchange'));
-  }, viewName);
+  }, resolved);
   await page.waitForTimeout(300);
-  await expect(page.locator('#view-' + viewName)).toBeVisible();
+  await expect(page.locator('#view-' + resolved)).toBeVisible();
 }
 
 async function waitForFonts(page) {

@@ -64,20 +64,12 @@
         Status
       </a>
       <a data-view="components">
-        <span class="material-symbols-outlined">component_exchange</span>
-        Components
-      </a>
-      <a data-view="schematic">
         <span class="material-symbols-outlined">schema</span>
-        Schematic
+        System
       </a>
       <a data-view="controls">
         <span class="material-symbols-outlined">tune</span>
         Controls
-      </a>
-      <a data-view="sensors" class="live-only" style="display:none;">
-        <span class="material-symbols-outlined">sensors</span>
-        Sensors
       </a>
       <a data-view="device" class="live-only" style="display:none;">
         <span class="material-symbols-outlined">settings_remote</span>
@@ -113,20 +105,12 @@
       <span>Status</span>
     </a>
     <a data-view="components">
-      <span class="material-symbols-outlined">component_exchange</span>
-      <span>Components</span>
-    </a>
-    <a data-view="schematic">
       <span class="material-symbols-outlined">schema</span>
-      <span>Schematic</span>
+      <span>System</span>
     </a>
     <a data-view="controls">
       <span class="material-symbols-outlined">tune</span>
       <span>Controls</span>
-    </a>
-    <a data-view="sensors" class="live-only" style="display:none;">
-      <span class="material-symbols-outlined">sensors</span>
-      <span>Sensors</span>
     </a>
     <a data-view="device" class="live-only" style="display:none;">
       <span class="material-symbols-outlined">settings_remote</span>
@@ -309,11 +293,16 @@
     <!-- ═══ COMPONENTS VIEW ═══ -->
     <section id="view-components" class="view">
       <div class="view-header">
-        <h2>System components.</h2>
-        <p>Live sensor readings, valve positions, and actuator states.</p>
+        <h2>System visualization.</h2>
+        <p>Live 2D schematic plus detailed sensor readings, valve positions, and actuator states.</p>
       </div>
 
-      <div class="bento-grid">
+      <!-- Schematic: big-picture visual summary of the system -->
+      <div class="card">
+        <div id="schematic" class="svg-container"></div>
+      </div>
+
+      <div class="bento-grid" style="margin-top:16px;">
         <div class="card bento-span-3">
           <h3>Temperature Sensors</h3>
           <table class="status-table">
@@ -340,17 +329,6 @@
       </div>
     </section>
 
-    <!-- ═══ SCHEMATIC VIEW ═══ -->
-    <section id="view-schematic" class="view">
-      <div class="view-header">
-        <h2>System visualization.</h2>
-        <p>Live 2D schematic of the heating system — pipe flows, temperatures, and component states.</p>
-      </div>
-      <div class="card">
-        <div id="schematic" class="svg-container"></div>
-      </div>
-    </section>
-
     <!-- ═══ CONTROLS VIEW ═══ -->
     <section id="view-controls" class="view">
       <div class="view-header">
@@ -373,22 +351,16 @@
       </div>
     </section>
 
-    <!-- ═══ SENSORS VIEW (live mode only) ═══ -->
-    <section id="view-sensors" class="view">
-      <div class="view-header">
-        <h2>Sensor configuration.</h2>
-        <p>Discover, identify, and assign DS18B20 sensors to system roles. Click <strong>Scan Sensors</strong> to read addresses and live temperatures.</p>
-      </div>
-      <div id="sensors-content">
-        <div class="card"><p style="color:var(--on-surface-variant);">Loading sensor configuration...</p></div>
-      </div>
-    </section>
-
     <!-- ═══ DEVICE VIEW (live mode only) ═══ -->
     <section id="view-device" class="view">
       <div class="view-header">
         <h2>Device configuration.</h2>
-        <p>Runtime settings for the Shelly controller. Changes are pushed instantly via MQTT.</p>
+        <p>Sensor assignment and runtime settings for the Shelly controller. Changes are pushed instantly via MQTT.</p>
+      </div>
+
+      <!-- Sensor discovery & assignment: merged from former Sensors view -->
+      <div id="sensors-content">
+        <div class="card"><p style="color:var(--on-surface-variant);">Loading sensor configuration...</p></div>
       </div>
 
       <div class="card" id="staged-valve-detail-card" style="display:none;">

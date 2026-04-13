@@ -105,7 +105,8 @@ test.describe('Thermal Simulation UI', () => {
   });
 
   test('schematic is visible', async ({ page }) => {
-    await goToView(page, 'schematic');
+    // Schematic is now rendered at the top of the merged Components view.
+    await goToView(page, 'components');
     await expect(page.locator('#schematic svg')).toBeVisible();
   });
 
@@ -154,9 +155,8 @@ test.describe('Thermal Simulation UI', () => {
     expect(box.height).toBeGreaterThan(50);
 
     const sidebarLinks = page.locator('.sidebar-nav a');
-    // status, components, schematic, controls, sensors, device, settings
-    // (sensors+device are .live-only and hidden in sim mode, but still in DOM)
-    await expect(sidebarLinks).toHaveCount(7);
+    // status, components (merged system), controls, device (live-only, still in DOM), settings
+    await expect(sidebarLinks).toHaveCount(5);
     await expect(page.locator('.sidebar-nav a.active')).toContainText('Status');
   });
 });
