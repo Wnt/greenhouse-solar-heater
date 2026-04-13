@@ -178,6 +178,8 @@ export function generate() {
     collectorsDrained: !!controller.collectorsDrained,
     lastRefillAttempt: controller.lastRefillAttempt,
     emergencyHeatingActive: !!controller.emergencyHeatingActive,
+    solarChargePeakTankTop: controller.solarChargePeakTankTop,
+    solarChargePeakTankTopAt: controller.solarChargePeakTankTopAt,
   };
 
   return {
