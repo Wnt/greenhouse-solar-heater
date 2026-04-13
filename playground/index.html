@@ -135,6 +135,34 @@
     <!-- ═══ STATUS VIEW ═══ -->
     <section id="view-status" class="view active">
       <div class="staleness-banner" id="staleness-banner">No data received for over 60 seconds. The device may be offline.</div>
+
+      <!-- Watchdog pending banner: shown only when a watchdog fire is pending -->
+      <div id="watchdog-banner" class="watchdog-banner" style="display:none;">
+        <div class="watchdog-banner-header">
+          <span class="material-symbols-outlined">warning</span>
+          <h3 id="watchdog-banner-title">Watchdog fired</h3>
+        </div>
+        <p id="watchdog-banner-reason" class="watchdog-banner-reason"></p>
+        <p class="watchdog-banner-countdown">
+          Auto-shutdown in <span id="watchdog-banner-countdown-text">5 min 0 s</span>
+        </p>
+        <div class="watchdog-banner-form">
+          <input id="watchdog-banner-reply" type="text" placeholder="Reason (e.g. door open)" />
+          <div class="watchdog-banner-actions">
+            <button id="watchdog-banner-snooze" class="auth-btn" type="button">
+              Snooze with reason
+            </button>
+            <button id="watchdog-banner-shutdown" class="auth-btn auth-btn-danger" type="button">
+              Shutdown now
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mode cool-off inline indicator: shown when any mode has a
+           temporary wb ban (non-sentinel, > now). -->
+      <div id="watchdog-cooloff-indicator" class="watchdog-cooloff-indicator" style="display:none;"></div>
+
       <div class="view-header">
         <h2>How your sanctuary is breathing.</h2>
         <p id="status-view-description">Live readings from the Shelly controller. Mode, valves, actuators, and 24h history.</p>
@@ -408,15 +436,9 @@
             </select>
           </div>
 
-          <h4 style="margin:20px 0 12px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Allowed Modes</h4>
-          <p style="font-size:12px;color:var(--on-surface-variant);margin-bottom:8px;">Restrict which modes the automation can select. Unchecked modes will never be activated automatically. The forced mode override is not affected by this setting.</p>
-          <div class="device-config-checks">
-            <label class="device-check"><input type="checkbox" id="dc-am-I" value="I" checked> Idle</label>
-            <label class="device-check"><input type="checkbox" id="dc-am-SC" value="SC" checked> Solar Charging</label>
-            <label class="device-check"><input type="checkbox" id="dc-am-GH" value="GH" checked> Greenhouse Heating</label>
-            <label class="device-check"><input type="checkbox" id="dc-am-AD" value="AD" checked> Active Drain</label>
-            <label class="device-check"><input type="checkbox" id="dc-am-EH" value="EH" checked> Emergency Heating</label>
-          </div>
+          <h4 style="margin:20px 0 12px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Mode enablement</h4>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin-bottom:8px;">Each mode can be permanently disabled, on a watchdog cool-off (temporary auto-ban), or allowed. Forced mode respects bans: a banned mode cannot be forced.</p>
+          <div id="mode-enablement-list"></div>
 
           <div style="margin-top:24px;display:flex;gap:12px;align-items:center;">
             <button class="primary" id="dc-save">Save &amp; Push to Device</button>
@@ -589,8 +611,28 @@
                 <span class="material-symbols-outlined">send</span>
               </button>
             </div>
+            <div class="notif-cat-row">
+              <label class="notif-cat-label">
+                <input type="checkbox" id="notif-cat-watchdog_fired" checked>
+                <span><strong>Watchdog fired</strong> &mdash; expected temperature change failed to materialize</span>
+              </label>
+              <button class="notif-test-btn" type="button" data-test-category="watchdog_fired" title="Send test notification">
+                <span class="material-symbols-outlined">send</span>
+              </button>
+            </div>
             <p class="notif-test-hint">Tap <span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px;">send</span> to preview how a notification in that category looks on this device.</p>
           </div>
+        </div>
+
+        <!-- Anomaly watchdogs -->
+        <div class="card settings-card" id="watchdogs-card" data-admin-only>
+          <h3>Anomaly watchdogs</h3>
+          <p class="settings-desc">Detect when a mode fails to produce its expected temperature change. When a watchdog fires, you have 5 minutes to respond before auto-shutdown.</p>
+          <div id="watchdogs-list"></div>
+          <details class="watchdog-history">
+            <summary>Show recent events</summary>
+            <div id="watchdogs-history-list"></div>
+          </details>
         </div>
 
         <!-- Account (only shown when authenticated) -->

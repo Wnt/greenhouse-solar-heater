@@ -15,6 +15,7 @@ const CATEGORIES = [
   { id: 'overheat_warning', label: 'Overheat warning', desc: '15 min before overheat drain' },
   { id: 'freeze_warning', label: 'Freeze warning', desc: '15 min before freeze protection' },
   { id: 'offline_warning', label: 'Controller offline', desc: 'Offline/online after 15 min' },
+  { id: 'watchdog_fired', label: 'Watchdog fired', desc: 'Expected temperature change failed to materialize' },
 ];
 
 function $(id) {

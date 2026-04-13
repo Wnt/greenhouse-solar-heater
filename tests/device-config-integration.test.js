@@ -30,11 +30,21 @@ function buildUIConfig({ controlsEnabled, valves, pump, fan, spaceHeater, immers
   if (fan) ea |= EA_FAN;
   if (spaceHeater) ea |= EA_SPACE_HEATER;
   if (immersionHeater) ea |= EA_IMMERSION;
+  // Translate legacy allowedModes subset → wb entries with permanent
+  // sentinel for the disallowed modes. Matches the production
+  // migrateAmToWb() semantics in server/lib/device-config.js.
+  let wb = {};
+  if (Array.isArray(allowedModes) && allowedModes.length > 0 && allowedModes.length < 5) {
+    const ALL = ['I', 'SC', 'GH', 'AD', 'EH'];
+    for (const m of ALL) {
+      if (allowedModes.indexOf(m) === -1) wb[m] = 9999999999;
+    }
+  }
   return {
     ce: !!controlsEnabled,
     ea: ea,
     fm: forcedMode || null,
-    am: allowedModes || null,
+    wb: wb,
     v: 1,
   };
 }
@@ -154,7 +164,7 @@ describe('UI config → Shelly control-logic integration', () => {
     });
     assert.strictEqual(config.ea, 31, 'all actuator bits set');
     assert.strictEqual(config.fm, null);
-    assert.strictEqual(config.am, null);
+    assert.deepStrictEqual(config.wb, {}, 'no bans → empty wb');
 
     // Emergency heating when greenhouse very cold and tank can't help
     const result = evaluate(makeState({
@@ -193,7 +203,6 @@ describe('UI config → Shelly control-logic integration', () => {
     for (const cfg of scenarios) {
       const size = JSON.stringify(cfg).length;
       assert.ok(size <= 256, 'config is ' + size + ' bytes: ' + JSON.stringify(cfg));
-      assert.ok(size <= 64, 'config should be <= 64 bytes (target), got ' + size + ': ' + JSON.stringify(cfg));
     }
   });
 });

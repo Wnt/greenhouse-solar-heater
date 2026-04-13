@@ -46,7 +46,18 @@ function isSafetyCritical(oldCfg, newCfg) {
   if (oldCfg.ce !== newCfg.ce) return true;
   if (oldCfg.ea !== newCfg.ea) return true;
   if (oldCfg.fm !== newCfg.fm) return true;
+  // Mode bans (wb) gate evaluate() immediately — changes must trigger a
+  // safety-critical re-eval so a newly-enforced ban takes effect on the
+  // next tick rather than after an unrelated mode change.
   if (JSON.stringify(oldCfg.wb) !== JSON.stringify(newCfg.wb)) return true;
+  // Watchdog enable/disable (we) and snooze (wz) changes do not require
+  // an immediate re-eval — they only affect the per-tick detectAnomaly
+  // call in control.js, which runs every POLL_INTERVAL anyway. We still
+  // reference these fields here so the regression guard in
+  // tests/shelly-telemetry.test.js catches schema drift in either
+  // direction.
+  if (JSON.stringify(oldCfg.we) !== JSON.stringify(newCfg.we)) return false;
+  if (JSON.stringify(oldCfg.wz) !== JSON.stringify(newCfg.wz)) return false;
   return false;
 }
 

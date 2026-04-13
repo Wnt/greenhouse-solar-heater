@@ -259,6 +259,10 @@ function ensureLiveSource() {
         updateSidebarSubtitle();
       }
     });
+    // Re-attach the watchdog broadcast listener now that liveSource exists.
+    if (typeof window.__attachWatchdogWS === 'function') {
+      window.__attachWatchdogWS();
+    }
   }
   liveSource.start();
 }
@@ -767,6 +771,7 @@ async function init() {
   initModeToggle();
   initDeviceConfig();
   initRelayBoard();
+  initWatchdogUI();
 
   // On deploys without live mode (e.g. GitHub Pages) load the
   // pre-baked simulation snapshot so the dashboard is populated on
@@ -2141,13 +2146,8 @@ function populateDeviceForm(cfg) {
   // Forced mode
   document.getElementById('dc-fm').value = cfg.fm || '';
 
-  // Allowed modes
-  const allCodes = ['I', 'SC', 'GH', 'AD', 'EH'];
-  const am = cfg.am; // null = all allowed
-  allCodes.forEach(code => {
-    const cb = document.getElementById('dc-am-' + code);
-    if (cb) cb.checked = !am || am.indexOf(code) >= 0;
-  });
+  // Mode enablement card (replaces the old allowed-modes checkboxes)
+  renderModeEnablement(cfg.wb || {}, _watchdogCurrentUserRole());
 
   // Version & size
   document.getElementById('dc-version').textContent = cfg.v || '-';
@@ -2176,12 +2176,11 @@ function saveDeviceConfig() {
   const fmSelect = document.getElementById('dc-fm');
   const fm = fmSelect.value || null;
 
-  // Allowed modes: null if all checked, array of codes otherwise
-  const allCodes = ['I', 'SC', 'GH', 'AD', 'EH'];
-  const checked = allCodes.filter(c => document.getElementById('dc-am-' + c).checked);
-  const am = checked.length >= 5 ? null : (checked.length === 0 ? null : checked);
-
-  const body = { ce, ea, fm, am };
+  // Mode enablement is edited directly via the Mode Enablement card
+  // (Disable / Re-enable / Clear cool-off), which calls PUT
+  // /api/device-config with a partial wb payload. No am field is
+  // computed or sent from this form.
+  const body = { ce, ea, fm };
 
   fetch('/api/device-config', {
     method: 'PUT',
@@ -2469,6 +2468,348 @@ function updateRelayBoard(result) {
     }
 
     btn.classList.toggle('on', actual);
+  });
+}
+
+// ── Watchdog UI ──
+//
+// Renders three distinct pieces:
+//   1. Pending banner on #status (with live countdown + ack/shutdown)
+//   2. Cool-off inline indicator on #status
+//   3. Mode enablement card in #device (replaces old allowed-modes)
+//   4. Anomaly watchdogs card in #settings (enable/disable + snooze)
+// Live state arrives via WebSocket 'watchdog-state' messages; initial
+// state is fetched from GET /api/watchdog/state on load.
+
+const WATCHDOG_PERMANENT_SENTINEL = 9999999999;
+const WATCHDOG_ALL_MODES = [
+  { code: 'I',  label: 'IDLE' },
+  { code: 'SC', label: 'SOLAR_CHARGING' },
+  { code: 'GH', label: 'GREENHOUSE_HEATING' },
+  { code: 'AD', label: 'ACTIVE_DRAIN' },
+  { code: 'EH', label: 'EMERGENCY_HEATING' },
+];
+
+let _watchdogCountdownTimer = null;
+let _watchdogPending = null;
+let _watchdogMeta = [];
+let _watchdogSnapshot = { we: {}, wz: {}, wb: {} };
+
+function _watchdogCurrentUserRole() {
+  return store.get('userRole') || 'admin';
+}
+
+function initWatchdogUI() {
+  // Wire banner buttons
+  const snoozeBtn = document.getElementById('watchdog-banner-snooze');
+  const shutdownBtn = document.getElementById('watchdog-banner-shutdown');
+  const replyInput = document.getElementById('watchdog-banner-reply');
+
+  if (snoozeBtn) {
+    snoozeBtn.addEventListener('click', () => {
+      if (!_watchdogPending) return;
+      const reason = (replyInput && replyInput.value.trim()) || '(no reason provided)';
+      fetch('/api/watchdog/ack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          id: _watchdogPending.id,
+          eventId: _watchdogPending.dbEventId,
+          reason: reason
+        })
+      }).catch(err => console.error('watchdog ack failed', err));
+    });
+  }
+
+  if (shutdownBtn) {
+    shutdownBtn.addEventListener('click', () => {
+      if (!_watchdogPending) return;
+      fetch('/api/watchdog/shutdownnow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          id: _watchdogPending.id,
+          eventId: _watchdogPending.dbEventId
+        })
+      }).catch(err => console.error('watchdog shutdownnow failed', err));
+    });
+  }
+
+  // Subscribe to live broadcasts via the LiveSource (if present).
+  // The liveSource is created lazily in initModeToggle; wire here, and
+  // also on every recreate via a reattach helper.
+  attachWatchdogWebSocket();
+
+  // Initial state load
+  refreshWatchdogStateFromServer();
+}
+
+function attachWatchdogWebSocket() {
+  if (liveSource && typeof liveSource.onWatchdogState === 'function') {
+    liveSource.onWatchdogState((msg) => {
+      _watchdogPending = msg.pending || null;
+      if (msg.snapshot) _watchdogSnapshot = msg.snapshot;
+      if (msg.watchdogs) _watchdogMeta = msg.watchdogs;
+      renderWatchdogBanner(_watchdogPending);
+      renderModeEnablement(_watchdogSnapshot.wb || {}, _watchdogCurrentUserRole());
+      renderWatchdogsCard(_watchdogSnapshot, _watchdogMeta, _watchdogCurrentUserRole());
+      if (msg.recent) renderWatchdogHistory(msg.recent);
+      renderCooloffIndicator(_watchdogSnapshot.wb || {});
+    });
+  }
+}
+
+// Re-attach hook: called when the live source is created in modes
+// where the playground switches from sim to live.
+window.__attachWatchdogWS = attachWatchdogWebSocket;
+
+function refreshWatchdogStateFromServer() {
+  fetch('/api/watchdog/state', { credentials: 'include' })
+    .then(r => r.ok ? r.json() : null)
+    .then(state => {
+      if (!state) return;
+      _watchdogPending = state.pending || null;
+      _watchdogSnapshot = state.snapshot || { we: {}, wz: {}, wb: {} };
+      _watchdogMeta = state.watchdogs || [];
+      renderWatchdogBanner(_watchdogPending);
+      renderModeEnablement(_watchdogSnapshot.wb || {}, _watchdogCurrentUserRole());
+      renderWatchdogsCard(_watchdogSnapshot, _watchdogMeta, _watchdogCurrentUserRole());
+      renderWatchdogHistory(state.recent || []);
+      renderCooloffIndicator(_watchdogSnapshot.wb || {});
+    })
+    .catch(() => { /* unauth (public browse) or offline — swallow */ });
+}
+
+function renderWatchdogBanner(pending) {
+  _watchdogPending = pending;
+  const banner = document.getElementById('watchdog-banner');
+  if (!banner) return;
+
+  if (!pending) {
+    banner.style.display = 'none';
+    if (_watchdogCountdownTimer) {
+      clearInterval(_watchdogCountdownTimer);
+      _watchdogCountdownTimer = null;
+    }
+    return;
+  }
+
+  banner.style.display = 'block';
+  const title = document.getElementById('watchdog-banner-title');
+  const reason = document.getElementById('watchdog-banner-reason');
+  const replyInput = document.getElementById('watchdog-banner-reply');
+  const meta = _watchdogMeta.find(w => w.id === pending.id);
+  const label = meta ? meta.shortLabel : pending.id;
+  if (title) title.textContent = 'Watchdog fired: ' + label;
+  if (reason) reason.textContent = pending.triggerReason || '';
+  if (replyInput) replyInput.value = '';
+
+  // Disable buttons for readonly users
+  const role = _watchdogCurrentUserRole();
+  const isAdmin = role === 'admin';
+  const snoozeBtn = document.getElementById('watchdog-banner-snooze');
+  const shutdownBtn = document.getElementById('watchdog-banner-shutdown');
+  if (snoozeBtn) snoozeBtn.disabled = !isAdmin;
+  if (shutdownBtn) shutdownBtn.disabled = !isAdmin;
+
+  // Local countdown ticking every second (5 min = 300s from firedAt)
+  if (_watchdogCountdownTimer) clearInterval(_watchdogCountdownTimer);
+  function updateCountdown() {
+    const now = Math.floor(Date.now() / 1000);
+    const remaining = Math.max(0, 300 - (now - pending.firedAt));
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    const el = document.getElementById('watchdog-banner-countdown-text');
+    if (el) el.textContent = m + ' min ' + (s < 10 ? '0' : '') + s + ' s';
+  }
+  updateCountdown();
+  _watchdogCountdownTimer = setInterval(updateCountdown, 1000);
+}
+
+function renderCooloffIndicator(wb) {
+  const el = document.getElementById('watchdog-cooloff-indicator');
+  if (!el) return;
+  const now = Math.floor(Date.now() / 1000);
+  const cooloffs = [];
+  WATCHDOG_ALL_MODES.forEach(m => {
+    const entry = wb && wb[m.code];
+    if (entry && entry > now && entry !== WATCHDOG_PERMANENT_SENTINEL) {
+      const remaining = entry - now;
+      const h = Math.floor(remaining / 3600);
+      const mn = Math.floor((remaining % 3600) / 60);
+      cooloffs.push('\u23F8 ' + m.label + ' cooling off — ' + h + 'h ' + mn + 'm remaining');
+    }
+  });
+  if (cooloffs.length === 0) {
+    el.style.display = 'none';
+    el.textContent = '';
+    return;
+  }
+  el.style.display = 'block';
+  el.textContent = cooloffs.join(' · ');
+}
+
+function renderModeEnablement(wb, userRole) {
+  const list = document.getElementById('mode-enablement-list');
+  if (!list) return;
+  const now = Math.floor(Date.now() / 1000);
+  const isAdmin = userRole === 'admin';
+
+  list.innerHTML = '';
+  WATCHDOG_ALL_MODES.forEach(mode => {
+    const row = document.createElement('div');
+    row.className = 'mode-enablement-row';
+    const entry = wb && wb[mode.code];
+
+    let statusLabel;
+    let actionLabel;
+    let actionHandler;
+
+    if (!entry || entry <= now) {
+      statusLabel = '<span class="mode-allowed">\u2022 allowed</span>';
+      actionLabel = 'Disable';
+      actionHandler = () => _watchdogDisableMode(mode.code);
+    } else if (entry === WATCHDOG_PERMANENT_SENTINEL) {
+      statusLabel = '<span class="mode-disabled">\u2715 disabled by user</span>';
+      actionLabel = 'Re-enable';
+      actionHandler = () => _watchdogClearBan(mode.code);
+    } else {
+      const remaining = entry - now;
+      const h = Math.floor(remaining / 3600);
+      const mn = Math.floor((remaining % 3600) / 60);
+      statusLabel = '<span class="mode-cooloff">\u23F8 cool-off — ' + h + 'h ' + mn + 'm</span>';
+      actionLabel = 'Clear cool-off';
+      actionHandler = () => _watchdogClearBan(mode.code);
+    }
+
+    row.innerHTML =
+      '<div class="mode-enablement-label">' + mode.label + '</div>' +
+      '<div class="mode-enablement-status">' + statusLabel + '</div>' +
+      (isAdmin ? '<button class="mode-enablement-action" type="button">' + actionLabel + '</button>' : '');
+
+    if (isAdmin) {
+      const btn = row.querySelector('.mode-enablement-action');
+      if (btn) btn.addEventListener('click', actionHandler);
+    }
+    list.appendChild(row);
+  });
+}
+
+function _watchdogDisableMode(modeCode) {
+  const body = { wb: {} };
+  body.wb[modeCode] = WATCHDOG_PERMANENT_SENTINEL;
+  fetch('/api/device-config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body)
+  }).catch(err => console.error('disable mode failed', err));
+}
+
+function _watchdogClearBan(modeCode) {
+  const body = { wb: {} };
+  body.wb[modeCode] = 0;
+  fetch('/api/device-config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body)
+  }).catch(err => console.error('clear ban failed', err));
+}
+
+function renderWatchdogsCard(snapshot, watchdogs, userRole) {
+  const list = document.getElementById('watchdogs-list');
+  if (!list) return;
+  const isAdmin = userRole === 'admin';
+  const now = Math.floor(Date.now() / 1000);
+
+  list.innerHTML = '';
+  if (!watchdogs || watchdogs.length === 0) {
+    list.innerHTML = '<p class="empty-state">No watchdogs configured.</p>';
+    return;
+  }
+  watchdogs.forEach(w => {
+    const row = document.createElement('div');
+    row.className = 'watchdog-row';
+
+    const enabled = snapshot && snapshot.we && snapshot.we[w.id];
+    const snoozeUntil = snapshot && snapshot.wz && snapshot.wz[w.id];
+    const isSnoozed = snoozeUntil && snoozeUntil > now;
+
+    const label = document.createElement('label');
+    label.className = 'watchdog-row-label';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !!enabled;
+    checkbox.disabled = !isAdmin;
+    checkbox.addEventListener('change', () => {
+      fetch('/api/watchdog/enabled', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ id: w.id, enabled: checkbox.checked })
+      }).catch(err => console.error('toggle watchdog failed', err));
+    });
+    label.appendChild(checkbox);
+
+    const text = document.createElement('span');
+    text.innerHTML = '<strong>' + (w.label || w.id) + '</strong> &mdash; ' + (w.mode || '');
+    label.appendChild(text);
+    row.appendChild(label);
+
+    if (isSnoozed) {
+      const snoozeInfo = document.createElement('div');
+      snoozeInfo.className = 'watchdog-snooze-info';
+      const remaining = snoozeUntil - now;
+      const h = Math.floor(remaining / 3600);
+      const mn = Math.floor((remaining % 3600) / 60);
+      snoozeInfo.textContent = '\u23F8 snoozed for ' + h + 'h ' + mn + 'm';
+      row.appendChild(snoozeInfo);
+      if (isAdmin) {
+        const clearBtn = document.createElement('button');
+        clearBtn.className = 'watchdog-clear-snooze';
+        clearBtn.type = 'button';
+        clearBtn.textContent = 'Clear snooze';
+        clearBtn.addEventListener('click', () => {
+          const body = { wz: {} };
+          body.wz[w.id] = 0;
+          fetch('/api/device-config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(body)
+          }).catch(err => console.error('clear snooze failed', err));
+        });
+        row.appendChild(clearBtn);
+      }
+    }
+    list.appendChild(row);
+  });
+}
+
+function renderWatchdogHistory(recent) {
+  const list = document.getElementById('watchdogs-history-list');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!recent || recent.length === 0) {
+    list.innerHTML = '<p class="empty-state">No events yet.</p>';
+    return;
+  }
+  recent.forEach(ev => {
+    const row = document.createElement('div');
+    row.className = 'watchdog-history-row';
+    const when = ev.fired_at ? new Date(ev.fired_at).toLocaleString() : '';
+    const resolution = ev.resolution || 'pending';
+    const safeReason = (ev.trigger_reason || '').replace(/</g, '&lt;');
+    const safeSnooze = (ev.snooze_reason || '').replace(/</g, '&lt;');
+    row.innerHTML =
+      '<div class="history-row-top">' + when + ' &mdash; <code>' + ev.watchdog_id + '</code> &mdash; ' + resolution + '</div>' +
+      '<div class="history-row-reason">' + safeReason + '</div>' +
+      (ev.snooze_reason ? '<div class="history-row-snooze">Snoozed: "' + safeSnooze + '"</div>' : '');
+    list.appendChild(row);
   });
 }
 
