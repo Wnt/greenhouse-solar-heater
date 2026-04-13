@@ -1,7 +1,10 @@
 /**
- * JSON file credential store for WebAuthn passkeys (single-user).
- * Manages users, passkey credentials, sessions, and setup state.
- * See data-model.md for entity definitions.
+ * JSON file credential store for WebAuthn passkeys.
+ * Supports multiple users with role-based access (admin / readonly).
+ *
+ * Backwards compatible with the previous single-user format: when an old
+ * `user` object is loaded, it is migrated to `users[0]` with the `admin`
+ * role and all existing credentials/sessions are linked to it.
  */
 
 const crypto = require('crypto');
@@ -12,15 +15,70 @@ const log = createLogger('credentials');
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SETUP_WINDOW_MS = parseInt(process.env.SETUP_WINDOW_MINUTES || '30', 10) * 60 * 1000;
 
+var ROLES = { ADMIN: 'admin', READONLY: 'readonly' };
+
 var store = null;
 
 function emptyStore() {
   return {
-    user: null,
+    users: [],
     credentials: [],
     sessions: [],
     setup: null,
   };
+}
+
+// Migrate the legacy single-user shape ({user: {...}}) to the new
+// multi-user shape ({users: [...]}). Existing credentials and sessions
+// are linked to the migrated admin user.
+function migrate(data) {
+  if (!data) return data;
+  if (Array.isArray(data.users)) {
+    // Already in the new shape, but normalize defaults on each user.
+    data.users.forEach(function (u) {
+      if (!u.role) u.role = ROLES.ADMIN;
+      if (!u.createdAt) u.createdAt = new Date().toISOString();
+    });
+    // Ensure every credential and session has a userId (legacy stores
+    // that were never migrated may have them undefined).
+    if (data.users.length > 0) {
+      var firstAdmin = null;
+      for (var i = 0; i < data.users.length; i++) {
+        if (data.users[i].role === ROLES.ADMIN) { firstAdmin = data.users[i]; break; }
+      }
+      if (!firstAdmin) firstAdmin = data.users[0];
+      (data.credentials || []).forEach(function (c) {
+        if (!c.userId) c.userId = firstAdmin.id;
+      });
+      (data.sessions || []).forEach(function (s) {
+        if (!s.userId) s.userId = firstAdmin.id;
+      });
+    }
+    return data;
+  }
+  // Legacy single-user format
+  var migrated = emptyStore();
+  migrated.setup = data.setup || null;
+  if (data.user) {
+    var legacy = {
+      id: data.user.id,
+      name: data.user.name || 'admin',
+      role: ROLES.ADMIN,
+      createdAt: new Date().toISOString(),
+    };
+    migrated.users.push(legacy);
+    migrated.credentials = (data.credentials || []).map(function (c) {
+      return Object.assign({}, c, { userId: legacy.id });
+    });
+    migrated.sessions = (data.sessions || []).map(function (s) {
+      return Object.assign({}, s, { userId: legacy.id });
+    });
+    log.info('migrated legacy single-user store to multi-user', { user: legacy.name });
+  } else {
+    migrated.credentials = data.credentials || [];
+    migrated.sessions = data.sessions || [];
+  }
+  return migrated;
 }
 
 function load(callback) {
@@ -34,8 +92,12 @@ function load(callback) {
         return;
       }
       if (data) {
-        store = data;
-        log.info('credentials loaded from S3', { credentials: store.credentials.length, sessions: store.sessions.length });
+        store = migrate(data);
+        log.info('credentials loaded from S3', {
+          users: store.users.length,
+          credentials: store.credentials.length,
+          sessions: store.sessions.length,
+        });
       } else {
         log.info('no credentials in S3, starting fresh');
       }
@@ -44,8 +106,12 @@ function load(callback) {
   } else {
     var data = storage.readSync();
     if (data) {
-      store = data;
-      log.info('credentials loaded', { credentials: store.credentials.length, sessions: store.sessions.length });
+      store = migrate(data);
+      log.info('credentials loaded', {
+        users: store.users.length,
+        credentials: store.credentials.length,
+        sessions: store.sessions.length,
+      });
     } else {
       store = emptyStore();
       log.info('no credentials file, starting fresh');
@@ -72,28 +138,149 @@ function getStore() {
   return store;
 }
 
-// ── User ──
+// ── Users ──
 
-function getUser() {
-  return getStore().user;
+function getUsers() {
+  return getStore().users.slice();
 }
 
-function createUser(name) {
+function getUserById(userId) {
+  if (!userId) return null;
+  var users = getStore().users;
+  for (var i = 0; i < users.length; i++) {
+    if (users[i].id === userId) return users[i];
+  }
+  return null;
+}
+
+function findUserByName(name) {
+  if (!name) return null;
+  var users = getStore().users;
+  for (var i = 0; i < users.length; i++) {
+    if (users[i].name === name) return users[i];
+  }
+  return null;
+}
+
+function createUser(name, role) {
   var s = getStore();
-  if (s.user) return s.user;
-  s.user = {
+  if (!name || typeof name !== 'string') {
+    throw new Error('name is required');
+  }
+  var trimmed = name.trim();
+  if (!trimmed) throw new Error('name is required');
+  if (findUserByName(trimmed)) {
+    throw new Error('user already exists: ' + trimmed);
+  }
+  var resolvedRole = role === ROLES.READONLY ? ROLES.READONLY : ROLES.ADMIN;
+  var user = {
     id: crypto.randomBytes(32).toString('base64url'),
-    name: name || 'admin',
+    name: trimmed,
+    role: resolvedRole,
+    createdAt: new Date().toISOString(),
   };
+  s.users.push(user);
   save();
-  log.info('user created', { name: s.user.name });
-  return s.user;
+  log.info('user created', { name: user.name, role: user.role });
+  return user;
+}
+
+function deleteUser(userId) {
+  var s = getStore();
+  var idx = -1;
+  for (var i = 0; i < s.users.length; i++) {
+    if (s.users[i].id === userId) { idx = i; break; }
+  }
+  if (idx < 0) return false;
+  // Refuse to delete the last admin so the system never locks itself out.
+  var deleted = s.users[idx];
+  if (deleted.role === ROLES.ADMIN) {
+    var otherAdmins = 0;
+    for (var j = 0; j < s.users.length; j++) {
+      if (j !== idx && s.users[j].role === ROLES.ADMIN) otherAdmins++;
+    }
+    if (otherAdmins === 0) {
+      throw new Error('Cannot delete the last admin user');
+    }
+  }
+  s.users.splice(idx, 1);
+  s.credentials = s.credentials.filter(function (c) { return c.userId !== userId; });
+  s.sessions = s.sessions.filter(function (sess) { return sess.userId !== userId; });
+  save();
+  log.info('user deleted', { name: deleted.name, role: deleted.role });
+  return true;
+}
+
+// Update a user's name and/or role. Throws on duplicate names, unknown
+// users, or attempts to demote the last admin.
+function updateUser(userId, updates) {
+  var s = getStore();
+  var user = null;
+  for (var i = 0; i < s.users.length; i++) {
+    if (s.users[i].id === userId) { user = s.users[i]; break; }
+  }
+  if (!user) throw new Error('User not found');
+
+  var nextName = user.name;
+  if (updates && typeof updates.name === 'string') {
+    var trimmed = updates.name.trim();
+    if (!trimmed) throw new Error('name is required');
+    if (trimmed.length > 64) throw new Error('Name is too long (max 64 chars)');
+    if (trimmed !== user.name) {
+      var existing = findUserByName(trimmed);
+      if (existing && existing.id !== userId) {
+        throw new Error('A user with that name already exists');
+      }
+      nextName = trimmed;
+    }
+  }
+
+  var nextRole = user.role;
+  if (updates && typeof updates.role === 'string') {
+    var requested = updates.role === ROLES.READONLY ? ROLES.READONLY : ROLES.ADMIN;
+    if (requested !== user.role) {
+      // Refuse to demote the last admin.
+      if (user.role === ROLES.ADMIN && requested !== ROLES.ADMIN) {
+        var otherAdmins2 = 0;
+        for (var j = 0; j < s.users.length; j++) {
+          if (s.users[j].id !== userId && s.users[j].role === ROLES.ADMIN) otherAdmins2++;
+        }
+        if (otherAdmins2 === 0) {
+          throw new Error('Cannot demote the last admin user');
+        }
+      }
+      nextRole = requested;
+    }
+  }
+
+  if (nextName === user.name && nextRole === user.role) {
+    return user; // no-op
+  }
+
+  user.name = nextName;
+  user.role = nextRole;
+  save();
+  log.info('user updated', { name: user.name, role: user.role });
+  return user;
+}
+
+function countAdmins() {
+  var users = getStore().users;
+  var n = 0;
+  for (var i = 0; i < users.length; i++) {
+    if (users[i].role === ROLES.ADMIN) n++;
+  }
+  return n;
 }
 
 // ── Credentials ──
 
 function getCredentials() {
   return getStore().credentials;
+}
+
+function getCredentialsForUser(userId) {
+  return getStore().credentials.filter(function (c) { return c.userId === userId; });
 }
 
 function getCredentialById(credentialId) {
@@ -105,16 +292,18 @@ function getCredentialById(credentialId) {
 }
 
 function addCredential(cred) {
+  if (!cred.userId) throw new Error('credential requires userId');
   var s = getStore();
   s.credentials.push({
     id: cred.id,
+    userId: cred.userId,
     publicKey: cred.publicKey,
     counter: cred.counter,
     transports: cred.transports || [],
     createdAt: new Date().toISOString(),
   });
   save();
-  log.info('credential added', { id: cred.id });
+  log.info('credential added', { id: cred.id, userId: cred.userId });
 }
 
 function updateCredentialCounter(credentialId, newCounter) {
@@ -127,18 +316,20 @@ function updateCredentialCounter(credentialId, newCounter) {
 
 // ── Sessions ──
 
-function createSession() {
+function createSession(userId) {
+  if (!userId) throw new Error('createSession requires userId');
   var s = getStore();
   var token = crypto.randomBytes(32).toString('hex');
   var now = new Date();
   var session = {
     token: token,
+    userId: userId,
     createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + SESSION_MAX_AGE_MS).toISOString(),
   };
   s.sessions.push(session);
   save();
-  log.info('session created');
+  log.info('session created', { userId: userId });
   return session;
 }
 
@@ -220,11 +411,24 @@ function closeRegistration() {
   }
 }
 
+// ── Test helpers ──
+
+function _reset() {
+  store = null;
+}
+
 module.exports = {
+  ROLES: ROLES,
   load: load,
-  getUser: getUser,
+  getUsers: getUsers,
+  getUserById: getUserById,
+  findUserByName: findUserByName,
   createUser: createUser,
+  deleteUser: deleteUser,
+  updateUser: updateUser,
+  countAdmins: countAdmins,
   getCredentials: getCredentials,
+  getCredentialsForUser: getCredentialsForUser,
   getCredentialById: getCredentialById,
   addCredential: addCredential,
   updateCredentialCounter: updateCredentialCounter,
@@ -237,4 +441,5 @@ module.exports = {
   isRegistrationOpen: isRegistrationOpen,
   closeRegistration: closeRegistration,
   SESSION_MAX_AGE_MS: SESSION_MAX_AGE_MS,
+  _reset: _reset,
 };

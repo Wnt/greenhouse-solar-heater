@@ -16,7 +16,8 @@ var RATE_LIMIT_MAX = 5; // max attempts per window
 
 // ── Invitation management ──
 
-function createInvitation(sessionToken) {
+function createInvitation(sessionToken, options) {
+  options = options || {};
   // Invalidate any previous invitation from the same session
   Object.keys(activeInvitations).forEach(function (code) {
     if (activeInvitations[code].sessionToken === sessionToken) {
@@ -31,17 +32,22 @@ function createInvitation(sessionToken) {
   }
 
   var now = Date.now();
+  var role = options.role === 'readonly' ? 'readonly' : 'admin';
   activeInvitations[code] = {
     code: code,
     createdAt: now,
     expiresAt: now + INVITE_EXPIRY_MS,
     sessionToken: sessionToken,
+    role: role,
+    name: options.name || null,
   };
 
   return {
     code: code,
     expiresAt: new Date(now + INVITE_EXPIRY_MS).toISOString(),
     expiresInSeconds: INVITE_EXPIRY_MS / 1000,
+    role: role,
+    name: options.name || null,
   };
 }
 
@@ -53,6 +59,11 @@ function validateInvitation(code) {
     return false;
   }
   return true;
+}
+
+function getInvitation(code) {
+  if (!validateInvitation(code)) return null;
+  return activeInvitations[code];
 }
 
 function consumeInvitation(code) {
@@ -111,6 +122,7 @@ function reset() {
 module.exports = {
   createInvitation: createInvitation,
   validateInvitation: validateInvitation,
+  getInvitation: getInvitation,
   consumeInvitation: consumeInvitation,
   checkRateLimit: checkRateLimit,
   recordAttempt: recordAttempt,

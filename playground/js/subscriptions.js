@@ -211,4 +211,22 @@ export function initSubscriptions(store) {
     updateDevicePush();
     updateStalenessBanner();
   });
+
+  // ── Role change: re-evaluate available views and reroute if needed ──
+  store.subscribe('userRole', () => {
+    const available = derived.availableViews;
+    document.querySelectorAll('[data-view]').forEach(el => {
+      const view = el.dataset.view;
+      if (!available.includes(view)) {
+        el.style.display = 'none';
+      } else {
+        // Defer to phase logic to decide whether live-only items should show.
+        el.style.display = '';
+      }
+    });
+    const current = store.get('currentView');
+    if (!available.includes(current)) {
+      navigateTo(store, 'status');
+    }
+  });
 }
