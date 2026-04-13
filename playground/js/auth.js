@@ -484,18 +484,15 @@ function buildPasskeyRow(passkey) {
   const row = document.createElement('div');
   row.className = 'passkey-row';
 
-  const info = document.createElement('div');
-  info.className = 'passkey-info';
-
   const label = document.createElement('div');
   label.className = 'passkey-label';
   label.textContent = getPasskeyLabel(passkey) + (passkey.isCurrent ? ' (this device)' : '');
-  info.appendChild(label);
+  row.appendChild(label);
 
   const subtitle = document.createElement('div');
   subtitle.className = 'passkey-subtitle';
   subtitle.textContent = passkey.deviceSummary || 'Unknown device';
-  info.appendChild(subtitle);
+  row.appendChild(subtitle);
 
   const meta = document.createElement('div');
   meta.className = 'passkey-meta';
@@ -504,9 +501,7 @@ function buildPasskeyRow(passkey) {
   if (passkey.lastIp) parts.push('IP ' + passkey.lastIp);
   if (passkey.createdAt) parts.push('Added ' + formatWhen(passkey.createdAt));
   meta.textContent = parts.join(' · ');
-  info.appendChild(meta);
-
-  row.appendChild(info);
+  row.appendChild(meta);
 
   const actions = document.createElement('div');
   actions.className = 'passkey-actions';

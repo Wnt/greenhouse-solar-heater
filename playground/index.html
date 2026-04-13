@@ -613,17 +613,17 @@
         <div class="card settings-card" id="users-card" data-admin-only>
           <div class="users-header">
             <h3>Users</h3>
-            <div class="users-header-actions">
-              <button id="users-new-btn" class="auth-btn" type="button" title="Create an empty user for passkey transfers">
-                <span class="material-symbols-outlined">person_add</span>
-                <span class="auth-btn-label">New User</span>
-              </button>
-              <button id="users-refresh-btn" class="auth-btn users-refresh-btn" type="button" title="Refresh users list">
-                <span class="material-symbols-outlined">refresh</span>
-              </button>
-            </div>
+            <button id="users-refresh-btn" class="auth-btn users-refresh-btn" type="button" title="Refresh users list">
+              <span class="material-symbols-outlined">refresh</span>
+            </button>
           </div>
           <p class="settings-desc">Manage who can sign in. Each passkey is shown as its own device, with last seen network details. Create an empty user first when you want to move an existing passkey into its own account.</p>
+          <div class="settings-btn-stack">
+            <button id="users-new-btn" class="auth-btn auth-btn-primary settings-btn" type="button" title="Create an empty user for passkey transfers">
+              <span class="material-symbols-outlined">person_add</span>
+              <span class="auth-btn-label">New User</span>
+            </button>
+          </div>
           <div id="users-feedback" class="users-feedback" hidden></div>
           <div id="users-create-form" class="users-inline-editor" hidden>
             <div class="users-inline-grid">
