@@ -17,15 +17,42 @@ var currentConfig = null;
 //   ce = controls_enabled (bool)
 //   ea = enabled_actuators bitmask (valves=1, pump=2, fan=4, sh=8, ih=16)
 //   fm = forced_mode ("I","SC","GH","AD","EH", or null)
-//   am = allowed_modes (["I","SC",...] or null = all)
+//   we = watchdogs_enabled ({sng:1, scs:1, ggr:1} — first-boot empty)
+//   wz = watchdog_snooze ({sng:<unix>, ...} — absent = not snoozed)
+//   wb = mode_bans ({SC:<unix>, GH:9999999999, ...} — sentinel = permanent)
+//   mo = manual override session ({a, ex, ss} or null)
 //   v  = version (int)
 var DEFAULT_CONFIG = {
   ce: false,
   ea: 0,
   fm: null,
-  am: null,
+  we: {},
+  wz: {},
+  wb: {},
   v: 1,
 };
+
+// Migration helper: translate legacy `am` (allowed modes) array into
+// `wb` entries with the permanent sentinel timestamp. Called on every
+// config load — idempotent by design. Once migrated, the `am` field is
+// deleted so it never round-trips back to the device.
+var ALL_MODES_FOR_MIGRATION = ['I', 'SC', 'GH', 'AD', 'EH'];
+var WB_PERMANENT_SENTINEL = 9999999999;
+
+function migrateAmToWb(cfg) {
+  if (cfg.am && Array.isArray(cfg.am) &&
+      cfg.am.length > 0 && cfg.am.length < ALL_MODES_FOR_MIGRATION.length) {
+    cfg.wb = cfg.wb || {};
+    for (var i = 0; i < ALL_MODES_FOR_MIGRATION.length; i++) {
+      var mode = ALL_MODES_FOR_MIGRATION[i];
+      if (cfg.am.indexOf(mode) === -1) {
+        cfg.wb[mode] = WB_PERMANENT_SENTINEL;
+      }
+    }
+  }
+  delete cfg.am;
+  return cfg;
+}
 
 function getS3Config() {
   if (s3Config) return s3Config;
@@ -75,7 +102,7 @@ function load(callback) {
       return response.Body.transformToString();
     }).then(function (bodyStr) {
       try {
-        currentConfig = JSON.parse(bodyStr);
+        currentConfig = migrateAmToWb(JSON.parse(bodyStr));
         callback(null, currentConfig);
       } catch (e) {
         callback(new Error('Failed to parse device config JSON'));
@@ -92,7 +119,7 @@ function load(callback) {
     var filePath = getLocalPath();
     try {
       var data = fs.readFileSync(filePath, 'utf8');
-      currentConfig = JSON.parse(data);
+      currentConfig = migrateAmToWb(JSON.parse(data));
       callback(null, currentConfig);
     } catch (err) {
       if (err.code === 'ENOENT') {
@@ -163,20 +190,64 @@ function updateConfig(newConfig, callback) {
   if (newConfig.fm !== undefined) {
     config.fm = newConfig.fm || null;
   }
-  if (newConfig.am !== undefined) {
-    var am = newConfig.am;
-    // Empty array would mean "no modes allowed" — controller would never select
-    // any operating mode, effectively bricking the system. Reject explicitly so
-    // the user gets a clear error instead of a silent normalize-to-null surprise.
-    if (Array.isArray(am) && am.length === 0) {
-      callback(validationError('Allowed modes cannot be empty — select at least one mode (or all to leave unrestricted).'));
-      return;
+  // we (watchdogs_enabled): object with 0/1 values per watchdog id.
+  // null clears all; unknown ids are silently dropped.
+  if (newConfig.we !== undefined) {
+    if (newConfig.we === null) {
+      config.we = {};
+    } else if (typeof newConfig.we === 'object') {
+      var we = {};
+      var weIds = ['sng', 'scs', 'ggr'];
+      for (var wi = 0; wi < weIds.length; wi++) {
+        var weId = weIds[wi];
+        if (newConfig.we[weId] !== undefined) {
+          we[weId] = newConfig.we[weId] ? 1 : 0;
+        } else if (config.we && config.we[weId] !== undefined) {
+          we[weId] = config.we[weId];
+        }
+      }
+      config.we = we;
     }
-    // null or all 5 modes = unrestricted; normalize to null to save KVS space
-    if (!Array.isArray(am) || am.length >= 5) {
-      config.am = null;
-    } else {
-      config.am = am;
+  }
+
+  // wz (watchdog_snooze): object with unix-seconds values.
+  // null clears all; 0 or null for a specific key removes that entry.
+  if (newConfig.wz !== undefined) {
+    if (newConfig.wz === null) {
+      config.wz = {};
+    } else if (typeof newConfig.wz === 'object') {
+      config.wz = config.wz || {};
+      var wzIds = ['sng', 'scs', 'ggr'];
+      for (var zi = 0; zi < wzIds.length; zi++) {
+        var wzId = wzIds[zi];
+        var wzVal = newConfig.wz[wzId];
+        if (wzVal === 0 || wzVal === null) {
+          delete config.wz[wzId];
+        } else if (typeof wzVal === 'number' && wzVal > 0) {
+          config.wz[wzId] = wzVal;
+        }
+      }
+    }
+  }
+
+  // wb (mode_bans): object with unix-seconds values. Sentinel 9999999999
+  // represents a user-set permanent ban. 0 or null for a specific key
+  // removes that entry. null for the field clears all bans.
+  if (newConfig.wb !== undefined) {
+    if (newConfig.wb === null) {
+      config.wb = {};
+    } else if (typeof newConfig.wb === 'object') {
+      config.wb = config.wb || {};
+      var wbKeys = ['I', 'SC', 'GH', 'AD', 'EH'];
+      for (var bi = 0; bi < wbKeys.length; bi++) {
+        var wbKey = wbKeys[bi];
+        var wbVal = newConfig.wb[wbKey];
+        if (wbVal === 0 || wbVal === null) {
+          delete config.wb[wbKey];
+        } else if (typeof wbVal === 'number' && wbVal > 0) {
+          config.wb[wbKey] = wbVal;
+        }
+      }
     }
   }
   // Manual override session
@@ -269,10 +340,12 @@ function _reset() {
 
 module.exports = {
   DEFAULT_CONFIG: DEFAULT_CONFIG,
+  WB_PERMANENT_SENTINEL: WB_PERMANENT_SENTINEL,
   load: load,
   save: save,
   getConfig: getConfig,
   updateConfig: updateConfig,
+  migrateAmToWb: migrateAmToWb,
   handleGet: handleGet,
   handlePut: handlePut,
   _reset: _reset,
