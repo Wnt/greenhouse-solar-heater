@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Liquid Glass Test</title>
+  <style>
+    :root {
+      --bar-w: 400px;
+      --bar-h: 72px;
+      --bar-r: 36px;
+      --glass-bg-alpha: 0.60;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #0c0e12; color: #e0e5f5; font-family: -apple-system, sans-serif; }
+    body { min-height: 100vh; }
+
+    .bg {
+      padding: 24px;
+      padding-bottom: 200px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 16px;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    .tile {
+      aspect-ratio: 1;
+      border-radius: 12px;
+      display: flex;
+      align-items: flex-end;
+      padding: 12px;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+      background-size: cover;
+      background-position: center;
+      position: relative;
+    }
+    .tile::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        repeating-linear-gradient(0deg, rgba(0,0,0,0.25) 0 2px, transparent 2px 12px),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.15) 0 2px, transparent 2px 12px);
+      border-radius: inherit;
+    }
+    .tile:nth-child(8n+1) { background: linear-gradient(135deg, #ff6b6b, #feca57); }
+    .tile:nth-child(8n+2) { background: linear-gradient(135deg, #4834d4, #686de0); }
+    .tile:nth-child(8n+3) { background: linear-gradient(135deg, #00d2d3, #54a0ff); }
+    .tile:nth-child(8n+4) { background: linear-gradient(135deg, #ff9ff3, #f368e0); }
+    .tile:nth-child(8n+5) { background: linear-gradient(135deg, #1dd1a1, #10ac84); }
+    .tile:nth-child(8n+6) { background: linear-gradient(135deg, #feca57, #ff9f43); }
+    .tile:nth-child(8n+7) { background: linear-gradient(135deg, #5f27cd, #341f97); }
+    .tile:nth-child(8n+0) { background: linear-gradient(135deg, #ee5253, #ff6b6b); }
+
+    h1 {
+      grid-column: 1 / -1;
+      font-size: 32px;
+      margin: 0 0 8px 0;
+      font-family: 'Newsreader', Georgia, serif;
+      font-weight: 500;
+      color: #e9c349;
+    }
+    p {
+      grid-column: 1 / -1;
+      margin: 0 0 24px 0;
+      opacity: 0.7;
+      line-height: 1.6;
+      max-width: 60ch;
+    }
+
+    .toolbar-wrap {
+      pointer-events: none;
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      width: var(--bar-w);
+      height: var(--bar-h);
+      z-index: 10;
+    }
+
+    .glass {
+      position: absolute;
+      inset: 0;
+      border-radius: var(--bar-r);
+      background: rgba(20, 24, 32, var(--glass-bg-alpha));
+      backdrop-filter: url(#liquid-glass);
+      -webkit-backdrop-filter: blur(20px) saturate(1.2);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+    }
+    .controls {
+      pointer-events: auto;
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 24px;
+    }
+    .controls button {
+      background: none;
+      border: none;
+      color: #e0e5f5;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 20px;
+      transition: background 0.2s;
+    }
+    .controls button:hover { background: rgba(255, 255, 255, 0.1); }
+    .controls button.primary {
+      background: rgba(255, 255, 255, 0.15);
+      width: 52px;
+      height: 52px;
+    }
+
+    /* Plain-blur comparison toggle */
+    body.plain .glass {
+      backdrop-filter: blur(20px) saturate(1.2);
+      -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    }
+
+    .hint {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      z-index: 20;
+    }
+    .hint button {
+      margin-left: 8px;
+      background: #e9c349;
+      color: #000;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <!-- Hidden SVG filter defs. Blog parameters applied:
+         Refraction Level = 1.00  → scale = maxDisplacement (27.75)
+         Blur Level = 2.4         → feGaussianBlur stdDeviation="2.4"
+         Specular Saturation = 14 → feColorMatrix values="14"
+         Specular Opacity = 0.24  → feFuncA slope="0.24" -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <filter id="liquid-glass" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="2.4" result="blurred_source"/>
+        <feImage href="assets/liquid-glass-displacement.png" x="0" y="0" width="400" height="72" result="displacement_map"/>
+        <feDisplacementMap in="blurred_source" in2="displacement_map" scale="37"
+                           xChannelSelector="R" yChannelSelector="G" result="displaced"/>
+        <feColorMatrix in="displaced" type="saturate" values="14" result="displaced_saturated"/>
+        <feImage href="assets/liquid-glass-specular.png" x="0" y="0" width="400" height="72" result="specular_layer"/>
+        <feComposite in="displaced_saturated" in2="specular_layer" operator="in" result="specular_saturated"/>
+        <feComponentTransfer in="specular_layer" result="specular_faded">
+          <feFuncA type="linear" slope="0.24"/>
+        </feComponentTransfer>
+        <feBlend in="specular_saturated" in2="displaced" mode="normal" result="withSaturation"/>
+        <feBlend in="specular_faded" in2="withSaturation" mode="normal"/>
+      </filter>
+    </defs>
+  </svg>
+
+  <div class="hint">
+    Liquid glass <button onclick="document.body.classList.toggle('plain')">toggle plain</button>
+  </div>
+
+  <div class="bg">
+    <h1>Liquid Glass Test</h1>
+    <p>Scroll behind the bar to see refraction at the bezel edges, specular highlight on the upper-left rim, and progressive blur softening the background as it approaches.</p>
+    <div class="tile">Are you experienced</div>
+    <div class="tile">Electric Ladyland</div>
+    <div class="tile">Blues</div>
+    <div class="tile">Axis: Bold as Love</div>
+    <div class="tile">Band of Gypsys</div>
+    <div class="tile">Cry of Love</div>
+    <div class="tile">Live at Woodstock</div>
+    <div class="tile">Voodoo Child</div>
+    <div class="tile">Valleys of Neptune</div>
+    <div class="tile">Both Sides of the Sky</div>
+    <div class="tile">Rainbow Bridge</div>
+    <div class="tile">People, Hell & Angels</div>
+    <div class="tile">First Rays</div>
+    <div class="tile">South Saturn Delta</div>
+    <div class="tile">Hendrix in the West</div>
+    <div class="tile">Smash Hits</div>
+  </div>
+
+  <div class="toolbar-wrap">
+    <div class="glass"></div>
+    <div class="controls">
+      <button>⏮</button>
+      <button>⏪</button>
+      <button class="primary">▶</button>
+      <button>⏩</button>
+      <button>⏭</button>
+    </div>
+  </div>
+</body>
+</html>
