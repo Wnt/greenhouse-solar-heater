@@ -200,6 +200,59 @@ test.describe('Account actions (logout + Add Device)', () => {
     await expect(err).toContainText('already exists');
   });
 
+  test('user management list supports rename via PATCH', async ({ page }) => {
+    await page.route('**/auth/status', route =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ authenticated: true, setupMode: false, registrationOpen: true, role: 'admin', name: 'alice' }),
+      })
+    );
+    let usersResponses = [
+      { users: [
+        { id: 'u1', name: 'alice', role: 'admin', credentialCount: 1, isCurrent: true },
+        { id: 'u2', name: 'bob', role: 'readonly', credentialCount: 1, isCurrent: false },
+      ] },
+      { users: [
+        { id: 'u1', name: 'alice', role: 'admin', credentialCount: 1, isCurrent: true },
+        { id: 'u2', name: 'bobby', role: 'readonly', credentialCount: 1, isCurrent: false },
+      ] },
+    ];
+    let callIdx = 0;
+    await page.route('**/auth/users', route =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(usersResponses[Math.min(callIdx++, usersResponses.length - 1)]),
+      })
+    );
+    const patchPromise = page.waitForRequest(req =>
+      req.url().includes('/auth/users/u2') && req.method() === 'PATCH'
+    );
+    await page.route('**/auth/users/u2', route =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, user: { id: 'u2', name: 'bobby', role: 'readonly' } }),
+      })
+    );
+
+    await page.goto('/playground/');
+    await gotoSettings(page);
+
+    const list = page.locator('#users-list');
+    await expect(list).toContainText('bob');
+
+    // Stub window.prompt to return the new name without UI interaction
+    await page.evaluate(() => { window.prompt = () => 'bobby'; });
+    await list.locator('.user-edit-btn').nth(1).click();
+
+    const req = await patchPromise;
+    expect(JSON.parse(req.postData() || '{}')).toEqual({ name: 'bobby' });
+
+    await expect(list).toContainText('bobby', { timeout: 5000 });
+  });
+
   test('user management list renders and supports delete', async ({ page }) => {
     await page.route('**/auth/status', route =>
       route.fulfill({

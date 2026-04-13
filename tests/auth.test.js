@@ -147,6 +147,59 @@ describe('credential store', function () {
     assert.throws(function () { store.deleteUser(admin.id); }, /last admin/);
   });
 
+  it('updateUser renames a user', function () {
+    var store = require('../server/auth/credentials');
+    store.load();
+    var user = store.createUser('alice');
+    var updated = store.updateUser(user.id, { name: 'alicia' });
+    assert.strictEqual(updated.name, 'alicia');
+    assert.strictEqual(store.findUserByName('alicia').id, user.id);
+    assert.strictEqual(store.findUserByName('alice'), null);
+  });
+
+  it('updateUser rejects empty or duplicate names', function () {
+    var store = require('../server/auth/credentials');
+    store.load();
+    var alice = store.createUser('alice');
+    store.createUser('bob', 'readonly');
+    assert.throws(function () { store.updateUser(alice.id, { name: '' }); }, /required/);
+    assert.throws(function () { store.updateUser(alice.id, { name: '   ' }); }, /required/);
+    assert.throws(function () { store.updateUser(alice.id, { name: 'bob' }); }, /already exists/);
+  });
+
+  it('updateUser allows renaming to current name (no-op)', function () {
+    var store = require('../server/auth/credentials');
+    store.load();
+    var user = store.createUser('alice');
+    var updated = store.updateUser(user.id, { name: 'alice' });
+    assert.strictEqual(updated.name, 'alice');
+  });
+
+  it('updateUser changes role between admin and readonly', function () {
+    var store = require('../server/auth/credentials');
+    store.load();
+    store.createUser('admin');
+    var bob = store.createUser('bob', 'readonly');
+    var updated = store.updateUser(bob.id, { role: 'admin' });
+    assert.strictEqual(updated.role, 'admin');
+    var demoted = store.updateUser(bob.id, { role: 'readonly' });
+    assert.strictEqual(demoted.role, 'readonly');
+  });
+
+  it('updateUser refuses to demote the last admin', function () {
+    var store = require('../server/auth/credentials');
+    store.load();
+    var admin = store.createUser('only-admin');
+    store.createUser('viewer', 'readonly');
+    assert.throws(function () { store.updateUser(admin.id, { role: 'readonly' }); }, /last admin/);
+  });
+
+  it('updateUser throws for unknown user', function () {
+    var store = require('../server/auth/credentials');
+    store.load();
+    assert.throws(function () { store.updateUser('does-not-exist', { name: 'x' }); }, /not found/);
+  });
+
   it('addCredential requires userId and links credential to user', function () {
     var store = require('../server/auth/credentials');
     store.load();

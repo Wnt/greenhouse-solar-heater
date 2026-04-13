@@ -211,6 +211,59 @@ function deleteUser(userId) {
   return true;
 }
 
+// Update a user's name and/or role. Throws on duplicate names, unknown
+// users, or attempts to demote the last admin.
+function updateUser(userId, updates) {
+  var s = getStore();
+  var user = null;
+  for (var i = 0; i < s.users.length; i++) {
+    if (s.users[i].id === userId) { user = s.users[i]; break; }
+  }
+  if (!user) throw new Error('User not found');
+
+  var nextName = user.name;
+  if (updates && typeof updates.name === 'string') {
+    var trimmed = updates.name.trim();
+    if (!trimmed) throw new Error('name is required');
+    if (trimmed.length > 64) throw new Error('Name is too long (max 64 chars)');
+    if (trimmed !== user.name) {
+      var existing = findUserByName(trimmed);
+      if (existing && existing.id !== userId) {
+        throw new Error('A user with that name already exists');
+      }
+      nextName = trimmed;
+    }
+  }
+
+  var nextRole = user.role;
+  if (updates && typeof updates.role === 'string') {
+    var requested = updates.role === ROLES.READONLY ? ROLES.READONLY : ROLES.ADMIN;
+    if (requested !== user.role) {
+      // Refuse to demote the last admin.
+      if (user.role === ROLES.ADMIN && requested !== ROLES.ADMIN) {
+        var otherAdmins2 = 0;
+        for (var j = 0; j < s.users.length; j++) {
+          if (s.users[j].id !== userId && s.users[j].role === ROLES.ADMIN) otherAdmins2++;
+        }
+        if (otherAdmins2 === 0) {
+          throw new Error('Cannot demote the last admin user');
+        }
+      }
+      nextRole = requested;
+    }
+  }
+
+  if (nextName === user.name && nextRole === user.role) {
+    return user; // no-op
+  }
+
+  user.name = nextName;
+  user.role = nextRole;
+  save();
+  log.info('user updated', { name: user.name, role: user.role });
+  return user;
+}
+
 function countAdmins() {
   var users = getStore().users;
   var n = 0;
@@ -372,6 +425,7 @@ module.exports = {
   findUserByName: findUserByName,
   createUser: createUser,
   deleteUser: deleteUser,
+  updateUser: updateUser,
   countAdmins: countAdmins,
   getCredentials: getCredentials,
   getCredentialsForUser: getCredentialsForUser,

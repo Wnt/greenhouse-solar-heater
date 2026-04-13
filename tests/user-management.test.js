@@ -226,6 +226,98 @@ describe('user management API', function () {
     assert.strictEqual(res.statusCode, 404);
   });
 
+  // ── PATCH /auth/users/:id ──
+
+  it('PATCH /auth/users/:id requires admin role', function () {
+    var ro = createReadonlyAndSession('bob');
+    var target = credStore.createUser('alice');
+    var req = reqWithSession('PATCH', '/auth/users/' + target.id, ro.sessionToken);
+    var res = mockRes();
+    webauthn.handleRequest(req, res, '/auth/users/' + target.id, JSON.stringify({ name: 'eve' }));
+    assert.strictEqual(res.statusCode, 403);
+    assert.strictEqual(credStore.getUserById(target.id).name, 'alice');
+  });
+
+  it('PATCH /auth/users/:id renames a user', function () {
+    var admin = createAdminAndSession('alice');
+    var target = credStore.createUser('bob', 'readonly');
+    var req = reqWithSession('PATCH', '/auth/users/' + target.id, admin.sessionToken);
+    var res = mockRes();
+    webauthn.handleRequest(req, res, '/auth/users/' + target.id, JSON.stringify({ name: 'bobby' }));
+    assert.strictEqual(res.statusCode, 200);
+    var body = jsonBody(res);
+    assert.strictEqual(body.user.name, 'bobby');
+    assert.strictEqual(credStore.getUserById(target.id).name, 'bobby');
+  });
+
+  it('PATCH /auth/users/:id rejects duplicate name', function () {
+    var admin = createAdminAndSession('alice');
+    credStore.createUser('eve', 'readonly');
+    var target = credStore.createUser('bob', 'readonly');
+    var req = reqWithSession('PATCH', '/auth/users/' + target.id, admin.sessionToken);
+    var res = mockRes();
+    webauthn.handleRequest(req, res, '/auth/users/' + target.id, JSON.stringify({ name: 'eve' }));
+    assert.strictEqual(res.statusCode, 400);
+  });
+
+  it('PATCH /auth/users/:id changes role between admin and readonly', function () {
+    var admin = createAdminAndSession('alice');
+    var target = credStore.createUser('bob', 'readonly');
+    var req = reqWithSession('PATCH', '/auth/users/' + target.id, admin.sessionToken);
+    var res = mockRes();
+    webauthn.handleRequest(req, res, '/auth/users/' + target.id, JSON.stringify({ role: 'admin' }));
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(credStore.getUserById(target.id).role, 'admin');
+  });
+
+  it('PATCH /auth/users/:id refuses changing your own role', function () {
+    var admin = createAdminAndSession('alice');
+    credStore.createUser('charlie'); // keeps another admin so the
+    // last-admin guard doesn't fire — we want to confirm the
+    // explicit self-demotion guard is the one rejecting.
+    var req = reqWithSession('PATCH', '/auth/users/' + admin.user.id, admin.sessionToken);
+    var res = mockRes();
+    webauthn.handleRequest(req, res, '/auth/users/' + admin.user.id, JSON.stringify({ role: 'readonly' }));
+    assert.strictEqual(res.statusCode, 400);
+    assert.match(jsonBody(res).error, /your own role/i);
+    assert.strictEqual(credStore.getUserById(admin.user.id).role, 'admin');
+  });
+
+  it('PATCH /auth/users/:id refuses demoting the last admin', function () {
+    var admin = createAdminAndSession('alice');
+    var helper = credStore.createUser('helper');
+    var ses2 = credStore.createSession(helper.id);
+    // helper is also an admin; from helper's session we try to demote alice
+    // — that would leave helper as the only admin, which is fine. So we
+    // use a third user as a target instead: helper demotes alice while
+    // alice is the only "other" admin → store-level last-admin guard
+    // does not apply. To exercise the guard we delete helper first.
+    credStore.deleteUser(helper.id);
+    void ses2;
+    // Now alice is the only admin. Try to PATCH alice via alice's
+    // session — caught by the self-demotion guard, not the store. Use
+    // the credential store directly to confirm the store-level guard.
+    assert.throws(function () { credStore.updateUser(admin.user.id, { role: 'readonly' }); }, /last admin/);
+  });
+
+  it('PATCH /auth/users/:id returns 404 for unknown user', function () {
+    var admin = createAdminAndSession('alice');
+    var req = reqWithSession('PATCH', '/auth/users/nope', admin.sessionToken);
+    var res = mockRes();
+    webauthn.handleRequest(req, res, '/auth/users/nope', JSON.stringify({ name: 'x' }));
+    assert.strictEqual(res.statusCode, 404);
+  });
+
+  it('PUT /auth/users/:id is also accepted as an alias for PATCH', function () {
+    var admin = createAdminAndSession('alice');
+    var target = credStore.createUser('bob', 'readonly');
+    var req = reqWithSession('PUT', '/auth/users/' + target.id, admin.sessionToken);
+    var res = mockRes();
+    webauthn.handleRequest(req, res, '/auth/users/' + target.id, JSON.stringify({ name: 'bobby' }));
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(credStore.getUserById(target.id).name, 'bobby');
+  });
+
   // ── POST /auth/invite/create ──
 
   it('POST /auth/invite/create requires admin role', function () {

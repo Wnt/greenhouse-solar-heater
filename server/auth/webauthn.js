@@ -118,6 +118,8 @@ function handleRequest(req, res, urlPath, body) {
     handleListUsers(req, res);
   } else if (req.method === 'DELETE' && urlPath.indexOf('/auth/users/') === 0) {
     handleDeleteUser(req, res, urlPath);
+  } else if ((req.method === 'PATCH' || req.method === 'PUT') && urlPath.indexOf('/auth/users/') === 0) {
+    handleUpdateUser(req, res, urlPath, body);
   } else {
     jsonResponse(res, 404, { error: 'Not found' });
   }
@@ -203,6 +205,53 @@ function handleListUsers(req, res) {
     };
   });
   jsonResponse(res, 200, { users: users });
+}
+
+// ── PATCH /auth/users/:id ──
+
+function handleUpdateUser(req, res, urlPath, body) {
+  var caller = requireAdmin(req, res);
+  if (!caller) return;
+
+  var userId = urlPath.substring('/auth/users/'.length);
+  if (!userId) {
+    jsonResponse(res, 400, { error: 'Missing user id' });
+    return;
+  }
+  var target = credStore.getUserById(userId);
+  if (!target) {
+    jsonResponse(res, 404, { error: 'User not found' });
+    return;
+  }
+
+  var parsed;
+  try {
+    parsed = body ? JSON.parse(body) : {};
+  } catch (e) {
+    jsonResponse(res, 400, { error: 'Invalid JSON body' });
+    return;
+  }
+
+  var updates = {};
+  if (typeof parsed.name === 'string') updates.name = parsed.name;
+  if (typeof parsed.role === 'string') updates.role = parsed.role;
+
+  // Refuse self-demotion so an admin can't lock themselves out via the API.
+  if (target.id === caller.id && updates.role && updates.role !== caller.role) {
+    jsonResponse(res, 400, { error: 'Cannot change your own role' });
+    return;
+  }
+
+  try {
+    var updated = credStore.updateUser(userId, updates);
+    jsonResponse(res, 200, {
+      ok: true,
+      user: { id: updated.id, name: updated.name, role: updated.role },
+    });
+  } catch (err) {
+    var status = err.message === 'User not found' ? 404 : 400;
+    jsonResponse(res, status, { error: err.message });
+  }
 }
 
 // ── DELETE /auth/users/:id ──

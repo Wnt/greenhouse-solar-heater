@@ -311,42 +311,93 @@ function renderUsers(users) {
     return;
   }
   list.innerHTML = '';
-  users.forEach(u => {
-    const row = document.createElement('div');
-    row.className = 'user-row';
+  users.forEach(u => list.appendChild(buildUserRow(u)));
+}
 
-    const info = document.createElement('div');
-    info.className = 'user-info';
+function buildUserRow(u) {
+  const row = document.createElement('div');
+  row.className = 'user-row';
+  row.dataset.userId = u.id;
 
-    const nameEl = document.createElement('div');
-    nameEl.className = 'user-name';
-    nameEl.textContent = u.name + (u.isCurrent ? ' (you)' : '');
-    info.appendChild(nameEl);
+  const info = document.createElement('div');
+  info.className = 'user-info';
 
-    const meta = document.createElement('div');
-    meta.className = 'user-meta';
-    const passkeyLabel = u.credentialCount === 1 ? '1 passkey' : (u.credentialCount + ' passkeys');
-    meta.textContent = passkeyLabel;
-    info.appendChild(meta);
+  const nameEl = document.createElement('div');
+  nameEl.className = 'user-name';
+  nameEl.textContent = u.name + (u.isCurrent ? ' (you)' : '');
+  info.appendChild(nameEl);
 
-    row.appendChild(info);
+  const meta = document.createElement('div');
+  meta.className = 'user-meta';
+  const passkeyLabel = u.credentialCount === 1 ? '1 passkey' : (u.credentialCount + ' passkeys');
+  meta.textContent = passkeyLabel;
+  info.appendChild(meta);
 
-    const badge = document.createElement('span');
-    badge.className = 'user-role-badge user-role-' + u.role;
-    badge.textContent = u.role === 'readonly' ? 'Read-only' : 'Admin';
-    row.appendChild(badge);
+  row.appendChild(info);
 
-    if (!u.isCurrent) {
-      const del = document.createElement('button');
-      del.className = 'user-delete-btn';
-      del.title = 'Delete user';
-      del.innerHTML = '<span class="material-symbols-outlined">delete</span>';
-      del.addEventListener('click', () => deleteUser(u));
-      row.appendChild(del);
+  const badge = document.createElement('span');
+  badge.className = 'user-role-badge user-role-' + u.role;
+  badge.textContent = u.role === 'readonly' ? 'Read-only' : 'Admin';
+  badge.title = u.isCurrent ? 'You cannot change your own role' : 'Click to toggle role';
+  if (!u.isCurrent) {
+    badge.classList.add('user-role-clickable');
+    badge.addEventListener('click', () => toggleRole(u));
+  }
+  row.appendChild(badge);
+
+  const edit = document.createElement('button');
+  edit.className = 'user-edit-btn';
+  edit.title = 'Rename user';
+  edit.innerHTML = '<span class="material-symbols-outlined">edit</span>';
+  edit.addEventListener('click', () => renameUser(u));
+  row.appendChild(edit);
+
+  if (!u.isCurrent) {
+    const del = document.createElement('button');
+    del.className = 'user-delete-btn';
+    del.title = 'Delete user';
+    del.innerHTML = '<span class="material-symbols-outlined">delete</span>';
+    del.addEventListener('click', () => deleteUser(u));
+    row.appendChild(del);
+  }
+
+  return row;
+}
+
+async function patchUser(user, updates, confirmMessage) {
+  if (confirmMessage && !confirm(confirmMessage)) return false;
+  try {
+    const res = await fetch('/auth/users/' + encodeURIComponent(user.id), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || ('Failed to update user (HTTP ' + res.status + ')'));
+      return false;
     }
+    return true;
+  } catch (err) {
+    alert('Network error: ' + err.message);
+    return false;
+  }
+}
 
-    list.appendChild(row);
-  });
+async function renameUser(user) {
+  const next = prompt('Rename "' + user.name + '" to:', user.name);
+  if (next === null) return;
+  const trimmed = next.trim();
+  if (!trimmed || trimmed === user.name) return;
+  const ok = await patchUser(user, { name: trimmed });
+  if (ok) refreshUsers();
+}
+
+async function toggleRole(user) {
+  const next = user.role === 'admin' ? 'readonly' : 'admin';
+  const label = next === 'admin' ? 'Admin' : 'Read-only';
+  const ok = await patchUser(user, { role: next }, 'Change ' + user.name + '\u2019s role to ' + label + '?');
+  if (ok) refreshUsers();
 }
 
 async function deleteUser(user) {
