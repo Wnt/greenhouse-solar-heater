@@ -12,6 +12,9 @@ export const store = createStore({
   phase: 'init',             // 'init' | 'simulation' | 'live'
   isLiveCapable: false,
 
+  // Auth
+  userRole: 'admin',         // 'admin' | 'readonly'
+
   // Navigation
   currentView: 'status',
 
@@ -57,6 +60,7 @@ export const derived = {
 
   get availableViews() {
     const phase = store.get('phase');
+    const role = store.get('userRole');
     // 'components' is the merged System view (schematic + sensors/valves/actuators).
     // 'device' is the merged Device view (sensor assignment + controller runtime config).
     // Settings (PWA install, notifications, account) only makes sense when the
@@ -67,6 +71,11 @@ export const derived = {
     if (phase === 'live' || phase === 'init') views.push('device');
     if (phase === 'simulation') views.push('controls');
     if (hasSettings) views.push('settings');
+    // Read-only users cannot see Controls or Device — they would be useless
+    // (server enforces admin-only on every mutating endpoint).
+    if (role === 'readonly') {
+      return views.filter(v => v !== 'controls' && v !== 'device');
+    }
     return views;
   },
 

@@ -27,7 +27,7 @@ When making changes, **update system.yaml first**, then propagate to affected do
 - `playground/vendor/simplewebauthn-browser.mjs` → vendored @simplewebauthn/browser 13.3.0
 - `playground/vendor/qrcode-generator.mjs` → vendored qrcode-generator 2.0.4 (invitation QR codes)
 - `server/` → Node.js API server (serves playground, WebSocket, MQTT bridge, auth, device config, sensor config, history, push notifications). All device communication flows through MQTT — no direct HTTP RPC to Shelly devices.
-- `server/auth/` → WebAuthn passkey authentication (credential store, session management, WebAuthn handlers, invitation-based registration)
+- `server/auth/` → WebAuthn passkey authentication: multi-user credential store with role-based access (`admin`, `readonly`), session management, WebAuthn handlers, invitation-based registration. Read-only users can browse the playground but are blocked from every mutating endpoint (PUT device-config, PUT sensor-config, sensor-config/apply, sensor-discovery, WebSocket override/relay commands). The credential store auto-migrates the legacy single-user `{user: {...}}` JSON shape to the new `{users: [...]}` shape on first load. New endpoints: `GET /auth/users` (list, any authenticated user), `DELETE /auth/users/:id` (admin only, refuses self-delete and last-admin removal). The `POST /auth/invite/create` endpoint now requires a name and accepts a `role` field (`admin` | `readonly`); the role + name are stored on the invitation and the new device inherits them on registration. `GET /auth/status` exposes `role` + `name`.
 - `server/lib/logger.js` → structured JSON logger (used by server and auth modules)
 - `server/lib/s3-storage.js` → S3/local filesystem storage adapter (credentials persistence)
 - `server/lib/vpn-config.js` → VPN config S3 persistence CLI (download/upload openvpn.conf)
@@ -245,7 +245,8 @@ npm run screenshots   # regenerate all screenshots (runs 24h simulation, ~1-2 mi
 
 - `tests/control-logic.test.js` — unit tests for the pure control logic (`shelly/control-logic.js`)
 - `tests/playground-control.test.js` — unit tests for the playground control state machine (`playground/js/control.js`)
-- `tests/auth.test.js` — unit tests for auth modules (session signing, credential store)
+- `tests/auth.test.js` — unit tests for auth modules (session signing, multi-user credential store, role-aware invitations, legacy single-user store migration)
+- `tests/user-management.test.js` — unit tests for the role-enforcing webauthn handlers (`GET /auth/status`, `GET /auth/users`, `DELETE /auth/users/:id`, `POST /auth/invite/create`, `POST /auth/invite/validate`, `requireAdmin`/`requireUser` helpers)
 - `tests/s3-storage.test.js` — unit tests for S3 storage adapter (local fallback mode, S3 detection)
 - `tests/vpn-config.test.js` — unit tests for VPN config S3 persistence helper
 - `tests/db.test.js` — unit tests for PostgreSQL/TimescaleDB module (schema init, inserts, queries)

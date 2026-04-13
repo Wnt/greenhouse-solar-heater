@@ -69,11 +69,11 @@
         <span class="material-symbols-outlined">schema</span>
         System
       </a>
-      <a data-view="controls">
+      <a data-view="controls" data-admin-only>
         <span class="material-symbols-outlined">tune</span>
         Controls
       </a>
-      <a data-view="device" class="live-only" style="display:none;">
+      <a data-view="device" class="live-only" data-admin-only style="display:none;">
         <span class="material-symbols-outlined">settings_remote</span>
         Device
       </a>
@@ -110,11 +110,11 @@
       <span class="material-symbols-outlined">schema</span>
       <span>System</span>
     </a>
-    <a data-view="controls">
+    <a data-view="controls" data-admin-only>
       <span class="material-symbols-outlined">tune</span>
       <span>Controls</span>
     </a>
-    <a data-view="device" class="live-only" style="display:none;">
+    <a data-view="device" class="live-only" data-admin-only style="display:none;">
       <span class="material-symbols-outlined">settings_remote</span>
       <span>Device</span>
     </a>
@@ -332,7 +332,7 @@
     </section>
 
     <!-- ═══ CONTROLS VIEW ═══ -->
-    <section id="view-controls" class="view">
+    <section id="view-controls" class="view" data-admin-only>
       <div class="view-header">
         <h2>Simulation controls.</h2>
         <p>Set environment parameters and initial conditions. Changes apply immediately to the running simulation.</p>
@@ -354,7 +354,7 @@
     </section>
 
     <!-- ═══ DEVICE VIEW (live mode only) ═══ -->
-    <section id="view-device" class="view">
+    <section id="view-device" class="view" data-admin-only>
       <div class="view-header">
         <h2>Device configuration.</h2>
         <p>Sensor assignment and runtime settings for the Shelly controller. Changes are pushed instantly via MQTT.</p>
@@ -596,11 +596,11 @@
         <!-- Account (only shown when authenticated) -->
         <div class="card settings-card" id="auth-actions" hidden>
           <h3>Account</h3>
-          <p class="settings-desc">Share access by inviting a new device, or sign out of this session.</p>
+          <p class="settings-desc">Sign out of this session or invite a new user.</p>
           <div class="settings-btn-stack">
-            <button id="invite-btn" class="auth-btn auth-btn-primary settings-btn" type="button">
-              <span class="material-symbols-outlined">add_to_home_screen</span>
-              <span class="auth-btn-label">Add Device</span>
+            <button id="invite-btn" class="auth-btn auth-btn-primary settings-btn" type="button" data-admin-only>
+              <span class="material-symbols-outlined">person_add</span>
+              <span class="auth-btn-label">Invite User</span>
             </button>
             <button id="logout-btn" class="auth-btn settings-btn" type="button">
               <span class="material-symbols-outlined">logout</span>
@@ -608,20 +608,54 @@
             </button>
           </div>
         </div>
+
+        <!-- User management (admin only) -->
+        <div class="card settings-card" id="users-card" data-admin-only>
+          <div class="users-header">
+            <h3>Users</h3>
+            <button id="users-refresh-btn" class="auth-btn users-refresh-btn" type="button" title="Refresh users list">
+              <span class="material-symbols-outlined">refresh</span>
+            </button>
+          </div>
+          <p class="settings-desc">Manage who can sign in. Read-only users can monitor the system but cannot change controls, push device config, or operate relays.</p>
+          <div id="users-list" class="users-list">
+            <div class="users-loading">Loading…</div>
+          </div>
+        </div>
       </div>
     </section>
 
   </main>
 
-  <!-- ── Invitation modal (Add Device) ── -->
+  <!-- ── Invitation modal (Invite User) ── -->
   <div id="invite-modal" class="invite-modal" hidden>
     <div class="invite-modal-backdrop" id="invite-modal-backdrop"></div>
     <div class="invite-modal-content card">
-      <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;font-size:24px;color:var(--primary);margin-bottom:8px;letter-spacing:-0.01em;text-transform:none;">Add a Device</h3>
-      <p style="color:var(--on-surface-variant);font-size:14px;margin-bottom:20px;">Share this code or scan the QR on your new device to register a passkey. The invitation expires when the timer runs out.</p>
-      <div id="invite-code" class="invite-code"></div>
-      <canvas id="invite-qr" class="invite-qr"></canvas>
-      <div id="invite-timer" class="invite-timer"></div>
+      <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;font-size:24px;color:var(--primary);margin-bottom:8px;letter-spacing:-0.01em;text-transform:none;">Invite a User</h3>
+
+      <div id="invite-form">
+        <p style="color:var(--on-surface-variant);font-size:14px;margin-bottom:16px;">Choose a name and role. They'll receive a 6-digit code and QR to register a passkey.</p>
+        <label class="invite-field-label" for="invite-name-input">Name</label>
+        <input type="text" id="invite-name-input" class="invite-text-input" placeholder="e.g. Alice" autocomplete="off" maxlength="64">
+        <label class="invite-field-label" for="invite-role-select">Role</label>
+        <select id="invite-role-select" class="invite-select">
+          <option value="readonly">Read-only — can monitor only</option>
+          <option value="admin">Admin — full access</option>
+        </select>
+        <button id="invite-create-btn" class="auth-btn auth-btn-primary" type="button" style="margin-top:16px;width:100%;justify-content:center;">
+          <span class="material-symbols-outlined">person_add</span>
+          <span>Create Invitation</span>
+        </button>
+      </div>
+
+      <div id="invite-result" hidden>
+        <p style="color:var(--on-surface-variant);font-size:14px;margin-bottom:8px;">Share this code or scan the QR on the new device. The invitation expires when the timer runs out.</p>
+        <p id="invite-summary" style="color:var(--secondary);font-size:13px;margin-bottom:16px;font-weight:600;"></p>
+        <div id="invite-code" class="invite-code"></div>
+        <canvas id="invite-qr" class="invite-qr"></canvas>
+        <div id="invite-timer" class="invite-timer"></div>
+      </div>
+
       <div id="invite-error" class="invite-error" hidden></div>
       <button id="invite-close-btn" class="auth-btn" type="button" style="margin-top:20px;width:100%;justify-content:center;">Close</button>
     </div>

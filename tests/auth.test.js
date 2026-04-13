@@ -85,32 +85,78 @@ describe('credential store', function () {
   it('starts with empty store when no file exists', function () {
     var store = require('../server/auth/credentials');
     store.load();
-    assert.strictEqual(store.getUser(), null);
+    assert.deepStrictEqual(store.getUsers(), []);
     assert.deepStrictEqual(store.getCredentials(), []);
   });
 
-  it('createUser creates a user with random id', function () {
+  it('createUser creates an admin user with random id by default', function () {
     var store = require('../server/auth/credentials');
     store.load();
     var user = store.createUser('admin');
     assert.strictEqual(user.name, 'admin');
+    assert.strictEqual(user.role, 'admin');
     assert.ok(user.id.length > 0);
+    assert.ok(user.createdAt);
   });
 
-  it('createUser returns existing user on second call', function () {
+  it('createUser supports the readonly role', function () {
+    var store = require('../server/auth/credentials');
+    store.load();
+    var ro = store.createUser('viewer', 'readonly');
+    assert.strictEqual(ro.role, 'readonly');
+  });
+
+  it('createUser allows multiple distinct users', function () {
     var store = require('../server/auth/credentials');
     store.load();
     var first = store.createUser('admin');
-    var second = store.createUser('other');
-    assert.strictEqual(first.id, second.id);
-    assert.strictEqual(second.name, 'admin');
+    var second = store.createUser('alice', 'readonly');
+    assert.notStrictEqual(first.id, second.id);
+    var users = store.getUsers();
+    assert.strictEqual(users.length, 2);
   });
 
-  it('addCredential and getCredentialById work', function () {
+  it('createUser rejects duplicate names', function () {
     var store = require('../server/auth/credentials');
     store.load();
+    store.createUser('admin');
+    assert.throws(function () { store.createUser('admin'); }, /already exists/);
+  });
+
+  it('deleteUser removes the user and their credentials/sessions', function () {
+    var store = require('../server/auth/credentials');
+    store.load();
+    var admin = store.createUser('admin');
+    var viewer = store.createUser('viewer', 'readonly');
+    store.addCredential({ id: 'c1', userId: viewer.id, publicKey: 'pk', counter: 0, transports: [] });
+    var sess = store.createSession(viewer.id);
+    assert.ok(store.validateSession(sess.token));
+    var ok = store.deleteUser(viewer.id);
+    assert.strictEqual(ok, true);
+    assert.strictEqual(store.getUserById(viewer.id), null);
+    assert.strictEqual(store.getCredentialById('c1'), null);
+    assert.strictEqual(store.validateSession(sess.token), null);
+    // Admin still around
+    assert.ok(store.getUserById(admin.id));
+  });
+
+  it('deleteUser refuses to remove the last admin', function () {
+    var store = require('../server/auth/credentials');
+    store.load();
+    var admin = store.createUser('only-admin');
+    assert.throws(function () { store.deleteUser(admin.id); }, /last admin/);
+  });
+
+  it('addCredential requires userId and links credential to user', function () {
+    var store = require('../server/auth/credentials');
+    store.load();
+    var user = store.createUser('admin');
+    assert.throws(function () {
+      store.addCredential({ id: 'no-owner', publicKey: 'pk', counter: 0, transports: [] });
+    }, /userId/);
     store.addCredential({
       id: 'cred-123',
+      userId: user.id,
       publicKey: 'pk-abc',
       counter: 0,
       transports: ['internal'],
@@ -119,25 +165,33 @@ describe('credential store', function () {
     assert.ok(found);
     assert.strictEqual(found.publicKey, 'pk-abc');
     assert.strictEqual(found.counter, 0);
+    assert.strictEqual(found.userId, user.id);
+    var byUser = store.getCredentialsForUser(user.id);
+    assert.strictEqual(byUser.length, 1);
   });
 
   it('updateCredentialCounter updates counter', function () {
     var store = require('../server/auth/credentials');
     store.load();
-    store.addCredential({ id: 'cred-1', publicKey: 'pk', counter: 5, transports: [] });
+    var user = store.createUser('admin');
+    store.addCredential({ id: 'cred-1', userId: user.id, publicKey: 'pk', counter: 5, transports: [] });
     store.updateCredentialCounter('cred-1', 10);
     assert.strictEqual(store.getCredentialById('cred-1').counter, 10);
   });
 
-  it('createSession and validateSession work', function () {
+  it('createSession requires userId and ties session to user', function () {
     var store = require('../server/auth/credentials');
     store.load();
-    var sess = store.createSession();
+    var user = store.createUser('admin');
+    assert.throws(function () { store.createSession(); }, /userId/);
+    var sess = store.createSession(user.id);
     assert.ok(sess.token);
     assert.ok(sess.createdAt);
     assert.ok(sess.expiresAt);
+    assert.strictEqual(sess.userId, user.id);
     var valid = store.validateSession(sess.token);
     assert.ok(valid, 'session should be valid');
+    assert.strictEqual(valid.userId, user.id);
   });
 
   it('validateSession returns null for unknown token', function () {
@@ -149,7 +203,8 @@ describe('credential store', function () {
   it('removeSession deletes a session', function () {
     var store = require('../server/auth/credentials');
     store.load();
-    var sess = store.createSession();
+    var user = store.createUser('admin');
+    var sess = store.createSession(user.id);
     store.removeSession(sess.token);
     assert.strictEqual(store.validateSession(sess.token), null);
   });
@@ -164,7 +219,8 @@ describe('credential store', function () {
     var store = require('../server/auth/credentials');
     store.load();
     store.initSetup();
-    store.addCredential({ id: 'c1', publicKey: 'pk', counter: 0, transports: [] });
+    var user = store.createUser('admin');
+    store.addCredential({ id: 'c1', userId: user.id, publicKey: 'pk', counter: 0, transports: [] });
     assert.strictEqual(store.isRegistrationOpen(), false);
   });
 
@@ -182,14 +238,41 @@ describe('credential store', function () {
   it('persists data to JSON file', function () {
     var store = require('../server/auth/credentials');
     store.load();
-    store.createUser('test');
-    store.addCredential({ id: 'persist-test', publicKey: 'pk', counter: 1, transports: [] });
+    var user = store.createUser('test');
+    store.addCredential({ id: 'persist-test', userId: user.id, publicKey: 'pk', counter: 1, transports: [] });
 
     // Read file directly
     var raw = JSON.parse(fs.readFileSync(credPath, 'utf8'));
-    assert.strictEqual(raw.user.name, 'test');
+    assert.strictEqual(raw.users.length, 1);
+    assert.strictEqual(raw.users[0].name, 'test');
+    assert.strictEqual(raw.users[0].role, 'admin');
     assert.strictEqual(raw.credentials.length, 1);
     assert.strictEqual(raw.credentials[0].id, 'persist-test');
+    assert.strictEqual(raw.credentials[0].userId, user.id);
+  });
+
+  it('migrates legacy single-user store on load', function () {
+    var legacy = {
+      user: { id: 'legacy-user-id', name: 'admin' },
+      credentials: [{ id: 'legacy-cred', publicKey: 'pk', counter: 0, transports: [] }],
+      sessions: [{ token: 'legacy-tok', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString() }],
+      setup: null,
+    };
+    fs.writeFileSync(credPath, JSON.stringify(legacy));
+    delete require.cache[require.resolve('../server/auth/credentials')];
+    var store = require('../server/auth/credentials');
+    store.load();
+    var users = store.getUsers();
+    assert.strictEqual(users.length, 1);
+    assert.strictEqual(users[0].name, 'admin');
+    assert.strictEqual(users[0].role, 'admin');
+    assert.strictEqual(users[0].id, 'legacy-user-id');
+    var creds = store.getCredentialsForUser('legacy-user-id');
+    assert.strictEqual(creds.length, 1);
+    assert.strictEqual(creds[0].id, 'legacy-cred');
+    var sess = store.validateSession('legacy-tok');
+    assert.ok(sess);
+    assert.strictEqual(sess.userId, 'legacy-user-id');
   });
 
   it('removeSession is idempotent for unknown tokens', function () {
@@ -213,7 +296,8 @@ describe('credential store', function () {
   it('logout flow: create session, remove it, validate returns null', function () {
     var store = require('../server/auth/credentials');
     store.load();
-    var sess = store.createSession();
+    var user = store.createUser('admin');
+    var sess = store.createSession(user.id);
     assert.ok(store.validateSession(sess.token), 'session should be valid before logout');
     store.removeSession(sess.token);
     assert.strictEqual(store.validateSession(sess.token), null, 'session should be invalid after logout');
@@ -222,7 +306,8 @@ describe('credential store', function () {
   it('expireSessions removes expired sessions', function () {
     var store = require('../server/auth/credentials');
     store.load();
-    var sess = store.createSession();
+    var user = store.createUser('admin');
+    var sess = store.createSession(user.id);
 
     // Manually set expiry to the past
     var raw = JSON.parse(fs.readFileSync(credPath, 'utf8'));
@@ -254,6 +339,25 @@ describe('invitations', function () {
     assert.ok(/^\d{6}$/.test(invite.code), 'code should be all digits');
     assert.ok(invite.expiresAt, 'should have expiresAt');
     assert.strictEqual(invite.expiresInSeconds, 300, 'should expire in 300s');
+  });
+
+  it('createInvitation defaults to admin role', function () {
+    var invite = inv.createInvitation('session-1');
+    assert.strictEqual(invite.role, 'admin');
+  });
+
+  it('createInvitation honors readonly role and stores name', function () {
+    var invite = inv.createInvitation('session-1', { role: 'readonly', name: 'Alice' });
+    assert.strictEqual(invite.role, 'readonly');
+    assert.strictEqual(invite.name, 'Alice');
+    var stored = inv.getInvitation(invite.code);
+    assert.ok(stored);
+    assert.strictEqual(stored.role, 'readonly');
+    assert.strictEqual(stored.name, 'Alice');
+  });
+
+  it('getInvitation returns null for invalid code', function () {
+    assert.strictEqual(inv.getInvitation('000000'), null);
   });
 
   it('validateInvitation returns true for valid code', function () {

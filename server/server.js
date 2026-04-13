@@ -209,14 +209,8 @@ function handleDeviceConfigApi(req, res, urlPath, body) {
   }
 
   if (req.method === 'PUT') {
-    // PUT requires auth
-    if (AUTH_ENABLED) {
-      var session = authMiddleware.validateRequest(req);
-      if (!session) {
-        jsonResponse(res, 401, { error: 'Not authenticated' });
-        return;
-      }
-    }
+    // PUT requires admin role
+    if (AUTH_ENABLED && !authMiddleware.requireAdmin(req, res)) return;
     deviceConfig.handlePut(req, res, body, function (config) {
       // Publish to MQTT for instant push to device
       mqttBridge.publishConfig(config);
@@ -342,6 +336,7 @@ function handlePushTest(req, res, body) {
 function resolveRoute(urlPath, method) {
   if (urlPath === '/health') return '/health';
   if (urlPath === '/version') return '/version';
+  if (urlPath.startsWith('/auth/users/')) return '/auth/users/*';
   if (urlPath.startsWith('/auth/')) return '/auth/*';
   if (urlPath === '/api/device-config') return '/api/device-config';
   if (urlPath === '/api/sensor-config') return '/api/sensor-config';
@@ -445,9 +440,11 @@ var server = http.createServer(function (req, res) {
   }
 
   // Auth gate for all other routes
+  var authedSession = null;
+  var currentUser = null;
   if (AUTH_ENABLED) {
-    var session = authMiddleware.validateRequest(req);
-    if (!session) {
+    authedSession = authMiddleware.validateRequest(req);
+    if (!authedSession) {
       if (urlPath.startsWith('/api/')) {
         jsonResponse(res, 401, { error: 'Not authenticated' });
       } else {
@@ -456,6 +453,16 @@ var server = http.createServer(function (req, res) {
       }
       return;
     }
+    currentUser = authMiddleware.getCurrentUser(req);
+  }
+
+  // Helper: enforce admin role on mutating endpoints. Read-only users
+  // can browse the playground but cannot push config or operate relays.
+  function isAdminOrReject() {
+    if (!AUTH_ENABLED) return true;
+    if (currentUser && currentUser.role === 'admin') return true;
+    jsonResponse(res, 403, { error: 'Admin role required' });
+    return false;
   }
 
   // Authenticated routes
@@ -466,6 +473,7 @@ var server = http.createServer(function (req, res) {
   } else if (urlPath === '/api/sensor-config') {
     readBody(req, function (body) {
       if (req.method === 'PUT') {
+        if (!isAdminOrReject()) return;
         sensorConfig.handlePut(req, res, body);
       } else {
         jsonResponse(res, 405, { error: 'Method not allowed' });
@@ -473,12 +481,14 @@ var server = http.createServer(function (req, res) {
     });
   } else if (urlPath === '/api/sensor-config/apply') {
     if (req.method === 'POST') {
+      if (!isAdminOrReject()) return;
       sensorConfig.handleApply(req, res, mqttBridge);
     } else {
       jsonResponse(res, 405, { error: 'Method not allowed' });
     }
   } else if (urlPath.startsWith('/api/sensor-config/apply/')) {
     if (req.method === 'POST') {
+      if (!isAdminOrReject()) return;
       var targetId = urlPath.split('/').pop();
       sensorConfig.handleApplyTarget(req, res, targetId, mqttBridge);
     } else {
@@ -486,6 +496,7 @@ var server = http.createServer(function (req, res) {
     }
   } else if (urlPath === '/api/sensor-discovery') {
     if (req.method === 'POST') {
+      if (!isAdminOrReject()) return;
       readBody(req, function (body) {
         handleSensorDiscovery(req, res, body);
       });
@@ -534,6 +545,12 @@ function handleWsCommand(ws, data) {
     return;
   }
   if (!msg || !msg.type) return;
+
+  // Read-only sessions cannot mutate device state via the websocket.
+  if (ws._role && ws._role !== 'admin') {
+    wsSend(ws, { type: 'override-error', message: 'Admin role required' });
+    return;
+  }
 
   if (msg.type === 'override-enter') {
     handleOverrideEnter(ws, msg);
@@ -664,6 +681,7 @@ function initWebSocket() {
     }
 
     // Auth check for WebSocket upgrade
+    var wsUser = null;
     if (AUTH_ENABLED) {
       var session = authMiddleware.validateRequest(req);
       if (!session) {
@@ -671,9 +689,12 @@ function initWebSocket() {
         socket.destroy();
         return;
       }
+      wsUser = authMiddleware.getCurrentUser(req);
     }
 
     wsServer.handleUpgrade(req, socket, head, function (ws) {
+      // Stamp the role on the socket so command handlers can gate writes.
+      ws._role = wsUser ? wsUser.role : 'admin';
       wsServer.emit('connection', ws, req);
       // Send current MQTT connection status on connect
       ws.send(JSON.stringify({

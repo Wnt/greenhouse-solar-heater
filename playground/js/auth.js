@@ -1,15 +1,54 @@
 /**
- * Auth UI for the playground: checks authentication status and wires up
- * logout + "Add Device" (invitation) actions in the sidebar. When auth is
- * disabled (e.g. local LAN mode, GitHub Pages, or the /auth endpoints are
- * not reachable) the controls stay hidden.
+ * Auth UI for the playground: checks authentication status, exposes the
+ * current user's role to the rest of the app, and wires up logout +
+ * "Add Device" (invitation) + user-management actions in Settings.
+ *
+ * Read-only users see the Settings card collapsed to the logout button —
+ * invitation creation and user management are admin-only.
  */
 import qrcode from 'qrcode-generator';
+import { store } from './app-state.js';
 
 let inviteCountdown = null;
+let currentRole = null;
+let currentName = null;
+let currentUserId = null;
+
+// Subscribers notified whenever the role is resolved or changes.
+const roleListeners = new Set();
 
 function $(id) {
   return document.getElementById(id);
+}
+
+export function getCurrentRole() {
+  return currentRole;
+}
+
+export function isReadOnly() {
+  return currentRole === 'readonly';
+}
+
+export function onRoleChange(listener) {
+  roleListeners.add(listener);
+  // Fire immediately if we already know the role
+  if (currentRole !== null) listener(currentRole);
+  return () => roleListeners.delete(listener);
+}
+
+function setRole(role, name) {
+  const changed = currentRole !== role;
+  currentRole = role;
+  currentName = name || null;
+  if (changed) {
+    document.body.dataset.role = role || '';
+    // Push the role into the app store so derived.availableViews and any
+    // navigation subscribers can react.
+    store.set('userRole', role || 'admin');
+    roleListeners.forEach(fn => {
+      try { fn(role); } catch (e) { /* noop */ }
+    });
+  }
 }
 
 export async function initAuth() {
@@ -20,10 +59,8 @@ export async function initAuth() {
   const inviteBackdrop = $('invite-modal-backdrop');
   const inviteCloseBtn = $('invite-close-btn');
 
-  if (!authActions || !logoutBtn || !inviteBtn) return;
-
-  logoutBtn.addEventListener('click', doLogout);
-  inviteBtn.addEventListener('click', doCreateInvite);
+  if (logoutBtn) logoutBtn.addEventListener('click', doLogout);
+  if (inviteBtn) inviteBtn.addEventListener('click', openCreateInviteForm);
   if (inviteCloseBtn) inviteCloseBtn.addEventListener('click', closeInviteModal);
   if (inviteBackdrop) inviteBackdrop.addEventListener('click', closeInviteModal);
   document.addEventListener('keydown', (e) => {
@@ -32,16 +69,45 @@ export async function initAuth() {
     }
   });
 
+  const createBtn = $('invite-create-btn');
+  if (createBtn) createBtn.addEventListener('click', doCreateInvite);
+
+  const refreshBtn = $('users-refresh-btn');
+  if (refreshBtn) refreshBtn.addEventListener('click', refreshUsers);
+
   try {
     const res = await fetch('/auth/status');
-    if (!res.ok) return; // auth disabled (404) — keep actions hidden
+    if (!res.ok) {
+      // Auth disabled (404). Treat as full admin so all UI shows up.
+      setRole('admin', null);
+      return;
+    }
     const data = await res.json();
     if (data.authenticated) {
-      authActions.hidden = false;
+      currentUserId = null;
+      setRole(data.role || 'admin', data.name || null);
+      if (authActions) authActions.hidden = false;
+      applyRoleVisibility();
+      if (currentRole === 'admin') {
+        refreshUsers();
+      }
+    } else {
+      // Not authenticated and auth IS enabled — initAuth shouldn't normally
+      // be called in that case (server redirects), but keep things safe.
+      setRole('admin', null);
     }
   } catch (err) {
-    // Network error / auth unreachable — keep actions hidden
+    // Network error / auth unreachable — assume admin so the playground
+    // is still usable in offline/local mode.
+    setRole('admin', null);
   }
+}
+
+// CSS handles `[data-admin-only]` visibility off the body[data-role]
+// attribute set by setRole(); this hook stays available for any future
+// programmatic toggles.
+function applyRoleVisibility() {
+  // no-op: see body[data-role="readonly"] [data-admin-only] in style.css
 }
 
 async function doLogout() {
@@ -63,27 +129,67 @@ async function doLogout() {
   }
 }
 
+function openCreateInviteForm() {
+  openInviteModal();
+  showInviteForm();
+}
+
+function showInviteForm() {
+  const form = $('invite-form');
+  const result = $('invite-result');
+  if (form) form.hidden = false;
+  if (result) result.hidden = true;
+  const nameInput = $('invite-name-input');
+  if (nameInput) {
+    nameInput.value = '';
+    setTimeout(() => nameInput.focus(), 60);
+  }
+  const err = $('invite-error');
+  if (err) { err.hidden = true; err.textContent = ''; }
+}
+
 async function doCreateInvite() {
-  const inviteBtn = $('invite-btn');
-  const inviteError = $('invite-error');
-  if (inviteError) inviteError.hidden = true;
-  if (inviteBtn) inviteBtn.disabled = true;
+  const nameInput = $('invite-name-input');
+  const roleSelect = $('invite-role-select');
+  const createBtn = $('invite-create-btn');
+  if (!nameInput || !roleSelect) return;
+
+  const name = nameInput.value.trim();
+  if (!name) {
+    showInviteError('Name is required');
+    return;
+  }
+
+  if (createBtn) createBtn.disabled = true;
   try {
-    const res = await fetch('/auth/invite/create', { method: 'POST' });
+    const res = await fetch('/auth/invite/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, role: roleSelect.value }),
+    });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       showInviteError(err.error || 'Failed to create invitation (HTTP ' + res.status + ')');
-      openInviteModal();
       return;
     }
     const data = await res.json();
-    openInviteModal();
-    renderInvite(data.code, data.expiresInSeconds);
+    showInviteResult(data.code, data.expiresInSeconds, data.role, data.name);
   } catch (err) {
     showInviteError('Network error: ' + err.message);
-    openInviteModal();
   } finally {
-    if (inviteBtn) inviteBtn.disabled = false;
+    if (createBtn) createBtn.disabled = false;
+  }
+}
+
+function showInviteResult(code, expiresInSeconds, role, name) {
+  const form = $('invite-form');
+  const result = $('invite-result');
+  if (form) form.hidden = true;
+  if (result) result.hidden = false;
+  renderInvite(code, expiresInSeconds);
+  const summary = $('invite-summary');
+  if (summary) {
+    summary.textContent = name + ' (' + (role === 'readonly' ? 'read-only' : 'admin') + ')';
   }
 }
 
@@ -176,4 +282,84 @@ function updateInviteTimer(seconds) {
   const sec = seconds % 60;
   timer.textContent = 'Expires in ' + min + ':' + (sec < 10 ? '0' : '') + sec;
   timer.className = seconds <= 30 ? 'invite-timer expiring' : 'invite-timer';
+}
+
+// ── User management ──
+
+async function refreshUsers() {
+  const list = $('users-list');
+  if (!list) return;
+  list.innerHTML = '<div class="users-loading">Loading…</div>';
+  try {
+    const res = await fetch('/auth/users');
+    if (!res.ok) {
+      list.innerHTML = '<div class="users-error">Failed to load users (HTTP ' + res.status + ')</div>';
+      return;
+    }
+    const data = await res.json();
+    renderUsers(data.users || []);
+  } catch (err) {
+    list.innerHTML = '<div class="users-error">Network error: ' + err.message + '</div>';
+  }
+}
+
+function renderUsers(users) {
+  const list = $('users-list');
+  if (!list) return;
+  if (users.length === 0) {
+    list.innerHTML = '<div class="users-empty">No users.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  users.forEach(u => {
+    const row = document.createElement('div');
+    row.className = 'user-row';
+
+    const info = document.createElement('div');
+    info.className = 'user-info';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'user-name';
+    nameEl.textContent = u.name + (u.isCurrent ? ' (you)' : '');
+    info.appendChild(nameEl);
+
+    const meta = document.createElement('div');
+    meta.className = 'user-meta';
+    const passkeyLabel = u.credentialCount === 1 ? '1 passkey' : (u.credentialCount + ' passkeys');
+    meta.textContent = passkeyLabel;
+    info.appendChild(meta);
+
+    row.appendChild(info);
+
+    const badge = document.createElement('span');
+    badge.className = 'user-role-badge user-role-' + u.role;
+    badge.textContent = u.role === 'readonly' ? 'Read-only' : 'Admin';
+    row.appendChild(badge);
+
+    if (!u.isCurrent) {
+      const del = document.createElement('button');
+      del.className = 'user-delete-btn';
+      del.title = 'Delete user';
+      del.innerHTML = '<span class="material-symbols-outlined">delete</span>';
+      del.addEventListener('click', () => deleteUser(u));
+      row.appendChild(del);
+    }
+
+    list.appendChild(row);
+  });
+}
+
+async function deleteUser(user) {
+  if (!confirm('Delete user "' + user.name + '"? This will revoke all their passkeys.')) return;
+  try {
+    const res = await fetch('/auth/users/' + encodeURIComponent(user.id), { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || ('Failed to delete user (HTTP ' + res.status + ')'));
+      return;
+    }
+    refreshUsers();
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
 }
