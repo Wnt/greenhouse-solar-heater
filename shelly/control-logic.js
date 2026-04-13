@@ -104,7 +104,12 @@ var DEFAULT_CONFIG = {
   minRunTimeAfterRefill: 600,
   refillRetryCooldown: 1800,
   sensorStaleThreshold: 150,
-  drainTimeout: 180
+  drainTimeout: 180,
+  // Uniform watchdog cool-off ban duration in seconds (4 hours).
+  // Applied when a watchdog fires and auto-shutdown or user-triggered
+  // "Shutdown now" executes. Mode re-entry is blocked until this
+  // duration elapses or the ban is explicitly cleared via the UI.
+  watchdogBanSeconds: 14400
 };
 
 function applyDefaults(config) {
@@ -782,10 +787,52 @@ function buildDisplayLabels(displayState) {
   return [ch0, ch1, ch2, ch3];
 }
 
+// ── Watchdog anomaly detection ──
+//
+// Pure: no side effects, no Shelly APIs, no Date.now.
+// Returns one of "sng" / "scs" / "ggr" (the watchdog id that should
+// fire this tick) or null. Caller (control.js) is responsible for
+// pending state + timer management.
+//
+// Parameters:
+//   entry : { mode, at, tankTop, collector, greenhouse } | null
+//           at = unix seconds (mode entry time)
+//   now   : unix seconds (caller passes Date.now()/1000 or test clock)
+//   s     : sensor snapshot { collector, tank_top, greenhouse, ... }
+//   cfg   : device config subset { ce, we, wz, mo }
+//
+// Early-exits:
+//   - null entry  -> not in a mode yet
+//   - !cfg.ce     -> controls disabled (commissioning)
+//   - mo.ss=true  -> user explicitly suppressing safety
+//
+// Priority: first-fires-wins by shortest window.
+function detectAnomaly(entry, now, s, cfg) {
+  if (!entry) return null;
+  if (!cfg.ce) return null;
+  if (cfg.mo && cfg.mo.a && cfg.mo.ss) return null;
+
+  var el = now - entry.at;
+  var we = cfg.we || {};
+  var wz = cfg.wz || {};
+
+  if (entry.mode === "SOLAR_CHARGING") {
+    if (we.scs && !(wz.scs > now) && el >= 300 &&
+        (entry.collector - s.collector) < 3) return "scs";
+    if (we.sng && !(wz.sng > now) && el >= 600 &&
+        (s.tank_top - entry.tankTop) < 0.5) return "sng";
+  } else if (entry.mode === "GREENHOUSE_HEATING") {
+    if (we.ggr && !(wz.ggr > now) && el >= 900 &&
+        (s.greenhouse - entry.greenhouse) < 0.5) return "ggr";
+  }
+  return null;
+}
+
 // Export for Node.js testing (Shelly ignores this)
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     evaluate: evaluate,
+    detectAnomaly: detectAnomaly,
     MODES: MODES,
     MODE_VALVES: MODE_VALVES,
     MODE_ACTUATORS: MODE_ACTUATORS,
