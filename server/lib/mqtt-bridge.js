@@ -16,6 +16,7 @@ var wsServer = null;
 var db = null;
 var deviceConfigRef = null;
 var pushRef = null;
+var anomalyManagerRef = null;
 var previousState = null;
 var connectionStatus = 'disconnected';
 
@@ -25,6 +26,7 @@ function start(options) {
   wsServer = options.wsServer || null;
   deviceConfigRef = options.deviceConfig || null;
   pushRef = options.push || null;
+  anomalyManagerRef = options.anomalyManager || null;
 
   notifications.init({ push: pushRef, deviceConfig: deviceConfigRef });
 
@@ -44,6 +46,9 @@ function start(options) {
     log.info('MQTT connected');
     mqttClient.subscribe('greenhouse/state', { qos: 1 }, function (err) {
       if (err) log.error('subscribe failed', { error: err.message });
+    });
+    mqttClient.subscribe('greenhouse/watchdog/event', { qos: 1 }, function (err) {
+      if (err) log.error('subscribe watchdog/event failed', { error: err.message });
     });
     subscribeResponseTopics();
     republishDeviceConfig();
@@ -74,6 +79,21 @@ function start(options) {
   mqttClient.on('message', function (topic, message) {
     if (topic === 'greenhouse/sensor-config-result' || topic === 'greenhouse/discover-sensors-result') {
       handleResponseMessage(topic, message);
+      return;
+    }
+    if (topic === 'greenhouse/watchdog/event') {
+      var wdMsg;
+      try {
+        wdMsg = JSON.parse(message.toString());
+      } catch (e) {
+        log.warn('invalid JSON on watchdog/event', { error: e.message });
+        return;
+      }
+      if (anomalyManagerRef && typeof anomalyManagerRef.handleDeviceEvent === 'function') {
+        Promise.resolve(anomalyManagerRef.handleDeviceEvent(wdMsg)).catch(function (err) {
+          log.error('anomaly handleDeviceEvent failed', { error: err.message });
+        });
+      }
       return;
     }
     if (topic !== 'greenhouse/state') return;
@@ -254,6 +274,14 @@ function publishRelayCommand(relay, on) {
   span.end();
   return true;
 }
+
+// NOTE: there is intentionally no publishWatchdogCmd. Watchdog ack
+// and shutdownnow round-trip via the existing greenhouse/config
+// retained topic — the server PUTs a partial config update with the
+// wz[id] (snooze) or wb[modeCode] (ban) field, the device picks it
+// up in its existing config_changed handler, and reacts. This avoids
+// adding a 6th MQTT subscription to the Shelly device, which has a
+// limited subscription budget.
 
 // ── MQTT request/response helpers ──
 

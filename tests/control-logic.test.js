@@ -952,32 +952,33 @@ describe('config-gated actuator behavior', () => {
     assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
   });
 
-  it('allowed_modes filters out disallowed modes', () => {
+  it('mode bans (wb) filter out banned modes', () => {
+    // GH is permanently banned; greenhouse physics would otherwise fire
     const result = evaluate(makeState({
       temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 },
-    }), null, { ...allEnabled, am: ['I', 'SC'] });
+    }), null, { ...allEnabled, wb: { GH: 9999999999 } });
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
-  it('allowed_modes permits allowed modes', () => {
+  it('mode bans (wb) permit unbanned modes', () => {
+    // GH banned, but SC physics is firing — SC is not banned
     const result = evaluate(makeState({
       temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
-    }), null, { ...allEnabled, am: ['I', 'SC'] });
+    }), null, { ...allEnabled, wb: { GH: 9999999999 } });
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
 
   it('device config JSON fits within Shelly KVS 256-byte limit', () => {
     const worstCase = {
       ce: true, ea: 31, fm: 'GH',
-      am: ['I', 'SC', 'GH', 'AD'], // 4 modes = max before normalization to null
+      we: { sng: 1, scs: 1, ggr: 1 },
+      wz: { sng: 1713050000, scs: 1713050000, ggr: 1713053400 },
+      wb: { SC: 9999999999, GH: 1713094215, AD: 9999999999 },
       v: 9999,
     };
     const json = JSON.stringify(worstCase);
     assert.ok(json.length <= 256,
       'device config JSON is ' + json.length + ' bytes, must be <= 256. Content: ' + json);
-    // Also verify it's well under — target is 1/4 of limit
-    assert.ok(json.length <= 64,
-      'device config should be <= 64 bytes (1/4 of KVS limit), got ' + json.length);
   });
 
   it('forced_mode still respects safety drain preemption', () => {

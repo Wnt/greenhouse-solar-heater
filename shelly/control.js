@@ -9,6 +9,10 @@ var SHELL_CFG = {
   DRAIN_POWER_THRESHOLD: 20,
 };
 
+// Watchdog id → mode short code. Used by applyBanAndShutdown to
+// translate a watchdog id to the mode code stored in wb.
+var WATCHDOG_MODE = { sng: "SC", scs: "SC", ggr: "GH" };
+
 var VALVES = {
   vi_btm:  {ip: "192.168.30.11", id: 0},
   vi_top:  {ip: "192.168.30.11", id: 1},
@@ -27,11 +31,22 @@ var VALVES = {
 // Sensor config from KVS (null = skip polling, safe IDLE default)
 var sensorConfig = null;
 // Device config from KVS
-var deviceConfig = { ce: false, ea: 0, fm: null, am: null, v: 0 };
+var deviceConfig = { ce: false, ea: 0, fm: null, we: {}, wz: {}, wb: {}, v: 0 };
 
 var state = {
   mode: MODES.IDLE,
   mode_start: 0,
+  // Watchdog baseline: captured at every mode entry; lost on reboot.
+  // Used by detectAnomaly() each tick to check if the expected
+  // temperature delta materialized within the per-watchdog window.
+  watchdog_baseline: null,
+  // Pending watchdog fire: { id, firedAt }. Null when no fire is in
+  // flight. Auto-shutdown fires at firedAt + 300s (5 min) from the
+  // 30s controlLoop tick (no new Timer.set).
+  watchdogPending: null,
+  // Previous mo.ss value used to detect transitions from
+  // suppressSafety=true → false so we can re-capture the baseline.
+  prev_ss: false,
   temps: {
     collector: null, tank_top: null, tank_bottom: null,
     greenhouse: null, outdoor: null,
@@ -179,6 +194,7 @@ function setValves(pairs, idx, cb) {
       setPump(false);
       state.mode = MODES.IDLE;
       state.mode_start = Date.now();
+      captureWatchdogBaseline();
       state.transitioning = false;
       if (cb) cb(false);
       return;
@@ -312,6 +328,144 @@ function applyFlags(flags) {
   state.solar_charge_peak_tank_top_at = flags.solarChargePeakTankTopAt || 0;
 }
 
+// ── Watchdog helpers ──
+
+// Snapshot sensor values at mode-entry so detectAnomaly() can compare
+// the current readings against the baseline every tick. Called at
+// every state.mode_start = Date.now() site to piggyback on existing
+// mode-transition points. Clears any in-flight pending, because a
+// mode transition terminates the current watchdog window.
+function captureWatchdogBaseline() {
+  state.watchdog_baseline = {
+    at: Math.floor(Date.now() / 1000),
+    tankTop: state.temps.tank_top,
+    collector: state.temps.collector,
+    greenhouse: state.temps.greenhouse
+  };
+  state.watchdogPending = null;
+}
+
+// Publish a watchdog event via the telemetry script. Events are sent
+// as Shelly.emitEvent and the telemetry.js handler forwards them to
+// MQTT. Silently dropped if the event system is not ready.
+function publishWatchdogEvent(payload) {
+  Shelly.emitEvent("watchdog_event", payload);
+}
+
+// ── Watchdog resolution handlers ──
+
+// Build an IDLE result for transitionTo() — used when a watchdog
+// fires the auto-shutdown path or the user-initiated shutdown via
+// config push.
+function buildIdleTransitionResult() {
+  return {
+    nextMode: MODES.IDLE,
+    valves: MODE_VALVES[MODES.IDLE],
+    actuators: MODE_ACTUATORS[MODES.IDLE],
+    flags: {
+      collectorsDrained: state.collectors_drained,
+      lastRefillAttempt: state.last_refill_attempt / 1000,
+      emergencyHeatingActive: false,
+      solarChargePeakTankTop: null,
+      solarChargePeakTankTopAt: 0
+    },
+    suppressed: false,
+    safetyOverride: false
+  };
+}
+
+// Auto-shutdown path: called from watchdogTick() after the 5-minute
+// pending grace period elapses with no user response. The device
+// writes the cool-off ban to its own KVS and transitions to IDLE.
+// User-initiated shutdownnow does NOT come through here — it arrives
+// as a config update via the existing greenhouse/config subscription
+// and is handled by handleConfigDrivenResolution() below.
+function applyBanAndShutdown(id, how) {
+  var modeCode = WATCHDOG_MODE[id];
+  if (!modeCode) return;
+  var nowSec = Math.floor(Date.now() / 1000);
+  var banTtl = deviceConfig.watchdogBanSeconds || 14400;
+  var newUntil = nowSec + banTtl;
+
+  deviceConfig.wb = deviceConfig.wb || {};
+  var existing = deviceConfig.wb[modeCode] || 0;
+  // max() so a permanent ban (sentinel 9999999999) is never downgraded
+  deviceConfig.wb[modeCode] = (existing > newUntil) ? existing : newUntil;
+
+  Shelly.call("KVS.Set", {
+    key: "config",
+    value: JSON.stringify(deviceConfig)
+  });
+
+  state.watchdogPending = null;
+  transitionTo(buildIdleTransitionResult());
+  publishWatchdogEvent({ t: "resolved", id: id, how: how, ts: nowSec });
+}
+
+function autoShutdown(id) {
+  applyBanAndShutdown(id, "shutdown_auto");
+}
+
+// User-driven resolution arrives as a device-config update (no
+// dedicated watchdog/cmd subscription on the device — see telemetry.js
+// notes). Detects two transitions:
+//
+//   1. wz[id] just became set to a future timestamp while a pending
+//      fire exists for this id → snooze ack. Clear pending, publish
+//      "resolved snoozed". Mode keeps running.
+//
+//   2. wb[modeCode] just became set to a future timestamp while a
+//      pending fire exists for a watchdog of this mode → shutdown
+//      now. Clear pending, transitionTo(IDLE), publish "resolved
+//      shutdown_user".
+//
+// Called from the config_changed event handler immediately after the
+// in-memory deviceConfig is replaced. The previous config is captured
+// before the assignment so the comparison can detect "just changed".
+//
+// Edge cases:
+// - If state.watchdogPending is already null (auto-shutdown won the
+//   race), do nothing. The wz/wb value in the new config is still
+//   honored for any future fire.
+// - "Clear cool-off" (wb[modeCode]=0) and "Clear snooze" (wz[id]=0)
+//   are filtered out by the `> nowSec` check since they delete the
+//   entry rather than setting a future timestamp.
+// - If a watchdog is pending and the user manually disables the same
+//   mode (sets wb sentinel) for unrelated reasons, the device treats
+//   it as a user-initiated shutdown of the in-flight watchdog.
+//   Semantically correct — banning a running mode shuts it down.
+function handleConfigDrivenResolution(prevCfg, newCfg) {
+  if (!state.watchdogPending) return;
+  var pid = state.watchdogPending.id;
+  var nowSec = Math.floor(Date.now() / 1000);
+
+  // Snooze: wz[pid] just became set/updated to a future time
+  var newWz = newCfg.wz && newCfg.wz[pid];
+  var oldWz = prevCfg && prevCfg.wz && prevCfg.wz[pid];
+  if (newWz && newWz > nowSec && newWz !== oldWz) {
+    state.watchdogPending = null;
+    publishWatchdogEvent({
+      t: "resolved", id: pid, how: "snoozed", ts: nowSec
+    });
+    // NOTE: mode keeps running — snooze does not transition.
+    return;
+  }
+
+  // Shutdown: wb[modeCode] just became set/updated to a future time
+  var modeCode = WATCHDOG_MODE[pid];
+  if (modeCode) {
+    var newWb = newCfg.wb && newCfg.wb[modeCode];
+    var oldWb = prevCfg && prevCfg.wb && prevCfg.wb[modeCode];
+    if (newWb && newWb > nowSec && newWb !== oldWb) {
+      state.watchdogPending = null;
+      transitionTo(buildIdleTransitionResult());
+      publishWatchdogEvent({
+        t: "resolved", id: pid, how: "shutdown_user", ts: nowSec
+      });
+    }
+  }
+}
+
 // ── Staged transitions (023-limit-valve-operations) ──
 //
 // The staged transition is a small state machine:
@@ -358,6 +512,7 @@ function finalizeTransitionOK(result) {
   Timer.set(SHELL_CFG.PUMP_PRIME_MS, false, function() {
     state.mode = result.nextMode;
     state.mode_start = Date.now();
+    captureWatchdogBaseline();
     state.transitioning = false;
     state.transition_step = null;
     state.targetValves = null;
@@ -394,6 +549,7 @@ function finalizeTransitionFail() {
   setPump(false);
   state.mode = MODES.IDLE;
   state.mode_start = Date.now();
+  captureWatchdogBaseline();
   state.transitioning = false;
   state.transition_step = null;
   emitStateUpdate();
@@ -745,10 +901,79 @@ function controlLoop() {
         emitStateUpdate();
       }
 
+      // ── Watchdog tick block ──
+      watchdogTick();
+
       // Process pending MQTT commands after control cycle completes
       processPendingCommands();
     });
   });
+}
+
+// Watchdog per-tick block: lazy-prune expired bans, reset baseline on
+// override exit, check pending or run detection. Three mutually
+// exclusive branches so the tick cost is bounded at O(1) even when
+// all three watchdogs are enabled.
+function watchdogTick() {
+  var nowSec = Math.floor(Date.now() / 1000);
+
+  // (a) Lazy prune of expired wb entries
+  if (deviceConfig.wb) {
+    var wbChanged = false;
+    for (var m in deviceConfig.wb) {
+      if (deviceConfig.wb[m] <= nowSec) {
+        delete deviceConfig.wb[m];
+        wbChanged = true;
+      }
+    }
+    if (wbChanged) {
+      Shelly.call("KVS.Set", {
+        key: "config",
+        value: JSON.stringify(deviceConfig)
+      });
+    }
+  }
+
+  // (b) Override-exit baseline reset
+  var ssNow = !!(deviceConfig.mo && deviceConfig.mo.a && deviceConfig.mo.ss);
+  if (state.prev_ss && !ssNow && state.watchdog_baseline) {
+    captureWatchdogBaseline();
+  }
+  state.prev_ss = ssNow;
+
+  // (c) Pending check OR detection — mutually exclusive
+  if (state.watchdogPending) {
+    if (nowSec - state.watchdogPending.firedAt >= 300) {
+      autoShutdown(state.watchdogPending.id);
+    }
+  } else if (state.watchdog_baseline) {
+    var entry = {
+      mode: state.mode,
+      at: state.watchdog_baseline.at,
+      tankTop: state.watchdog_baseline.tankTop,
+      collector: state.watchdog_baseline.collector,
+      greenhouse: state.watchdog_baseline.greenhouse
+    };
+    var sensors = {
+      collector: state.temps.collector,
+      tank_top: state.temps.tank_top,
+      greenhouse: state.temps.greenhouse
+    };
+    var fired = detectAnomaly(entry, nowSec, sensors, deviceConfig);
+    if (fired) {
+      state.watchdogPending = { id: fired, firedAt: nowSec };
+      publishWatchdogEvent({
+        t: "fired",
+        id: fired,
+        mode: entry.mode,
+        el: nowSec - entry.at,
+        dT: state.temps.tank_top - entry.tankTop,
+        dC: entry.collector - state.temps.collector,
+        dG: state.temps.greenhouse - entry.greenhouse,
+        ts: nowSec
+      });
+    }
+  }
 }
 
 // ── MQTT command queue (sensor config apply + discovery) ──
@@ -860,7 +1085,13 @@ Shelly.addEventHandler(function(ev) {
   if (ev.info.event === "config_changed") {
     var data = ev.info.data;
     if (data && data.config) {
+      // Capture the old config BEFORE overwriting so we can detect
+      // watchdog-driven transitions (snooze ack and user-initiated
+      // shutdown both arrive as wz/wb config updates rather than a
+      // separate MQTT cmd subscription).
+      var prevDeviceConfig = deviceConfig;
       deviceConfig = data.config;
+      handleConfigDrivenResolution(prevDeviceConfig, deviceConfig);
       if (data.safety_critical) {
         controlLoop();
       }
@@ -926,6 +1157,7 @@ function bootCloseValves() {
 
             pollAllSensors(function() {
               state.mode_start = Date.now();
+              captureWatchdogBaseline();
               Timer.set(SHELL_CFG.POLL_INTERVAL, true, controlLoop);
               controlLoop();
             });

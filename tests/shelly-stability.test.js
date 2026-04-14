@@ -21,6 +21,12 @@ const LIMITS = {
   MAX_CONCURRENT_CALLS: 5,
   MAX_TIMERS: 5,
   MAX_EVENT_HANDLERS: 5,
+  // MQTT.subscribe is not strictly constrained by SH-002 (which only
+  // counts Shelly.addEventHandler / Shelly.addStatusHandler), but the
+  // test holds the line at 5 to keep the device's subscription budget
+  // disciplined. The watchdog feature deliberately avoids adding a
+  // 6th subscription by routing user ack/shutdownnow through the
+  // existing greenhouse/config retained topic.
   MAX_MQTT_SUBSCRIPTIONS: 5,
 };
 

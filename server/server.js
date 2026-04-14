@@ -18,6 +18,8 @@ const otelApi = require('@opentelemetry/api');
 
 const sensorConfig = require('./lib/sensor-config');
 const push = require('./lib/push');
+const anomalyManager = require('./lib/anomaly-manager');
+const { createHistory: createWatchdogHistory } = require('./lib/watchdog-history');
 
 const log = createLogger('server');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
@@ -214,6 +216,18 @@ function handleDeviceConfigApi(req, res, urlPath, body) {
     deviceConfig.handlePut(req, res, body, function (config) {
       // Publish to MQTT for instant push to device
       mqttBridge.publishConfig(config);
+      // Mirror the latest snapshot into anomaly-manager so wb-clear
+      // actions from the Mode Enablement UI are reflected in WS
+      // broadcasts and subsequent getState() calls.
+      anomalyManager.updateSnapshot(config);
+      // Push a watchdog-state broadcast so UIs re-render the mode
+      // enablement / watchdog cards live.
+      broadcastToWebSockets({
+        type: 'watchdog-state',
+        pending: anomalyManager.getPending(),
+        watchdogs: require('../shelly/watchdogs-meta.js').WATCHDOGS,
+        snapshot: { we: config.we || {}, wz: config.wz || {}, wb: config.wb || {} }
+      });
     });
     return;
   }
@@ -527,6 +541,71 @@ var server = http.createServer(function (req, res) {
     handleHistoryApi(req, res);
   } else if (urlPath === '/api/events') {
     handleEventsApi(req, res);
+  } else if (urlPath === '/api/watchdog/state' && req.method === 'GET') {
+    anomalyManager.getState().then(function (state) {
+      jsonResponse(res, 200, state);
+    }).catch(function (err) {
+      log.error('watchdog state failed', { error: err.message });
+      jsonResponse(res, 500, { error: 'Failed to load watchdog state' });
+    });
+  } else if (urlPath === '/api/watchdog/ack' && req.method === 'POST') {
+    if (!isAdminOrReject()) return;
+    readBody(req, function (body) {
+      var parsed;
+      try { parsed = JSON.parse(body); } catch (e) {
+        jsonResponse(res, 400, { error: 'Invalid JSON' });
+        return;
+      }
+      if (!parsed || !parsed.id || typeof parsed.reason !== 'string') {
+        jsonResponse(res, 400, { error: 'Missing id or reason' });
+        return;
+      }
+      anomalyManager.ack(parsed.id, parsed.reason, currentUser || { name: 'admin', role: 'admin' })
+        .then(function (result) {
+          jsonResponse(res, 200, result);
+        })
+        .catch(function (err) {
+          var code = /no matching pending/.test(err.message) ? 409 : 500;
+          jsonResponse(res, code, { error: err.message });
+        });
+    });
+  } else if (urlPath === '/api/watchdog/shutdownnow' && req.method === 'POST') {
+    if (!isAdminOrReject()) return;
+    readBody(req, function (body) {
+      var parsed;
+      try { parsed = JSON.parse(body); } catch (e) {
+        jsonResponse(res, 400, { error: 'Invalid JSON' });
+        return;
+      }
+      if (!parsed || !parsed.id) {
+        jsonResponse(res, 400, { error: 'Missing id' });
+        return;
+      }
+      anomalyManager.shutdownNow(parsed.id, currentUser || { name: 'admin', role: 'admin' })
+        .then(function () { jsonResponse(res, 200, { ok: true }); })
+        .catch(function (err) {
+          var code = /no matching pending/.test(err.message) ? 409 : 500;
+          jsonResponse(res, code, { error: err.message });
+        });
+    });
+  } else if (urlPath === '/api/watchdog/enabled' && req.method === 'PUT') {
+    if (!isAdminOrReject()) return;
+    readBody(req, function (body) {
+      var parsed;
+      try { parsed = JSON.parse(body); } catch (e) {
+        jsonResponse(res, 400, { error: 'Invalid JSON' });
+        return;
+      }
+      if (!parsed || !parsed.id || typeof parsed.enabled !== 'boolean') {
+        jsonResponse(res, 400, { error: 'Missing id or enabled' });
+        return;
+      }
+      anomalyManager.setEnabled(parsed.id, parsed.enabled, currentUser || { name: 'admin', role: 'admin' })
+        .then(function (updated) { jsonResponse(res, 200, { we: updated.we }); })
+        .catch(function (err) {
+          jsonResponse(res, 500, { error: err.message });
+        });
+    });
   } else {
     serveStatic(req, res);
   }
@@ -673,6 +752,16 @@ function clearOverrideTtlTimer() {
 
 var wsServer = null;
 
+// Broadcast a message to all connected WebSocket clients. Used by the
+// anomaly-manager to push watchdog-state updates to the UI.
+function broadcastToWebSockets(msg) {
+  if (!wsServer) return;
+  var str = JSON.stringify(msg);
+  wsServer.clients.forEach(function (ws) {
+    if (ws.readyState === 1) ws.send(str);
+  });
+}
+
 function initWebSocket() {
   var WebSocketServer = require('ws').WebSocketServer;
   wsServer = new WebSocketServer({ noServer: true });
@@ -773,13 +862,55 @@ function initServices(callback) {
           log.info('database initialized');
           db.startMaintenance();
         }
+        initAnomalyManager();
         callback();
       });
     } else {
       log.info('DATABASE_URL not found (checked env and S3) — history features disabled');
+      initAnomalyManager();
       callback();
     }
   });
+}
+
+// Initialize the anomaly-manager with its dependencies. Called after DB
+// init (or after confirming no DB is available) so the history storage
+// can pick the right backend (Postgres when db is present, ring buffer
+// fallback otherwise). Also applies the watchdog_events schema when a
+// database connection is available.
+function initAnomalyManager() {
+  // Apply the watchdog_events schema if we have a database connection.
+  if (db && typeof db.getPool === 'function') {
+    try {
+      var pool = db.getPool();
+      var sqlPath = path.join(__dirname, 'db', 'watchdog-events-schema.sql');
+      var schemaSql = fs.readFileSync(sqlPath, 'utf8');
+      pool.query(schemaSql, [], function (schemaErr) {
+        if (schemaErr) {
+          log.warn('watchdog schema init failed', { error: schemaErr.message });
+        } else {
+          log.info('watchdog_events schema ready');
+        }
+      });
+    } catch (e) {
+      log.warn('failed to apply watchdog schema', { error: e.message });
+    }
+  }
+
+  var wdHistoryDb = (db && typeof db.getPool === 'function') ? db.getPool() : null;
+  var watchdogHistory = createWatchdogHistory({
+    db: wdHistoryDb,
+    log: log
+  });
+  anomalyManager.init({
+    history: watchdogHistory,
+    push: push,
+    wsBroadcast: broadcastToWebSockets,
+    mqttBridge: mqttBridge,
+    deviceConfig: deviceConfig,
+    log: log
+  });
+  log.info('anomaly-manager initialized', { backend: wdHistoryDb ? 'postgres' : 'ring-buffer' });
 }
 
 function startMqttBridge() {
@@ -796,6 +927,7 @@ function startMqttBridge() {
     db: db,
     deviceConfig: deviceConfig,
     push: push,
+    anomalyManager: anomalyManager,
   });
 
   log.info('MQTT bridge started', { host: MQTT_HOST });

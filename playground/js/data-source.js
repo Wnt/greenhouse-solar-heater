@@ -114,6 +114,11 @@ export class LiveSource extends DataSource {
           for (const cb of this._connectionCallbacks) {
             cb(this.connected ? 'connected' : 'disconnected');
           }
+        } else if (msg.type === 'watchdog-state') {
+          // Watchdog fire/resolve/config broadcasts → main.js re-renders.
+          if (this._watchdogCallbacks) {
+            for (const cb of this._watchdogCallbacks) cb(msg);
+          }
         }
       } catch (e) {
         // ignore parse errors
@@ -152,6 +157,11 @@ export class LiveSource extends DataSource {
   onCommandResponse(callback) {
     this._commandCallbacks = this._commandCallbacks || [];
     this._commandCallbacks.push(callback);
+  }
+
+  onWatchdogState(callback) {
+    this._watchdogCallbacks = this._watchdogCallbacks || [];
+    this._watchdogCallbacks.push(callback);
   }
 
   _handleState(data) {

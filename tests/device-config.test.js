@@ -36,7 +36,9 @@ describe('device-config', () => {
       assert.strictEqual(config.ce, false);
       assert.strictEqual(config.ea, 0);
       assert.strictEqual(config.fm, null);
-      assert.strictEqual(config.am, null);
+      assert.deepStrictEqual(config.we, {});
+      assert.deepStrictEqual(config.wz, {});
+      assert.deepStrictEqual(config.wb, {});
       assert.strictEqual(config.v, 1);
       done();
     });
@@ -165,62 +167,63 @@ describe('device-config', () => {
     });
   });
 
-  // ── Allowed modes (am) validation ──
+  // ── Mode bans (wb) — replaces legacy am filter ──
 
-  it('rejects empty allowed modes array (would lock the controller)', (t, done) => {
-    deviceConfig.load(function (err) {
+  it('empty wb means all modes unrestricted', (t, done) => {
+    deviceConfig.load(function (err, config) {
       assert.ifError(err);
-      deviceConfig.updateConfig({ am: [] }, function (err2) {
-        assert.ok(err2, 'should reject empty allowed modes');
-        assert.match(err2.message, /at least one|allowed modes/i);
-        done();
-      });
+      assert.deepStrictEqual(config.wb, {});
+      done();
     });
   });
 
-  it('PUT with empty allowed modes returns 400 not 500', (t, done) => {
+  it('null wb clears all bans', (t, done) => {
     deviceConfig.load(function (err) {
       assert.ifError(err);
-      const res = mockResponse();
-      deviceConfig.handlePut({}, res, JSON.stringify({ am: [] }), null);
-      // Tiny tick so async update completes
-      setTimeout(() => {
-        assert.strictEqual(res._statusCode, 400, 'expected 400 validation error');
-        done();
-      }, 50);
-    });
-  });
-
-  it('null allowed modes still means unrestricted (all modes allowed)', (t, done) => {
-    deviceConfig.load(function (err) {
-      assert.ifError(err);
-      deviceConfig.updateConfig({ am: null }, function (err2, config) {
+      deviceConfig.updateConfig({ wb: { GH: 9999999999 } }, function (err2) {
         assert.ifError(err2);
-        assert.strictEqual(config.am, null);
+        deviceConfig.updateConfig({ wb: null }, function (err3, config) {
+          assert.ifError(err3);
+          assert.deepStrictEqual(config.wb, {});
+          done();
+        });
+      });
+    });
+  });
+
+  it('subset of modes banned is preserved as wb entries', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      // Ban GH and AD permanently
+      deviceConfig.updateConfig({
+        wb: { GH: 9999999999, AD: 9999999999 }
+      }, function (err2, config) {
+        assert.ifError(err2);
+        assert.strictEqual(config.wb.GH, 9999999999);
+        assert.strictEqual(config.wb.AD, 9999999999);
         done();
       });
     });
   });
 
-  it('all 5 modes selected normalizes to null (unrestricted)', (t, done) => {
-    deviceConfig.load(function (err) {
+  it('legacy am field is migrated to wb on load', (t, done) => {
+    // Pre-populate the config file with a legacy am array
+    fs.writeFileSync(configPath, JSON.stringify({
+      ce: false, ea: 0, fm: null, am: ['I', 'SC'], v: 1
+    }));
+    deviceConfig._reset();
+    delete require.cache[require.resolve('../server/lib/device-config.js')];
+    deviceConfig = require('../server/lib/device-config.js');
+    deviceConfig._reset();
+    deviceConfig.load(function (err, config) {
       assert.ifError(err);
-      deviceConfig.updateConfig({ am: ['I', 'SC', 'GH', 'AD', 'EH'] }, function (err2, config) {
-        assert.ifError(err2);
-        assert.strictEqual(config.am, null, 'all-5 should normalize to unrestricted');
-        done();
-      });
-    });
-  });
-
-  it('subset of modes is preserved as-is', (t, done) => {
-    deviceConfig.load(function (err) {
-      assert.ifError(err);
-      deviceConfig.updateConfig({ am: ['I', 'SC'] }, function (err2, config) {
-        assert.ifError(err2);
-        assert.deepStrictEqual(config.am, ['I', 'SC']);
-        done();
-      });
+      assert.strictEqual(config.am, undefined);
+      assert.strictEqual(config.wb.GH, 9999999999);
+      assert.strictEqual(config.wb.AD, 9999999999);
+      assert.strictEqual(config.wb.EH, 9999999999);
+      assert.strictEqual(config.wb.I, undefined);
+      assert.strictEqual(config.wb.SC, undefined);
+      done();
     });
   });
 
@@ -241,12 +244,15 @@ describe('device-config', () => {
     });
   });
 
-  it('config with mo fits within 256 bytes', (t, done) => {
+  it('config with watchdog fields fits within 256 bytes', (t, done) => {
     deviceConfig.load(function (err) {
       assert.ifError(err);
-      // Max-size config with mo
+      // Max-size config with mo + watchdog fields
       deviceConfig.updateConfig({
-        ce: true, ea: 31, fm: 'EH', am: ['I', 'SC', 'GH', 'AD'],
+        ce: true, ea: 31, fm: 'EH',
+        we: { sng: 1, scs: 1, ggr: 1 },
+        wz: { sng: 1713050000, scs: 1713050000, ggr: 1713053400 },
+        wb: { SC: 9999999999, GH: 1713094215, AD: 9999999999 },
         mo: { a: true, ex: 9999999999, ss: true },
       }, function (err2, config) {
         assert.ifError(err2);

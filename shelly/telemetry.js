@@ -11,6 +11,12 @@ var DISCOVER_TOPIC = "greenhouse/discover-sensors";
 var DISCOVER_RESULT_TOPIC = "greenhouse/discover-sensors-result";
 var RELAY_COMMAND_TOPIC = "greenhouse/relay-command";
 var STATE_TOPIC = "greenhouse/state";
+// Watchdog events are device→server only. There is intentionally NO
+// matching watchdog/cmd subscription on the device — user ack and
+// shutdownnow commands round-trip via the existing greenhouse/config
+// retained topic (the server PUTs a partial wz/wb update). This keeps
+// the device under its MQTT subscription budget.
+var WATCHDOG_EVENT_TOPIC = "greenhouse/watchdog/event";
 var CONFIG_KVS_KEY = "config";
 var SENSOR_CONFIG_KVS_KEY = "sensor_config";
 var CONFIG_URL = "";  // Set via KVS "config_url" or default
@@ -44,7 +50,18 @@ function isSafetyCritical(oldCfg, newCfg) {
   if (oldCfg.ce !== newCfg.ce) return true;
   if (oldCfg.ea !== newCfg.ea) return true;
   if (oldCfg.fm !== newCfg.fm) return true;
-  if (JSON.stringify(oldCfg.am) !== JSON.stringify(newCfg.am)) return true;
+  // Mode bans (wb) gate evaluate() immediately — changes must trigger a
+  // safety-critical re-eval so a newly-enforced ban takes effect on the
+  // next tick rather than after an unrelated mode change.
+  if (JSON.stringify(oldCfg.wb) !== JSON.stringify(newCfg.wb)) return true;
+  // Watchdog enable/disable (we) and snooze (wz) changes do not require
+  // an immediate re-eval — they only affect the per-tick detectAnomaly
+  // call in control.js, which runs every POLL_INTERVAL anyway. We still
+  // reference these fields here so the regression guard in
+  // tests/shelly-telemetry.test.js catches schema drift in either
+  // direction.
+  if (JSON.stringify(oldCfg.we) !== JSON.stringify(newCfg.we)) return false;
+  if (JSON.stringify(oldCfg.wz) !== JSON.stringify(newCfg.wz)) return false;
   return false;
 }
 
@@ -195,6 +212,10 @@ Shelly.addEventHandler(function(ev) {
     var discResult = ev.info.data;
     if (!discResult || !MQTT.isConnected()) return;
     MQTT.publish(DISCOVER_RESULT_TOPIC, JSON.stringify(discResult), 1, false);
+  } else if (ev.info.event === "watchdog_event") {
+    var wdPayload = ev.info.data;
+    if (!wdPayload || !MQTT.isConnected()) return;
+    MQTT.publish(WATCHDOG_EVENT_TOPIC, JSON.stringify(wdPayload), 1, false);
   }
 });
 

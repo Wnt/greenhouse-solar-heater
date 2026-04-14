@@ -56,18 +56,63 @@ self.addEventListener('push', function (event) {
     icon: data.icon || 'assets/icon-192.png',
     badge: 'assets/badge-72.png',
     tag: data.tag || 'default',
-    data: { url: data.url || '/' },
+    data: data.data || { url: data.url || '/' },
   };
+  // Forward optional fields the server may include (watchdog notifications)
+  if (data.requireInteraction) options.requireInteraction = true;
+  if (data.renotify) options.renotify = true;
+  if (data.actions) options.actions = data.actions;
 
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', function (event) {
+  var data = event.notification.data || {};
   event.notification.close();
 
-  var url = event.notification.data && event.notification.data.url
-    ? event.notification.data.url
-    : '/';
+  // Watchdog fired notifications have two inline actions beyond the
+  // main click: "shutdownnow" (button) and "snooze" (text input).
+  // Both POST to the watchdog HTTP endpoints; credentials:include so
+  // the session cookie rides along.
+  if (data.kind === 'watchdog_fired') {
+    // Test notifications (sent from Settings → "send test") use the
+    // same shape as a real fire so the user can preview the inline
+    // reply input and the Shutdown now button on their actual device.
+    // But the server has no pending fire, so we must NOT POST to the
+    // real endpoints — that would 409. Just close the notification.
+    if (data.test) {
+      return;
+    }
+
+    var action = event.action;
+    var reply  = event.reply;
+
+    if (action === 'shutdownnow') {
+      event.waitUntil(fetch('/api/watchdog/shutdownnow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: data.watchdogId, eventId: data.eventId }),
+        credentials: 'include'
+      }).catch(function () { /* swallow — UI will reconcile */ }));
+      return;
+    }
+    if (action === 'snooze') {
+      event.waitUntil(fetch('/api/watchdog/ack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id:      data.watchdogId,
+          eventId: data.eventId,
+          reason:  (reply && reply.trim()) || '(no reason provided)'
+        }),
+        credentials: 'include'
+      }).catch(function () { /* swallow */ }));
+      return;
+    }
+    // Main click (no action) falls through to the open-window logic.
+  }
+
+  var url = data.url ? data.url : '/';
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true })
