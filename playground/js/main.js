@@ -2494,6 +2494,15 @@ let _watchdogCountdownTimer = null;
 let _watchdogPending = null;
 let _watchdogMeta = [];
 let _watchdogSnapshot = { we: {}, wz: {}, wb: {} };
+// Tracks whether the watchdog state has been seeded by either the
+// initial GET or a WebSocket broadcast. The WS handler always wins —
+// it represents the server's most recent push — so once any state has
+// been applied, the (possibly in-flight) GET response is discarded
+// rather than allowed to clobber a fresher WS update. Without this,
+// the GET → handler order is racy: a WS broadcast that arrives
+// between the GET being issued and it resolving would be silently
+// overwritten by the older GET response.
+let _watchdogStateSeeded = false;
 
 function _watchdogCurrentUserRole() {
   return store.get('userRole') || 'admin';
@@ -2549,6 +2558,10 @@ function initWatchdogUI() {
 function attachWatchdogWebSocket() {
   if (liveSource && typeof liveSource.onWatchdogState === 'function') {
     liveSource.onWatchdogState((msg) => {
+      // Mark seeded so any still-in-flight GET /api/watchdog/state
+      // response is discarded rather than clobbering this fresher
+      // WS state.
+      _watchdogStateSeeded = true;
       _watchdogPending = msg.pending || null;
       if (msg.snapshot) _watchdogSnapshot = msg.snapshot;
       if (msg.watchdogs) _watchdogMeta = msg.watchdogs;
@@ -2570,6 +2583,15 @@ function refreshWatchdogStateFromServer() {
     .then(r => r.ok ? r.json() : null)
     .then(state => {
       if (!state) return;
+      // If a WebSocket broadcast arrived between issuing this GET and
+      // it resolving, the WS state is fresher and we must NOT clobber
+      // it with the now-stale GET response. The watchdog-flow e2e
+      // test "shutdown now button POSTs..." was flaky on CI under
+      // load specifically because of this race: it injected a WS
+      // broadcast immediately after page load, but the GET resolved
+      // shortly after with `pending: null` and reset the banner.
+      if (_watchdogStateSeeded) return;
+      _watchdogStateSeeded = true;
       _watchdogPending = state.pending || null;
       _watchdogSnapshot = state.snapshot || { we: {}, wz: {}, wb: {} };
       _watchdogMeta = state.watchdogs || [];

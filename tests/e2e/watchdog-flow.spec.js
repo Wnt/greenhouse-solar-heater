@@ -212,4 +212,81 @@ test.describe('watchdog flow', () => {
     await expect.poll(() => calls.shutdownnow.length).toBeGreaterThan(0);
     expect(calls.shutdownnow[0]).toMatchObject({ id: 'scs', eventId: 7 });
   });
+
+  test('WS broadcast received during initial GET is not clobbered when GET resolves later', async ({ page }) => {
+    // Regression for a race where the initial GET /api/watchdog/state
+    // resolved AFTER a WebSocket broadcast had already set the banner
+    // visible, and unconditionally overwrote _watchdogPending with the
+    // GET's `pending: null`, hiding the banner. The CI failure showed
+    // up as flake on tests that injected without a sync gap, because
+    // under load the GET could lose the race and resolve last.
+    //
+    // This test forces the bad order deterministically: the GET is
+    // held until the test releases it, and the test injects the WS
+    // broadcast first. After releasing the GET, the banner must
+    // STILL be visible — the WS state must win.
+
+    await mockLiveConnectionWithWatchdog(page);
+
+    let releaseGet;
+    const getReleased = new Promise(resolve => { releaseGet = resolve; });
+
+    // Hold the watchdog/state GET until the test releases it.
+    await page.route('**/api/watchdog/state', async (route) => {
+      await getReleased;
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          pending: null,  // server reports no pending — but WS will say otherwise
+          watchdogs: WATCHDOGS_META,
+          snapshot: { we: {}, wz: {}, wb: {} },
+          recent: []
+        })
+      });
+    });
+    await page.route('**/api/device-config', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200, contentType: 'application/json',
+          body: JSON.stringify({ ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1 })
+        });
+      } else { await route.continue(); }
+    });
+    await page.route('**/api/history**', route => route.fulfill({
+      status: 200, contentType: 'application/json', body: '[]'
+    }));
+    await page.route('**/api/push/**', route => route.fulfill({
+      status: 200, contentType: 'application/json', body: '{}'
+    }));
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#mode-toggle')).toBeVisible();
+
+    // GET is still pending — inject a WS broadcast that should set the banner
+    await page.evaluate(({ watchdogs }) => {
+      window.__wdInject({
+        type: 'watchdog-state',
+        pending: {
+          id: 'ggr', firedAt: Math.floor(Date.now() / 1000),
+          mode: 'GREENHOUSE_HEATING', dbEventId: 99,
+          triggerReason: 'race regression test'
+        },
+        watchdogs: watchdogs,
+        snapshot: { we: { ggr: 1 }, wz: {}, wb: {} }
+      });
+    }, { watchdogs: WATCHDOGS_META });
+
+    await expect(page.locator('#watchdog-banner')).toBeVisible();
+
+    // Now release the GET — it returns pending:null. Without the
+    // fix the banner would be hidden again here. With the fix the
+    // GET is discarded because the WS already seeded the state.
+    releaseGet();
+
+    // Give the GET a chance to fully resolve. We expect the banner
+    // to STAY visible the whole time.
+    await page.waitForTimeout(300);
+    await expect(page.locator('#watchdog-banner')).toBeVisible();
+    await expect(page.locator('#watchdog-banner-title')).toContainText('Greenhouse not warming');
+  });
 });
