@@ -179,6 +179,31 @@ describe('push', () => {
         assert.match(payload.icon, /^assets\/notif-.*\.png$/, `icon path for ${cat} must be assets/notif-*.png (got ${payload.icon})`);
       });
     });
+
+    it('watchdog_fired mock includes inline-reply action so the test exercises real shape', () => {
+      const payload = push.buildMockPayload('watchdog_fired');
+      assert.ok(Array.isArray(payload.actions), 'expected actions array');
+      assert.strictEqual(payload.actions.length, 2);
+
+      const snooze = payload.actions.find(a => a.action === 'snooze');
+      assert.ok(snooze, 'expected snooze action');
+      assert.strictEqual(snooze.type, 'text', 'snooze action must be type:text for inline reply');
+      assert.ok(snooze.placeholder, 'snooze action should have a placeholder hint');
+
+      const shutdown = payload.actions.find(a => a.action === 'shutdownnow');
+      assert.ok(shutdown, 'expected shutdownnow action');
+      assert.strictEqual(shutdown.type, 'button');
+
+      // requireInteraction so the notification doesn't auto-dismiss
+      assert.strictEqual(payload.requireInteraction, true);
+
+      // SW must recognize this as a watchdog-style notification AND
+      // know it's a test, so it short-circuits before POSTing to
+      // the real /api/watchdog/* endpoints.
+      assert.ok(payload.data, 'expected data object on watchdog mock');
+      assert.strictEqual(payload.data.kind, 'watchdog_fired');
+      assert.strictEqual(payload.data.test, true);
+    });
   });
 
   describe('iconFor / CATEGORY_ICONS', () => {

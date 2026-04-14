@@ -75,6 +75,15 @@ self.addEventListener('notificationclick', function (event) {
   // Both POST to the watchdog HTTP endpoints; credentials:include so
   // the session cookie rides along.
   if (data.kind === 'watchdog_fired') {
+    // Test notifications (sent from Settings → "send test") use the
+    // same shape as a real fire so the user can preview the inline
+    // reply input and the Shutdown now button on their actual device.
+    // But the server has no pending fire, so we must NOT POST to the
+    // real endpoints — that would 409. Just close the notification.
+    if (data.test) {
+      return;
+    }
+
     var action = event.action;
     var reply  = event.reply;
 

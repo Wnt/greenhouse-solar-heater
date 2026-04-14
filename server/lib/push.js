@@ -333,12 +333,35 @@ function buildMockPayload(category) {
     };
   }
   if (category === 'watchdog_fired') {
+    // Mirror the real fired-notification shape so the test exercises
+    // the inline-reply input and the "Shutdown now" button. Without
+    // `actions`, the notification renders bare and the user can't
+    // verify whether their device supports inline replies.
+    //
+    // `data.test: true` is the SW-side short-circuit: tapping snooze
+    // or shutdown on a TEST notification must not POST to the real
+    // /api/watchdog/* endpoints — there's no pending fire on the
+    // server, so the call would 409. The SW closes the notification
+    // and does nothing else.
     return {
       title: '[Test] Watchdog fired \u2014 Greenhouse not warming',
       body: 'Greenhouse only +0.2\u00B0C after 15:00. Auto-shutdown in 5 min.',
       tag: 'test-watchdog-fired',
       icon: iconFor(category),
+      badge: 'assets/badge-72.png',
       url: '/#status',
+      requireInteraction: true,
+      renotify: true,
+      actions: [
+        { action: 'shutdownnow', type: 'button', title: 'Shutdown now' },
+        { action: 'snooze',      type: 'text',   title: 'Snooze',
+          placeholder: 'Reason (e.g. door open)' },
+      ],
+      data: {
+        kind: 'watchdog_fired',
+        test: true,
+        url: '/#status',
+      },
     };
   }
   return null;
