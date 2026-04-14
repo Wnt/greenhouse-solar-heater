@@ -275,16 +275,13 @@ function publishRelayCommand(relay, on) {
   return true;
 }
 
-function publishWatchdogCmd(cmd) {
-  if (!mqttClient || !mqttClient.connected) {
-    log.warn('cannot publish watchdog cmd: MQTT not connected');
-    return false;
-  }
-  var span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': 'greenhouse/watchdog/cmd' } });
-  mqttClient.publish('greenhouse/watchdog/cmd', JSON.stringify(cmd), { qos: 1, retain: false });
-  span.end();
-  return true;
-}
+// NOTE: there is intentionally no publishWatchdogCmd. Watchdog ack
+// and shutdownnow round-trip via the existing greenhouse/config
+// retained topic — the server PUTs a partial config update with the
+// wz[id] (snooze) or wb[modeCode] (ban) field, the device picks it
+// up in its existing config_changed handler, and reacts. This avoids
+// adding a 6th MQTT subscription to the Shelly device, which has a
+// limited subscription budget.
 
 // ── MQTT request/response helpers ──
 
@@ -366,7 +363,6 @@ module.exports = {
   publishConfig: publishConfig,
   publishSensorConfig: publishSensorConfig,
   publishRelayCommand: publishRelayCommand,
-  publishWatchdogCmd: publishWatchdogCmd,
   publishSensorConfigApply: publishSensorConfigApply,
   publishDiscoveryRequest: publishDiscoveryRequest,
   handleStateMessage: handleStateMessage,

@@ -5,10 +5,17 @@
 // only carries the three watchdog short ids (sng/scs/ggr) and a
 // mapping to mode codes; all human-readable labels and TTLs live here.
 
+// Uniform watchdog cool-off ban duration (4 hours). Mirrors
+// DEFAULT_CONFIG.watchdogBanSeconds in shelly/control-logic.js — kept
+// here so the server can compute the same ban timestamp without
+// importing the full device script.
+var WATCHDOG_BAN_SECONDS = 14400;
+
 var WATCHDOGS = [
   {
     id: "sng",
     mode: "SOLAR_CHARGING",
+    modeCode: "SC",
     label: "No tank gain",
     shortLabel: "Tank not heating",
     windowSeconds: 600,
@@ -17,6 +24,7 @@ var WATCHDOGS = [
   {
     id: "scs",
     mode: "SOLAR_CHARGING",
+    modeCode: "SC",
     label: "Collector stuck",
     shortLabel: "Collector flow stuck",
     windowSeconds: 300,
@@ -25,6 +33,7 @@ var WATCHDOGS = [
   {
     id: "ggr",
     mode: "GREENHOUSE_HEATING",
+    modeCode: "GH",
     label: "No greenhouse rise",
     shortLabel: "Greenhouse not warming",
     windowSeconds: 900,
@@ -45,6 +54,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     WATCHDOGS: WATCHDOGS,
     WATCHDOG_IDS: WATCHDOG_IDS,
+    WATCHDOG_BAN_SECONDS: WATCHDOG_BAN_SECONDS,
     getWatchdog: getWatchdog
   };
 }

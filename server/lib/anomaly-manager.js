@@ -9,7 +9,9 @@
 
 'use strict';
 
-const { WATCHDOGS, WATCHDOG_IDS, getWatchdog } = require('../../shelly/watchdogs-meta.js');
+const {
+  WATCHDOGS, WATCHDOG_IDS, WATCHDOG_BAN_SECONDS, getWatchdog
+} = require('../../shelly/watchdogs-meta.js');
 
 // Module-scoped state — set by init()
 let _deps = null;         // { deviceConfig, mqttBridge, push, wsBroadcast, history, log }
@@ -159,6 +161,31 @@ function _buildNotificationPayload(pending) {
   };
 }
 
+// Internal helper: PUT a partial device-config update and publish the
+// resulting full config via the existing greenhouse/config retained
+// MQTT topic. Returns a Promise that resolves with the merged config.
+//
+// The device picks up the change in its existing config_changed event
+// handler, where it detects watchdog-relevant transitions (wz[id] for
+// snooze, wb[modeCode] for shutdown) and reacts. This avoids needing
+// a second MQTT subscription on the Shelly device, which has a
+// limited subscription budget.
+function _updateConfigAndPublish(patch) {
+  return new Promise((resolve, reject) => {
+    _deps.deviceConfig.updateConfig(patch, (err, updated) => {
+      if (err) return reject(err);
+      try {
+        if (_deps.mqttBridge && typeof _deps.mqttBridge.publishConfig === 'function') {
+          _deps.mqttBridge.publishConfig(updated);
+        }
+      } catch (e) { /* ignore publish errors — server already persisted */ }
+      // Mirror snapshot for live broadcasts and getState() calls.
+      updateSnapshot(updated);
+      resolve(updated);
+    });
+  });
+}
+
 async function ack(id, reason, user) {
   if (!_pending || _pending.id !== id) {
     throw new Error('no matching pending');
@@ -173,11 +200,14 @@ async function ack(id, reason, user) {
     resolved_by: user.name
   });
 
-  _deps.mqttBridge.publishWatchdogCmd({
-    t: 'ack',
-    id: id,
-    u: snoozeUntil
-  });
+  // Encode the snooze as a wz[id] config update. The device's
+  // config_changed handler detects "wz[id] just became set while a
+  // pending fire exists for this id" and treats it as the snooze
+  // ack — same effect as the old MQTT cmd path, but uses the
+  // existing greenhouse/config subscription.
+  const patch = { wz: {} };
+  patch.wz[id] = snoozeUntil;
+  await _updateConfigAndPublish(patch);
 
   return { snoozeUntil };
 }
@@ -186,13 +216,23 @@ async function shutdownNow(id, user) {
   if (!_pending || _pending.id !== id) {
     throw new Error('no matching pending');
   }
+  const meta = getWatchdog(id);
+  if (!meta || !meta.modeCode) {
+    throw new Error('unknown watchdog mode for id ' + id);
+  }
   await _deps.history.update(_pending.dbEventId, {
     resolved_by: user.name
   });
-  _deps.mqttBridge.publishWatchdogCmd({
-    t: 'shutdownnow',
-    id: id
-  });
+
+  // Encode the user-triggered shutdown as a wb[modeCode] cool-off
+  // ban set to (now + WATCHDOG_BAN_SECONDS). The device detects
+  // "wb[modeCode] just became set while a pending fire exists for
+  // a watchdog of this mode" and reacts: clears pending, transitions
+  // to IDLE, publishes "resolved shutdown_user".
+  const banUntil = Math.floor(Date.now() / 1000) + WATCHDOG_BAN_SECONDS;
+  const patch = { wb: {} };
+  patch.wb[meta.modeCode] = banUntil;
+  await _updateConfigAndPublish(patch);
 }
 
 function setEnabled(id, enabled, user) {

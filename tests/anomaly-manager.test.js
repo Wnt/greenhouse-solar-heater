@@ -33,8 +33,9 @@ describe('anomaly-manager formatReason', () => {
 });
 
 function makeMocks() {
-  const calls = { history: [], push: [], ws: [], mqtt: [] };
+  const calls = { history: [], push: [], ws: [], deviceConfigPut: [], publishedConfigs: [] };
   let nextId = 0;
+  let storedConfig = { ce: true, ea: 0, fm: null, we: {}, wz: {}, wb: {}, v: 1 };
   const history = {
     insert: (row) => {
       nextId++;
@@ -55,12 +56,35 @@ function makeMocks() {
   };
   const wsBroadcast = (msg) => calls.ws.push(msg);
   const mqttBridge = {
-    publishWatchdogCmd: (msg) => calls.mqtt.push(msg),
-    publishConfig: () => {},
+    publishConfig: (cfg) => calls.publishedConfigs.push(cfg),
   };
   const deviceConfig = {
-    getConfig: () => ({ we: {}, wz: {}, wb: {} }),
-    updateConfig: (update, cb) => cb(null, Object.assign({ we: {}, wz: {}, wb: {} }, update))
+    getConfig: () => storedConfig,
+    updateConfig: (update, cb) => {
+      calls.deviceConfigPut.push(update);
+      // Mimic the real partial-update merge for wb/wz/we.
+      if (update.wz) {
+        storedConfig.wz = Object.assign({}, storedConfig.wz);
+        for (const k of Object.keys(update.wz)) {
+          const v = update.wz[k];
+          if (v === 0 || v === null) delete storedConfig.wz[k];
+          else storedConfig.wz[k] = v;
+        }
+      }
+      if (update.wb) {
+        storedConfig.wb = Object.assign({}, storedConfig.wb);
+        for (const k of Object.keys(update.wb)) {
+          const v = update.wb[k];
+          if (v === 0 || v === null) delete storedConfig.wb[k];
+          else storedConfig.wb[k] = v;
+        }
+      }
+      if (update.we) {
+        storedConfig.we = Object.assign({}, storedConfig.we, update.we);
+      }
+      storedConfig.v++;
+      cb(null, storedConfig);
+    }
   };
   return {
     history, push, wsBroadcast, mqttBridge, deviceConfig, calls,
@@ -116,7 +140,7 @@ describe('anomaly-manager handleDeviceEvent fired', () => {
 });
 
 describe('anomaly-manager ack', () => {
-  it('computes snoozeUntil and publishes MQTT ack', async () => {
+  it('computes snoozeUntil and pushes wz update via device-config', async () => {
     const mocks = makeMocks();
     anomalyManager.init(mocks);
 
@@ -133,10 +157,17 @@ describe('anomaly-manager ack', () => {
     assert.ok(result.snoozeUntil > nowSec);
     assert.ok(result.snoozeUntil - nowSec > 43000);
 
-    assert.strictEqual(mocks.calls.mqtt.length, 1);
-    assert.strictEqual(mocks.calls.mqtt[0].t, 'ack');
-    assert.strictEqual(mocks.calls.mqtt[0].id, 'ggr');
-    assert.strictEqual(mocks.calls.mqtt[0].u, result.snoozeUntil);
+    // Server should NOT publish to a watchdog/cmd topic — that
+    // subscription was deliberately removed from the device. Instead,
+    // it issues a partial wz update and republishes the full config
+    // via the existing greenhouse/config subscription.
+    const wzUpdate = mocks.calls.deviceConfigPut.find(u => u.wz);
+    assert.ok(wzUpdate, 'expected a wz partial update');
+    assert.strictEqual(wzUpdate.wz.ggr, result.snoozeUntil);
+
+    // The merged config should be published via greenhouse/config
+    assert.strictEqual(mocks.calls.publishedConfigs.length, 1);
+    assert.strictEqual(mocks.calls.publishedConfigs[0].wz.ggr, result.snoozeUntil);
 
     const update = mocks.calls.history.find(h => h.snooze_reason);
     assert.ok(update);
@@ -156,7 +187,7 @@ describe('anomaly-manager ack', () => {
 });
 
 describe('anomaly-manager shutdownNow', () => {
-  it('publishes MQTT shutdownnow command', async () => {
+  it('pushes wb cool-off ban via device-config update', async () => {
     const mocks = makeMocks();
     anomalyManager.init(mocks);
 
@@ -167,9 +198,18 @@ describe('anomaly-manager shutdownNow', () => {
 
     await anomalyManager.shutdownNow('scs', { name: 'jonni', role: 'admin' });
 
-    assert.strictEqual(mocks.calls.mqtt.length, 1);
-    assert.strictEqual(mocks.calls.mqtt[0].t, 'shutdownnow');
-    assert.strictEqual(mocks.calls.mqtt[0].id, 'scs');
+    // The shutdown command is encoded as a wb[modeCode] cool-off ban
+    // pushed via greenhouse/config — no separate watchdog/cmd topic.
+    // scs maps to mode SOLAR_CHARGING → modeCode "SC".
+    const wbUpdate = mocks.calls.deviceConfigPut.find(u => u.wb);
+    assert.ok(wbUpdate, 'expected a wb partial update');
+    const nowSec = Math.floor(Date.now() / 1000);
+    assert.ok(wbUpdate.wb.SC > nowSec);
+    assert.ok(wbUpdate.wb.SC < nowSec + 14401, 'ban TTL <= 4h');
+    assert.ok(wbUpdate.wb.SC > nowSec + 14000, 'ban TTL ~4h');
+
+    assert.strictEqual(mocks.calls.publishedConfigs.length, 1);
+    assert.strictEqual(mocks.calls.publishedConfigs[0].wb.SC, wbUpdate.wb.SC);
 
     const update = mocks.calls.history.find(h => h.resolved_by);
     assert.ok(update);

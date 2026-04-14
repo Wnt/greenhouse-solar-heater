@@ -354,6 +354,32 @@ function publishWatchdogEvent(payload) {
 
 // ── Watchdog resolution handlers ──
 
+// Build an IDLE result for transitionTo() — used when a watchdog
+// fires the auto-shutdown path or the user-initiated shutdown via
+// config push.
+function buildIdleTransitionResult() {
+  return {
+    nextMode: MODES.IDLE,
+    valves: MODE_VALVES[MODES.IDLE],
+    actuators: MODE_ACTUATORS[MODES.IDLE],
+    flags: {
+      collectorsDrained: state.collectors_drained,
+      lastRefillAttempt: state.last_refill_attempt / 1000,
+      emergencyHeatingActive: false,
+      solarChargePeakTankTop: null,
+      solarChargePeakTankTopAt: 0
+    },
+    suppressed: false,
+    safetyOverride: false
+  };
+}
+
+// Auto-shutdown path: called from watchdogTick() after the 5-minute
+// pending grace period elapses with no user response. The device
+// writes the cool-off ban to its own KVS and transitions to IDLE.
+// User-initiated shutdownnow does NOT come through here — it arrives
+// as a config update via the existing greenhouse/config subscription
+// and is handled by handleConfigDrivenResolution() below.
 function applyBanAndShutdown(id, how) {
   var modeCode = WATCHDOG_MODE[id];
   if (!modeCode) return;
@@ -372,23 +398,7 @@ function applyBanAndShutdown(id, how) {
   });
 
   state.watchdogPending = null;
-  // Compute an IDLE result and run a full transition so pump/fan/valves
-  // go through the staged scheduler rather than abrupt relay changes.
-  var idleResult = {
-    nextMode: MODES.IDLE,
-    valves: MODE_VALVES[MODES.IDLE],
-    actuators: MODE_ACTUATORS[MODES.IDLE],
-    flags: {
-      collectorsDrained: state.collectors_drained,
-      lastRefillAttempt: state.last_refill_attempt / 1000,
-      emergencyHeatingActive: false,
-      solarChargePeakTankTop: null,
-      solarChargePeakTankTopAt: 0
-    },
-    suppressed: false,
-    safetyOverride: false
-  };
-  transitionTo(idleResult);
+  transitionTo(buildIdleTransitionResult());
   publishWatchdogEvent({ t: "resolved", id: id, how: how, ts: nowSec });
 }
 
@@ -396,28 +406,64 @@ function autoShutdown(id) {
   applyBanAndShutdown(id, "shutdown_auto");
 }
 
-function onWatchdogShutdownNow(id) {
-  if (!state.watchdogPending || state.watchdogPending.id !== id) return;
-  applyBanAndShutdown(id, "shutdown_user");
-}
+// User-driven resolution arrives as a device-config update (no
+// dedicated watchdog/cmd subscription on the device — see telemetry.js
+// notes). Detects two transitions:
+//
+//   1. wz[id] just became set to a future timestamp while a pending
+//      fire exists for this id → snooze ack. Clear pending, publish
+//      "resolved snoozed". Mode keeps running.
+//
+//   2. wb[modeCode] just became set to a future timestamp while a
+//      pending fire exists for a watchdog of this mode → shutdown
+//      now. Clear pending, transitionTo(IDLE), publish "resolved
+//      shutdown_user".
+//
+// Called from the config_changed event handler immediately after the
+// in-memory deviceConfig is replaced. The previous config is captured
+// before the assignment so the comparison can detect "just changed".
+//
+// Edge cases:
+// - If state.watchdogPending is already null (auto-shutdown won the
+//   race), do nothing. The wz/wb value in the new config is still
+//   honored for any future fire.
+// - "Clear cool-off" (wb[modeCode]=0) and "Clear snooze" (wz[id]=0)
+//   are filtered out by the `> nowSec` check since they delete the
+//   entry rather than setting a future timestamp.
+// - If a watchdog is pending and the user manually disables the same
+//   mode (sets wb sentinel) for unrelated reasons, the device treats
+//   it as a user-initiated shutdown of the in-flight watchdog.
+//   Semantically correct — banning a running mode shuts it down.
+function handleConfigDrivenResolution(prevCfg, newCfg) {
+  if (!state.watchdogPending) return;
+  var pid = state.watchdogPending.id;
+  var nowSec = Math.floor(Date.now() / 1000);
 
-function onWatchdogAck(msg) {
-  // msg = { t:"ack", id:"ggr", u:<unix seconds> }
-  if (!state.watchdogPending || state.watchdogPending.id !== msg.id) return;
-  deviceConfig.wz = deviceConfig.wz || {};
-  deviceConfig.wz[msg.id] = msg.u;
-  Shelly.call("KVS.Set", {
-    key: "config",
-    value: JSON.stringify(deviceConfig)
-  });
-  state.watchdogPending = null;
-  publishWatchdogEvent({
-    t: "resolved",
-    id: msg.id,
-    how: "snoozed",
-    ts: Math.floor(Date.now() / 1000)
-  });
-  // NOTE: mode is NOT transitioned — snooze keeps it running
+  // Snooze: wz[pid] just became set/updated to a future time
+  var newWz = newCfg.wz && newCfg.wz[pid];
+  var oldWz = prevCfg && prevCfg.wz && prevCfg.wz[pid];
+  if (newWz && newWz > nowSec && newWz !== oldWz) {
+    state.watchdogPending = null;
+    publishWatchdogEvent({
+      t: "resolved", id: pid, how: "snoozed", ts: nowSec
+    });
+    // NOTE: mode keeps running — snooze does not transition.
+    return;
+  }
+
+  // Shutdown: wb[modeCode] just became set/updated to a future time
+  var modeCode = WATCHDOG_MODE[pid];
+  if (modeCode) {
+    var newWb = newCfg.wb && newCfg.wb[modeCode];
+    var oldWb = prevCfg && prevCfg.wb && prevCfg.wb[modeCode];
+    if (newWb && newWb > nowSec && newWb !== oldWb) {
+      state.watchdogPending = null;
+      transitionTo(buildIdleTransitionResult());
+      publishWatchdogEvent({
+        t: "resolved", id: pid, how: "shutdown_user", ts: nowSec
+      });
+    }
+  }
 }
 
 // ── Staged transitions (023-limit-valve-operations) ──
@@ -1039,7 +1085,13 @@ Shelly.addEventHandler(function(ev) {
   if (ev.info.event === "config_changed") {
     var data = ev.info.data;
     if (data && data.config) {
+      // Capture the old config BEFORE overwriting so we can detect
+      // watchdog-driven transitions (snooze ack and user-initiated
+      // shutdown both arrive as wz/wb config updates rather than a
+      // separate MQTT cmd subscription).
+      var prevDeviceConfig = deviceConfig;
       deviceConfig = data.config;
+      handleConfigDrivenResolution(prevDeviceConfig, deviceConfig);
       if (data.safety_critical) {
         controlLoop();
       }
@@ -1063,15 +1115,6 @@ Shelly.addEventHandler(function(ev) {
     var relayData = ev.info.data;
     if (relayData && typeof relayData.relay === "string" && typeof relayData.on === "boolean") {
       handleRelayCommand(relayData.relay, relayData.on);
-    }
-  } else if (ev.info.event === "watchdog_cmd") {
-    var wdCmd = ev.info.data;
-    if (wdCmd && typeof wdCmd.t === "string") {
-      if (wdCmd.t === "ack" && typeof wdCmd.id === "string" && typeof wdCmd.u === "number") {
-        onWatchdogAck(wdCmd);
-      } else if (wdCmd.t === "shutdownnow" && typeof wdCmd.id === "string") {
-        onWatchdogShutdownNow(wdCmd.id);
-      }
     }
   }
 });

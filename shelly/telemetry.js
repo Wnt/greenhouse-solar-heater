@@ -11,8 +11,12 @@ var DISCOVER_TOPIC = "greenhouse/discover-sensors";
 var DISCOVER_RESULT_TOPIC = "greenhouse/discover-sensors-result";
 var RELAY_COMMAND_TOPIC = "greenhouse/relay-command";
 var STATE_TOPIC = "greenhouse/state";
+// Watchdog events are device→server only. There is intentionally NO
+// matching watchdog/cmd subscription on the device — user ack and
+// shutdownnow commands round-trip via the existing greenhouse/config
+// retained topic (the server PUTs a partial wz/wb update). This keeps
+// the device under its MQTT subscription budget.
 var WATCHDOG_EVENT_TOPIC = "greenhouse/watchdog/event";
-var WATCHDOG_CMD_TOPIC = "greenhouse/watchdog/cmd";
 var CONFIG_KVS_KEY = "config";
 var SENSOR_CONFIG_KVS_KEY = "sensor_config";
 var CONFIG_URL = "";  // Set via KVS "config_url" or default
@@ -186,15 +190,6 @@ function setupMqttSubscription() {
       var cmd = JSON.parse(message);
       if (cmd && typeof cmd.relay === "string" && typeof cmd.on === "boolean") {
         Shelly.emitEvent("relay_command", {relay: cmd.relay, on: cmd.on});
-      }
-    } catch(e) {}
-  });
-  safeSubscribe(WATCHDOG_CMD_TOPIC, function(topic, message) {
-    if (topic !== WATCHDOG_CMD_TOPIC) return;
-    try {
-      var cmd = JSON.parse(message);
-      if (cmd && typeof cmd.t === "string") {
-        Shelly.emitEvent("watchdog_cmd", cmd);
       }
     } catch(e) {}
   });
