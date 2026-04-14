@@ -341,8 +341,14 @@ function buildMockPayload(category) {
     // `data.test: true` is the SW-side short-circuit: tapping snooze
     // or shutdown on a TEST notification must not POST to the real
     // /api/watchdog/* endpoints — there's no pending fire on the
-    // server, so the call would 409. The SW closes the notification
-    // and does nothing else.
+    // server, so the call would 409. Instead, the SW handles the
+    // action locally and shows an acknowledgement notification with
+    // the user's reply text, mirroring the real ack flow entirely
+    // client-side.
+    //
+    // `snoozeTtlSeconds` and `testLabel` give the SW the metadata it
+    // needs to build the local ack notification (for ggr the snooze
+    // TTL is 12h per shelly/watchdogs-meta.js).
     return {
       title: '[Test] Watchdog fired \u2014 Greenhouse not warming',
       body: 'Greenhouse only +0.2\u00B0C after 15:00. Auto-shutdown in 5 min.',
@@ -360,6 +366,8 @@ function buildMockPayload(category) {
       data: {
         kind: 'watchdog_fired',
         test: true,
+        testLabel: 'Greenhouse not warming',
+        snoozeTtlSeconds: 43200,
         url: '/#status',
       },
     };

@@ -111,20 +111,68 @@ async function _handleFired(msg) {
 
 async function _handleResolved(msg) {
   const resolvedAt = new Date((msg.ts || Math.floor(Date.now() / 1000)) * 1000);
-  let rowId = null;
-  if (_pending && _pending.id === msg.id) {
-    rowId = _pending.dbEventId;
-  }
-  if (rowId) {
-    await _deps.history.update(rowId, {
+  const matches = !!(_pending && _pending.id === msg.id);
+
+  if (matches) {
+    await _deps.history.update(_pending.dbEventId, {
       resolution: msg.how,
       resolved_at: resolvedAt
     });
-  }
-  if (_pending && _pending.id === msg.id) {
+
+    // Snooze ack push: the user submitted a snooze (via inline reply
+    // or web UI), the server pushed the wz config, and the device has
+    // now confirmed it processed the snooze. Send a positive
+    // confirmation push so the user sees the result of their action
+    // even if they were interacting purely via the system notification
+    // and never had the app open. The push is dispatched BEFORE
+    // _pending is cleared so the stashed snooze metadata is still
+    // available.
+    if (msg.how === 'snoozed' && _pending.snoozeUntil) {
+      _dispatchSnoozeAckPush(msg.id, _pending);
+    }
+
     _pending = null;
   }
+
   _broadcastState();
+}
+
+function _dispatchSnoozeAckPush(id, pendingSnapshot) {
+  if (!_deps.push || typeof _deps.push.sendByCategory !== 'function') return;
+  const meta = getWatchdog(id);
+  const label = meta ? meta.shortLabel : id;
+  const reason = pendingSnapshot.snoozeReason || '(no reason provided)';
+  const until = new Date(pendingSnapshot.snoozeUntil * 1000);
+  // Compact "HH:MM" formatting using local-time UTC offset of the
+  // server. The user's wall-clock interpretation matches whatever
+  // their browser sees in the in-app banner.
+  const hh = until.getHours();
+  const mm = until.getMinutes();
+  const untilStr = (hh < 10 ? '0' + hh : '' + hh) + ':' +
+                   (mm < 10 ? '0' + mm : '' + mm);
+
+  const payload = {
+    title: 'Snooze applied \u2014 ' + label,
+    body: '"' + reason + '" \u2014 running until ' + untilStr,
+    icon: 'assets/notif-watchdog.png',
+    badge: 'assets/badge-72.png',
+    // Same tag as the original fire notification so this REPLACES it
+    // on the device rather than stacking. The user sees the original
+    // notification turn into the ack confirmation.
+    tag: 'watchdog-' + id,
+    data: {
+      kind: 'watchdog_ack',
+      watchdogId: id,
+      url: '/#status',
+    }
+  };
+
+  Promise.resolve(_deps.push.sendByCategory('watchdog_fired', payload))
+    .catch(err => {
+      if (_deps.log && _deps.log.error) {
+        _deps.log.error('watchdog ack push failed', { error: err.message });
+      }
+    });
 }
 
 function _broadcastState() {
@@ -199,6 +247,16 @@ async function ack(id, reason, user) {
     snooze_until: new Date(snoozeUntil * 1000),
     resolved_by: user.name
   });
+
+  // Stash snooze metadata on _pending so _handleResolved can build
+  // the ack notification once the device confirms it processed the
+  // snooze. We don't fire the ack push here directly — we wait for
+  // the device's "resolved snoozed" event so the confirmation truly
+  // means "the device has applied your snooze", not just "the server
+  // accepted your request".
+  _pending.snoozeUntil = snoozeUntil;
+  _pending.snoozeReason = reason;
+  _pending.snoozedBy = user.name;
 
   // Encode the snooze as a wz[id] config update. The device's
   // config_changed handler detects "wz[id] just became set while a

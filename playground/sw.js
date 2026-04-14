@@ -79,8 +79,44 @@ self.addEventListener('notificationclick', function (event) {
     // same shape as a real fire so the user can preview the inline
     // reply input and the Shutdown now button on their actual device.
     // But the server has no pending fire, so we must NOT POST to the
-    // real endpoints — that would 409. Just close the notification.
+    // real endpoints — that would 409. Instead, mirror the real flow
+    // entirely client-side by showing a local acknowledgement
+    // notification with the user's reply text. This lets the user
+    // verify the full UX (fire → snooze with reason → ack confirmation)
+    // without involving the device.
     if (data.test) {
+      var testTitle = data.testLabel || 'Greenhouse not warming';
+      if (event.action === 'snooze') {
+        var testReply = (event.reply && event.reply.trim()) || '(no reason provided)';
+        var ttlSec = data.snoozeTtlSeconds || 43200;
+        var until = new Date(Date.now() + ttlSec * 1000);
+        var pad2 = function (n) { return n < 10 ? '0' + n : '' + n; };
+        var untilStr = pad2(until.getHours()) + ':' + pad2(until.getMinutes());
+        event.waitUntil(self.registration.showNotification(
+          '[Test] Snooze applied \u2014 ' + testTitle,
+          {
+            body: '"' + testReply + '" \u2014 would run until ' + untilStr,
+            icon: 'assets/notif-watchdog.png',
+            badge: 'assets/badge-72.png',
+            // Same tag as the test fire notification so this REPLACES
+            // it on the device, mirroring the real-flow behaviour
+            // where the ack push reuses the watchdog-<id> tag.
+            tag: 'test-watchdog-fired',
+            data: { kind: 'watchdog_ack_test', test: true, url: '/#status' },
+          }
+        ));
+      } else if (event.action === 'shutdownnow') {
+        event.waitUntil(self.registration.showNotification(
+          '[Test] Shutdown applied \u2014 ' + testTitle,
+          {
+            body: 'Cool-off would be active for the next 4 h.',
+            icon: 'assets/notif-watchdog.png',
+            badge: 'assets/badge-72.png',
+            tag: 'test-watchdog-fired',
+            data: { kind: 'watchdog_ack_test', test: true, url: '/#status' },
+          }
+        ));
+      }
       return;
     }
 

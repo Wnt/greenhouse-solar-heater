@@ -137,6 +137,65 @@ describe('anomaly-manager handleDeviceEvent fired', () => {
     assert.ok(updates.length >= 1);
     assert.strictEqual(updates[0].resolution, 'snoozed');
   });
+
+  it('dispatches a snooze ack push when the device confirms snoozed resolution', async () => {
+    const mocks = makeMocks();
+    anomalyManager.init(mocks);
+
+    // Fire → ack → resolved (snoozed) — the full happy path.
+    await anomalyManager.handleDeviceEvent({
+      t: 'fired', id: 'ggr', mode: 'GREENHOUSE_HEATING',
+      el: 905, dT: 0.3, dC: 0, dG: 0.2, ts: 1700000000
+    });
+
+    await anomalyManager.ack('ggr', 'door open, visiting today',
+                             { name: 'jonni', role: 'admin' });
+
+    // Drain the fire-and-forget push from _handleFired
+    await new Promise(r => setTimeout(r, 10));
+    const firePushes = mocks.calls.push.filter(p => p.payload.data.kind === 'watchdog_fired');
+    assert.strictEqual(firePushes.length, 1, 'expected one fire push');
+
+    // Now the device acknowledges the snooze
+    await anomalyManager.handleDeviceEvent({
+      t: 'resolved', id: 'ggr', how: 'snoozed', ts: 1700000060
+    });
+    await new Promise(r => setTimeout(r, 10));
+
+    const ackPushes = mocks.calls.push.filter(p => p.payload.data.kind === 'watchdog_ack');
+    assert.strictEqual(ackPushes.length, 1, 'expected one ack push');
+    const ack = ackPushes[0].payload;
+    assert.strictEqual(ackPushes[0].category, 'watchdog_fired');
+    assert.match(ack.title, /Snooze applied/);
+    assert.match(ack.title, /Greenhouse not warming/);
+    assert.match(ack.body, /door open, visiting today/);
+    assert.match(ack.body, /running until \d{2}:\d{2}/);
+    // Same tag as the original fire so this REPLACES the fire
+    // notification on the device rather than stacking.
+    assert.strictEqual(ack.tag, 'watchdog-ggr');
+    assert.strictEqual(ack.data.watchdogId, 'ggr');
+  });
+
+  it('does not dispatch an ack push when the device auto-shuts-down (no snooze metadata)', async () => {
+    const mocks = makeMocks();
+    anomalyManager.init(mocks);
+
+    await anomalyManager.handleDeviceEvent({
+      t: 'fired', id: 'ggr', mode: 'GREENHOUSE_HEATING',
+      el: 905, dT: 0.3, dC: 0, dG: 0.2, ts: 1700000000
+    });
+
+    // Auto-shutdown path: no ack() was called, so _pending has no
+    // snooze metadata. The resolved event should NOT dispatch an
+    // ack push (only DB update + WS broadcast).
+    await anomalyManager.handleDeviceEvent({
+      t: 'resolved', id: 'ggr', how: 'shutdown_auto', ts: 1700000300
+    });
+    await new Promise(r => setTimeout(r, 10));
+
+    const ackPushes = mocks.calls.push.filter(p => p.payload.data.kind === 'watchdog_ack');
+    assert.strictEqual(ackPushes.length, 0);
+  });
 });
 
 describe('anomaly-manager ack', () => {

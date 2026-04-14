@@ -204,6 +204,18 @@ describe('push', () => {
       assert.strictEqual(payload.data.kind, 'watchdog_fired');
       assert.strictEqual(payload.data.test, true);
     });
+
+    it('watchdog_fired mock carries snoozeTtlSeconds + testLabel for the SW local ack', () => {
+      // The SW builds a local "Snooze applied" notification when the
+      // user taps snooze on a TEST notification. It needs the snooze
+      // TTL to compute the "until HH:MM" string and the watchdog
+      // label to put in the title. Both are forwarded via data.
+      const payload = push.buildMockPayload('watchdog_fired');
+      assert.strictEqual(payload.data.snoozeTtlSeconds, 43200,
+        'ggr snooze TTL is 12h (43200s) per shelly/watchdogs-meta.js');
+      assert.ok(payload.data.testLabel,
+        'expected testLabel for the SW to render in the local ack title');
+    });
   });
 
   describe('iconFor / CATEGORY_ICONS', () => {
