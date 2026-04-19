@@ -330,7 +330,13 @@ function mqttRequest(requestTopic, responseTopic, payload, timeoutMs) {
 }
 
 function publishSensorConfigApply(request) {
-  return mqttRequest('greenhouse/sensor-config-apply', 'greenhouse/sensor-config-result', request, 30000);
+  // 60s budget — applying a multi-host config involves GetPeripherals +
+  // RemovePeripheral×N + AddPeripheral×M (~1s each) on each hub, plus a
+  // Shelly.Reboot on any hub that reports restart_required. 30s was
+  // intermittently tight once reboots were added, producing "Failed to
+  // fetch" in the client; bumping here gives slack without changing the
+  // device-side code.
+  return mqttRequest('greenhouse/sensor-config-apply', 'greenhouse/sensor-config-result', request, 60000);
 }
 
 function publishDiscoveryRequest(hosts, options) {

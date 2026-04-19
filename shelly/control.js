@@ -1021,6 +1021,14 @@ function needsRestart(r) {
   return !!(r && r.result && r.result.restart_required);
 }
 
+function rpcError(r) {
+  // Shelly Gen2 returns {"id":1,"error":{"code":-103,"message":"..."}}
+  // with HTTP 200 when the method was reached but rejected. addonRpc
+  // treats this as a success, so pull the error out here.
+  if (!r || !r.error) return null;
+  return (r.error.code !== undefined ? r.error.code + ": " : "") + (r.error.message || "unknown");
+}
+
 function doApply(req) {
   var cfg=req.config;
   if(!cfg||!cfg.h||!cfg.s){Shelly.emitEvent("sensor_config_apply_result",{id:req.id,success:false,results:[]});return;}
@@ -1032,34 +1040,50 @@ function doApply(req) {
       var ok=true;for(var j=0;j<res.length;j++){if(!res[j].ok)ok=false;}
       Shelly.emitEvent("sensor_config_apply_result",{id:req.id,success:ok,results:res});return;
     }
-    var ip=hosts[idx],hi=-1,reboot=false;
+    var ip=hosts[idx],hi=-1,reboot=false,errs=[];
     for(var k=0;k<cfg.h.length;k++){if(cfg.h[k]===ip){hi=k;break;}}
     addonRpc(ip,"SensorAddon.GetPeripherals",null,function(e,r){
-      if(e){res.push({host:ip,ok:false,error:e,peripherals:0});next(idx+1);return;}
+      if(e){res.push({host:ip,ok:false,error:"GetPeripherals: "+e,peripherals:0});next(idx+1);return;}
+      var re=rpcError(r);
+      if(re){res.push({host:ip,ok:false,error:"GetPeripherals: "+re,peripherals:0});next(idx+1);return;}
       var ex=[];var d=getDs18b20(r);for(var c in d)ex.push(c);
       function rm(ri){
         if(ri>=ex.length){add();return;}
-        addonRpc(ip,"SensorAddon.RemovePeripheral",{component:ex[ri]},function(re,rr){if(needsRestart(rr))reboot=true;rm(ri+1);});
+        addonRpc(ip,"SensorAddon.RemovePeripheral",{component:ex[ri]},function(rme,rmr){
+          var rerr=rme||rpcError(rmr);
+          if(rerr)errs.push("remove "+ex[ri]+": "+rerr);
+          if(needsRestart(rmr))reboot=true;
+          rm(ri+1);
+        });
       }
       function add(){
         // SensorAddon.AddPeripheral requires BOTH attrs.addr (which probe on
         // the 1-Wire bus) and attrs.cid (which component slot). Earlier code
         // only passed cid, so the Add-on created empty slots that polled no
         // physical probe — symptom: some sensors showed "—" after apply.
-        var ta=[];for(var rl in cfg.s){if(cfg.s[rl].h===hi)ta.push({i:cfg.s[rl].i,a:cfg.s[rl].a});}
+        var ta=[];for(var rl in cfg.s){if(cfg.s[rl].h===hi)ta.push({i:cfg.s[rl].i,a:cfg.s[rl].a,r:rl});}
         var n=0;
         function an(ai){
           if(ai>=ta.length){finishHost();return;}
           var attrs={cid:ta[ai].i};
           if(ta[ai].a)attrs.addr=ta[ai].a;
-          addonRpc(ip,"SensorAddon.AddPeripheral",{type:"ds18b20",attrs:attrs},function(ae,ar){if(!ae)n++;if(needsRestart(ar))reboot=true;an(ai+1);});
+          addonRpc(ip,"SensorAddon.AddPeripheral",{type:"ds18b20",attrs:attrs},function(ae,ar){
+            var aerr=ae||rpcError(ar);
+            if(aerr)errs.push("add "+ta[ai].r+" (cid "+ta[ai].i+", addr "+(ta[ai].a||"?")+"): "+aerr);
+            else n++;
+            if(needsRestart(ar))reboot=true;
+            an(ai+1);
+          });
         }
         an(0);
         function finishHost(){
-          if(!reboot){res.push({host:ip,ok:true,peripherals:n});next(idx+1);return;}
+          var hostRes={host:ip,ok:errs.length===0,peripherals:n};
+          if(errs.length)hostRes.error=errs.join("; ");
+          function done(){res.push(hostRes);next(idx+1);}
+          if(!reboot){done();return;}
           // Shelly.Reboot often tears down the HTTP connection before sending
           // a response — treat any callback (ok or error) as success and move on.
-          addonRpc(ip,"Shelly.Reboot",null,function(){res.push({host:ip,ok:true,peripherals:n,rebooted:true});next(idx+1);});
+          addonRpc(ip,"Shelly.Reboot",null,function(){hostRes.rebooted=true;done();});
         }
       }
       rm(0);

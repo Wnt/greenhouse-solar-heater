@@ -463,7 +463,7 @@ async function handleSave() {
   // Skip the round-trip when nothing changed — no version bump, no S3 write,
   // no MQTT republish. Saves users from accidentally pushing redundant configs.
   if (sensorConfig && assignmentsEqual(assignments, sensorConfig.assignments)) {
-    showStatus('No changes to save.');
+    showStatus('No changes to save \u2014 click Apply Configuration to re-push to hubs.');
     return;
   }
   showStatus('Saving...');
@@ -483,7 +483,16 @@ async function handleApply() {
     showApplyResults(result);
     showStatus('Apply complete.');
   } catch (e) {
-    showStatus('Apply failed: ' + e.message, true);
+    // Apply can take 30+ seconds when a hub needs to reboot. If the browser
+    // or an intermediate proxy gives up first, `fetch` rejects with something
+    // generic like "Failed to fetch" even though the device may have applied
+    // the changes successfully — surface that possibility so the user doesn't
+    // assume nothing happened.
+    var isNetErr = /fetch|network|abort/i.test(e.message || '');
+    var hint = isNetErr
+      ? 'Network error during apply \u2014 the hubs may have applied the changes anyway. Scan again to verify.'
+      : 'Apply failed: ' + e.message;
+    showStatus(hint, true);
   }
 }
 
