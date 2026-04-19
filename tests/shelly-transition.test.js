@@ -255,4 +255,42 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
       });
     });
   });
+
+  it('drain exit: closes valves BEFORE stopping pump', function(t, done) {
+    var rt = createOrderingRuntime();
+    rt.kvs.config = JSON.stringify({
+      ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1
+    });
+    rt.kvs.drained = '0';
+    rt.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
+    loadScript(rt, ['control-logic.js', 'control.js']);
+    rt.advance(10000, function() {
+      rt.globals.Shelly.__test_driveTransition('ACTIVE_DRAIN', {
+        nextMode: 'IDLE',
+        valves: { vi_btm: false, vi_top: false, vi_coll: false,
+                  vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
+        actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
+        flags: { collectorsDrained: true, lastRefillAttempt: 0,
+                 emergencyHeatingActive: false,
+                 solarChargePeakTankTop: null, solarChargePeakTankTopAt: 0 },
+        suppressed: false, safetyOverride: false,
+      });
+      // Advance long enough for valves to close AND the 20 s drain-exit wait
+      // AND the trailing setActuators. 30 s covers everything.
+      rt.advance(30000, function() {
+        var events = rt.events();
+        var firstValve = events.findIndex(function(e) {
+          return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
+        });
+        var pumpOff = events.findIndex(function(e) {
+          return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
+        });
+        assert.ok(firstValve >= 0, 'expected at least one valve HTTP.GET');
+        assert.ok(pumpOff >= 0, 'expected a pump-off Switch.Set');
+        assert.ok(firstValve < pumpOff,
+          'drain exit must actuate valves (index ' + firstValve + ') BEFORE stopping pump (index ' + pumpOff + ')');
+        done();
+      });
+    });
+  });
 });
