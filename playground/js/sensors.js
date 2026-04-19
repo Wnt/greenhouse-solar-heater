@@ -182,7 +182,9 @@ function renderSensorsView() {
       const label = s.addr + tempStr + (inUse ? ' [' + assignedAddrs[s.addr] + ']' : '');
       const selected = s.addr === assignedAddr ? ' selected' : '';
       const disabled = inUse ? ' disabled' : '';
-      html += '<option value="' + s.addr + '|' + s.hostIndex + '|' + (s.component ? s.component.replace('temperature:', '') : '100') + '"' + selected + disabled + '>' + label + '</option>';
+      // Option value omits the component ID — it's resolved in collectAssignments
+      // so unbound probes get unique cids instead of all defaulting to 100.
+      html += '<option value="' + s.addr + '|' + s.hostIndex + '"' + selected + disabled + '>' + label + '</option>';
     }
     html += '</select>';
 
@@ -271,18 +273,62 @@ function getMissingRequiredRoles() {
 }
 
 function collectAssignments() {
-  const assignments = {};
+  // Step 1 — map each (hostIndex|addr) to its currently-bound component ID, if any.
+  // The scan result's `component` field looks like "temperature:102" for probes
+  // already bound to a Shelly peripheral slot; null for freshly-detected probes.
+  const existingCid = {};
+  if (sensorConfig && sensorConfig.hosts) {
+    for (let hi = 0; hi < sensorConfig.hosts.length; hi++) {
+      const detected = detectedSensors[sensorConfig.hosts[hi].id];
+      if (!detected || !detected.sensors) continue;
+      for (const s of detected.sensors) {
+        if (s.component && s.component.indexOf('temperature:') === 0) {
+          const cid = parseInt(s.component.split(':')[1], 10);
+          if (!isNaN(cid)) existingCid[hi + '|' + s.addr] = cid;
+        }
+      }
+    }
+  }
+
+  // Step 2 — gather the current role picks from the dropdowns.
+  const picks = [];
   const selects = document.querySelectorAll('.sensor-select');
   for (const sel of selects) {
-    const role = sel.dataset.role;
-    if (sel.value) {
-      const parts = sel.value.split('|');
-      assignments[role] = {
-        addr: parts[0],
-        hostIndex: parseInt(parts[1], 10),
-        componentId: parseInt(parts[2], 10),
-      };
+    if (!sel.value) continue;
+    const parts = sel.value.split('|');
+    const addr = parts[0];
+    const hostIndex = parseInt(parts[1], 10);
+    picks.push({
+      role: sel.dataset.role,
+      addr: addr,
+      hostIndex: hostIndex,
+      fixedCid: existingCid[hostIndex + '|' + addr],  // undefined if unbound
+    });
+  }
+
+  // Step 3 — reserve cids for picks whose probe is already bound, then fill in
+  // the rest with the smallest free slot in [100, 199] on the same host. Without
+  // this, every unbound probe defaulted to cid 100 and saves failed with
+  // "Duplicate component ID 100 on host X for both <role A> and <role B>".
+  const usedPerHost = {};  // hostIndex -> Set<number>
+  const reserve = (hi, cid) => {
+    if (!usedPerHost[hi]) usedPerHost[hi] = new Set();
+    usedPerHost[hi].add(cid);
+  };
+  for (const p of picks) {
+    if (p.fixedCid != null) reserve(p.hostIndex, p.fixedCid);
+  }
+  const assignments = {};
+  for (const p of picks) {
+    let cid = p.fixedCid;
+    if (cid == null) {
+      const used = usedPerHost[p.hostIndex] || new Set();
+      for (let i = 100; i <= 199; i++) {
+        if (!used.has(i)) { cid = i; break; }
+      }
+      reserve(p.hostIndex, cid);
     }
+    assignments[p.role] = { addr: p.addr, hostIndex: p.hostIndex, componentId: cid };
   }
   return assignments;
 }

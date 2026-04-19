@@ -244,6 +244,75 @@ test.describe('Sensor Configuration View', () => {
     expect(putBody.assignments.collector).toBeDefined();
   });
 
+  test('auto-assigns unique component IDs when unbound probes are picked', async ({ page }) => {
+    // Regression — users were getting "Duplicate component ID 100 on host 0"
+    // because every unbound probe's <option> baked in componentId=100. Fix:
+    // collectAssignments resolves cids at save time, reusing existing
+    // bindings and filling the rest with the smallest free slot per host.
+    let putBody = null;
+    await page.route('**/api/sensor-config', async (route) => {
+      if (route.request().method() === 'PUT') {
+        putBody = JSON.parse(route.request().postData());
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ hosts: [], assignments: putBody.assignments, version: 1 }),
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            hosts: [{ id: 'sensor_1', ip: '192.168.30.20', name: 'Sensor Hub 1' }],
+            assignments: {},
+            version: 0,
+          }),
+        });
+      }
+    });
+    await page.route('**/api/sensor-discovery', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'disc-mock',
+          results: [{
+            host: '192.168.30.20',
+            ok: true,
+            sensors: [
+              // Already bound: cid 100
+              { addr: 'aa:01', tC: 55.8, component: 'temperature:100' },
+              // Unbound probes — the bug was that both would default to cid 100
+              { addr: 'bb:02', tC: null, component: null },
+              { addr: 'cc:03', tC: null, component: null },
+            ],
+          }],
+        }),
+      });
+    });
+
+    await goToSensorsAndScan(page);
+
+    // Probe aa:01 → collector (should keep its existing cid 100).
+    // Probe bb:02 → tank_top (unbound — should get next free cid, not 100 again).
+    // Probe cc:03 → tank_bottom (unbound — should get yet another free cid).
+    await page.locator('[data-role="collector"]').selectOption('aa:01|0');
+    await page.locator('[data-role="tank_top"]').selectOption('bb:02|0');
+    await page.locator('[data-role="tank_bottom"]').selectOption('cc:03|0');
+
+    await page.click('#btn-save-sensors');
+    await expect.poll(() => putBody).not.toBeNull();
+
+    const a = putBody.assignments;
+    expect(a.collector.componentId).toBe(100);
+    const cids = [a.collector.componentId, a.tank_top.componentId, a.tank_bottom.componentId];
+    expect(new Set(cids).size).toBe(3);  // all distinct
+    for (const cid of cids) {
+      expect(cid).toBeGreaterThanOrEqual(100);
+      expect(cid).toBeLessThanOrEqual(199);
+    }
+  });
+
   test('shows apply button and results', async ({ page }) => {
     await page.route('**/api/sensor-config/apply', async (route) => {
       await route.fulfill({
