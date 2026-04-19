@@ -1091,65 +1091,35 @@ function bootCloseValves() {
 
 // ── Test hook ──
 // Only used by Node unit tests running control.js under a mocked Shelly host.
-// The real Shelly device does not expose `globalThis`/the outer function scope,
-// so this is a no-op there (the assignment lands in local scope and is GC'd).
-// The Function-constructor wrapper used by the test runner passes
-// `this === undefined` in strict mode, so we bind to the `Shelly` mock object
-// which is always present.
-if (typeof Shelly !== "undefined" && Shelly) {
-  // Suppress Shelly.call event recording during boot so test runtimes only
-  // see events from the explicit transition under test. The mock records
-  // switch_set and http_get events synchronously inside shellyCall; if we
-  // don't suppress them, boot's pump-off and valve-close events pollute the
-  // event index space and findIndex comparisons find boot events instead of
-  // transition events. KVS calls are passed through unmodified because the
-  // boot sequence needs them to load config and sensor maps.
-  //
-  // This guard fires before boot() because the if-block runs at script load
-  // time, which precedes the boot() call at the bottom.
-  var _shellyCallOrig = Shelly.call;
-  var _shellyBootSuppressed = true;
-  Shelly.call = function(method, params, cb) {
-    if (!_shellyBootSuppressed) {
-      return _shellyCallOrig(method, params, cb);
-    }
-    // Suppressed path: pass KVS through (boot needs config), swallow
-    // Switch.Set and HTTP.GET callbacks with fake-success responses so
-    // the async callback chains (setActuators, closeAllValves) complete
-    // normally even though no events are recorded.
-    if (method === 'KVS.Get' || method === 'KVS.Set') {
-      return _shellyCallOrig(method, params, cb);
-    }
-    if (cb) { setImmediate(function() { cb({code: 200, body: ''}, null); }); }
-  };
-
+// The gate is a global `__TEST_HARNESS` symbol that the test runtime injects
+// via `new Function(..., '__TEST_HARNESS', src)` — on the real Shelly device
+// this identifier is undefined and the entire block is skipped, so production
+// code paths are untouched.
+if (typeof __TEST_HARNESS !== "undefined" && __TEST_HARNESS) {
   Shelly.__test_driveTransition = function(fromMode, result) {
-    // Re-enable recording so the transition's Shelly.call events are captured.
-    _shellyBootSuppressed = false;
     state.mode = MODES[fromMode] || fromMode;
     state.transitioning = false;
-    // Seed valve_states so scheduleStep() sees a real valve delta to actuate.
-    // Without this, boot already closed all valves and targetReached fires
-    // immediately with no valve HTTP events, making ordering assertions
-    // meaningless.
-    // Use scheduler polarity (toSchedulerView) to find valves that need to
-    // CLOSE (not open) in the scheduler's view. Close-only work completes in
-    // milliseconds; any open would trigger a 20 s openWindowMs delay that
-    // pushes the finalizeTransitionOK pump-off beyond the test's advance window.
+    // Seed valve_states so scheduleStep() sees real close work: boot already
+    // closed every valve, so without seeding the source mode's open valves
+    // the scheduler's plan.targetReached fires immediately and no valve HTTP
+    // events appear, making ordering assertions meaningless. We seed only
+    // valves that need to CLOSE in scheduler polarity — seeding an open that
+    // needs to re-open would trigger a 20 s openWindowMs delay that pushes
+    // finalizeTransitionOK past the test's advance window.
     var srcValves = MODE_VALVES[fromMode];
     if (srcValves && result.valves) {
       var srcSched = toSchedulerView(srcValves);
       var tgtSched = toSchedulerView(result.valves);
       for (var vn in srcSched) {
-        // Seed logical-open if the scheduler needs to close this valve.
         if (srcSched[vn] === true && tgtSched[vn] === false) {
           state.valve_states[vn] = srcValves[vn];
         }
       }
     }
-    // Seed pump_on from the source mode's actuator config so that
-    // finalizeTransitionOK's setActuators({pump:false,...}) fires a real
-    // Switch.Set (pump was on → needs to turn off) rather than being skipped.
+    // Seed pump_on/fan_on from the source mode's actuator config so that
+    // the trailing setActuators({pump:false,...}) in finalizeTransitionOK
+    // fires a real Switch.Set (pump was on → needs to turn off) rather
+    // than being skipped.
     var srcAct = MODE_ACTUATORS[fromMode];
     if (srcAct) {
       state.pump_on = !!srcAct.pump;

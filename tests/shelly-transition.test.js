@@ -118,6 +118,7 @@ function createOrderingRuntime(opts) {
   return {
     globals: globals,
     events: function() { return events.slice(); },
+    clearEvents: function() { events.length = 0; },
     setComponentStatus: function(fn) { componentStatus = fn; },
     setHttpResponder: function(fn) { httpResponder = fn; },
     advance: function(ms, done) {
@@ -171,11 +172,15 @@ function loadScript(runtime, files) {
     return fs.readFileSync(path.join(SHELLY_DIR, f), 'utf8');
   }).join('\n');
   var g = runtime.globals;
+  // __TEST_HARNESS enables the `Shelly.__test_driveTransition` hook in
+  // control.js. On the real device this identifier is undefined and the
+  // hook block is skipped entirely.
   var fn = new Function(
     'Shelly', 'Timer', 'MQTT', 'JSON', 'Date', 'Math', 'parseInt', 'print',
+    '__TEST_HARNESS',
     src
   );
-  fn(g.Shelly, g.Timer, g.MQTT, g.JSON, g.Date, g.Math, g.parseInt, g.print);
+  fn(g.Shelly, g.Timer, g.MQTT, g.JSON, g.Date, g.Math, g.parseInt, g.print, true);
 }
 
 describe('shelly/control.js :: transitionTo() ordering', function() {
@@ -265,6 +270,9 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
     rt.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
     loadScript(rt, ['control-logic.js', 'control.js']);
     rt.advance(10000, function() {
+      // Drop boot events (valve-close on boot, sensor polls) so the
+      // transition under test starts from a clean event log.
+      rt.clearEvents();
       rt.globals.Shelly.__test_driveTransition('ACTIVE_DRAIN', {
         nextMode: 'IDLE',
         valves: { vi_btm: false, vi_top: false, vi_coll: false,
@@ -303,6 +311,9 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
     rt.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
     loadScript(rt, ['control-logic.js', 'control.js']);
     rt.advance(10000, function() {
+      // Drop boot events (valve-close on boot, sensor polls) so the
+      // transition under test starts from a clean event log.
+      rt.clearEvents();
       rt.globals.Shelly.__test_driveTransition('ACTIVE_DRAIN', {
         nextMode: 'IDLE',
         valves: { vi_btm: false, vi_top: false, vi_coll: false,
@@ -346,6 +357,9 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
     rt.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
     loadScript(rt, ['control-logic.js', 'control.js']);
     rt.advance(10000, function() {
+      // Drop boot events (valve-close on boot, sensor polls) so the
+      // transition under test starts from a clean event log.
+      rt.clearEvents();
       rt.globals.Shelly.__test_driveTransition('ACTIVE_DRAIN', {
         nextMode: 'IDLE',
         valves: { vi_btm: false, vi_top: false, vi_coll: false,
