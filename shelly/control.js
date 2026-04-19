@@ -7,6 +7,10 @@ var SHELL_CFG = {
   PUMP_PRIME_MS: 5000,
   DRAIN_MONITOR_INTERVAL: 200,
   DRAIN_POWER_THRESHOLD: 20,
+  // Post-valve pump-run window on ACTIVE_DRAIN exit. See CLAUDE.md
+  // "Safety: stop pump BEFORE switching valves" for the one-sentence rule
+  // and system.yaml active_drain.sequence step 8 for the physical reason.
+  DRAIN_EXIT_PUMP_RUN_MS: 20000,
 };
 
 // Watchdog id → mode short code. Used by applyBanAndShutdown to
@@ -80,6 +84,7 @@ var state = {
   targetValves: null,       // target valve map (scheduler polarity) during a transition
   targetResult: null,       // full evaluate() result held for end-of-transition finalization
   transitionTimer: null,    // transition-scoped timer handle
+  transitionFromMode: null, // mode snapshot at transitionTo() entry; drives drain-exit branch
   transition_step: null,
 };
 
@@ -509,7 +514,12 @@ function clearTransitionTimer() {
 function finalizeTransitionOK(result) {
   state.transition_step = "pump_start";
   emitStateUpdate();
-  Timer.set(SHELL_CFG.PUMP_PRIME_MS, false, function() {
+  // Default wait is pump-prime (5 s). For ACTIVE_DRAIN exit, extend to
+  // DRAIN_EXIT_PUMP_RUN_MS (20 s) — see transitionTo() for the rule.
+  var postValveWaitMs = (state.transitionFromMode === MODES.ACTIVE_DRAIN)
+    ? SHELL_CFG.DRAIN_EXIT_PUMP_RUN_MS
+    : SHELL_CFG.PUMP_PRIME_MS;
+  Timer.set(postValveWaitMs, false, function() {
     state.mode = result.nextMode;
     state.mode_start = Date.now();
     captureWatchdogBaseline();
@@ -517,6 +527,7 @@ function finalizeTransitionOK(result) {
     state.transition_step = null;
     state.targetValves = null;
     state.targetResult = null;
+    state.transitionFromMode = null;
     state.valvePendingOpen = [];
     state.valvePendingClose = [];
     applyFlags(result.flags);
@@ -544,6 +555,7 @@ function finalizeTransitionFail() {
   clearTransitionTimer();
   state.targetValves = null;
   state.targetResult = null;
+  state.transitionFromMode = null;
   state.valvePendingOpen = [];
   state.valvePendingClose = [];
   setPump(false);
@@ -698,8 +710,11 @@ function transitionTo(result) {
     }
     return;
   }
+  // Snapshot the source mode BEFORE state.transitioning flips — used by
+  // the drain-exit branch below and by finalizeTransitionOK() to pick the
+  // post-valve wait.
+  state.transitionFromMode = state.mode;
   state.transitioning = true;
-  state.transition_step = "pump_stop";
   state.targetResult = result;
   state.targetValves = toSchedulerView(result.valves);
 
@@ -708,9 +723,20 @@ function transitionTo(result) {
     state.drain_timer = null;
   }
 
-  // Turn off all non-valve actuators sequentially (one Shelly.call at a
-  // time) before starting the valve transition. See setActuators comment
-  // for the concurrency-budget rationale.
+  // ── Drain-exit ordering (exception to pump-first rule) ──
+  // When exiting ACTIVE_DRAIN, close valves WHILE the pump is still
+  // running so residual water in the manifold piping is pushed out to
+  // the tank before the valves seal. The 20 s post-valve wait inside
+  // finalizeTransitionOK() is what actually stops the pump.
+  if (state.transitionFromMode === MODES.ACTIVE_DRAIN) {
+    state.transition_step = "valves_opening";
+    emitStateUpdate();
+    scheduleStep();
+    return;
+  }
+
+  // Default path: stop pump/fan/heaters first, then actuate valves.
+  state.transition_step = "pump_stop";
   setActuators({ pump: false, fan: false, space_heater: false, immersion_heater: false }, function() {
     emitStateUpdate();
     Timer.set(SHELL_CFG.VALVE_SETTLE_MS, false, function() {
@@ -1061,6 +1087,46 @@ function bootCloseValves() {
       });
     });
   });
+}
+
+// ── Test hook ──
+// Only used by Node unit tests running control.js under a mocked Shelly host.
+// The gate is a global `__TEST_HARNESS` symbol that the test runtime injects
+// via `new Function(..., '__TEST_HARNESS', src)` — on the real Shelly device
+// this identifier is undefined and the entire block is skipped, so production
+// code paths are untouched.
+if (typeof __TEST_HARNESS !== "undefined" && __TEST_HARNESS) {
+  Shelly.__test_driveTransition = function(fromMode, result) {
+    state.mode = MODES[fromMode] || fromMode;
+    state.transitioning = false;
+    // Seed valve_states so scheduleStep() sees real close work: boot already
+    // closed every valve, so without seeding the source mode's open valves
+    // the scheduler's plan.targetReached fires immediately and no valve HTTP
+    // events appear, making ordering assertions meaningless. We seed only
+    // valves that need to CLOSE in scheduler polarity — seeding an open that
+    // needs to re-open would trigger a 20 s openWindowMs delay that pushes
+    // finalizeTransitionOK past the test's advance window.
+    var srcValves = MODE_VALVES[fromMode];
+    if (srcValves && result.valves) {
+      var srcSched = toSchedulerView(srcValves);
+      var tgtSched = toSchedulerView(result.valves);
+      for (var vn in srcSched) {
+        if (srcSched[vn] === true && tgtSched[vn] === false) {
+          state.valve_states[vn] = srcValves[vn];
+        }
+      }
+    }
+    // Seed pump_on/fan_on from the source mode's actuator config so that
+    // the trailing setActuators({pump:false,...}) in finalizeTransitionOK
+    // fires a real Switch.Set (pump was on → needs to turn off) rather
+    // than being skipped.
+    var srcAct = MODE_ACTUATORS[fromMode];
+    if (srcAct) {
+      state.pump_on = !!srcAct.pump;
+      state.fan_on = !!srcAct.fan;
+    }
+    transitionTo(result);
+  };
 }
 
 boot();

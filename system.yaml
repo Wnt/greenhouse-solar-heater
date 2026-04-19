@@ -558,9 +558,17 @@ modes:
       - step: 7
         action: Monitor pump power (Pro 4PM O1)
       - step: 8
-        action: "Power drops below threshold → stop pump → close all valves"
+        action: >
+          Power drops below threshold → close all valves → wait 20 s →
+          stop pump. Exception to the stop-pump-first rule: keeps the pump
+          pushing residual water out of the manifold piping while the
+          valves seal, so water is not trapped between closed valves
+          (where it could freeze in the freeze-drain case).
     safety:
-      - Always stop pump before switching valves
+      - >-
+        Exit reverses the usual stop-pump-first rule: valves close, pump
+        runs 20 s more, then stops (see step 8). All other modes stop the
+        pump first.
       - Pump power monitoring prevents running dry (Pro 4PM built-in metering)
 
   overheat_drain:

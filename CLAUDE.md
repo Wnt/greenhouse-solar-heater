@@ -49,7 +49,7 @@ Physical facts about the hardware that are NOT discoverable from code:
 
 ### Safety: stop pump BEFORE switching valves
 
-Generally true, enforced by `transitionTo()` in `shelly/control.js` (stops pump/fan/heaters, then actuates valves). A few specific sequences intentionally deviate — don't simplify the transition scheduler assuming pump-first is always safe.
+Generally true, enforced by `transitionTo()` in `shelly/control.js` (stops pump/fan/heaters, then actuates valves). **The one named exception is exit from `ACTIVE_DRAIN`**, which reverses the order (close valves → wait 20 s via `DRAIN_EXIT_PUMP_RUN_MS` → stop pump) so the pump evacuates residual water from the manifold before the valves seal. Don't simplify the transition scheduler assuming pump-first is always safe.
 
 ### Only edit `shelly/control-logic.js` for control decisions
 
