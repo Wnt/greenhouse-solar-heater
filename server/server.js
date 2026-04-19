@@ -653,6 +653,8 @@ function handleWsCommand(ws, data) {
     handleOverrideExit(ws);
   } else if (msg.type === 'override-update') {
     handleOverrideUpdate(ws, msg);
+  } else if (msg.type === 'override-set-mode') {
+    handleOverrideSetMode(ws, msg);
   } else if (msg.type === 'relay-command') {
     handleRelayCommand(ws, msg);
   }
@@ -675,7 +677,7 @@ function handleOverrideEnter(ws, msg) {
       return;
     }
     mqttBridge.publishConfig(updated);
-    wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, suppressSafety: ss });
+    wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, suppressSafety: ss, forcedMode: (updated.mo && updated.mo.fm) || null });
 
     // Secondary server-side TTL tracking
     clearOverrideTtlTimer();
@@ -699,7 +701,7 @@ function handleOverrideExit(ws) {
       return;
     }
     mqttBridge.publishConfig(updated);
-    wsSend(ws, { type: 'override-ack', active: false });
+    wsSend(ws, { type: 'override-ack', active: false, forcedMode: null });
   });
 }
 
@@ -713,13 +715,15 @@ function handleOverrideUpdate(ws, msg) {
   var ttl = Math.max(60, Math.min(3600, parseInt(msg.ttl, 10) || 300));
   var ex = Math.floor(Date.now() / 1000) + ttl;
 
-  deviceConfig.updateConfig({ mo: { a: cfg.mo.a, ex: ex, ss: cfg.mo.ss } }, function (err, updated) {
+  var newMo = { a: cfg.mo.a, ex: ex, ss: cfg.mo.ss };
+  if (cfg.mo.fm) newMo.fm = cfg.mo.fm;
+  deviceConfig.updateConfig({ mo: newMo }, function (err, updated) {
     if (err) {
       wsSend(ws, { type: 'override-error', message: err.message });
       return;
     }
     mqttBridge.publishConfig(updated);
-    wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, suppressSafety: cfg.mo.ss });
+    wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, suppressSafety: cfg.mo.ss, forcedMode: (updated.mo && updated.mo.fm) || null });
 
     // Reset secondary TTL timer
     clearOverrideTtlTimer();
@@ -732,6 +736,43 @@ function handleOverrideUpdate(ws, msg) {
         });
       }
     }, ttl * 1000);
+  });
+}
+
+function handleOverrideSetMode(ws, msg) {
+  var cfg = deviceConfig.getConfig();
+  if (!cfg.mo || !cfg.mo.a) {
+    wsSend(ws, { type: 'override-error', message: 'Override not active' });
+    return;
+  }
+
+  var mode = msg.mode;
+  var VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
+  if (mode !== null && VALID_MODES.indexOf(mode) === -1) {
+    wsSend(ws, { type: 'override-error', message: 'Invalid mo.fm: must be one of I,SC,GH,AD,EH' });
+    return;
+  }
+  if (mode !== null && cfg.wb && cfg.wb[mode] && cfg.wb[mode] > Math.floor(Date.now() / 1000)) {
+    wsSend(ws, { type: 'override-error', message: 'Mode banned' });
+    return;
+  }
+
+  var newMo = { a: cfg.mo.a, ex: cfg.mo.ex, ss: cfg.mo.ss };
+  if (mode !== null) newMo.fm = mode;
+
+  deviceConfig.updateConfig({ mo: newMo }, function (err, updated) {
+    if (err) {
+      wsSend(ws, { type: 'override-error', message: err.message });
+      return;
+    }
+    mqttBridge.publishConfig(updated);
+    wsSend(ws, {
+      type: 'override-ack',
+      active: true,
+      expiresAt: updated.mo.ex,
+      suppressSafety: updated.mo.ss,
+      forcedMode: updated.mo.fm || null,
+    });
   });
 }
 
@@ -980,17 +1021,26 @@ function shutdown(signal) {
 process.on('SIGTERM', function () { shutdown('SIGTERM'); });
 process.on('SIGINT', function () { shutdown('SIGINT'); });
 
-if (AUTH_ENABLED) {
-  var session = require('./auth/session');
-  var secretCheck = session.validateSecret();
-  if (!secretCheck.valid) {
-    log.error('FATAL: ' + secretCheck.reason);
-    process.exit(1);
-  }
-  authMiddleware.init(function (err) {
-    if (err) log.error('auth init failed, starting with empty credentials', { error: err.message });
+if (require.main === module) {
+  if (AUTH_ENABLED) {
+    var session = require('./auth/session');
+    var secretCheck = session.validateSecret();
+    if (!secretCheck.valid) {
+      log.error('FATAL: ' + secretCheck.reason);
+      process.exit(1);
+    }
+    authMiddleware.init(function (err) {
+      if (err) log.error('auth init failed, starting with empty credentials', { error: err.message });
+      startServer();
+    });
+  } else {
     startServer();
-  });
-} else {
-  startServer();
+  }
 }
+
+// ── Test-only exports ──
+// Exported so unit tests can exercise WS command handlers without starting the server.
+module.exports = {
+  handleWsCommand: handleWsCommand,
+  wsSend: wsSend,
+};
