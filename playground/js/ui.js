@@ -200,6 +200,22 @@ export function pickTickStep(rangeSec, plotWidthPx, minPxPerLabel = 72) {
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**
+ * Pick the bucket size (seconds) for the duty-cycle mode bars on the history
+ * chart. Must divide the range cleanly and yield a readable number of bars:
+ *
+ *   - 1h range  → 15 min (4 bars — the operator asked for this explicitly)
+ *   - ≤ 6h      → 30 min
+ *   - ≤ 48h     → 1 h  (previous fixed default)
+ *   - > 48h     → 1 day
+ */
+export function pickBucketSize(rangeSec) {
+  if (rangeSec <= HOUR_SECONDS) return 15 * 60;
+  if (rangeSec <= 6 * HOUR_SECONDS) return 30 * 60;
+  if (rangeSec <= 48 * HOUR_SECONDS) return HOUR_SECONDS;
+  return DAY_SECONDS;
+}
+
+/**
  * Format a tick label for an epoch-seconds timestamp. The step determines the
  * granularity: sub-day ⇒ HH:MM, single-to-twoweek ⇒ D.M, month+ ⇒ MMM YY.
  *

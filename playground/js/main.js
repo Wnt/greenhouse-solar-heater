@@ -1,7 +1,7 @@
 import { loadSystemYaml } from './yaml-loader.js';
 import { ThermalModel } from './physics.js';
 import { ControlStateMachine, initControlLogic } from './control.js';
-import { createSlider, formatTime, pickTickStep, formatTick } from './ui.js';
+import { createSlider, formatTime, pickTickStep, formatTick, pickBucketSize } from './ui.js';
 import { LiveSource, SimulationSource } from './data-source.js';
 import { startVersionCheck, triggerVersionCheck } from './version-check.js';
 import { initSensorsView, destroySensorsView } from './sensors.js';
@@ -1916,17 +1916,21 @@ function drawHistoryGraph() {
   if (timeSeriesStore.times.length < 2) return;
 
   // ── Duty cycle bars ──
+  // Bucket granularity scales with the visible range — see pickBucketSize
+  // in ui.js. 1h view uses 15-minute buckets (4 bars/h), 6h uses 30-minute,
+  // 12-48h uses 1h, longer ranges use daily. Previously this was a fixed
+  // 1-hour bucket regardless of range.
   const barAreaH = ph * 0.3;
   const barY0 = pad.top + ph;
+  const bucketSec = pickBucketSize(graphRange);
 
-  // Compute duty cycles for each hour in the visible window
-  const firstVisibleHour = Math.floor(tMin / hourSeconds);
-  const lastVisibleHour = Math.ceil(tMax / hourSeconds);
+  const firstBucket = Math.floor(tMin / bucketSec);
+  const lastBucket = Math.ceil(tMax / bucketSec);
 
   let hasEmergency = false;
-  for (let hr = firstVisibleHour; hr < lastVisibleHour; hr++) {
-    const hrStart = hr * hourSeconds;
-    const hrEnd = (hr + 1) * hourSeconds;
+  for (let bi = firstBucket; bi < lastBucket; bi++) {
+    const hrStart = bi * bucketSec;
+    const hrEnd = (bi + 1) * bucketSec;
 
     // Skip if entirely outside visible range
     if (hrEnd <= tMin || hrStart >= tMax) continue;
@@ -1943,12 +1947,12 @@ function drawHistoryGraph() {
     }
 
     if (totalSec === 0) continue;
-    const chargingFrac = chargingSec / hourSeconds;
-    const heatingFrac = heatingSec / hourSeconds;
-    const emergencyFrac = emergencySec / hourSeconds;
+    const chargingFrac = chargingSec / bucketSec;
+    const heatingFrac = heatingSec / bucketSec;
+    const emergencyFrac = emergencySec / bucketSec;
 
     const barX = pad.left + ((hrStart - tMin) / graphRange) * pw;
-    const barW = Math.max(1, (hourSeconds / graphRange) * pw - 2);
+    const barW = Math.max(1, (bucketSec / graphRange) * pw - 2);
 
     let stackH = 0;
 
@@ -1977,17 +1981,10 @@ function drawHistoryGraph() {
   document.getElementById('legend-emergency').style.display = hasEmergency ? 'flex' : 'none';
 
   // ── Temperature line (gold, matching Stitch design) ──
-  const pts = [];
-  for (let i = 0; i < timeSeriesStore.times.length; i++) {
-    const t = timeSeriesStore.times[i];
-    if (t < tMin) continue;
-    if (t > tMax) break;
-    const v = timeSeriesStore.values[i].t_tank_top;
-    if (!isNum(v)) continue;
-    const x = pad.left + ((t - tMin) / graphRange) * pw;
-    const y = pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph;
-    pts.push({ x, y });
-  }
+  // collectSeriesPts carries a pre-window sample forward as an
+  // interpolated point at tMin so the line meets the chart's left edge
+  // even when a real sensor-reading gap straddles the boundary.
+  const pts = collectSeriesPts(timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_tank_top');
 
   if (pts.length >= 2) {
     // Area fill gradient under the line
@@ -2032,18 +2029,42 @@ function drawHistoryGraph() {
   drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_outdoor', '#42a5f5', 1);
 }
 
-function drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, key, color, lineWidth) {
+// Collect visible plot points for a single series, carrying a leading-edge
+// sample (the last point before tMin) forward as a linearly-interpolated
+// value at tMin so the line starts at the chart's left edge even when the
+// first in-window sample is several minutes late.
+function collectSeriesPts(timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, key) {
+  let preT = null, preV = null;
   const pts = [];
   for (let i = 0; i < timeSeriesStore.times.length; i++) {
     const t = timeSeriesStore.times[i];
-    if (t < tMin) continue;
-    if (t > tMax) break;
     const v = timeSeriesStore.values[i][key];
     if (!isNum(v)) continue;
+    if (t < tMin) {
+      // Keep only the latest pre-window sample — in insertion order the
+      // loop sees samples in ascending time, so this overwrites each time.
+      preT = t; preV = v;
+      continue;
+    }
+    if (t > tMax) break;
+    // First in-window sample: synthesize an interpolated point at the
+    // left edge (x = pad.left) from preT/preV + this sample so the line
+    // covers the [tMin, t] gap without a visible hole.
+    if (pts.length === 0 && preT !== null && t > tMin) {
+      const frac = (tMin - preT) / (t - preT);
+      const vAtTMin = preV + (v - preV) * frac;
+      const yAtTMin = pad.top + ph - ((vAtTMin - yMin) / (yMax - yMin)) * ph;
+      pts.push({ x: pad.left, y: yAtTMin });
+    }
     const x = pad.left + ((t - tMin) / graphRange) * pw;
     const y = pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph;
     pts.push({ x, y });
   }
+  return pts;
+}
+
+function drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, key, color, lineWidth) {
+  const pts = collectSeriesPts(timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, key);
   if (pts.length < 2) return;
   ctx.beginPath();
   ctx.strokeStyle = color;

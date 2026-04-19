@@ -303,7 +303,31 @@ function getHistory(range, sensor, callback) {
       params.push(sensor);
       paramIdx++;
     }
-    sql = 'SELECT ts, sensor_id, value FROM sensor_readings' + whereTime + whereSensor + ' ORDER BY ts';
+    // Raw window data (rows inside the range).
+    var windowSql = 'SELECT ts, sensor_id, value FROM sensor_readings' + whereTime + whereSensor;
+
+    if (range === 'all') {
+      sql = windowSql + ' ORDER BY ts';
+    } else {
+      // Leading-edge row per sensor: the last reading BEFORE the window
+      // starts. Without this, a gap between the last pre-window reading
+      // (e.g. at 11:18) and the first in-window reading (e.g. at 11:33)
+      // leaves the chart's left side blank. The client's line renderer
+      // connects these leading-edge points across the window boundary,
+      // visually interpolating through the gap.
+      var leadingSensorClause = sensor
+        ? ' AND sensor_id = $' + paramIdx
+        : '';
+      if (sensor) {
+        params.push(sensor);
+        paramIdx++;
+      }
+      var leadingSql = "SELECT DISTINCT ON (sensor_id) ts, sensor_id, value" +
+        " FROM sensor_readings" +
+        " WHERE ts <= NOW() - INTERVAL '" + interval + "'" + leadingSensorClause +
+        " ORDER BY sensor_id, ts DESC";
+      sql = '(' + leadingSql + ') UNION ALL (' + windowSql + ') ORDER BY ts';
+    }
   }
 
   p.query(sql, params, function (err, result) {

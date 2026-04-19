@@ -18,7 +18,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 
-import { pickTickStep, formatTick } from '../playground/js/ui.js';
+import { pickTickStep, formatTick, pickBucketSize } from '../playground/js/ui.js';
 
 const HOUR = 3600;
 const DAY = 86400;
@@ -70,6 +70,40 @@ describe('pickTickStep — x-axis tick spacing', () => {
       const step = pickTickStep(r, 520);
       const ticks = Math.ceil(r / step);
       assert.ok(ticks >= 2, `range=${r}: only ${ticks} ticks — chart would look empty`);
+    }
+  });
+});
+
+describe('pickBucketSize — duty-cycle bar windowing', () => {
+  it('uses 15-minute buckets on the 1h range so modes show as 4 segments', () => {
+    assert.strictEqual(pickBucketSize(1 * HOUR), 15 * 60, 'expected 900s (15 min) bucket for 1h range');
+  });
+
+  it('uses 30-minute buckets on the 6h range (keeps ~12 bars across the window)', () => {
+    // 6 hours ÷ 30 min = 12 buckets — readable, matches the 60-second sample
+    // cadence of the raw sensor_readings table.
+    assert.strictEqual(pickBucketSize(6 * HOUR), 30 * 60);
+  });
+
+  it('keeps the existing 1-hour buckets for 12h / 24h / 48h', () => {
+    for (const rangeSec of [12 * HOUR, 24 * HOUR, 48 * HOUR]) {
+      assert.strictEqual(pickBucketSize(rangeSec), HOUR, `range ${rangeSec}s should use 1h buckets`);
+    }
+  });
+
+  it('switches to daily buckets for multi-day ranges', () => {
+    assert.strictEqual(pickBucketSize(7 * DAY), DAY, '7d range should use 1-day buckets');
+    assert.strictEqual(pickBucketSize(30 * DAY), DAY);
+    assert.strictEqual(pickBucketSize(365 * DAY), DAY);
+  });
+
+  it('scales monotonically — bigger range ⇒ bigger (or equal) bucket', () => {
+    const ranges = [HOUR, 6 * HOUR, 12 * HOUR, 24 * HOUR, 7 * DAY, 30 * DAY];
+    let prev = 0;
+    for (const r of ranges) {
+      const s = pickBucketSize(r);
+      assert.ok(s >= prev, `bucket should not shrink: range=${r}, size=${s}, prev=${prev}`);
+      prev = s;
     }
   });
 });
