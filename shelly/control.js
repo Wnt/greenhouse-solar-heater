@@ -1014,7 +1014,11 @@ function isSafetyCritical(oldCfg, newCfg) {
   if (!oldCfg) return true;
   if (oldCfg.ce !== newCfg.ce) return true;
   if (oldCfg.ea !== newCfg.ea) return true;
-  if (oldCfg.fm !== newCfg.fm) return true;
+  // mo.fm drives the forced-mode transition on-device. Mark changes
+  // safety-critical so the config_changed handler fires immediately.
+  var oldMf = (oldCfg.mo) ? oldCfg.mo.fm : null;
+  var newMf = (newCfg.mo) ? newCfg.mo.fm : null;
+  if (oldMf !== newMf) return true;
   // Mode bans (wb) gate evaluate() immediately — a newly-enforced ban
   // must take effect on the next tick rather than waiting for the next
   // unrelated mode change.
