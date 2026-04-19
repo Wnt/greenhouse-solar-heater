@@ -7,7 +7,7 @@
 
 const CAPS = {
   DEPLOYED_BYTES: 65535,          // Shelly Script.PutCode hard limit, error -103
-  RUNTIME_PROXY_PEAK: 30646,      // calibrated on main 2026-04-20 (0.7× measured baseline 43781)
+  RUNTIME_PROXY_PEAK: 41744,      // calibrated post-merge 2026-04-20 (measured peak 41232 + 512 B margin)
   STATE_BYTES: 600,               // JSON.stringify(state).length peak
   LIVE_TIMERS: 3,                 // simultaneous Timer.set handles (5 - 2 reserve)
   MQTT_SUBS: 3,                   // active MQTT.subscribe topics
