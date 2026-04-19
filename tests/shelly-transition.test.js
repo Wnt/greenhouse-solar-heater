@@ -227,7 +227,7 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
       // __test_driveTransition(fromMode, idleResult) is the testing hook
       // added in Task 3. It sets state.mode, clears state.transitioning,
       // and calls transitionTo(idleResult).
-      rt.globals.__test_driveTransition('SOLAR_CHARGING', {
+      rt.globals.Shelly.__test_driveTransition('SOLAR_CHARGING', {
         nextMode: 'IDLE',
         valves: { vi_btm: false, vi_top: false, vi_coll: false,
                   vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },

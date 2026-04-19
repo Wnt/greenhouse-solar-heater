@@ -1063,4 +1063,19 @@ function bootCloseValves() {
   });
 }
 
+// ── Test hook ──
+// Only used by Node unit tests running control.js under a mocked Shelly host.
+// The real Shelly device does not expose `globalThis`/the outer function scope,
+// so this is a no-op there (the assignment lands in local scope and is GC'd).
+// The Function-constructor wrapper used by the test runner passes
+// `this === undefined` in strict mode, so we bind to the `Shelly` mock object
+// which is always present.
+if (typeof Shelly !== "undefined" && Shelly) {
+  Shelly.__test_driveTransition = function(fromMode, result) {
+    state.mode = MODES[fromMode] || fromMode;
+    state.transitioning = false;
+    transitionTo(result);
+  };
+}
+
 boot();
