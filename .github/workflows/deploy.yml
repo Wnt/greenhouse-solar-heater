@@ -105,7 +105,7 @@ jobs:
             delay=1
             attempt=1
             while [ $elapsed -lt 60 ]; do
-              if curl -sf --connect-timeout 3 http://192.168.30.10/rpc/Shelly.GetStatus > /dev/null 2>&1; then
+              if curl -sf --connect-timeout 3 http://192.168.30.50/rpc/Shelly.GetStatus > /dev/null 2>&1; then
                 echo "VPN connected — Shelly device reachable (after ${elapsed}s)"
                 exit 0
               fi

@@ -14,14 +14,14 @@ var SHELL_CFG = {
 var WATCHDOG_MODE = { sng: "SC", scs: "SC", ggr: "GH" };
 
 var VALVES = {
-  vi_btm:  {ip: "192.168.30.11", id: 0},
-  vi_top:  {ip: "192.168.30.11", id: 1},
-  vi_coll: {ip: "192.168.30.12", id: 0},
-  vo_coll: {ip: "192.168.30.12", id: 1},
-  vo_rad:  {ip: "192.168.30.13", id: 0},
-  vo_tank: {ip: "192.168.30.13", id: 1},
-  // 192.168.30.14 id 0 is a reserved spare (passive T joint at collector top — spec 024)
-  v_air:   {ip: "192.168.30.14", id: 1},
+  vi_btm:  {ip: "192.168.30.51", id: 0},
+  vi_top:  {ip: "192.168.30.51", id: 1},
+  vi_coll: {ip: "192.168.30.52", id: 0},
+  vo_coll: {ip: "192.168.30.52", id: 1},
+  vo_rad:  {ip: "192.168.30.53", id: 0},
+  vo_tank: {ip: "192.168.30.53", id: 1},
+  // 192.168.30.54 id 0 is a reserved spare (passive T joint at collector top — spec 024)
+  v_air:   {ip: "192.168.30.54", id: 1},
 };
 
 // toSchedulerView / fromSchedulerView live in control-logic.js (pure). They

@@ -46,10 +46,10 @@ Before starting commissioning:
 
 | Component | IP Address | Purpose |
 |-----------|------------|---------|
-| Shelly Pro 4PM | 192.168.30.10 | Controller — runs control logic, drives pump |
-| Shelly Pro 2PM #1 | 192.168.30.11 | Valves VI-btm, VI-top (input manifold) |
-| Shelly Pro 2PM #2 | 192.168.30.12 | Valves VI-coll, VO-coll (collector loop) |
-| Shelly Pro 2PM #4 | 192.168.30.14 | Valve V_air (collector top); second relay is a spare — the collector-top return is now a passive T joint |
+| Shelly Pro 4PM | 192.168.30.50 | Controller — runs control logic, drives pump |
+| Shelly Pro 2PM #1 | 192.168.30.51 | Valves VI-btm, VI-top (input manifold) |
+| Shelly Pro 2PM #2 | 192.168.30.52 | Valves VI-coll, VO-coll (collector loop) |
+| Shelly Pro 2PM #4 | 192.168.30.54 | Valve V_air (collector top); second relay is a spare — the collector-top return is now a passive T joint |
 | Shelly 1 Gen3 + Add-on | 192.168.30.20 | Sensor hub — 3× DS18B20 |
 | Zyxel GS-108BV5 | — | 8-port Ethernet switch |
 | Mean Well 24V 15W PSU | — | Powers all valve actuators |
@@ -236,7 +236,7 @@ As you install additional hardware (radiator loop, space heater), progressively 
 **When**: Radiator + fan installed in greenhouse, tank top sensor and greenhouse sensor connected.
 
 **New hardware**:
-- Pro 2PM unit 3 (192.168.30.13) — valves VO-rad, VO-tank
+- Pro 2PM unit 3 (192.168.30.53) — valves VO-rad, VO-tank
 - Tank top sensor (sensor ID 1) and greenhouse sensor (sensor ID 3)
 - 230V fan connected to Pro 4PM O2
 
