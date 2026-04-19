@@ -251,10 +251,15 @@ function toCompactFormat(config) {
   for (var role in config.assignments) {
     var a = config.assignments[role];
     if (a && a.addr) {
-      // `a` (addr) is required by SensorAddon.AddPeripheral to bind a specific
-      // physical probe to the chosen component ID. Without it the Add-on
-      // creates an empty peripheral slot and polls return no temperature.
-      compact.s[role] = { h: a.hostIndex, i: a.componentId, a: a.addr };
+      // Only h (hostIndex) and i (componentId) are included — control.js
+      // polls by cid on the hub, which already has the probe address bound
+      // via sensor-apply.js's direct HTTP AddPeripheral call. Including the
+      // 1-Wire address here would push the serialized compact past Shelly
+      // KVS's 256-byte per-value cap with 7 sensors, causing
+      // `Shelly.call("KVS.Set", ...)` in telemetry.js saveSensorConfig to
+      // fail silently (no callback → swallowed error) and the controller to
+      // keep the stale routing after reboot.
+      compact.s[role] = { h: a.hostIndex, i: a.componentId };
     }
   }
   return compact;

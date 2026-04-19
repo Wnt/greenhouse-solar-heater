@@ -219,16 +219,20 @@ describe('sensor-config', () => {
       };
       const compact = sensorConfig.toCompactFormat(config);
       assert.deepStrictEqual(compact.h, ['192.168.30.20', '192.168.30.21']);
-      assert.deepStrictEqual(compact.s.collector, { h: 0, i: 100, a: '40:255:100:6:199:204:149:177' });
-      assert.deepStrictEqual(compact.s.radiator_in, { h: 1, i: 100, a: '40:255:100:6:199:204:149:182' });
+      assert.deepStrictEqual(compact.s.collector, { h: 0, i: 100 });
+      assert.deepStrictEqual(compact.s.radiator_in, { h: 1, i: 100 });
       assert.equal(compact.v, 3);
     });
 
-    it('fits within Shelly KVS budget (1024 bytes) with 7 realistic-addr sensors', () => {
-      // Real 1-Wire addresses are ~25 chars (decimal bytes, colon-separated)
-      // — including them so SensorAddon.AddPeripheral can bind specific
-      // probes pushes us past the old 256-byte device-config budget. Shelly
-      // KVS accepts ~2400 bytes per value, so 1024 is a safe ceiling.
+    it('fits within Shelly KVS 256-byte value limit with 7 realistic-addr sensors', () => {
+      // Shelly Gen2 KVS rejects values above 256 bytes (verified empirically on
+      // Pro 4PM fw 1.7.5: 215 B accepted, 271 B rejected with code -1). In
+      // telemetry.js `saveSensorConfig` uses `Shelly.call("KVS.Set", ...)` with
+      // no callback, so an over-size write fails *silently*: in-memory
+      // `currentSensorVersion` advances, KVS stays on the previous value, and
+      // on the next control.js boot the controller polls the old cid map —
+      // which is exactly how the sensor-rotation bug on 2026-04-20 manifested.
+      // Keep the compact format comfortably under the cap.
       const config = {
         hosts: [{ id: 'sensor_1', ip: '192.168.30.20' }, { id: 'sensor_2', ip: '192.168.30.21' }],
         assignments: {
@@ -244,7 +248,7 @@ describe('sensor-config', () => {
       };
       const compact = sensorConfig.toCompactFormat(config);
       const json = JSON.stringify(compact);
-      assert.ok(json.length <= 1024, 'Compact format is ' + json.length + ' bytes, exceeds 1024');
+      assert.ok(json.length <= 256, 'Compact format is ' + json.length + ' bytes, exceeds Shelly KVS 256-byte limit');
     });
   });
 
@@ -506,10 +510,8 @@ describe('sensor-config', () => {
           // The toCompactFormat of the passed config must preserve the
           // role→cid pairs the UI sent (matching current hub bindings).
           const compact = sensorConfig.toCompactFormat(config);
-          assert.deepStrictEqual(compact.s.collector,
-            { h: 0, i: 101, a: '40:255:100:6:199:204:149:178' });
-          assert.deepStrictEqual(compact.s.tank_top,
-            { h: 0, i: 100, a: '40:255:100:6:199:204:149:177' });
+          assert.deepStrictEqual(compact.s.collector, { h: 0, i: 101 });
+          assert.deepStrictEqual(compact.s.tank_top, { h: 0, i: 100 });
           assert.equal(compact.v, config.version);
           done();
         });
