@@ -15,6 +15,7 @@ var mqttClient = null;
 var wsServer = null;
 var db = null;
 var deviceConfigRef = null;
+var sensorConfigRef = null;
 var pushRef = null;
 var anomalyManagerRef = null;
 var previousState = null;
@@ -25,6 +26,7 @@ function start(options) {
   db = options.db || null;
   wsServer = options.wsServer || null;
   deviceConfigRef = options.deviceConfig || null;
+  sensorConfigRef = options.sensorConfig || null;
   pushRef = options.push || null;
   anomalyManagerRef = options.anomalyManager || null;
 
@@ -52,6 +54,7 @@ function start(options) {
     });
     subscribeResponseTopics();
     republishDeviceConfig();
+    republishSensorConfig();
     broadcastConnection('connected');
   });
 
@@ -253,6 +256,23 @@ function republishDeviceConfig() {
   publishConfig(cfg);
 }
 
+// Sibling of republishDeviceConfig — the Mosquitto sidecar has no persistence,
+// so a broker restart drops the retained greenhouse/sensor-config and the
+// Shelly controller would otherwise keep polling whatever role→cid mapping
+// its KVS still holds, diverging from the server-side config that the
+// sensors tab reads via per-hub scans. Empty-assignments configs are skipped
+// — publishing them would tell the controller to stop polling every sensor.
+function republishSensorConfig() {
+  if (!sensorConfigRef || typeof sensorConfigRef.getConfig !== 'function') return;
+  var cfg = sensorConfigRef.getConfig();
+  if (!cfg || !cfg.assignments || Object.keys(cfg.assignments).length === 0) return;
+  var compact = typeof sensorConfigRef.toCompactFormat === 'function'
+    ? sensorConfigRef.toCompactFormat(cfg)
+    : null;
+  if (!compact) return;
+  publishSensorConfig(compact);
+}
+
 function publishSensorConfig(config) {
   if (!mqttClient || !mqttClient.connected) {
     log.warn('cannot publish sensor config: MQTT not connected');
@@ -379,6 +399,7 @@ module.exports = {
     wsServer = null;
     db = null;
     deviceConfigRef = null;
+    sensorConfigRef = null;
     pushRef = null;
     previousState = null;
     connectionStatus = 'disconnected';
