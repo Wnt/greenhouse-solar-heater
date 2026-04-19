@@ -194,7 +194,12 @@ function enrichState(payload) {
   var cfg = deviceConfigRef.getConfig();
   if (cfg && cfg.mo && cfg.mo.a) {
     return Object.assign({}, payload, {
-      manual_override: { active: true, expiresAt: cfg.mo.ex, suppressSafety: cfg.mo.ss },
+      manual_override: {
+        active: true,
+        expiresAt: cfg.mo.ex,
+        suppressSafety: cfg.mo.ss,
+        forcedMode: cfg.mo.fm || null,
+      },
     });
   }
   return Object.assign({}, payload, { manual_override: null });
