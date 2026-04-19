@@ -349,5 +349,102 @@ describe('mqtt-bridge', () => {
       assert.strictEqual(configPublishes.length, 0,
         'should skip republish when no config is loaded yet (e.g. S3 fetch still in flight)');
     });
+
+    // Sibling to the device-config republish: our Mosquitto sidecar has no
+    // persistence, so a broker restart wipes the retained greenhouse/sensor-config
+    // message. Without an auto-republish the Shelly controller would keep
+    // polling whatever it has in KVS — even if the server has since stored a
+    // newer role→cid mapping via PUT /api/sensor-config. The status view would
+    // then keep showing the wrong probe for each role while the sensors tab
+    // (which talks to each hub directly) shows the right one.
+    it('republishes the current sensor config to greenhouse/sensor-config (retained) when MQTT connects', () => {
+      const currentSensor = {
+        hosts: [{ id: 'sensor_1', ip: '192.168.30.20' }],
+        assignments: {
+          collector: { addr: 'aa:01', hostIndex: 0, componentId: 100 },
+          tank_top:  { addr: 'aa:02', hostIndex: 0, componentId: 101 },
+        },
+        version: 5,
+      };
+      const fakeSensorConfig = {
+        getConfig: function () { return currentSensor; },
+        toCompactFormat: function (cfg) {
+          return {
+            s: {
+              collector: { h: 0, i: cfg.assignments.collector.componentId, a: cfg.assignments.collector.addr },
+              tank_top:  { h: 0, i: cfg.assignments.tank_top.componentId,  a: cfg.assignments.tank_top.addr },
+            },
+            h: ['192.168.30.20'],
+            v: cfg.version,
+          };
+        },
+      };
+
+      bridge.start({ mqttHost: '127.0.0.1', sensorConfig: fakeSensorConfig });
+
+      fakeClient.connected = true;
+      fakeClient.emit('connect');
+
+      const sensorPublishes = fakeClient.publishCalls.filter(function (c) {
+        return c.topic === 'greenhouse/sensor-config';
+      });
+      assert.strictEqual(sensorPublishes.length, 1,
+        'bridge should publish sensor config exactly once on MQTT connect');
+      const payload = JSON.parse(sensorPublishes[0].message);
+      assert.strictEqual(payload.v, 5);
+      assert.deepStrictEqual(payload.s.collector, { h: 0, i: 100, a: 'aa:01' });
+      assert.deepStrictEqual(payload.s.tank_top,  { h: 0, i: 101, a: 'aa:02' });
+      assert.strictEqual(sensorPublishes[0].opts.retain, true,
+        'sensor-config publish must be retained so a rebooting Shelly picks it up after reconnect');
+      assert.strictEqual(sensorPublishes[0].opts.qos, 1);
+    });
+
+    it('re-publishes sensor config on every reconnect so a broker restart self-heals', () => {
+      const fakeSensorConfig = {
+        getConfig: function () {
+          return {
+            hosts: [{ id: 'sensor_1', ip: '192.168.30.20' }],
+            assignments: { collector: { addr: 'aa:01', hostIndex: 0, componentId: 100 } },
+            version: 2,
+          };
+        },
+        toCompactFormat: function () {
+          return { s: { collector: { h: 0, i: 100, a: 'aa:01' } }, h: ['192.168.30.20'], v: 2 };
+        },
+      };
+
+      bridge.start({ mqttHost: '127.0.0.1', sensorConfig: fakeSensorConfig });
+
+      fakeClient.connected = true;
+      fakeClient.emit('connect');
+      fakeClient.emit('connect');
+      fakeClient.emit('connect');
+
+      const sensorPublishes = fakeClient.publishCalls.filter(function (c) {
+        return c.topic === 'greenhouse/sensor-config';
+      });
+      assert.strictEqual(sensorPublishes.length, 3,
+        'bridge should re-publish sensor config on every MQTT connect event');
+    });
+
+    it('skips sensor-config republish when no assignments have been persisted yet', () => {
+      const fakeSensorConfig = {
+        getConfig: function () {
+          return { hosts: [], assignments: {}, version: 0 };
+        },
+        toCompactFormat: function () { return { s: {}, h: [], v: 0 }; },
+      };
+
+      bridge.start({ mqttHost: '127.0.0.1', sensorConfig: fakeSensorConfig });
+
+      fakeClient.connected = true;
+      fakeClient.emit('connect');
+
+      const sensorPublishes = fakeClient.publishCalls.filter(function (c) {
+        return c.topic === 'greenhouse/sensor-config';
+      });
+      assert.strictEqual(sensorPublishes.length, 0,
+        'no point in publishing an empty sensor config — Shelly would just keep all temps null');
+    });
   });
 });

@@ -494,7 +494,17 @@ var server = http.createServer(function (req, res) {
     readBody(req, function (body) {
       if (req.method === 'PUT') {
         if (!isAdminOrReject()) return;
-        sensorConfig.handlePut(req, res, body);
+        // Publish the new routing to MQTT right away. The hub bindings for
+        // the picked probes already match the cids that collectAssignments
+        // resolved from the scan, so the controller can immediately start
+        // polling the right cid for each role — closing the gap between the
+        // sensors tab (live per-hub reads) and the status view (MQTT snapshot
+        // driven by state.temps) without waiting for Apply.
+        sensorConfig.handlePut(req, res, body, function (config) {
+          if (mqttBridge) {
+            mqttBridge.publishSensorConfig(sensorConfig.toCompactFormat(config));
+          }
+        });
       } else {
         jsonResponse(res, 405, { error: 'Method not allowed' });
       }
@@ -928,6 +938,7 @@ function startMqttBridge() {
     wsServer: ws,
     db: db,
     deviceConfig: deviceConfig,
+    sensorConfig: sensorConfig,
     push: push,
     anomalyManager: anomalyManager,
   });

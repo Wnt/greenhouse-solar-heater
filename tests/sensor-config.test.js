@@ -479,6 +479,42 @@ describe('sensor-config', () => {
         done();
       });
     });
+
+    // Regression: the sensors tab and the control loop were reading different
+    // role→cid mappings when the user swapped assignments. The sensors tab
+    // always shows correct values (re-fetched live from each hub), but the
+    // Shelly controller kept polling the old cids because the new config was
+    // only pushed to MQTT on Apply — so the snapshot driving the status view
+    // and the `evaluate()` decisions was stale. handlePut must invoke
+    // onUpdate with the persisted config so server.js can publish immediately.
+    // The hub bindings for the picked probes already match the cids resolved
+    // by collectAssignments (they come from the scan), so Apply becomes a
+    // no-op in the swap case and both views reconverge without waiting for
+    // the user to click Apply.
+    it('PUT invokes onUpdate with the persisted config (the server uses this to push new routing to MQTT)', (t, done) => {
+      sensorConfig.load(function (err) {
+        assert.ifError(err);
+        const body = JSON.stringify({
+          assignments: {
+            collector: { addr: '40:255:100:6:199:204:149:178', hostIndex: 0, componentId: 101 },
+            tank_top:  { addr: '40:255:100:6:199:204:149:177', hostIndex: 0, componentId: 100 },
+          },
+        });
+        const res = mockResponse();
+        sensorConfig.handlePut({}, res, body, function (config) {
+          assert.equal(res._statusCode, 200);
+          // The toCompactFormat of the passed config must preserve the
+          // role→cid pairs the UI sent (matching current hub bindings).
+          const compact = sensorConfig.toCompactFormat(config);
+          assert.deepStrictEqual(compact.s.collector,
+            { h: 0, i: 101, a: '40:255:100:6:199:204:149:178' });
+          assert.deepStrictEqual(compact.s.tank_top,
+            { h: 0, i: 100, a: '40:255:100:6:199:204:149:177' });
+          assert.equal(compact.v, config.version);
+          done();
+        });
+      });
+    });
   });
 });
 
