@@ -327,8 +327,8 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
         var gap = pumpOff.t - lastValveAt;
         assert.ok(gap >= 20000,
           'pump-off must be ≥ 20 000 ms after last valve close (got ' + gap + ' ms)');
+        done();
       });
-      done();
     });
   });
 
