@@ -109,23 +109,12 @@ function setPump(on) {
   state.pump_on = on;
 }
 
-function setFan(on) {
-  if (on && !deviceConfig.ce) return;
-  if (on && !(deviceConfig.ea & EA_FAN)) return;
-  Shelly.call("Switch.Set", {id: 1, on: on});
-  state.fan_on = on;
-}
-
-function setImmersion(on) {
-  if (on && !deviceConfig.ce) return;
-  if (on && !(deviceConfig.ea & EA_IMMERSION)) return;
-  Shelly.call("Switch.Set", {id: 2, on: on});
-  state.immersion_heater_on = on;
-}
-
+// Individual per-actuator setFan/setImmersion helpers were removed —
+// all callers go through setActuators. setSpaceHeater kept as a thin
+// standalone because controlLoop() fires it inside an in-flight chain
+// (see its call site in controlLoop) without gating on ce/ea elsewhere.
 function setSpaceHeater(on) {
-  if (on && !deviceConfig.ce) return;
-  if (on && !(deviceConfig.ea & EA_SPACE_HEATER)) return;
+  if (on && (!deviceConfig.ce || !(deviceConfig.ea & EA_SPACE_HEATER))) return;
   Shelly.call("Switch.Set", {id: 3, on: on});
   state.space_heater_on = on;
 }
@@ -327,14 +316,11 @@ function buildEvalState() {
 }
 
 // buildSnapshotFromState is the pure snapshot builder (defined in
-// control-logic.js so it is unit-testable in Node).
-function buildStateSnapshot() {
-  return buildSnapshotFromState(state, deviceConfig, Date.now());
-}
-
+// control-logic.js so it is unit-testable in Node). Called once from
+// emitStateUpdate below — inlined directly, no wrapper.
 function emitStateUpdate() {
   if (!MQTT.isConnected()) return;
-  MQTT.publish(STATE_TOPIC, JSON.stringify(buildStateSnapshot()), 1, true);
+  MQTT.publish(STATE_TOPIC, JSON.stringify(buildSnapshotFromState(state, deviceConfig, Date.now())), 1, true);
 }
 
 function applyFlags(flags) {
