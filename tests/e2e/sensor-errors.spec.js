@@ -238,16 +238,22 @@ test.describe('Sensor discovery per-host error isolation', () => {
   });
 });
 
-test.describe('Sensor discovery MQTT timeout', () => {
-  test('shows MQTT timeout message for all hosts on HTTP 504', async ({ page }) => {
+test.describe('Sensor discovery per-host error surfacing', () => {
+  test('shows specific per-host error when a single hub is unreachable', async ({ page }) => {
     await page.route('**/api/sensor-config', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
     });
     await page.route('**/api/sensor-discovery', async (route) => {
       await route.fulfill({
-        status: 504,
+        status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ error: 'Discovery timed out' }),
+        body: JSON.stringify({
+          id: 'disc-1',
+          results: [
+            { host: '192.168.30.20', ok: true, sensors: [{ addr: 'aa:01', component: 'temperature:100', tC: 22.9 }] },
+            { host: '192.168.30.21', ok: false, error: '192.168.30.21 refused connection — device off or wrong IP', sensors: [] },
+          ],
+        }),
       });
     });
 
@@ -255,23 +261,22 @@ test.describe('Sensor discovery MQTT timeout', () => {
     await page.waitForSelector('.host-error', { timeout: 15000 });
 
     const errors = page.locator('.host-error');
-    await expect(errors).toHaveCount(2);
-    for (let i = 0; i < 2; i++) {
-      const text = await errors.nth(i).textContent();
-      expect(text).toContain('MQTT timeout');
-      expect(text).toContain('controller did not respond');
-    }
+    await expect(errors).toHaveCount(1);
+    const text = await errors.nth(0).textContent();
+    expect(text).toContain('refused connection');
+    // The working hub still renders its sensors in the other host group.
+    await expect(page.locator('.sensor-table')).toHaveCount(1);
   });
 
-  test('shows MQTT broker disconnected message on HTTP 503', async ({ page }) => {
+  test('shows server error message on HTTP 500', async ({ page }) => {
     await page.route('**/api/sensor-config', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
     });
     await page.route('**/api/sensor-discovery', async (route) => {
       await route.fulfill({
-        status: 503,
+        status: 500,
         contentType: 'application/json',
-        body: JSON.stringify({ error: 'MQTT not connected' }),
+        body: JSON.stringify({ error: 'Internal discovery failure' }),
       });
     });
 
@@ -282,7 +287,7 @@ test.describe('Sensor discovery MQTT timeout', () => {
     await expect(errors).toHaveCount(2);
     for (let i = 0; i < 2; i++) {
       const text = await errors.nth(i).textContent();
-      expect(text).toContain('MQTT broker not connected');
+      expect(text).toContain('Internal discovery failure');
     }
   });
 });

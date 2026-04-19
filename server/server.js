@@ -17,6 +17,7 @@ const deviceConfig = require('./lib/device-config');
 const otelApi = require('@opentelemetry/api');
 
 const sensorConfig = require('./lib/sensor-config');
+const sensorDiscovery = require('./lib/sensor-discovery');
 const push = require('./lib/push');
 const anomalyManager = require('./lib/anomaly-manager');
 const { createHistory: createWatchdogHistory } = require('./lib/watchdog-history');
@@ -247,14 +248,15 @@ function handleSensorDiscovery(req, res, body) {
     jsonResponse(res, 400, { error: 'Missing hosts array' });
     return;
   }
+  // Direct HTTP scan of each hub in parallel. Bypasses the Pro 4PM + MQTT
+  // path because it was slow and produced opaque timeouts on a single hub
+  // failure. See server/lib/sensor-discovery.js.
   var options = {};
   if (parsed.skipTemp) options.skipTemp = true;
-  mqttBridge.publishDiscoveryRequest(parsed.hosts, options).then(function (result) {
+  sensorDiscovery.discoverSensors(parsed.hosts, options).then(function (result) {
     jsonResponse(res, 200, result);
   }).catch(function (err) {
-    var msg = err.message || String(err);
-    var statusCode = msg === 'Request timed out' ? 504 : msg === 'MQTT not connected' ? 503 : 500;
-    jsonResponse(res, statusCode, { error: msg });
+    jsonResponse(res, 500, { error: err.message || String(err) });
   });
 }
 

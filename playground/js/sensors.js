@@ -47,23 +47,9 @@ async function scanAllHosts({ withTemp = false } = {}) {
     });
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      if (res.status === 504) {
-        // MQTT timeout: the controller didn't respond in time
-        for (const host of sensorConfig.hosts) {
-          // Preserve any partial results that may have arrived before timeout
-          if (!detectedSensors[host.id]) {
-            detectedSensors[host.id] = { sensors: [], error: 'MQTT timeout — controller did not respond. Device may be offline or MQTT not connected.' };
-          }
-        }
-      } else if (res.status === 503 || (errData.error && errData.error.indexOf('MQTT not connected') !== -1)) {
-        for (const host of sensorConfig.hosts) {
-          detectedSensors[host.id] = { sensors: [], error: 'Server MQTT broker not connected' };
-        }
-      } else {
-        const errMsg = errData.error || 'Server error (' + res.status + ')';
-        for (const host of sensorConfig.hosts) {
-          detectedSensors[host.id] = { sensors: [], error: errMsg };
-        }
+      const errMsg = errData.error || 'Server error (' + res.status + ')';
+      for (const host of sensorConfig.hosts) {
+        detectedSensors[host.id] = { sensors: [], error: errMsg };
       }
       return;
     }
@@ -360,7 +346,7 @@ async function handleScan() {
     }
   }
   renderSensorsView();
-  showStatus('Waiting for device response via MQTT...');
+  showStatus('Scanning sensor hubs...');
 
   try {
     // Read temperatures during the scan so the user sees actual values they

@@ -64,9 +64,11 @@ Shelly runs a restricted Espruino runtime. The linter (`shelly/lint/`) enforces:
 
 Convention (not linter-enforced): use `var`, not `const`/`let`. The `SH-014` array-method list is **empirical** — each banned method has a device-crash incident comment. Add to the list if you hit another missing method on-device and document the incident.
 
-### All device communication flows through MQTT
+### Device communication flows through MQTT (one exception: sensor discovery)
 
-No direct HTTP RPC to Shelly from the server. The `mqtt-bridge` routes state, config pushes, sensor discovery/apply, and relay commands through `greenhouse/*` topics. Adding a new device operation = new MQTT topic, not a new HTTP endpoint.
+No direct HTTP RPC to Shelly from the server for state, config pushes, sensor-config apply, or relay commands. The `mqtt-bridge` routes all of those through `greenhouse/*` topics. Adding a new mutating or stateful device operation = new MQTT topic, not a new HTTP endpoint.
+
+**Exception**: `/api/sensor-discovery` calls `SensorAddon.OneWireScan` directly over HTTP to each sensor hub (see `server/lib/sensor-discovery.js`). The MQTT-routed flow (server → Pro 4PM → HTTP to hub → MQTT result) was slow (~30s) and produced opaque "controller did not respond" errors when any single hub failed. Discovery is read-only, parallelizable per host, and matches what the Shelly mobile app does. If you add more read-only diagnostic endpoints, prefer direct HTTP for the same reasons.
 
 ### Vendored dependencies must stay vendored
 
