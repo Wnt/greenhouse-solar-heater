@@ -879,7 +879,6 @@ function controlLoop() {
         }
         // Override active, no safety intervention — just emit state
         emitStateUpdate();
-        processPendingCommands();
         return;
       }
 
@@ -903,9 +902,6 @@ function controlLoop() {
 
       // ── Watchdog tick block ──
       watchdogTick();
-
-      // Process pending MQTT commands after control cycle completes
-      processPendingCommands();
     });
   });
 }
@@ -976,151 +972,16 @@ function watchdogTick() {
   }
 }
 
-// ── MQTT command queue (sensor config apply + discovery) ──
+// Sensor-config apply and discovery are now driven directly from the
+// server over HTTP (see server/lib/sensor-apply.js and sensor-discovery.js)
+// rather than via MQTT → controller → HTTP. The on-device doApply /
+// doDiscover functions and their helpers were removed to free ~3 KB of
+// script RAM — previously the telemetry script kept OOM-ing because
+// control.js's bytecode footprint left under 5 KB headroom for it.
 
-var pendingApply = null;
-var pendingDisc = null;
-
-function processPendingCommands() {
-  if (pendingApply) { var r = pendingApply; pendingApply = null; doApply(r); }
-  else if (pendingDisc) { var d = pendingDisc; pendingDisc = null; doDiscover(d); }
-}
-
-function addonRpc(ip, method, params, cb) {
-  var body = JSON.stringify({id:1,method:method,params:params||{}});
-  Shelly.call("HTTP.POST",{url:"http://"+ip+"/rpc",body:body,content_type:"application/json",timeout:5},function(r,e){
-    if(e||!r||r.code!==200||!r.body){cb(e?"RPC error: "+JSON.stringify(e):(r?"HTTP "+r.code:"No response from "+ip),null);return;}
-    try{cb(null,JSON.parse(r.body));}catch(x){cb("Invalid JSON response",null);}
-  });
-}
-
-function getDs18b20(res) {
-  if (!res) return {};
-  // JSON-RPC response: {id, result: {ds18b20: {...}}}
-  if (res.result && res.result.ds18b20) return res.result.ds18b20;
-  // Direct response: {ds18b20: {...}}
-  if (res.ds18b20) return res.ds18b20;
-  return {};
-}
-
-function getOneWireDevices(res) {
-  if (!res) return [];
-  // JSON-RPC response: {id, result: {devices: [...]}}
-  if (res.result && res.result.devices) return res.result.devices;
-  // Direct response: {devices: [...]}
-  if (res.devices) return res.devices;
-  return [];
-}
-
-function rpcError(r) {
-  // Shelly Gen2 returns {"id":1,"error":{"code":-103,"message":"..."}}
-  // with HTTP 200 when the method was reached but rejected. addonRpc
-  // treats this as a success, so pull the error out here.
-  if (!r || !r.error) return null;
-  return (r.error.code !== undefined ? r.error.code + ": " : "") + (r.error.message || "unknown");
-}
-
-function doApply(req) {
-  var cfg=req.config;
-  if(!cfg||!cfg.h||!cfg.s){Shelly.emitEvent("sensor_config_apply_result",{id:req.id,success:false,results:[]});return;}
-  var tgt=req.target,hosts=[];
-  for(var i=0;i<cfg.h.length;i++){if(!tgt||cfg.h[i]===tgt)hosts.push(cfg.h[i]);}
-  var res=[];
-  function next(idx){
-    if(idx>=hosts.length){
-      var ok=true;for(var j=0;j<res.length;j++){if(!res[j].ok)ok=false;}
-      Shelly.emitEvent("sensor_config_apply_result",{id:req.id,success:ok,results:res});return;
-    }
-    var ip=hosts[idx],hi=-1,errs=[];
-    for(var k=0;k<cfg.h.length;k++){if(cfg.h[k]===ip){hi=k;break;}}
-    addonRpc(ip,"SensorAddon.GetPeripherals",null,function(e,r){
-      if(e){res.push({host:ip,ok:false,error:"GetPeripherals: "+e,peripherals:0});next(idx+1);return;}
-      var re=rpcError(r);
-      if(re){res.push({host:ip,ok:false,error:"GetPeripherals: "+re,peripherals:0});next(idx+1);return;}
-      var ex=[];var d=getDs18b20(r);for(var c in d)ex.push(c);
-      function rm(ri){
-        if(ri>=ex.length){add();return;}
-        addonRpc(ip,"SensorAddon.RemovePeripheral",{component:ex[ri]},function(rme,rmr){
-          var rerr=rme||rpcError(rmr);
-          if(rerr)errs.push("remove "+ex[ri]+": "+rerr);
-          rm(ri+1);
-        });
-      }
-      function add(){
-        // SensorAddon.AddPeripheral requires BOTH attrs.addr (which probe on
-        // the 1-Wire bus) and attrs.cid (which component slot). Both persist
-        // immediately to flash on the hub — no delay needed before reboot.
-        var ta=[];for(var rl in cfg.s){if(cfg.s[rl].h===hi)ta.push({i:cfg.s[rl].i,a:cfg.s[rl].a,r:rl});}
-        var n=0;
-        function an(ai){
-          if(ai>=ta.length){verify();return;}
-          var attrs={cid:ta[ai].i};
-          if(ta[ai].a)attrs.addr=ta[ai].a;
-          addonRpc(ip,"SensorAddon.AddPeripheral",{type:"ds18b20",attrs:attrs},function(ae,ar){
-            var aerr=ae||rpcError(ar);
-            if(aerr)errs.push("add "+ta[ai].r+" (cid "+ta[ai].i+", addr "+(ta[ai].a||"?")+"): "+aerr);
-            else n++;
-            an(ai+1);
-          });
-        }
-        an(0);
-        function verify(){
-          // Read GetPeripherals BEFORE the reboot — at this point the Add-on
-          // state is authoritative. After a reboot GetPeripherals may return
-          // {} for ~20s while SensorAddon reinitializes, so polling later is
-          // unreliable. Verifying here catches silent AddPeripheral failures.
-          addonRpc(ip,"SensorAddon.GetPeripherals",null,function(ge,gr){
-            var bound=0;
-            if(!ge&&!rpcError(gr)){var dd=getDs18b20(gr);for(var cc in dd)bound++;}
-            if(bound<n&&!errs.length){errs.push("post-add verify: "+bound+" of "+n+" peripherals actually persisted");}
-            var hostRes={host:ip,ok:errs.length===0,peripherals:bound};
-            if(errs.length)hostRes.error=errs.join("; ");
-            // SensorAddon.{Add,Remove}Peripheral never flag restart_required,
-            // but Temperature.GetStatus on newly-added cids returns "No
-            // handler" until the hub reboots — so reboot unconditionally
-            // whenever we touched the peripheral table. After ~15–20s the
-            // hub is back online with all Temperature components registered.
-            if(ex.length===0&&n===0){res.push(hostRes);next(idx+1);return;}
-            addonRpc(ip,"Shelly.Reboot",null,function(){hostRes.rebooted=true;res.push(hostRes);next(idx+1);});
-          });
-        }
-      }
-      rm(0);
-    });
-  }
-  next(0);
-}
-
-function doDiscover(req) {
-  var hosts=req.hosts||[],res=[];
-  var wantTemp=!req.skipTemp;
-  function next(idx){
-    if(idx>=hosts.length){Shelly.emitEvent("discover_sensors_result",{id:req.id,results:res});return;}
-    var ip=hosts[idx];
-    addonRpc(ip,"SensorAddon.OneWireScan",null,function(e,r){
-      if(e){res.push({host:ip,ok:false,error:e,sensors:[]});next(idx+1);return;}
-      var devs=getOneWireDevices(r);
-      var sns=[];
-      for(var i=0;i<devs.length;i++){
-        sns.push({addr:devs[i].addr||"",component:devs[i].component||null,tC:null});
-      }
-      if(!wantTemp){res.push({host:ip,ok:true,sensors:sns});next(idx+1);return;}
-      // Poll temperature for each sensor that has a component
-      function pollTemp(si){
-        if(si>=sns.length){res.push({host:ip,ok:true,sensors:sns});next(idx+1);return;}
-        var comp=sns[si].component;
-        if(!comp||comp.indexOf("temperature:")!==0){pollTemp(si+1);return;}
-        var cid=comp.replace("temperature:","");
-        pollSensor("_disc",ip,cid,function(_n,val){
-          if(val!==null)sns[si].tC=val;
-          pollTemp(si+1);
-        });
-      }
-      pollTemp(0);
-    });
-  }
-  next(0);
-}
+// (doApply / doDiscover / addonRpc / getDs18b20 / getOneWireDevices /
+// rpcError all removed — the server now drives sensor-config apply and
+// discovery directly over HTTP. See the note above.)
 
 // ── Config event handlers ──
 
@@ -1144,16 +1005,6 @@ Shelly.addEventHandler(function(ev) {
     var scData = ev.info.data;
     if (scData && scData.config) {
       sensorConfig = scData.config;
-    }
-  } else if (ev.info.event === "sensor_config_apply") {
-    var applyData = ev.info.data;
-    if (applyData && applyData.request) {
-      pendingApply = applyData.request;
-    }
-  } else if (ev.info.event === "discover_sensors") {
-    var discData = ev.info.data;
-    if (discData && discData.request) {
-      pendingDisc = discData.request;
     }
   } else if (ev.info.event === "relay_command") {
     var relayData = ev.info.data;

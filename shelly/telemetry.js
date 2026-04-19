@@ -5,10 +5,11 @@
 
 var CONFIG_TOPIC = "greenhouse/config";
 var SENSOR_CONFIG_TOPIC = "greenhouse/sensor-config";
-var SENSOR_CONFIG_APPLY_TOPIC = "greenhouse/sensor-config-apply";
-var SENSOR_CONFIG_RESULT_TOPIC = "greenhouse/sensor-config-result";
-var DISCOVER_TOPIC = "greenhouse/discover-sensors";
-var DISCOVER_RESULT_TOPIC = "greenhouse/discover-sensors-result";
+// sensor-config-apply and discover-sensors topics were removed:
+// the server drives both flows directly over HTTP (see
+// server/lib/sensor-apply.js and sensor-discovery.js). Keeping the
+// subscriptions here was pure overhead that pushed the Pro 4PM's
+// shared JS heap over the edge and OOM'd this telemetry script.
 var RELAY_COMMAND_TOPIC = "greenhouse/relay-command";
 var STATE_TOPIC = "greenhouse/state";
 // Watchdog events are device→server only. There is intentionally NO
@@ -166,24 +167,6 @@ function setupMqttSubscription() {
       }
     } catch(e) {}
   });
-  safeSubscribe(SENSOR_CONFIG_APPLY_TOPIC, function(topic, message) {
-    if (topic !== SENSOR_CONFIG_APPLY_TOPIC) return;
-    try {
-      var req = JSON.parse(message);
-      if (req && req.id) {
-        Shelly.emitEvent("sensor_config_apply", {request: req});
-      }
-    } catch(e) {}
-  });
-  safeSubscribe(DISCOVER_TOPIC, function(topic, message) {
-    if (topic !== DISCOVER_TOPIC) return;
-    try {
-      var req = JSON.parse(message);
-      if (req && req.id) {
-        Shelly.emitEvent("discover_sensors", {request: req});
-      }
-    } catch(e) {}
-  });
   safeSubscribe(RELAY_COMMAND_TOPIC, function(topic, message) {
     if (topic !== RELAY_COMMAND_TOPIC) return;
     try {
@@ -204,14 +187,6 @@ Shelly.addEventHandler(function(ev) {
     if (!snapshot) return;
     if (!MQTT.isConnected()) return;
     MQTT.publish(STATE_TOPIC, JSON.stringify(snapshot), 1, true);
-  } else if (ev.info.event === "sensor_config_apply_result") {
-    var applyResult = ev.info.data;
-    if (!applyResult || !MQTT.isConnected()) return;
-    MQTT.publish(SENSOR_CONFIG_RESULT_TOPIC, JSON.stringify(applyResult), 1, false);
-  } else if (ev.info.event === "discover_sensors_result") {
-    var discResult = ev.info.data;
-    if (!discResult || !MQTT.isConnected()) return;
-    MQTT.publish(DISCOVER_RESULT_TOPIC, JSON.stringify(discResult), 1, false);
   } else if (ev.info.event === "watchdog_event") {
     var wdPayload = ev.info.data;
     if (!wdPayload || !MQTT.isConnected()) return;
