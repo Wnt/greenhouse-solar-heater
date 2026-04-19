@@ -248,29 +248,50 @@ describe('sensor-config', () => {
     });
   });
 
-  describe('MQTT-based apply', () => {
-    it('applyConfig uses mqttBridge.publishSensorConfigApply', (t, done) => {
+  describe('Direct-HTTP apply (via sensor-apply module)', () => {
+    const sensorApply = require('../server/lib/sensor-apply');
+    let origApplyAll, origApplyOne;
+
+    beforeEach(() => {
+      origApplyAll = sensorApply.applyAll;
+      origApplyOne = sensorApply.applyOne;
+    });
+    afterEach(() => {
+      sensorApply.applyAll = origApplyAll;
+      sensorApply.applyOne = origApplyOne;
+    });
+
+    it('applyConfig calls sensor-apply.applyAll with hosts + assignments and publishes routing to MQTT', (t, done) => {
       sensorConfig.load(function (err) {
         assert.ifError(err);
+        let applyCalled = false;
+        let mqttRoutingPublished = false;
+        sensorApply.applyAll = function (hosts, assignments) {
+          applyCalled = true;
+          assert.ok(Array.isArray(hosts));
+          assert.ok(hosts[0].ip);
+          assert.ok(typeof assignments === 'object');
+          return Promise.resolve({
+            id: 'apply-1',
+            success: true,
+            results: [
+              { host: '192.168.30.20', ok: true, peripherals: 2 },
+              { host: '192.168.30.21', ok: true, peripherals: 1 },
+            ],
+          });
+        };
         const mockBridge = {
-          publishSensorConfigApply: function (request) {
-            assert.ok(request.id.startsWith('apply-'));
-            assert.equal(request.target, null);
-            assert.ok(request.config.h);
-            assert.ok(request.config.s !== undefined);
-            return Promise.resolve({
-              id: request.id,
-              success: true,
-              results: [
-                { host: '192.168.30.20', ok: true, peripherals: 2 },
-                { host: '192.168.30.21', ok: true, peripherals: 1 },
-              ],
-            });
+          publishSensorConfig: function (compact) {
+            mqttRoutingPublished = true;
+            assert.ok(compact.h);
+            assert.ok(compact.s !== undefined);
+            return true;
           },
-          publishSensorConfig: function () { return true; },
         };
         sensorConfig.applyConfig(mockBridge, function (err, results) {
           assert.ifError(err);
+          assert.ok(applyCalled, 'sensor-apply.applyAll must be invoked');
+          assert.ok(mqttRoutingPublished, 'MQTT routing config must be published');
           assert.equal(results.sensor_1.status, 'success');
           assert.equal(results.sensor_2.status, 'success');
           assert.equal(results.control.status, 'success');
@@ -279,61 +300,88 @@ describe('sensor-config', () => {
       });
     });
 
-    it('applyConfig surfaces "hub rebooted" in the success message when the controller reports rebooted:true', (t, done) => {
+    it('applyConfig surfaces "hub rebooted" in the per-host message when rebooted:true', (t, done) => {
       sensorConfig.load(function (err) {
         assert.ifError(err);
-        const mockBridge = {
-          publishSensorConfigApply: function (request) {
-            return Promise.resolve({
-              id: request.id,
-              success: true,
-              results: [
-                { host: '192.168.30.20', ok: true, peripherals: 3, rebooted: true },
-                { host: '192.168.30.21', ok: true, peripherals: 1 },
-              ],
-            });
-          },
-          publishSensorConfig: function () { return true; },
+        sensorApply.applyAll = function () {
+          return Promise.resolve({
+            id: 'apply-1',
+            success: true,
+            results: [
+              { host: '192.168.30.20', ok: true, peripherals: 3, rebooted: true },
+              { host: '192.168.30.21', ok: true, peripherals: 1 },
+            ],
+          });
         };
+        const mockBridge = { publishSensorConfig: function () { return true; } };
         sensorConfig.applyConfig(mockBridge, function (err, results) {
           assert.ifError(err);
-          assert.equal(results.sensor_1.status, 'success');
           assert.match(results.sensor_1.message, /rebooted/);
-          assert.equal(results.sensor_2.status, 'success');
           assert.doesNotMatch(results.sensor_2.message, /rebooted/);
           done();
         });
       });
     });
 
-    it('applyConfig returns error when MQTT bridge not available', (t, done) => {
+    it('applyConfig surfaces per-host errors from sensor-apply in the results', (t, done) => {
       sensorConfig.load(function (err) {
         assert.ifError(err);
-        sensorConfig.applyConfig(null, function (err) {
-          assert.ok(err);
-          assert.ok(err.message.includes('MQTT bridge not available'));
-          done();
-        });
-      });
-    });
-
-    it('applyConfig returns error on MQTT timeout', (t, done) => {
-      sensorConfig.load(function (err) {
-        assert.ifError(err);
-        const mockBridge = {
-          publishSensorConfigApply: function () {
-            return Promise.reject(new Error('Request timed out'));
-          },
+        sensorApply.applyAll = function () {
+          return Promise.resolve({
+            id: 'apply-1',
+            success: false,
+            results: [
+              { host: '192.168.30.20', ok: true, peripherals: 3, rebooted: true },
+              { host: '192.168.30.21', ok: false, peripherals: 0, error: 'GetPeripherals: ECONNREFUSED' },
+            ],
+          });
         };
-        sensorConfig.applyConfig(mockBridge, function (err) {
-          assert.ok(err);
-          assert.equal(err.message, 'Request timed out');
+        const mockBridge = { publishSensorConfig: function () { return true; } };
+        sensorConfig.applyConfig(mockBridge, function (err, results) {
+          assert.ifError(err);
+          assert.equal(results.sensor_1.status, 'success');
+          assert.equal(results.sensor_2.status, 'error');
+          assert.match(results.sensor_2.message, /ECONNREFUSED/);
           done();
         });
       });
     });
 
-    it('applySingleTarget routes control target via publishSensorConfig', (t, done) => {
+    it('applyConfig reports control:error when the MQTT bridge is unavailable but hubs still apply', (t, done) => {
+      sensorConfig.load(function (err) {
+        assert.ifError(err);
+        sensorApply.applyAll = function () {
+          return Promise.resolve({
+            id: 'apply-1',
+            success: true,
+            results: [{ host: '192.168.30.20', ok: true, peripherals: 2 }],
+          });
+        };
+        sensorConfig.applyConfig(null, function (err, results) {
+          assert.ifError(err);
+          assert.equal(results.sensor_1.status, 'success');
+          assert.equal(results.control.status, 'error');
+          assert.match(results.control.message, /MQTT bridge not available/);
+          done();
+        });
+      });
+    });
+
+    it('applyConfig propagates a sensor-apply rejection to the callback', (t, done) => {
+      sensorConfig.load(function (err) {
+        assert.ifError(err);
+        sensorApply.applyAll = function () {
+          return Promise.reject(new Error('catastrophic failure'));
+        };
+        sensorConfig.applyConfig({}, function (err) {
+          assert.ok(err);
+          assert.equal(err.message, 'catastrophic failure');
+          done();
+        });
+      });
+    });
+
+    it('applySingleTarget routes control target via publishSensorConfig (unchanged)', (t, done) => {
       sensorConfig.load(function (err) {
         assert.ifError(err);
         let published = false;
@@ -349,21 +397,21 @@ describe('sensor-config', () => {
       });
     });
 
-    it('applySingleTarget routes host target via MQTT', (t, done) => {
+    it('applySingleTarget routes host target via sensor-apply.applyOne with the host ip', (t, done) => {
       sensorConfig.load(function (err) {
         assert.ifError(err);
-        const mockBridge = {
-          publishSensorConfigApply: function (request) {
-            assert.equal(request.target, '192.168.30.20');
-            return Promise.resolve({
-              id: request.id,
-              success: true,
-              results: [{ host: '192.168.30.20', ok: true, peripherals: 3 }],
-            });
-          },
+        let appliedHost = null;
+        sensorApply.applyOne = function (hosts, assignments, hostIp) {
+          appliedHost = hostIp;
+          return Promise.resolve({
+            id: 'apply-1',
+            success: true,
+            results: [{ host: hostIp, ok: true, peripherals: 3 }],
+          });
         };
-        sensorConfig.applySingleTarget('sensor_1', mockBridge, function (err, results) {
+        sensorConfig.applySingleTarget('sensor_1', {}, function (err, results) {
           assert.ifError(err);
+          assert.equal(appliedHost, '192.168.30.20');
           assert.equal(results.sensor_1.status, 'success');
           done();
         });

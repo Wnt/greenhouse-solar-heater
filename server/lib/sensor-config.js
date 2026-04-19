@@ -260,41 +260,55 @@ function toCompactFormat(config) {
   return compact;
 }
 
-// ── Apply to sensor hosts via MQTT (routed through Shelly controller) ──
+// ── Apply to sensor hosts directly over HTTP ──
+//
+// The Shelly Add-on needs a remove→reboot→add→reboot dance (see
+// server/lib/sensor-apply.js comments). That async orchestration is far
+// easier in Node than in the Shelly's ES5 runtime, so apply bypasses the
+// MQTT-via-controller route and talks to each hub directly. The sensor
+// *routing* (which cid each role polls) still goes through MQTT so the
+// controller can drive its polling loop.
+
+var sensorApply = require('./sensor-apply');
+
+function formatHostResult(config, r) {
+  var hostInfo = config.hosts.find(function (h) { return h.ip === r.host; });
+  var hostId = hostInfo ? hostInfo.id : r.host;
+  var okMsg = r.peripherals + ' sensors configured';
+  if (r.rebooted) okMsg += ' — hub rebooted to apply';
+  return {
+    id: hostId,
+    result: r.ok
+      ? { status: 'success', message: okMsg }
+      : { status: 'error', message: r.error || 'Failed' },
+  };
+}
 
 function applyConfig(mqttBridge, callback) {
   var config = getConfig();
-  if (!mqttBridge) {
-    callback(new Error('MQTT bridge not available'));
-    return;
-  }
-
   var compact = toCompactFormat(config);
-  var request = {
-    id: 'apply-' + Date.now(),
-    target: null,
-    config: compact,
-  };
 
-  mqttBridge.publishSensorConfigApply(request).then(function (result) {
-    // Also publish the sensor routing config for the controller's own use
-    mqttBridge.publishSensorConfig(compact);
-
-    // Convert MQTT response to the existing results format
+  sensorApply.applyAll(config.hosts, config.assignments).then(function (result) {
     var results = {};
-    if (result.results) {
-      for (var i = 0; i < result.results.length; i++) {
-        var r = result.results[i];
-        var hostInfo = config.hosts.find(function (h) { return h.ip === r.host; });
-        var hostId = hostInfo ? hostInfo.id : r.host;
-        var okMsg = r.peripherals + ' sensors configured';
-        if (r.rebooted) okMsg += ' — hub rebooted to apply';
-        results[hostId] = r.ok
-          ? { status: 'success', message: okMsg }
-          : { status: 'error', message: r.error || 'Failed' };
-      }
+    for (var i = 0; i < result.results.length; i++) {
+      var f = formatHostResult(config, result.results[i]);
+      results[f.id] = f.result;
     }
-    results.control = { status: 'success', message: 'Sensor routing published' };
+    // Publish the sensor routing to MQTT so the controller knows which
+    // cid to poll for each role. Not fatal if the bridge is down — the
+    // hub bindings we just applied are still the durable source of truth.
+    if (mqttBridge) {
+      try {
+        var ok = mqttBridge.publishSensorConfig(compact);
+        results.control = ok
+          ? { status: 'success', message: 'Sensor routing published' }
+          : { status: 'error', message: 'MQTT not connected' };
+      } catch (e) {
+        results.control = { status: 'error', message: e.message || String(e) };
+      }
+    } else {
+      results.control = { status: 'error', message: 'MQTT bridge not available' };
+    }
     callback(null, results);
   }).catch(function (err) {
     callback(err);
@@ -316,11 +330,6 @@ function applySingleTarget(targetId, mqttBridge, callback) {
     return;
   }
 
-  if (!mqttBridge) {
-    callback(new Error('MQTT bridge not available'));
-    return;
-  }
-
   // Find host by id
   var host = null;
   for (var i = 0; i < config.hosts.length; i++) {
@@ -334,24 +343,11 @@ function applySingleTarget(targetId, mqttBridge, callback) {
     return;
   }
 
-  var compact = toCompactFormat(config);
-  var request = {
-    id: 'apply-' + Date.now(),
-    target: host.ip,
-    config: compact,
-  };
-
-  mqttBridge.publishSensorConfigApply(request).then(function (result) {
+  sensorApply.applyOne(config.hosts, config.assignments, host.ip).then(function (result) {
     var results = {};
-    if (result.results) {
-      for (var j = 0; j < result.results.length; j++) {
-        var r = result.results[j];
-        var okMsg = r.peripherals + ' sensors configured';
-        if (r.rebooted) okMsg += ' — hub rebooted to apply';
-        results[host.id] = r.ok
-          ? { status: 'success', message: okMsg }
-          : { status: 'error', message: r.error || 'Failed' };
-      }
+    if (result.results && result.results[0]) {
+      var f = formatHostResult(config, result.results[0]);
+      results[host.id] = f.result;
     }
     callback(null, results);
   }).catch(function (err) {

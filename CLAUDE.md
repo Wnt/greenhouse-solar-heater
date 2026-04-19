@@ -64,11 +64,17 @@ Shelly runs a restricted Espruino runtime. The linter (`shelly/lint/`) enforces:
 
 Convention (not linter-enforced): use `var`, not `const`/`let`. The `SH-014` array-method list is **empirical** — each banned method has a device-crash incident comment. Add to the list if you hit another missing method on-device and document the incident.
 
-### Device communication flows through MQTT (one exception: sensor discovery)
+### Device communication flows through MQTT (two exceptions: sensor discovery and sensor apply)
 
-No direct HTTP RPC to Shelly from the server for state, config pushes, sensor-config apply, or relay commands. The `mqtt-bridge` routes all of those through `greenhouse/*` topics. Adding a new mutating or stateful device operation = new MQTT topic, not a new HTTP endpoint.
+No direct HTTP RPC to Shelly from the server for state, config pushes, or relay commands. The `mqtt-bridge` routes all of those through `greenhouse/*` topics. Adding a new mutating or stateful device operation = new MQTT topic, not a new HTTP endpoint.
 
-**Exception**: `/api/sensor-discovery` calls `SensorAddon.OneWireScan` directly over HTTP to each sensor hub (see `server/lib/sensor-discovery.js`). The MQTT-routed flow (server → Pro 4PM → HTTP to hub → MQTT result) was slow (~30s) and produced opaque "controller did not respond" errors when any single hub failed. Discovery is read-only, parallelizable per host, and matches what the Shelly mobile app does. If you add more read-only diagnostic endpoints, prefer direct HTTP for the same reasons.
+**Exceptions**:
+
+- `/api/sensor-discovery` → `server/lib/sensor-discovery.js`. Calls `SensorAddon.OneWireScan` directly. The MQTT-routed flow (server → Pro 4PM → HTTP to hub → MQTT result) was slow and produced opaque "controller did not respond" errors on any single-hub failure. Discovery is read-only, parallelizable per host, and matches what the Shelly mobile app does.
+
+- `/api/sensor-config/apply` → `server/lib/sensor-apply.js`. Drives the `remove-all → Shelly.Reboot → wait → add-all → Shelly.Reboot` sequence required by the Add-on (it keeps a "reserved address" cache after RemovePeripheral that only a reboot clears, and newly-added Temperature.GetStatus handlers only register after a reboot). That async orchestration is hard on the Shelly's ES5 runtime (5-timer limit, no promises), trivial in Node. The sensor routing config (role → cid map) is still published via MQTT (`greenhouse/sensor-config`) so the controller's polling loop picks up assignment changes.
+
+If you add more operations that need multi-step async waits or cross-hub orchestration, prefer direct HTTP for the same reasons.
 
 ### Vendored dependencies must stay vendored
 

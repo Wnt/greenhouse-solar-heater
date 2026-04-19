@@ -1012,15 +1012,6 @@ function getOneWireDevices(res) {
   return [];
 }
 
-function needsRestart(r) {
-  // Shelly Gen2 RPC response: {id, result: {restart_required: bool, ...}}.
-  // RemovePeripheral and AddPeripheral both set this when the hub needs to
-  // reboot for the new bus configuration to take effect — without a reboot,
-  // Temperature.GetStatus on freshly-added component IDs returns no tC and
-  // the role shows as "—" in the UI.
-  return !!(r && r.result && r.result.restart_required);
-}
-
 function rpcError(r) {
   // Shelly Gen2 returns {"id":1,"error":{"code":-103,"message":"..."}}
   // with HTTP 200 when the method was reached but rejected. addonRpc
@@ -1040,7 +1031,7 @@ function doApply(req) {
       var ok=true;for(var j=0;j<res.length;j++){if(!res[j].ok)ok=false;}
       Shelly.emitEvent("sensor_config_apply_result",{id:req.id,success:ok,results:res});return;
     }
-    var ip=hosts[idx],hi=-1,reboot=false,errs=[];
+    var ip=hosts[idx],hi=-1,errs=[];
     for(var k=0;k<cfg.h.length;k++){if(cfg.h[k]===ip){hi=k;break;}}
     addonRpc(ip,"SensorAddon.GetPeripherals",null,function(e,r){
       if(e){res.push({host:ip,ok:false,error:"GetPeripherals: "+e,peripherals:0});next(idx+1);return;}
@@ -1052,49 +1043,45 @@ function doApply(req) {
         addonRpc(ip,"SensorAddon.RemovePeripheral",{component:ex[ri]},function(rme,rmr){
           var rerr=rme||rpcError(rmr);
           if(rerr)errs.push("remove "+ex[ri]+": "+rerr);
-          if(needsRestart(rmr))reboot=true;
           rm(ri+1);
         });
       }
       function add(){
         // SensorAddon.AddPeripheral requires BOTH attrs.addr (which probe on
-        // the 1-Wire bus) and attrs.cid (which component slot). Earlier code
-        // only passed cid, so the Add-on created empty slots that polled no
-        // physical probe — symptom: some sensors showed "—" after apply.
+        // the 1-Wire bus) and attrs.cid (which component slot). Both persist
+        // immediately to flash on the hub — no delay needed before reboot.
         var ta=[];for(var rl in cfg.s){if(cfg.s[rl].h===hi)ta.push({i:cfg.s[rl].i,a:cfg.s[rl].a,r:rl});}
         var n=0;
         function an(ai){
-          if(ai>=ta.length){finishHost();return;}
+          if(ai>=ta.length){verify();return;}
           var attrs={cid:ta[ai].i};
           if(ta[ai].a)attrs.addr=ta[ai].a;
           addonRpc(ip,"SensorAddon.AddPeripheral",{type:"ds18b20",attrs:attrs},function(ae,ar){
             var aerr=ae||rpcError(ar);
             if(aerr)errs.push("add "+ta[ai].r+" (cid "+ta[ai].i+", addr "+(ta[ai].a||"?")+"): "+aerr);
             else n++;
-            if(needsRestart(ar))reboot=true;
             an(ai+1);
           });
         }
         an(0);
-        function finishHost(){
-          // Verify the adds actually landed. If AddPeripheral returned no
-          // error but the Add-on never registered the peripheral (e.g. attrs
-          // format mismatch), this is our only way to catch it — the
-          // symptom otherwise is a silent "Apply complete" followed by
-          // "No peripherals added" in the Shelly app.
+        function verify(){
+          // Read GetPeripherals BEFORE the reboot — at this point the Add-on
+          // state is authoritative. After a reboot GetPeripherals may return
+          // {} for ~20s while SensorAddon reinitializes, so polling later is
+          // unreliable. Verifying here catches silent AddPeripheral failures.
           addonRpc(ip,"SensorAddon.GetPeripherals",null,function(ge,gr){
             var bound=0;
             if(!ge&&!rpcError(gr)){var dd=getDs18b20(gr);for(var cc in dd)bound++;}
             if(bound<n&&!errs.length){errs.push("post-add verify: "+bound+" of "+n+" peripherals actually persisted");}
             var hostRes={host:ip,ok:errs.length===0,peripherals:bound};
             if(errs.length)hostRes.error=errs.join("; ");
-            function done(){res.push(hostRes);next(idx+1);}
-            if(!reboot){done();return;}
-            // delay_ms gives the Add-on 2s to flush the just-added peripherals
-            // to flash before the reboot — without it, pending writes are lost
-            // and the hub boots with no peripherals. The HTTP ACK comes back
-            // immediately; the device then reboots on its own timer.
-            addonRpc(ip,"Shelly.Reboot",{delay_ms:2000},function(){hostRes.rebooted=true;done();});
+            // SensorAddon.{Add,Remove}Peripheral never flag restart_required,
+            // but Temperature.GetStatus on newly-added cids returns "No
+            // handler" until the hub reboots — so reboot unconditionally
+            // whenever we touched the peripheral table. After ~15–20s the
+            // hub is back online with all Temperature components registered.
+            if(ex.length===0&&n===0){res.push(hostRes);next(idx+1);return;}
+            addonRpc(ip,"Shelly.Reboot",null,function(){hostRes.rebooted=true;res.push(hostRes);next(idx+1);});
           });
         }
       }
