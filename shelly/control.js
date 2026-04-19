@@ -1077,13 +1077,25 @@ function doApply(req) {
         }
         an(0);
         function finishHost(){
-          var hostRes={host:ip,ok:errs.length===0,peripherals:n};
-          if(errs.length)hostRes.error=errs.join("; ");
-          function done(){res.push(hostRes);next(idx+1);}
-          if(!reboot){done();return;}
-          // Shelly.Reboot often tears down the HTTP connection before sending
-          // a response — treat any callback (ok or error) as success and move on.
-          addonRpc(ip,"Shelly.Reboot",null,function(){hostRes.rebooted=true;done();});
+          // Verify the adds actually landed. If AddPeripheral returned no
+          // error but the Add-on never registered the peripheral (e.g. attrs
+          // format mismatch), this is our only way to catch it — the
+          // symptom otherwise is a silent "Apply complete" followed by
+          // "No peripherals added" in the Shelly app.
+          addonRpc(ip,"SensorAddon.GetPeripherals",null,function(ge,gr){
+            var bound=0;
+            if(!ge&&!rpcError(gr)){var dd=getDs18b20(gr);for(var cc in dd)bound++;}
+            if(bound<n&&!errs.length){errs.push("post-add verify: "+bound+" of "+n+" peripherals actually persisted");}
+            var hostRes={host:ip,ok:errs.length===0,peripherals:bound};
+            if(errs.length)hostRes.error=errs.join("; ");
+            function done(){res.push(hostRes);next(idx+1);}
+            if(!reboot){done();return;}
+            // delay_ms gives the Add-on 2s to flush the just-added peripherals
+            // to flash before the reboot — without it, pending writes are lost
+            // and the hub boots with no peripherals. The HTTP ACK comes back
+            // immediately; the device then reboots on its own timer.
+            addonRpc(ip,"Shelly.Reboot",{delay_ms:2000},function(){hostRes.rebooted=true;done();});
+          });
         }
       }
       rm(0);
