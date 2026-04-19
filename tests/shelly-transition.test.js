@@ -293,4 +293,42 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
       });
     });
   });
+
+  it('drain exit: waits ≥ 20 s between last valve close and pump-off', function(t, done) {
+    var rt = createOrderingRuntime();
+    rt.kvs.config = JSON.stringify({
+      ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1
+    });
+    rt.kvs.drained = '0';
+    rt.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
+    loadScript(rt, ['control-logic.js', 'control.js']);
+    rt.advance(10000, function() {
+      rt.globals.Shelly.__test_driveTransition('ACTIVE_DRAIN', {
+        nextMode: 'IDLE',
+        valves: { vi_btm: false, vi_top: false, vi_coll: false,
+                  vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
+        actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
+        flags: { collectorsDrained: true, lastRefillAttempt: 0,
+                 emergencyHeatingActive: false,
+                 solarChargePeakTankTop: null, solarChargePeakTankTopAt: 0 },
+        suppressed: false, safetyOverride: false,
+      });
+      rt.advance(30000, function() {
+        var events = rt.events();
+        var valveCloses = events.filter(function(e) {
+          return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
+        });
+        var pumpOff = events.find(function(e) {
+          return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
+        });
+        assert.ok(valveCloses.length > 0, 'expected at least one valve HTTP.GET');
+        assert.ok(pumpOff, 'expected a pump-off Switch.Set');
+        var lastValveAt = valveCloses[valveCloses.length - 1].t;
+        var gap = pumpOff.t - lastValveAt;
+        assert.ok(gap >= 20000,
+          'pump-off must be ≥ 20 000 ms after last valve close (got ' + gap + ' ms)');
+      });
+      done();
+    });
+  });
 });
