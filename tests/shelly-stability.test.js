@@ -62,7 +62,9 @@ function createShellyRuntime(opts) {
       response = {};
     } else if (method === 'HTTP.GET' || method === 'HTTP.POST') {
       concurrentCalls--;
-      if (cb) cb(null, { code: 0, body: '' });
+      // Return success so valve/sensor HTTP calls don't trigger retries
+      // that infinite-loop the boot chain when tests need subscribe/publish.
+      if (cb) cb({ code: 200, body: '{"tC":20}' }, null);
       return;
     }
 
@@ -103,15 +105,17 @@ function createShellyRuntime(opts) {
   var mqtt = {
     subscribe: function(topic, cb) {
       // Match real Shelly behavior: subscribing to an already-subscribed
-      // topic throws "Invalid topic" and crashes the script. The real
-      // device exhibited this with telemetry.js after a connectHandler
-      // reset re-ran setupMqttSubscription.
+      // topic throws "Invalid topic". The merged control script's boot
+      // dance calls unsubscribe first to avoid this.
       for (var i = 0; i < mqttSubscriptions.length; i++) {
         if (mqttSubscriptions[i].topic === topic) {
           throw new Error('Invalid topic');
         }
       }
       mqttSubscriptions.push({ topic: topic, cb: cb });
+    },
+    unsubscribe: function(topic) {
+      mqttSubscriptions = mqttSubscriptions.filter(function(s) { return s.topic !== topic; });
     },
     publish: function() {},
     isConnected: function() { return mqttConnected; },
@@ -154,6 +158,25 @@ function createShellyRuntime(opts) {
     triggerMqttConnect: function() {
       mqttConnected = true;
       if (mqttConnectHandler) mqttConnectHandler();
+    },
+    deliverMqtt: function(topic, message) {
+      for (var i = 0; i < mqttSubscriptions.length; i++) {
+        if (mqttSubscriptions[i].topic === topic) {
+          mqttSubscriptions[i].cb(topic, message);
+        }
+      }
+    },
+    // Fire all pending one-shot timers repeatedly until none left. Helps
+    // tests push the boot chain (Timer.set(5000) gates) to completion.
+    flushTimers: function() {
+      for (var round = 0; round < 10; round++) {
+        var oneshot = timers.filter(function(t) { return !t.repeat; });
+        if (oneshot.length === 0) return;
+        for (var i = 0; i < oneshot.length; i++) {
+          timers = timers.filter(function(t) { return t.id !== oneshot[i].id; });
+          try { oneshot[i].cb(); } catch (_e) {}
+        }
+      }
     },
     reset: function() {
       concurrentCalls = 0;
@@ -244,23 +267,23 @@ describe('Shelly control script stability', function() {
     // Shelly Pro 4PM rebooted (reset_reason 3 = software watchdog). The fix
     // serializes relay commands so at most one Switch.Set is in flight at
     // any moment from the manual-override path.
-    var rt = createShellyRuntime();
+    var rt = createShellyRuntime({ mqttConnected: true });
     loadScript(rt, ['control-logic.js', 'control.js']);
 
-    // Activate manual override via the script's existing config_changed event
-    // path so deviceConfig.mo is properly set inside the script's closure.
+    // Activate manual override via the CONFIG_TOPIC MQTT path — that's how
+    // config updates reach the merged script now.
     var future = Math.floor(Date.now() / 1000) + 600;
-    rt.globals.Shelly.emitEvent('config_changed', {
-      config: { ce: true, ea: 31, fm: null, am: null, v: 99, mo: { a: true, ex: future, ss: false } },
-      safety_critical: false,
-    });
+    rt.deliverMqtt('greenhouse/config', JSON.stringify({
+      ce: true, ea: 31, fm: null, am: null, v: 99,
+      mo: { a: true, ex: future, ss: false }
+    }));
 
     rt.reset();
     // Fire 4 relay commands in the same synchronous tick (worst case).
-    rt.globals.Shelly.emitEvent('relay_command', { relay: 'pump', on: true });
-    rt.globals.Shelly.emitEvent('relay_command', { relay: 'fan',  on: true });
-    rt.globals.Shelly.emitEvent('relay_command', { relay: 'fan',  on: false });
-    rt.globals.Shelly.emitEvent('relay_command', { relay: 'pump', on: false });
+    rt.deliverMqtt('greenhouse/relay-command', JSON.stringify({ relay: 'pump', on: true }));
+    rt.deliverMqtt('greenhouse/relay-command', JSON.stringify({ relay: 'fan',  on: true }));
+    rt.deliverMqtt('greenhouse/relay-command', JSON.stringify({ relay: 'fan',  on: false }));
+    rt.deliverMqtt('greenhouse/relay-command', JSON.stringify({ relay: 'pump', on: false }));
 
     setTimeout(function() {
       var stats = rt.stats();
@@ -274,73 +297,75 @@ describe('Shelly control script stability', function() {
   });
 });
 
-// ── Telemetry script tests ──
+// ── Merged-script MQTT tests (formerly shelly/telemetry.js) ──
 
-describe('Shelly telemetry script stability', function() {
-  it('stays within MQTT subscription limit (MQTT connected on boot)', function() {
-    var runtime = createShellyRuntime({ mqttConnected: true });
-    loadScript(runtime, ['telemetry.js']);
-    var stats = runtime.stats();
-    assert.ok(stats.mqttSubscriptionCount <= LIMITS.MAX_MQTT_SUBSCRIPTIONS,
-      'MQTT subscriptions: ' + stats.mqttSubscriptionCount +
-      ' (max ' + LIMITS.MAX_MQTT_SUBSCRIPTIONS + ')' +
-      ' topics: ' + stats.mqttTopics.join(', '));
-  });
+describe('Shelly merged-control MQTT stability', function() {
+  // Helper: boot the script and drain the boot chain (setImmediate
+  // callbacks + deferred 5 s timers) so MQTT subscribe + publish happen.
+  // loadPersistedState chains 3 KVS.Get setImmediate callbacks → alternate
+  // setImmediate / flushTimers for several rounds.
+  function bootAndSettle(rt, done) {
+    loadScript(rt, ['control-logic.js', 'control.js']);
+    var rounds = 0;
+    function loop() {
+      rt.flushTimers();
+      if (++rounds >= 20) { done(); return; }
+      setImmediate(loop);
+    }
+    setImmediate(loop);
+  }
 
-  it('stays within MQTT subscription limit after reconnect', function() {
-    var runtime = createShellyRuntime({ mqttConnected: true });
-    loadScript(runtime, ['telemetry.js']);
-    // Simulate reconnect — connectHandler fires again
-    runtime.triggerMqttConnect();
-    var stats = runtime.stats();
-    assert.ok(stats.mqttSubscriptionCount <= LIMITS.MAX_MQTT_SUBSCRIPTIONS,
-      'After reconnect: ' + stats.mqttSubscriptionCount +
-      ' subscriptions (max ' + LIMITS.MAX_MQTT_SUBSCRIPTIONS + ')' +
-      ' topics: ' + stats.mqttTopics.join(', '));
-  });
-
-  it('no duplicate MQTT topics', function() {
-    var runtime = createShellyRuntime({ mqttConnected: true });
-    loadScript(runtime, ['telemetry.js']);
-    var stats = runtime.stats();
-    var seen = {};
-    var dupes = [];
-    stats.mqttTopics.forEach(function(t) {
-      if (seen[t]) dupes.push(t);
-      seen[t] = true;
+  it('subscribes to exactly 3 MQTT topics (config, sensor-config, relay-command)', function(t, done) {
+    var rt = createShellyRuntime({ mqttConnected: true });
+    bootAndSettle(rt, function() {
+      var topics = rt.stats().mqttTopics.slice().sort();
+      assert.deepStrictEqual(topics,
+        ['greenhouse/config', 'greenhouse/relay-command', 'greenhouse/sensor-config'],
+        'Unexpected topics: ' + topics.join(', '));
+      done();
     });
-    assert.deepStrictEqual(dupes, [],
-      'Duplicate MQTT subscriptions: ' + dupes.join(', '));
   });
 
-  it('stays within event handler limit', function() {
-    var runtime = createShellyRuntime({ mqttConnected: true });
-    loadScript(runtime, ['telemetry.js']);
-    var stats = runtime.stats();
-    assert.ok(stats.eventHandlerCount <= LIMITS.MAX_EVENT_HANDLERS,
-      'Event handlers: ' + stats.eventHandlerCount + ' (max ' + LIMITS.MAX_EVENT_HANDLERS + ')');
+  it('stays within MQTT subscription limit', function(t, done) {
+    var rt = createShellyRuntime({ mqttConnected: true });
+    bootAndSettle(rt, function() {
+      var stats = rt.stats();
+      assert.ok(stats.mqttSubscriptionCount <= LIMITS.MAX_MQTT_SUBSCRIPTIONS,
+        'MQTT subscriptions: ' + stats.mqttSubscriptionCount);
+      done();
+    });
   });
 
-  it('stays within timer limit', function() {
-    var runtime = createShellyRuntime({ mqttConnected: true });
-    loadScript(runtime, ['telemetry.js']);
-    var stats = runtime.stats();
-    assert.ok(stats.timerCount <= LIMITS.MAX_TIMERS,
-      'Timers: ' + stats.timerCount + ' (max ' + LIMITS.MAX_TIMERS + ')');
+  it('survives connectHandler firing after boot already subscribed (orphan-fix via unsubscribe)', function(t, done) {
+    var rt = createShellyRuntime({ mqttConnected: true });
+    bootAndSettle(rt, function() {
+      assert.doesNotThrow(function() {
+        rt.triggerMqttConnect();
+        rt.triggerMqttConnect();
+      }, 'merged control script must not crash on repeated connectHandler');
+      var stats = rt.stats();
+      var uniq = {};
+      stats.mqttTopics.forEach(function(t) { uniq[t] = true; });
+      assert.strictEqual(Object.keys(uniq).length, 3,
+        'expected 3 unique subscriptions after repeated connectHandler, got: ' + stats.mqttTopics.join(', '));
+      done();
+    });
   });
 
-  it('survives connectHandler firing after bootTelemetry already subscribed', function() {
-    // Real-device crash: bootTelemetry → setupMqttSubscription subscribes
-    // 5 topics, then Shelly fires the connectHandler for the same active
-    // connection, which used to reset the guard flag and re-subscribe →
-    // "Invalid topic" → script crashed → relays stopped responding.
-    var runtime = createShellyRuntime({ mqttConnected: true });
-    assert.doesNotThrow(function () {
-      loadScript(runtime, ['telemetry.js']);
-      // Simulate Shelly firing the connectHandler for the same connection
-      // (or a quick reconnect). Either way the script must not crash.
-      runtime.triggerMqttConnect();
-      runtime.triggerMqttConnect();
-    }, 'telemetry must not crash on duplicate connectHandler invocations');
+  it('publishes greenhouse/state directly via MQTT.publish (no emitEvent IPC bridge)', function(t, done) {
+    var rt = createShellyRuntime({ mqttConnected: true });
+    var publishes = [];
+    var realPublish = rt.globals.MQTT.publish;
+    rt.globals.MQTT.publish = function(topic, payload, qos, retain) {
+      publishes.push({ topic: topic });
+      return realPublish.apply(null, arguments);
+    };
+    bootAndSettle(rt, function() {
+      var stateTopics = publishes.filter(function(p) { return p.topic === 'greenhouse/state'; });
+      assert.ok(stateTopics.length >= 1,
+        'merged control must publish greenhouse/state directly — topics seen: ' +
+        publishes.map(function(p) { return p.topic; }).join(', '));
+      done();
+    });
   });
 });

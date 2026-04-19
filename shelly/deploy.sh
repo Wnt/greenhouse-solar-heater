@@ -8,7 +8,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONF="$SCRIPT_DIR/devices.conf"
 LOGIC_JS="$SCRIPT_DIR/control-logic.js"
 CONTROL_JS="$SCRIPT_DIR/control.js"
-TELEMETRY_JS="$SCRIPT_DIR/telemetry.js"
 
 if [ ! -f "$CONF" ]; then
   echo "Error: $CONF not found" >&2
@@ -36,7 +35,7 @@ else
   DEVICE="${1:-$PRO4PM}"
 fi
 
-EXPECTED_SLOT_COUNT=2  # slot 1: control, slot 2: telemetry
+EXPECTED_SLOT_COUNT=1  # slot 1: merged control+telemetry
 
 # ── Ensure exactly the expected script slots exist ──
 # Shelly Script.Create auto-assigns IDs (1, 2, 3...) — we can't pick IDs.
@@ -104,7 +103,6 @@ print(' '.join(str(i) for i in ids))
 ensure_script_slots "$DEVICE" "$EXPECTED_SLOT_COUNT"
 
 CONTROL_SCRIPT_ID=1
-TELEMETRY_SCRIPT_ID=2
 
 # ── Helper: upload script files to a Shelly script slot ──
 upload_script() {
@@ -179,26 +177,6 @@ curl -s -X POST "http://$DEVICE/rpc/Script.SetConfig" \
 echo "Control script auto-start enabled"
 curl -s "http://$DEVICE/rpc/Script.Start?id=$CONTROL_SCRIPT_ID" > /dev/null
 echo "Control script started on $DEVICE"
-
-# ── Deploy telemetry script (slot 2) ──
-if [ -f "$TELEMETRY_JS" ]; then
-  echo ""
-  echo "Deploying telemetry.js to $DEVICE (script $TELEMETRY_SCRIPT_ID)..."
-
-  curl -s "http://$DEVICE/rpc/Script.Stop?id=$TELEMETRY_SCRIPT_ID" > /dev/null 2>&1 || true
-  sleep "$DEPLOY_STOP_DELAY"
-
-  echo "Uploading telemetry script..."
-  upload_script "$TELEMETRY_SCRIPT_ID" "$TELEMETRY_JS" "$DEVICE"
-
-  curl -s -X POST "http://$DEVICE/rpc/Script.SetConfig" \
-    -H "Content-Type: application/json" \
-    -d "{\"id\":$TELEMETRY_SCRIPT_ID,\"config\":{\"name\":\"telemetry\",\"enable\":true}}" > /dev/null
-
-  echo "Telemetry script auto-start enabled"
-  curl -s "http://$DEVICE/rpc/Script.Start?id=$TELEMETRY_SCRIPT_ID" > /dev/null
-  echo "Telemetry script started on $DEVICE"
-fi
 
 # ── Configure MQTT on device (if MQTT_BROKER_HOST is set) ──
 if [ -n "${MQTT_BROKER_HOST:-}" ]; then

@@ -13,6 +13,18 @@ var SHELL_CFG = {
   DRAIN_EXIT_PUMP_RUN_MS: 20000,
 };
 
+// ── MQTT topics and KVS keys (absorbed from former telemetry.js) ──
+var CONFIG_TOPIC = "greenhouse/config";
+var SENSOR_CONFIG_TOPIC = "greenhouse/sensor-config";
+var RELAY_COMMAND_TOPIC = "greenhouse/relay-command";
+var STATE_TOPIC = "greenhouse/state";
+// Watchdog events are device→server only. User ack and shutdownnow round-trip
+// via the existing greenhouse/config retained topic — no matching watchdog/cmd
+// subscription, which keeps the device within its MQTT subscription budget.
+var WATCHDOG_EVENT_TOPIC = "greenhouse/watchdog/event";
+var CONFIG_KVS_KEY = "config";
+var SENSOR_CONFIG_KVS_KEY = "sensor_config";
+
 // Watchdog id → mode short code. Used by applyBanAndShutdown to
 // translate a watchdog id to the mode code stored in wb.
 var WATCHDOG_MODE = { sng: "SC", scs: "SC", ggr: "GH" };
@@ -321,7 +333,8 @@ function buildStateSnapshot() {
 }
 
 function emitStateUpdate() {
-  Shelly.emitEvent("state_updated", buildStateSnapshot());
+  if (!MQTT.isConnected()) return;
+  MQTT.publish(STATE_TOPIC, JSON.stringify(buildStateSnapshot()), 1, true);
 }
 
 function applyFlags(flags) {
@@ -350,11 +363,11 @@ function captureWatchdogBaseline() {
   state.watchdogPending = null;
 }
 
-// Publish a watchdog event via the telemetry script. Events are sent
-// as Shelly.emitEvent and the telemetry.js handler forwards them to
-// MQTT. Silently dropped if the event system is not ready.
+// Publish a watchdog event directly via MQTT. Silently dropped if the
+// broker is not connected.
 function publishWatchdogEvent(payload) {
-  Shelly.emitEvent("watchdog_event", payload);
+  if (!MQTT.isConnected()) return;
+  MQTT.publish(WATCHDOG_EVENT_TOPIC, JSON.stringify(payload), 1, false);
 }
 
 // ── Watchdog resolution handlers ──
@@ -1009,36 +1022,96 @@ function watchdogTick() {
 // rpcError all removed — the server now drives sensor-config apply and
 // discovery directly over HTTP. See the note above.)
 
-// ── Config event handlers ──
+// ── Config apply + MQTT setup (absorbed from former telemetry.js) ──
 
-Shelly.addEventHandler(function(ev) {
-  if (!ev || !ev.info) return;
-  if (ev.info.event === "config_changed") {
-    var data = ev.info.data;
-    if (data && data.config) {
-      // Capture the old config BEFORE overwriting so we can detect
-      // watchdog-driven transitions (snooze ack and user-initiated
-      // shutdown both arrive as wz/wb config updates rather than a
-      // separate MQTT cmd subscription).
-      var prevDeviceConfig = deviceConfig;
-      deviceConfig = data.config;
-      handleConfigDrivenResolution(prevDeviceConfig, deviceConfig);
-      if (data.safety_critical) {
-        controlLoop();
-      }
-    }
-  } else if (ev.info.event === "sensor_config_changed") {
-    var scData = ev.info.data;
-    if (scData && scData.config) {
-      sensorConfig = scData.config;
-    }
-  } else if (ev.info.event === "relay_command") {
-    var relayData = ev.info.data;
-    if (relayData && typeof relayData.relay === "string" && typeof relayData.on === "boolean") {
-      handleRelayCommand(relayData.relay, relayData.on);
-    }
+function isSafetyCritical(oldCfg, newCfg) {
+  if (!oldCfg) return true;
+  if (oldCfg.ce !== newCfg.ce) return true;
+  if (oldCfg.ea !== newCfg.ea) return true;
+  if (oldCfg.fm !== newCfg.fm) return true;
+  // Mode bans (wb) gate evaluate() immediately — a newly-enforced ban
+  // must take effect on the next tick rather than waiting for the next
+  // unrelated mode change.
+  if (JSON.stringify(oldCfg.wb) !== JSON.stringify(newCfg.wb)) return true;
+  // we/wz changes are not safety-critical; next POLL_INTERVAL tick picks
+  // them up via evaluate(). Still referenced here as a regression guard
+  // against schema drift.
+  if (JSON.stringify(oldCfg.we) !== JSON.stringify(newCfg.we)) return false;
+  if (JSON.stringify(oldCfg.wz) !== JSON.stringify(newCfg.wz)) return false;
+  return false;
+}
+
+function applyConfig(newCfg) {
+  if (newCfg.v === deviceConfig.v) return;
+  var prev = deviceConfig;
+  var critical = isSafetyCritical(prev, newCfg);
+  deviceConfig = newCfg;
+  Shelly.call("KVS.Set", { key: CONFIG_KVS_KEY, value: JSON.stringify(newCfg) });
+  // Watchdog snooze ack / user-initiated shutdown arrive as wz/wb config
+  // updates rather than a separate MQTT cmd topic.
+  handleConfigDrivenResolution(prev, newCfg);
+  if (critical) controlLoop();
+}
+
+function applySensorConfig(newCfg) {
+  if (sensorConfig && newCfg.v === sensorConfig.v) return;
+  sensorConfig = newCfg;
+  Shelly.call("KVS.Set", { key: SENSOR_CONFIG_KVS_KEY, value: JSON.stringify(newCfg) });
+}
+
+function setupMqttSubscriptions() {
+  if (!MQTT.isConnected()) return;
+
+  // Subscribe-orphan fix (2026-04-20): after Script.Stop/Start (but not
+  // Shelly.Reboot) the device retains topic subscriptions while the JS
+  // callback is garbage-collected. Calling MQTT.subscribe on a still-
+  // registered topic then throws "Invalid topic". Explicitly unsubscribe
+  // first — wrapped in try/catch for the first-boot case where there is
+  // nothing to unsubscribe.
+  var topics = [CONFIG_TOPIC, SENSOR_CONFIG_TOPIC, RELAY_COMMAND_TOPIC];
+  for (var i = 0; i < topics.length; i++) {
+    try { MQTT.unsubscribe(topics[i]); } catch (e) {}
   }
-});
+
+  MQTT.subscribe(CONFIG_TOPIC, function(topic, message) {
+    try {
+      var newCfg = JSON.parse(message);
+      if (newCfg.v && newCfg.v !== deviceConfig.v) applyConfig(newCfg);
+    } catch (e) {}
+  });
+  MQTT.subscribe(SENSOR_CONFIG_TOPIC, function(topic, message) {
+    try {
+      var newCfg = JSON.parse(message);
+      if (newCfg.v && (!sensorConfig || newCfg.v !== sensorConfig.v)) applySensorConfig(newCfg);
+    } catch (e) {}
+  });
+  MQTT.subscribe(RELAY_COMMAND_TOPIC, function(topic, message) {
+    try {
+      var cmd = JSON.parse(message);
+      if (cmd && typeof cmd.relay === "string" && typeof cmd.on === "boolean") {
+        handleRelayCommand(cmd.relay, cmd.on);
+      }
+    } catch (e) {}
+  });
+}
+
+// Shelly's MQTT client maintains subscriptions across (re)connects; the
+// unsubscribe-first dance above makes connectHandler re-invocation safe.
+MQTT.setConnectHandler(function() { setupMqttSubscriptions(); });
+
+function bootstrapConfig() {
+  Shelly.call("KVS.Get", { key: "config_url" }, function(res) {
+    var url = (res && res.value) ? res.value : "";
+    if (!url) return;
+    Shelly.call("HTTP.GET", { url: url, timeout: 10 }, function(httpRes, err) {
+      if (err || !httpRes || httpRes.code !== 200 || !httpRes.body) return;
+      try {
+        var cfg = JSON.parse(httpRes.body);
+        if (cfg.v && cfg.v !== deviceConfig.v) applyConfig(cfg);
+      } catch (e) {}
+    });
+  });
+}
 
 // ── Boot ──
 
@@ -1054,6 +1127,23 @@ function boot() {
   });
 }
 
+function loadPersistedState(cb) {
+  Shelly.call("KVS.Get", { key: CONFIG_KVS_KEY }, function(cfgRes) {
+    if (cfgRes && cfgRes.value) {
+      try { deviceConfig = JSON.parse(cfgRes.value); } catch (e) {}
+    }
+    Shelly.call("KVS.Get", { key: SENSOR_CONFIG_KVS_KEY }, function(scRes) {
+      if (scRes && scRes.value) {
+        try { sensorConfig = JSON.parse(scRes.value); } catch (e) {}
+      }
+      Shelly.call("KVS.Get", { key: "drained" }, function(dRes) {
+        if (dRes && dRes.value === "1") state.collectors_drained = true;
+        if (cb) cb();
+      });
+    });
+  });
+}
+
 function bootCloseValves() {
   closeAllValves(function(ok) {
     if (!ok) {
@@ -1061,28 +1151,14 @@ function bootCloseValves() {
       return;
     }
     Timer.set(5000, false, function() {
-      // Load persisted config from KVS
-      Shelly.call("KVS.Get", {key: "config"}, function(cfgRes) {
-        if (cfgRes && cfgRes.value) {
-          try { deviceConfig = JSON.parse(cfgRes.value); } catch(e) {}
-        }
-
-        // Load sensor config from KVS
-        Shelly.call("KVS.Get", {key: "sensor_config"}, function(scRes) {
-          if (scRes && scRes.value) {
-            try { sensorConfig = JSON.parse(scRes.value); } catch(e) {}
-          }
-
-          Shelly.call("KVS.Get", {key: "drained"}, function(res) {
-            if (res && res.value === "1") state.collectors_drained = true;
-
-            pollAllSensors(function() {
-              state.mode_start = Date.now();
-              captureWatchdogBaseline();
-              Timer.set(SHELL_CFG.POLL_INTERVAL, true, controlLoop);
-              controlLoop();
-            });
-          });
+      loadPersistedState(function() {
+        pollAllSensors(function() {
+          state.mode_start = Date.now();
+          captureWatchdogBaseline();
+          Timer.set(SHELL_CFG.POLL_INTERVAL, true, controlLoop);
+          controlLoop();
+          bootstrapConfig();
+          if (MQTT.isConnected()) setupMqttSubscriptions();
         });
       });
     });
