@@ -119,10 +119,22 @@ import json, sys, urllib.request
 
 CHUNK_SIZE = 512
 
+# Strip full-line // comments, blank lines, and leading indentation to fit
+# the 65535-byte Shelly Script.PutCode limit. Inline comments are preserved.
+# Trailing inline comments stay; block comments aren't used in the sources.
+def minify(src):
+    out = []
+    for line in src.split('\n'):
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith('//'):
+            continue
+        out.append(stripped)
+    return '\n'.join(out) + '\n'
+
 content = ''
 for path in sys.argv[1:-2]:
     with open(path) as f:
-        content += f.read() + '\n'
+        content += minify(f.read())
 
 script_id = int(sys.argv[-2])
 base_url = 'http://' + sys.argv[-1] + '/rpc/Script.PutCode'

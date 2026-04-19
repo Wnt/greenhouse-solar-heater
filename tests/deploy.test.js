@@ -9,6 +9,21 @@ const SCRIPTS_DIR = path.join(__dirname, '..', 'shelly');
 const DEPLOY_SH = path.join(SCRIPTS_DIR, 'deploy.sh');
 const CONF_PATH = path.join(SCRIPTS_DIR, 'devices.conf');
 
+// Shelly Script.PutCode rejects payloads over 65535 bytes with
+// `code:-103, Invalid argument 'code': Script length exceeded 65535 bytes limit!`
+const SHELLY_SCRIPT_LIMIT = 65535;
+
+// Mirrors the minify() in shelly/deploy.sh's upload_script helper.
+function minify(src) {
+  const out = [];
+  for (const line of src.split('\n')) {
+    const stripped = line.replace(/^\s+/, '');
+    if (!stripped || stripped.startsWith('//')) continue;
+    out.push(stripped);
+  }
+  return out.join('\n') + '\n';
+}
+
 // Safety net: always restore devices.conf on process exit
 const ORIGINAL_CONF = fs.readFileSync(CONF_PATH, 'utf8');
 process.on('exit', () => {
@@ -143,10 +158,10 @@ describe('deploy.sh', () => {
     }
   });
 
-  it('reassembles control script to the full concatenated source', () => {
+  it('reassembles control script to the minified concatenated source', () => {
     const logicContent = fs.readFileSync(path.join(SCRIPTS_DIR, 'control-logic.js'), 'utf8');
     const controlContent = fs.readFileSync(path.join(SCRIPTS_DIR, 'control.js'), 'utf8');
-    const expected = logicContent + '\n' + controlContent + '\n';
+    const expected = minify(logicContent) + minify(controlContent);
 
     // Reconstruct only the script id=1 uploads
     let controlCode = '';
@@ -158,6 +173,19 @@ describe('deploy.sh', () => {
       }
     }
     assert.strictEqual(controlCode, expected);
+  });
+
+  it('deployed control script stays under the 65535-byte Shelly limit', () => {
+    let controlCode = '';
+    const putCalls = mock.calls.filter(c => c.url.includes('Script.PutCode'));
+    for (const call of putCalls) {
+      const body = JSON.parse(call.body);
+      if (body.id === 1) {
+        if (!body.append) { controlCode = body.code; } else { controlCode += body.code; }
+      }
+    }
+    assert.ok(controlCode.length <= SHELLY_SCRIPT_LIMIT,
+      `deployed control script is ${controlCode.length} bytes, exceeds ${SHELLY_SCRIPT_LIMIT}-byte device limit`);
   });
 
   it('chunks are at most 512 bytes each', () => {
