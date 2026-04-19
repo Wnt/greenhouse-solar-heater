@@ -882,7 +882,7 @@ describe('buildDisplayLabels', () => {
 
 // ── Device config gated actuator tests ──
 
-// Compact device config format: ce, ea (bitmask), fm (mode code), am (mode codes), v
+// Compact device config format: ce, ea (bitmask), am (mode codes), v
 describe('config-gated actuator behavior', () => {
   // ea bitmask: valves=1, pump=2, fan=4, space_heater=8, immersion_heater=16
   const disabledConfig = { ce: false, ea: 0, v: 1 };
@@ -940,18 +940,6 @@ describe('config-gated actuator behavior', () => {
     assert.strictEqual(result.actuators.pump, true);
   });
 
-  it('forced_mode overrides automatic mode selection', () => {
-    const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
-    }), null, { ...allEnabled, fm: 'SC' });
-    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
-  });
-
-  it('forced_mode works with full mode names', () => {
-    const result = evaluate(makeState({}), null, { ...allEnabled, fm: 'GH' });
-    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
-  });
-
   it('mode bans (wb) filter out banned modes', () => {
     // GH is permanently banned; greenhouse physics would otherwise fire
     const result = evaluate(makeState({
@@ -970,7 +958,7 @@ describe('config-gated actuator behavior', () => {
 
   it('device config JSON fits within Shelly KVS 256-byte limit', () => {
     const worstCase = {
-      ce: true, ea: 31, fm: 'GH',
+      ce: true, ea: 31,
       we: { sng: 1, scs: 1, ggr: 1 },
       wz: { sng: 1713050000, scs: 1713050000, ggr: 1713053400 },
       wb: { SC: 9999999999, GH: 1713094215, AD: 9999999999 },
@@ -979,13 +967,6 @@ describe('config-gated actuator behavior', () => {
     const json = JSON.stringify(worstCase);
     assert.ok(json.length <= 256,
       'device config JSON is ' + json.length + ' bytes, must be <= 256. Content: ' + json);
-  });
-
-  it('forced_mode still respects safety drain preemption', () => {
-    const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
-    }), null, { ...allEnabled, fm: 'SC' });
-    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
   });
 });
 
@@ -1761,7 +1742,7 @@ describe('buildSnapshotFromState — US5 staged-transition fields', () => {
       valvePendingOpen: [], valvePendingClose: []
     };
   }
-  const baseDc = { ce: true, ea: 31, fm: null, am: null, v: 1 };
+  const baseDc = { ce: true, ea: 31, am: null, v: 1 };
 
   it('idle state: opening/queued_opens/pending_closes are empty', () => {
     const snap = buildSnapshotFromState(baseShellState(), baseDc, 1000000);

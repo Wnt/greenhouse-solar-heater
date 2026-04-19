@@ -139,7 +139,8 @@ function anySensorStale(sensorAge, threshold) {
 // Device config uses compact keys to fit Shelly KVS 256-byte limit:
 //   ce (bool)   = controls_enabled
 //   ea (int)    = enabled_actuators bitmask: valves=1, pump=2, fan=4, sh=8, ih=16
-//   fm (string) = forced_mode: "I","SC","GH","AD","EH", or null
+//   mo (obj)    = manual override: {a, ex, ss, fm?} or null
+//                 a=active, ex=expiry unix, ss=suppress safety, fm=forced mode
 //   am (array)  = allowed_modes: ["I","SC",...] or null (all)
 //   v  (int)    = version
 
@@ -405,35 +406,6 @@ function evaluate(state, config, deviceConfig) {
   if (pumpMode !== MODES.SOLAR_CHARGING) {
     flags.solarChargePeakTankTop = null;
     flags.solarChargePeakTankTopAt = 0;
-  }
-
-  // ── Unified mode ban check (wb) — strict: fm and mo.ss do NOT bypass ──
-  // Replaces the legacy am filter. Runs BEFORE the fm early-return so
-  // that forced mode cannot override a ban. Sentinel 9999999999 is a
-  // user-set permanent ban; any other positive value is a watchdog
-  // temporary ban that will be lazy-pruned on the device at tick time
-  // once it has expired.
-  if (dc && dc.wb && dc.fm) {
-    var fmCode = dc.fm;
-    if (dc.wb[fmCode] && dc.wb[fmCode] > state.now) {
-      flags.solarChargePeakTankTop = null;
-      flags.solarChargePeakTankTopAt = 0;
-      return makeResult(MODES.IDLE, flags, dc);
-    }
-  }
-
-  // ── Forced mode override (for staged deployment / manual testing) ──
-  if (dc && dc.fm) {
-    var forcedMode = expandModeCode(dc.fm);
-    if (MODES[forcedMode]) {
-      pumpMode = MODES[forcedMode];
-      flags.emergencyHeatingActive = false;
-      if (pumpMode !== MODES.SOLAR_CHARGING) {
-        flags.solarChargePeakTankTop = null;
-        flags.solarChargePeakTankTopAt = 0;
-      }
-      return makeResult(pumpMode, flags, dc);
-    }
   }
 
   // ── Combine pump mode + emergency overlay ──
