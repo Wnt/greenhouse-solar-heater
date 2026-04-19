@@ -179,5 +179,80 @@ function loadScript(runtime, files) {
 }
 
 describe('shelly/control.js :: transitionTo() ordering', function() {
-  // Tests added in later tasks.
+  // Helper: boot the script into a known mode by pre-seeding KVS before load,
+  // then waiting for boot's delayed (VALVE_SETTLE_MS+5000ms) startup chain to
+  // resolve. Config has all-modes-allowed and actuators enabled.
+  function bootScriptInMode(runtime, mode, collectorsDrained, done) {
+    runtime.kvs.config = JSON.stringify({
+      ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1
+    });
+    runtime.kvs.drained = collectorsDrained ? '1' : '0';
+    runtime.kvs.sensor_config = JSON.stringify({
+      s: {}, h: {}, version: 1
+    });
+    loadScript(runtime, ['control-logic.js', 'control.js']);
+    // Boot fires closeAllValves then a 5 s delay before the control loop
+    // starts. Advance 10 s to clear all boot timers.
+    runtime.advance(10000, function() {
+      // Force the mode via Shelly.emitEvent of a synthetic ... not possible
+      // without script cooperation. Instead, we drive the script's mode via
+      // the config_changed path: push a safety_critical config that triggers
+      // an immediate control loop run, with a controlled sensor-set pushed
+      // into the script's telemetry via direct KVS replay.
+      //
+      // For these tests we do not need the script to actually BE in `mode` —
+      // we stub state via the exported __test_setMode hook installed by
+      // Task 3 / Task 4 changes. Until those exist, the tests use the
+      // script's natural entry path. See task-specific notes.
+      done();
+    });
+  }
+
+  it('non-drain exit: stops pump before issuing any valve HTTP command', function(t, done) {
+    // Natural-entry approach: drive the script into GREENHOUSE_HEATING via
+    // sensor values, wait for mode to settle, then push sensor values that
+    // exit the mode, and capture the ordering.
+    //
+    // This is covered end-to-end by the simulation harness; for this unit
+    // test we use the __test_driveTransition hook added in Task 3 which
+    // calls transitionTo() directly with a specified source mode.
+    var rt = createOrderingRuntime();
+    rt.kvs.config = JSON.stringify({
+      ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1
+    });
+    rt.kvs.drained = '0';
+    rt.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
+    loadScript(rt, ['control-logic.js', 'control.js']);
+    rt.advance(10000, function() {
+      // __test_driveTransition(fromMode, idleResult) is the testing hook
+      // added in Task 3. It sets state.mode, clears state.transitioning,
+      // and calls transitionTo(idleResult).
+      rt.globals.__test_driveTransition('SOLAR_CHARGING', {
+        nextMode: 'IDLE',
+        valves: { vi_btm: false, vi_top: false, vi_coll: false,
+                  vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
+        actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
+        flags: { collectorsDrained: false, lastRefillAttempt: 0,
+                 emergencyHeatingActive: false,
+                 solarChargePeakTankTop: null, solarChargePeakTankTopAt: 0 },
+        suppressed: false, safetyOverride: false,
+      });
+      // Advance through the full transition (pump_stop + settle + scheduleStep
+      // + PUMP_PRIME). ≤ 10 s covers everything for non-drain transitions.
+      rt.advance(10000, function() {
+        var events = rt.events();
+        var pumpOff = events.findIndex(function(e) {
+          return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
+        });
+        var firstValve = events.findIndex(function(e) {
+          return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
+        });
+        assert.ok(pumpOff >= 0, 'expected a pump-off Switch.Set event');
+        assert.ok(firstValve >= 0, 'expected at least one valve HTTP.GET event');
+        assert.ok(pumpOff < firstValve,
+          'non-drain exit must stop pump (index ' + pumpOff + ') before any valve command (index ' + firstValve + ')');
+        done();
+      });
+    });
+  });
 });
