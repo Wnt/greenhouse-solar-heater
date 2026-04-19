@@ -331,4 +331,48 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
       done();
     });
   });
+
+  it('drain exit: valve HTTP failure → pump stops immediately, no 20 s wait', function(t, done) {
+    var rt = createOrderingRuntime({
+      httpResponder: function(url) {
+        // Fail every HTTP.GET (valve command) on both primary AND retry.
+        return { ok: false, err: 'http fail' };
+      }
+    });
+    rt.kvs.config = JSON.stringify({
+      ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1
+    });
+    rt.kvs.drained = '0';
+    rt.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
+    loadScript(rt, ['control-logic.js', 'control.js']);
+    rt.advance(10000, function() {
+      rt.globals.Shelly.__test_driveTransition('ACTIVE_DRAIN', {
+        nextMode: 'IDLE',
+        valves: { vi_btm: false, vi_top: false, vi_coll: false,
+                  vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
+        actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
+        flags: { collectorsDrained: true, lastRefillAttempt: 0,
+                 emergencyHeatingActive: false,
+                 solarChargePeakTankTop: null, solarChargePeakTankTopAt: 0 },
+        suppressed: false, safetyOverride: false,
+      });
+      // Advance 5 s — well under 20 s. If the failure path waits 20 s, the
+      // pump-off event won't be recorded yet and the assertion fails.
+      rt.advance(5000, function() {
+        var events = rt.events();
+        var firstValve = events.find(function(e) {
+          return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
+        });
+        var pumpOff = events.find(function(e) {
+          return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
+        });
+        assert.ok(firstValve, 'expected a valve HTTP.GET attempt');
+        assert.ok(pumpOff, 'expected a pump-off Switch.Set within 5 s');
+        var gap = pumpOff.t - firstValve.t;
+        assert.ok(gap < 5000,
+          'on valve HTTP failure, pump-off must be within 5 s (got ' + gap + ' ms)');
+        done();
+      });
+    });
+  });
 });
