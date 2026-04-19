@@ -7,7 +7,7 @@
 
 const CAPS = {
   DEPLOYED_BYTES: 65535,          // Shelly Script.PutCode hard limit, error -103
-  RUNTIME_PROXY_PEAK: 41744,      // calibrated post-merge 2026-04-20 (measured peak 41232 + 512 B margin)
+  RUNTIME_PROXY_PEAK: 42312,      // calibrated post-merge w/ fixed async harness 2026-04-20 (measured 41800 + 512 B margin; pre-merge baseline on main: 44887)
   STATE_BYTES: 600,               // JSON.stringify(state).length peak
   LIVE_TIMERS: 3,                 // simultaneous Timer.set handles (5 - 2 reserve)
   MQTT_SUBS: 3,                   // active MQTT.subscribe topics
@@ -35,10 +35,17 @@ function createInstrumentedRuntime(opts) {
   const eventHandlers = [];
 
   let callIdSeq = 0;
+  let peakCallsSnapshot = null;
   function shellyCall(method, params, cb) {
     const id = ++callIdSeq;
     inflightCalls++;
-    if (inflightCalls > peakCalls) peakCalls = inflightCalls;
+    if (inflightCalls > peakCalls) {
+      peakCalls = inflightCalls;
+      // Snapshot in-flight methods at the peak so tests can explain why.
+      peakCallsSnapshot = [];
+      for (const c of liveCalls.values()) peakCallsSnapshot.push(c.method);
+      peakCallsSnapshot.push(method);
+    }
     liveCalls.set(id, { method, params });
 
     let response = null;
@@ -154,6 +161,7 @@ function createInstrumentedRuntime(opts) {
     stats() {
       return {
         peakTimers, peakCalls, peakSubs, peakKvsBytes,
+        peakCallsSnapshot,
         kvsTooLarge,
         liveTimers: new Map(liveTimers),
         liveCalls: new Map(liveCalls),

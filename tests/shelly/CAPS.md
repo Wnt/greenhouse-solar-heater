@@ -8,7 +8,7 @@ Section 3 for which commit touches which cap.
 | Counter | Cap | Current peak | Notes |
 |---|---|---|---|
 | Deployed slot-1 source (minified) | ≤ 65 535 B | ≈ 25 000 B | Shelly Script.PutCode limit, also enforced by `tests/deploy.test.js` |
-| Runtime proxy peak (Node byte-sum) | ≤ 41 744 B | 41 232 B | Calibrated post-merge 2026-04-20 at measured + 512 B margin. Future ≥ 512 B regression in bytecode, state, or live closures trips the test. |
+| Runtime proxy peak (Node byte-sum) | ≤ 42 312 B | 41 800 B | Calibrated post-merge w/ async harness 2026-04-20 at measured + 512 B margin. Future ≥ 512 B regression in bytecode, state, or live closures trips the test. |
 | `JSON.stringify(state).length` | ≤ 600 B | under cap | Snapshot captured via `greenhouse/state` publish |
 | Live `Timer.set` handles (simultaneous) | ≤ 3 | under cap | 2-handle reserve against Shelly's 5-handle limit |
 | Active MQTT.subscribe topics | ≤ 3 | 3 | config, sensor-config, relay-command |
@@ -17,16 +17,25 @@ Section 3 for which commit touches which cap.
 
 ## Baseline history
 
-| Date | Commit context | Runtime proxy peak | Delta |
-|---|---|---|---|
-| 2026-04-20 | pre-merge `main` | 43 781 B | baseline |
-| 2026-04-20 | post-merge (telemetry→control) | 41 674 B | −2 107 B |
-| 2026-04-20 | post-inlining (Commit 3) | 41 232 B | −2 549 B vs baseline |
+| Date | Commit context | Harness | Runtime proxy peak | Delta |
+|---|---|---|---|---|
+| 2026-04-20 | pre-merge `main` | sync-loop (buggy) | 43 781 B | — |
+| 2026-04-20 | post-merge (telemetry→control) | sync-loop (buggy) | 41 674 B | — |
+| 2026-04-20 | post-inlining (Commit 3) | sync-loop (buggy) | 41 232 B | — |
+| 2026-04-20 | pre-merge `main` | async-loop (fixed) | 44 887 B | baseline |
+| 2026-04-20 | post-merge (current) | async-loop (fixed) | 41 800 B | −3 087 B |
 
-Note: the spec's original 0.7× target (30 646 B) assumed greater variable-
-memory contributions than this script has in practice. The proxy total
-is dominated by the minified bytecode size (~40 KB static), which is
-already independently guarded by the Shelly Script.PutCode 65 535-byte
-limit via `tests/deploy.test.js`. The cap above locks in the post-
-refactor working set so a regression in state size, closure leaks, or
-bytecode growth of ≥ 512 B trips the test.
+Note 1: the sync-loop harness was vacuously passing most caps because
+`setImmediate` callbacks from `Shelly.call` never drained inside the
+synchronous `for`-loop — peak counters for timers, subs, and in-flight
+calls stayed at zero. The async-loop harness (`await
+drainImmediates(30)` between ticks) lets the boot chain and per-tick
+`controlLoop` fully resolve, so the caps actually bite.
+
+Note 2: the spec's original 0.7× target (≈31 000 B) assumed greater
+variable-memory contributions than this script has in practice. The
+proxy total is dominated by the minified bytecode size (~40 KB static),
+which is already independently guarded by the Shelly `Script.PutCode`
+65 535-byte limit via `tests/deploy.test.js`. The cap above locks in
+the post-refactor working set so a regression in state size, closure
+leaks, or bytecode growth of ≥ 512 B trips the test.
