@@ -35,7 +35,7 @@ describe('device-config', () => {
       assert.ifError(err);
       assert.strictEqual(config.ce, false);
       assert.strictEqual(config.ea, 0);
-      assert.strictEqual(config.fm, null);
+      assert.strictEqual(config.fm, undefined); // fm moved into mo.fm; top-level fm no longer exists
       assert.deepStrictEqual(config.we, {});
       assert.deepStrictEqual(config.wz, {});
       assert.deepStrictEqual(config.wb, {});
@@ -218,6 +218,7 @@ describe('device-config', () => {
     deviceConfig.load(function (err, config) {
       assert.ifError(err);
       assert.strictEqual(config.am, undefined);
+      assert.strictEqual(config.fm, undefined);
       assert.strictEqual(config.wb.GH, 9999999999);
       assert.strictEqual(config.wb.AD, 9999999999);
       assert.strictEqual(config.wb.EH, 9999999999);
@@ -249,11 +250,11 @@ describe('device-config', () => {
       assert.ifError(err);
       // Max-size config with mo + watchdog fields
       deviceConfig.updateConfig({
-        ce: true, ea: 31, fm: 'EH',
+        ce: true, ea: 31,
         we: { sng: 1, scs: 1, ggr: 1 },
         wz: { sng: 1713050000, scs: 1713050000, ggr: 1713053400 },
         wb: { SC: 9999999999, GH: 1713094215, AD: 9999999999 },
-        mo: { a: true, ex: 9999999999, ss: true },
+        mo: { a: true, ex: 9999999999, ss: true, fm: 'EH' },
       }, function (err2, config) {
         assert.ifError(err2);
         const size = JSON.stringify(config).length;
@@ -261,6 +262,87 @@ describe('device-config', () => {
         done();
       });
     });
+  });
+});
+
+describe('device-config mo.fm', () => {
+  let deviceConfig;
+  let tmpDir;
+  let configPath;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'device-config-mofm-test-'));
+    configPath = path.join(tmpDir, 'device-config.json');
+
+    delete process.env.S3_ENDPOINT;
+    delete process.env.S3_BUCKET;
+    delete process.env.S3_ACCESS_KEY_ID;
+    delete process.env.S3_SECRET_ACCESS_KEY;
+    process.env.DEVICE_CONFIG_PATH = configPath;
+
+    delete require.cache[require.resolve('../server/lib/device-config.js')];
+    deviceConfig = require('../server/lib/device-config.js');
+    deviceConfig._reset();
+  });
+
+  afterEach(() => {
+    try { fs.rmSync(tmpDir, { recursive: true }); } catch (e) {}
+    delete process.env.DEVICE_CONFIG_PATH;
+  });
+
+  it('accepts mo.fm when mo.a is true', (t, done) => {
+    deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: false, fm: 'SC' } }, (err, cfg) => {
+      assert.ifError(err);
+      assert.deepStrictEqual(cfg.mo, { a: true, ex: 9999999999, ss: false, fm: 'SC' });
+      done();
+    });
+  });
+
+  it('accepts mo.fm update while override is active', (t, done) => {
+    deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: false } }, (err) => {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: false, fm: 'GH' } }, (err2, cfg) => {
+        assert.ifError(err2);
+        assert.strictEqual(cfg.mo.fm, 'GH');
+        done();
+      });
+    });
+  });
+
+  it('rejects mo.fm when mo.a is false', (t, done) => {
+    deviceConfig.updateConfig({ mo: { a: false, ex: 0, ss: false, fm: 'SC' } }, (err) => {
+      assert.ok(err);
+      assert.match(err.message, /mo\.fm/);
+      assert.strictEqual(err.code, 'VALIDATION');
+      done();
+    });
+  });
+
+  it('rejects unknown mode codes in mo.fm', (t, done) => {
+    deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: false, fm: 'XX' } }, (err) => {
+      assert.ok(err);
+      assert.match(err.message, /mo\.fm/);
+      done();
+    });
+  });
+
+  it('clears mo.fm when mo is cleared', (t, done) => {
+    deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: false, fm: 'SC' } }, (err) => {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ mo: null }, (err2, cfg) => {
+        assert.ifError(err2);
+        assert.strictEqual(cfg.mo, null);
+        done();
+      });
+    });
+  });
+
+  it('strips legacy top-level fm from loaded config', (t, done) => {
+    // Simulate a config that still has legacy fm (would come from S3/local storage written before this change).
+    deviceConfig.loadForTest({ ce: true, ea: 31, fm: 'SC', we: {}, wz: {}, wb: {}, v: 42 });
+    var cfg = deviceConfig.getConfig();
+    assert.strictEqual(cfg.fm, undefined);
+    done();
   });
 });
 

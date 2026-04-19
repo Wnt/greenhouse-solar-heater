@@ -16,16 +16,15 @@ var currentConfig = null;
 // Compact keys to fit Shelly KVS 256-byte limit:
 //   ce = controls_enabled (bool)
 //   ea = enabled_actuators bitmask (valves=1, pump=2, fan=4, sh=8, ih=16)
-//   fm = forced_mode ("I","SC","GH","AD","EH", or null)
 //   we = watchdogs_enabled ({sng:1, scs:1, ggr:1} — first-boot empty)
 //   wz = watchdog_snooze ({sng:<unix>, ...} — absent = not snoozed)
 //   wb = mode_bans ({SC:<unix>, GH:9999999999, ...} — sentinel = permanent)
-//   mo = manual override session ({a, ex, ss} or null)
+//   mo = manual override session ({a, ex, ss, fm?} or null)
+//        fm is optional, only valid when a === true
 //   v  = version (int)
 var DEFAULT_CONFIG = {
   ce: false,
   ea: 0,
-  fm: null,
   we: {},
   wz: {},
   wb: {},
@@ -51,6 +50,11 @@ function migrateAmToWb(cfg) {
     }
   }
   delete cfg.am;
+  return cfg;
+}
+
+function stripLegacyFm(cfg) {
+  if (cfg && cfg.fm !== undefined) delete cfg.fm;
   return cfg;
 }
 
@@ -103,6 +107,7 @@ function load(callback) {
     }).then(function (bodyStr) {
       try {
         currentConfig = migrateAmToWb(JSON.parse(bodyStr));
+        stripLegacyFm(currentConfig);
         callback(null, currentConfig);
       } catch (e) {
         callback(new Error('Failed to parse device config JSON'));
@@ -120,6 +125,7 @@ function load(callback) {
     try {
       var data = fs.readFileSync(filePath, 'utf8');
       currentConfig = migrateAmToWb(JSON.parse(data));
+      stripLegacyFm(currentConfig);
       callback(null, currentConfig);
     } catch (err) {
       if (err.code === 'ENOENT') {
@@ -187,9 +193,6 @@ function updateConfig(newConfig, callback) {
   if (newConfig.ea !== undefined) {
     config.ea = parseInt(newConfig.ea, 10) || 0;
   }
-  if (newConfig.fm !== undefined) {
-    config.fm = newConfig.fm || null;
-  }
   // we (watchdogs_enabled): object with 0/1 values per watchdog id.
   // null clears all; unknown ids are silently dropped.
   if (newConfig.we !== undefined) {
@@ -254,13 +257,26 @@ function updateConfig(newConfig, callback) {
   if (newConfig.mo !== undefined) {
     if (newConfig.mo === null) {
       config.mo = null;
-    } else if (typeof newConfig.mo === 'object' && newConfig.mo !== null) {
+    } else if (typeof newConfig.mo === 'object') {
       var mo = newConfig.mo;
       if (typeof mo.a !== 'boolean' || typeof mo.ex !== 'number' || typeof mo.ss !== 'boolean') {
         callback(validationError('Invalid mo: requires {a: bool, ex: int, ss: bool}'));
         return;
       }
-      config.mo = { a: mo.a, ex: Math.floor(mo.ex), ss: mo.ss };
+      var newMo = { a: mo.a, ex: Math.floor(mo.ex), ss: mo.ss };
+      if (mo.fm !== undefined && mo.fm !== null) {
+        var VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
+        if (VALID_MODES.indexOf(mo.fm) === -1) {
+          callback(validationError('Invalid mo.fm: must be one of I,SC,GH,AD,EH'));
+          return;
+        }
+        if (!mo.a) {
+          callback(validationError('mo.fm cannot be set when mo.a is false'));
+          return;
+        }
+        newMo.fm = mo.fm;
+      }
+      config.mo = newMo;
     }
   }
 
@@ -338,6 +354,12 @@ function _reset() {
   currentConfig = null;
 }
 
+function loadForTest(cfg) {
+  currentConfig = deepCopy(cfg);
+  migrateAmToWb(currentConfig);
+  stripLegacyFm(currentConfig);
+}
+
 module.exports = {
   DEFAULT_CONFIG: DEFAULT_CONFIG,
   WB_PERMANENT_SENTINEL: WB_PERMANENT_SENTINEL,
@@ -349,4 +371,5 @@ module.exports = {
   handleGet: handleGet,
   handlePut: handlePut,
   _reset: _reset,
+  loadForTest: loadForTest,
 };
