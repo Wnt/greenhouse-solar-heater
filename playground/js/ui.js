@@ -147,6 +147,78 @@ export function formatTime(seconds) {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+// ── History-chart x-axis ticks ──
+// The previous drawHistoryGraph hard-coded a 1–4 h step, so 7d / 30d / 1y
+// ranges produced hundreds of "HH:00" labels packed into an illegible bar.
+// These two helpers replace that: pickTickStep chooses a step that keeps the
+// label count under a readability budget, and formatTick picks a format
+// suited to the step size (HH:MM for sub-day, D.M for multi-day, MMM YY for
+// month-spanning).
+
+const HOUR_SECONDS = 3600;
+const DAY_SECONDS = 86400;
+
+// Candidate step sizes in seconds, smallest to largest. The first one that
+// satisfies the label budget wins — preserves the "round number" feel (1 h,
+// 6 h, 1 day, 1 week, 1 month, etc.).
+const TICK_STEPS = [
+  5 * 60,               // 5 min
+  15 * 60,
+  30 * 60,
+  HOUR_SECONDS,         // 1 h
+  2 * HOUR_SECONDS,
+  3 * HOUR_SECONDS,
+  6 * HOUR_SECONDS,
+  12 * HOUR_SECONDS,
+  DAY_SECONDS,          // 1 d
+  2 * DAY_SECONDS,
+  7 * DAY_SECONDS,      // 1 w
+  14 * DAY_SECONDS,
+  30 * DAY_SECONDS,     // ~1 month
+  60 * DAY_SECONDS,
+  90 * DAY_SECONDS,
+  180 * DAY_SECONDS,
+  365 * DAY_SECONDS,    // 1 y — last resort
+];
+
+/**
+ * Pick a tick step (seconds) for a time axis so the number of visible labels
+ * stays within ~plotWidthPx / minPxPerLabel.
+ *
+ * @param {number} rangeSec      span of the axis in seconds
+ * @param {number} plotWidthPx   pixel width of the plot area
+ * @param {number} [minPxPerLabel=72]  rough minimum pixels per label
+ */
+export function pickTickStep(rangeSec, plotWidthPx, minPxPerLabel = 72) {
+  const budget = Math.max(3, Math.floor(plotWidthPx / minPxPerLabel));
+  for (const step of TICK_STEPS) {
+    if (rangeSec / step <= budget) return step;
+  }
+  return TICK_STEPS[TICK_STEPS.length - 1];
+}
+
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Format a tick label for an epoch-seconds timestamp. The step determines the
+ * granularity: sub-day ⇒ HH:MM, single-to-twoweek ⇒ D.M, month+ ⇒ MMM YY.
+ *
+ * @param {number} tEpochSec  unix time in seconds
+ * @param {number} stepSec    the tick step returned by pickTickStep
+ */
+export function formatTick(tEpochSec, stepSec) {
+  const d = new Date(tEpochSec * 1000);
+  if (stepSec < DAY_SECONDS) {
+    const hh = d.getHours().toString().padStart(2, '0');
+    const mm = d.getMinutes().toString().padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+  if (stepSec < 30 * DAY_SECONDS) {
+    return `${d.getDate()}.${d.getMonth() + 1}.`;
+  }
+  return `${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() % 100}`;
+}
+
 /** Simple rolling time-series data store */
 export class TimeSeriesStore {
   constructor(maxPoints = 500) {

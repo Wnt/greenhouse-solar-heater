@@ -244,6 +244,7 @@ function insertStateEvent(ts, entityType, entityId, oldValue, newValue, callback
 var RANGE_INTERVALS = {
   '1h': '1 hour',
   '6h': '6 hours',
+  '12h': '12 hours',
   '24h': '24 hours',
   '48h': '48 hours',
   '7d': '7 days',

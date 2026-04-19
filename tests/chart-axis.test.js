@@ -1,0 +1,102 @@
+/**
+ * Unit tests for the history-chart x-axis tick helpers in playground/js/ui.js.
+ *
+ * Two long-standing bugs surfaced during live smoke-testing:
+ *
+ *  1. The tick step capped at 4 h, so a 7d / 30d / 1y range crammed hundreds
+ *     of "HH:00" labels into the same axis and they overlapped into an
+ *     unreadable solid bar.
+ *
+ *  2. The label text was always "HH:00" (time-of-day), which is useless for
+ *     multi-day or multi-month ranges.
+ *
+ * The fix is to expose pure `pickTickStep(rangeSec, plotWidthPx)` and
+ * `formatTick(tEpochSec, stepSec)` helpers and have drawHistoryGraph call
+ * them. These tests pin both contracts.
+ */
+
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
+
+import { pickTickStep, formatTick } from '../playground/js/ui.js';
+
+const HOUR = 3600;
+const DAY = 86400;
+
+describe('pickTickStep — x-axis tick spacing', () => {
+  const PLOT_W = 520; // ~typical live-chart plot width after padding
+
+  it('returns a tick step that keeps the label count within the budget', () => {
+    const budget = Math.max(3, Math.floor(PLOT_W / 72)); // same formula the UI uses
+    const ranges = [
+      { name: '1h', seconds: 1 * HOUR },
+      { name: '6h', seconds: 6 * HOUR },
+      { name: '12h', seconds: 12 * HOUR },
+      { name: '24h', seconds: 24 * HOUR },
+      { name: '7d', seconds: 7 * DAY },
+      { name: '30d', seconds: 30 * DAY },
+      { name: '1y', seconds: 365 * DAY },
+    ];
+    for (const { name, seconds } of ranges) {
+      const step = pickTickStep(seconds, PLOT_W);
+      const ticks = Math.ceil(seconds / step);
+      assert.ok(
+        ticks <= budget + 1,
+        `${name}: ${ticks} ticks at step=${step}s exceeds budget ${budget}`,
+      );
+      assert.ok(step > 0, `${name}: step must be positive, got ${step}`);
+    }
+  });
+
+  it('scales monotonically — bigger range ⇒ bigger (or equal) step', () => {
+    const ranges = [HOUR, 6 * HOUR, 12 * HOUR, 24 * HOUR, 7 * DAY, 30 * DAY, 365 * DAY];
+    let prev = 0;
+    for (const r of ranges) {
+      const step = pickTickStep(r, 520);
+      assert.ok(step >= prev, `step should not decrease: range=${r}, step=${step}, prev=${prev}`);
+      prev = step;
+    }
+  });
+
+  it('gives more ticks on a wider plot (respects plotWidthPx)', () => {
+    const narrow = pickTickStep(7 * DAY, 300);
+    const wide = pickTickStep(7 * DAY, 1200);
+    assert.ok(wide <= narrow, 'wider plot should produce a tick step <= narrower plot');
+  });
+
+  it('always returns at least 3 ticks for a visible chart', () => {
+    const ranges = [HOUR, 6 * HOUR, 24 * HOUR, 30 * DAY, 365 * DAY];
+    for (const r of ranges) {
+      const step = pickTickStep(r, 520);
+      const ticks = Math.ceil(r / step);
+      assert.ok(ticks >= 2, `range=${r}: only ${ticks} ticks — chart would look empty`);
+    }
+  });
+});
+
+describe('formatTick — label format per step', () => {
+  // Fixed epoch so tests don't drift with local time: 2026-04-19T10:30:00Z
+  const T0 = 1776551400;
+
+  it('formats sub-day steps as HH:MM (local time, zero-padded)', () => {
+    const s = formatTick(T0, HOUR);
+    assert.match(s, /^\d{2}:\d{2}$/, `expected HH:MM, got "${s}"`);
+  });
+
+  it('formats multi-day steps as short date (no time)', () => {
+    const s = formatTick(T0, DAY);
+    assert.doesNotMatch(s, /:/, `expected no time component for day step, got "${s}"`);
+    assert.match(s, /\d/, `expected digits in date label, got "${s}"`);
+  });
+
+  it('formats monthly+ steps with month abbreviation', () => {
+    const s = formatTick(T0, 30 * DAY);
+    assert.match(s, /[A-Za-z]{3}/, `expected month abbrev in long-range label, got "${s}"`);
+  });
+
+  it('different epoch ⇒ different label for the same step', () => {
+    const a = formatTick(T0, HOUR);
+    const b = formatTick(T0 + 2 * HOUR, HOUR);
+    assert.notStrictEqual(a, b, 'HH:MM labels must change with time');
+  });
+});

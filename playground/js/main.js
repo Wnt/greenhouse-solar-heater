@@ -1,7 +1,7 @@
 import { loadSystemYaml } from './yaml-loader.js';
 import { ThermalModel } from './physics.js';
 import { ControlStateMachine, initControlLogic } from './control.js';
-import { createSlider, formatTime } from './ui.js';
+import { createSlider, formatTime, pickTickStep, formatTick } from './ui.js';
 import { LiveSource, SimulationSource } from './data-source.js';
 import { startVersionCheck, triggerVersionCheck } from './version-check.js';
 import { initSensorsView, destroySensorsView } from './sensors.js';
@@ -1886,30 +1886,30 @@ function drawHistoryGraph() {
     ctx.stroke();
   }
 
-  // X-axis time labels — show time of day at full hours
+  // X-axis time labels — pick a step that keeps the label count readable
+  // at any range (pickTickStep caps labels at ~plotWidth/72px). Sub-day
+  // ranges render as HH:MM; multi-day as D.M.; month+ as "MMM YY".
   ctx.fillStyle = '#a5abb9';
   ctx.font = '10px Manrope, sans-serif';
   ctx.textAlign = 'center';
 
-  // Fixed time-of-day labels — anchor to absolute hour boundaries to avoid twitching
-  const hourSeconds = 3600;
-  const hoursInRange = graphRange / hourSeconds;
-  const hourStep = hoursInRange <= 2 ? 1 : hoursInRange <= 8 ? 2 : hoursInRange <= 16 ? 3 : 4;
-  // Snap to multiples of hourStep so labels stay fixed as time advances
-  const stepSeconds = hourStep * hourSeconds;
+  const stepSeconds = pickTickStep(graphRange, pw);
   const firstTick = Math.ceil(tMin / stepSeconds) * stepSeconds;
+  const hourSeconds = 3600;
   for (let t = firstTick; t <= tMax; t += stepSeconds) {
     const frac = (t - tMin) / graphRange;
     if (frac < -0.01 || frac > 1.01) continue;
     const x = pad.left + frac * pw;
-    let todH;
+    let label;
     if (isLivePhase) {
-      // Live mode: t is Unix epoch seconds; render in local time
-      todH = new Date(t * 1000).getHours();
+      // Live mode: t is Unix epoch seconds; formatTick switches format per step.
+      label = formatTick(t, stepSeconds);
     } else {
-      todH = Math.floor((SIM_START_HOUR + t / hourSeconds) % 24);
+      // Simulation mode: t is offset seconds from SIM_START_HOUR. Sub-day
+      // view keeps the old "HH:00" behavior for familiarity.
+      const todH = Math.floor((SIM_START_HOUR + t / hourSeconds) % 24);
+      label = todH.toString().padStart(2, '0') + ':00';
     }
-    const label = todH.toString().padStart(2, '0') + ':00';
     ctx.fillText(label, x, dh - 4);
   }
 
