@@ -7,6 +7,10 @@ var SHELL_CFG = {
   PUMP_PRIME_MS: 5000,
   DRAIN_MONITOR_INTERVAL: 200,
   DRAIN_POWER_THRESHOLD: 20,
+  // Post-valve pump-run window on ACTIVE_DRAIN exit. See CLAUDE.md
+  // "Safety: stop pump BEFORE switching valves" for the one-sentence rule
+  // and system.yaml active_drain.sequence step 8 for the physical reason.
+  DRAIN_EXIT_PUMP_RUN_MS: 20000,
 };
 
 // Watchdog id → mode short code. Used by applyBanAndShutdown to
@@ -80,6 +84,7 @@ var state = {
   targetValves: null,       // target valve map (scheduler polarity) during a transition
   targetResult: null,       // full evaluate() result held for end-of-transition finalization
   transitionTimer: null,    // transition-scoped timer handle
+  transitionFromMode: null, // mode snapshot at transitionTo() entry; drives drain-exit branch
   transition_step: null,
 };
 
