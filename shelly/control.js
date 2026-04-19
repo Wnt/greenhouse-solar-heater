@@ -378,6 +378,23 @@ function buildIdleTransitionResult() {
   };
 }
 
+// Build a transitionTo-shaped result for a forced mode inside manual
+// override. Bypasses evaluate() — we already hand the scheduler the
+// mode's canonical valve + actuator table, no sensor logic required.
+function makeModeResult(modeCode) {
+  var expanded = (typeof expandModeCode === 'function') ? expandModeCode(modeCode) : null;
+  if (!expanded || !MODES[expanded]) return null;
+  var mode = MODES[expanded];
+  var valves = {};
+  var k;
+  var mv = MODE_VALVES[mode];
+  for (k in mv) valves[k] = mv[k];
+  var actuators = {};
+  var ma = MODE_ACTUATORS[mode];
+  for (k in ma) actuators[k] = ma[k];
+  return { nextMode: mode, valves: valves, actuators: actuators, flags: {} };
+}
+
 // Auto-shutdown path: called from watchdogTick() after the 5-minute
 // pending grace period elapses with no user response. The device
 // writes the cool-off ban to its own KVS and transitions to IDLE.
@@ -467,6 +484,33 @@ function handleConfigDrivenResolution(prevCfg, newCfg) {
         t: "resolved", id: pid, how: "shutdown_user", ts: nowSec
       });
     }
+  }
+}
+
+// mo.fm change handler — called from the config_changed event handler
+// AFTER handleConfigDrivenResolution() so watchdog resolution paths
+// still take priority. Only fires when a forced-mode change is detected
+// inside an active override, or when the override is cleared.
+function handleForcedModeChange(prevCfg, newCfg) {
+  var prevMo = prevCfg && prevCfg.mo;
+  var nextMo = newCfg && newCfg.mo;
+  var prevFm = (prevMo && prevMo.fm) ? prevMo.fm : null;
+  var nextFm = (nextMo && nextMo.fm) ? nextMo.fm : null;
+
+  // mo.fm diff: forced-mode change inside an active override.
+  if (nextMo && nextMo.a && nextFm && nextFm !== prevFm) {
+    var mrResult = makeModeResult(nextFm);
+    if (mrResult) {
+      transitionTo(mrResult);
+      return;
+    }
+  }
+
+  // mo cleared while it was previously active → force IDLE transition so
+  // the greenhouse does not linger in whatever relay state the user left.
+  if (prevMo && prevMo.a && (!nextMo || !nextMo.a)) {
+    transitionTo(buildIdleTransitionResult());
+    return;
   }
 }
 
@@ -803,6 +847,13 @@ function isManualOverrideActive() {
     // TTL expired — clear override and persist
     deviceConfig.mo = null;
     Shelly.call("KVS.Set", {key: "config", value: JSON.stringify(deviceConfig)});
+    // TTL-expiry exit path: force IDLE transition so relays don't linger
+    // in whatever state the user left. For AD→IDLE this uses the
+    // valves-first + DRAIN_EXIT_PUMP_RUN_MS sequence automatically via
+    // state.transitionFromMode.
+    if (!state.transitioning) {
+      transitionTo(buildIdleTransitionResult());
+    }
     return false;
   }
   return true;
@@ -1040,6 +1091,8 @@ function applyConfig(newCfg) {
   // Watchdog snooze ack / user-initiated shutdown arrive as wz/wb config
   // updates rather than a separate MQTT cmd topic.
   handleConfigDrivenResolution(prev, newCfg);
+  // mo.fm change → drive forced-mode transition. mo clear → force IDLE.
+  handleForcedModeChange(prev, newCfg);
   if (critical) controlLoop();
 }
 
