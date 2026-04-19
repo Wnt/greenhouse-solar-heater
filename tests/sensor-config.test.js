@@ -279,6 +279,33 @@ describe('sensor-config', () => {
       });
     });
 
+    it('applyConfig surfaces "hub rebooted" in the success message when the controller reports rebooted:true', (t, done) => {
+      sensorConfig.load(function (err) {
+        assert.ifError(err);
+        const mockBridge = {
+          publishSensorConfigApply: function (request) {
+            return Promise.resolve({
+              id: request.id,
+              success: true,
+              results: [
+                { host: '192.168.30.20', ok: true, peripherals: 3, rebooted: true },
+                { host: '192.168.30.21', ok: true, peripherals: 1 },
+              ],
+            });
+          },
+          publishSensorConfig: function () { return true; },
+        };
+        sensorConfig.applyConfig(mockBridge, function (err, results) {
+          assert.ifError(err);
+          assert.equal(results.sensor_1.status, 'success');
+          assert.match(results.sensor_1.message, /rebooted/);
+          assert.equal(results.sensor_2.status, 'success');
+          assert.doesNotMatch(results.sensor_2.message, /rebooted/);
+          done();
+        });
+      });
+    });
+
     it('applyConfig returns error when MQTT bridge not available', (t, done) => {
       sensorConfig.load(function (err) {
         assert.ifError(err);

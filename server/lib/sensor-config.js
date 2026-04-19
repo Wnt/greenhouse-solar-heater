@@ -287,8 +287,10 @@ function applyConfig(mqttBridge, callback) {
         var r = result.results[i];
         var hostInfo = config.hosts.find(function (h) { return h.ip === r.host; });
         var hostId = hostInfo ? hostInfo.id : r.host;
+        var okMsg = r.peripherals + ' sensors configured';
+        if (r.rebooted) okMsg += ' — hub rebooted to apply';
         results[hostId] = r.ok
-          ? { status: 'success', message: r.peripherals + ' sensors configured' }
+          ? { status: 'success', message: okMsg }
           : { status: 'error', message: r.error || 'Failed' };
       }
     }
@@ -344,8 +346,10 @@ function applySingleTarget(targetId, mqttBridge, callback) {
     if (result.results) {
       for (var j = 0; j < result.results.length; j++) {
         var r = result.results[j];
+        var okMsg = r.peripherals + ' sensors configured';
+        if (r.rebooted) okMsg += ' — hub rebooted to apply';
         results[host.id] = r.ok
-          ? { status: 'success', message: r.peripherals + ' sensors configured' }
+          ? { status: 'success', message: okMsg }
           : { status: 'error', message: r.error || 'Failed' };
       }
     }
