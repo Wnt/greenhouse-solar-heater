@@ -1033,11 +1033,17 @@ function doApply(req) {
         addonRpc(ip,"SensorAddon.RemovePeripheral",{component:ex[ri]},function(){rm(ri+1);});
       }
       function add(){
-        var ta=[];for(var rl in cfg.s){if(cfg.s[rl].h===hi)ta.push({i:cfg.s[rl].i});}
+        // SensorAddon.AddPeripheral requires BOTH attrs.addr (which probe on
+        // the 1-Wire bus) and attrs.cid (which component slot). Earlier code
+        // only passed cid, so the Add-on created empty slots that polled no
+        // physical probe — symptom: some sensors showed "—" after apply.
+        var ta=[];for(var rl in cfg.s){if(cfg.s[rl].h===hi)ta.push({i:cfg.s[rl].i,a:cfg.s[rl].a});}
         var n=0;
         function an(ai){
           if(ai>=ta.length){res.push({host:ip,ok:true,peripherals:n});next(idx+1);return;}
-          addonRpc(ip,"SensorAddon.AddPeripheral",{type:"ds18b20",attrs:{cid:ta[ai].i}},function(ae){if(!ae)n++;an(ai+1);});
+          var attrs={cid:ta[ai].i};
+          if(ta[ai].a)attrs.addr=ta[ai].a;
+          addonRpc(ip,"SensorAddon.AddPeripheral",{type:"ds18b20",attrs:attrs},function(ae){if(!ae)n++;an(ai+1);});
         }
         an(0);
       }

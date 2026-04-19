@@ -219,28 +219,32 @@ describe('sensor-config', () => {
       };
       const compact = sensorConfig.toCompactFormat(config);
       assert.deepStrictEqual(compact.h, ['192.168.30.20', '192.168.30.21']);
-      assert.deepStrictEqual(compact.s.collector, { h: 0, i: 100 });
-      assert.deepStrictEqual(compact.s.radiator_in, { h: 1, i: 100 });
+      assert.deepStrictEqual(compact.s.collector, { h: 0, i: 100, a: '40:255:100:6:199:204:149:177' });
+      assert.deepStrictEqual(compact.s.radiator_in, { h: 1, i: 100, a: '40:255:100:6:199:204:149:182' });
       assert.equal(compact.v, 3);
     });
 
-    it('stays under 256 bytes with 7 sensors', () => {
+    it('fits within Shelly KVS budget (1024 bytes) with 7 realistic-addr sensors', () => {
+      // Real 1-Wire addresses are ~25 chars (decimal bytes, colon-separated)
+      // — including them so SensorAddon.AddPeripheral can bind specific
+      // probes pushes us past the old 256-byte device-config budget. Shelly
+      // KVS accepts ~2400 bytes per value, so 1024 is a safe ceiling.
       const config = {
         hosts: [{ id: 'sensor_1', ip: '192.168.30.20' }, { id: 'sensor_2', ip: '192.168.30.21' }],
         assignments: {
-          collector: { addr: 'a', hostIndex: 0, componentId: 100 },
-          tank_top: { addr: 'b', hostIndex: 0, componentId: 101 },
-          tank_bottom: { addr: 'c', hostIndex: 0, componentId: 102 },
-          greenhouse: { addr: 'd', hostIndex: 0, componentId: 103 },
-          outdoor: { addr: 'e', hostIndex: 0, componentId: 104 },
-          radiator_in: { addr: 'f', hostIndex: 1, componentId: 100 },
-          radiator_out: { addr: 'g', hostIndex: 1, componentId: 101 },
+          collector:    { addr: '40:208:87:71:0:0:0:120', hostIndex: 0, componentId: 100 },
+          tank_top:     { addr: '40:171:89:71:0:0:0:186', hostIndex: 0, componentId: 101 },
+          tank_bottom:  { addr: '40:190:23:71:0:0:0:65',  hostIndex: 0, componentId: 102 },
+          greenhouse:   { addr: '40:52:155:84:0:0:0:62',  hostIndex: 0, componentId: 103 },
+          outdoor:      { addr: '40:77:248:69:0:0:0:216', hostIndex: 0, componentId: 104 },
+          radiator_in:  { addr: '40:255:100:6:199:204:149:182', hostIndex: 1, componentId: 100 },
+          radiator_out: { addr: '40:255:100:6:199:204:149:183', hostIndex: 1, componentId: 101 },
         },
         version: 1,
       };
       const compact = sensorConfig.toCompactFormat(config);
       const json = JSON.stringify(compact);
-      assert.ok(json.length <= 256, 'Compact format is ' + json.length + ' bytes, exceeds 256');
+      assert.ok(json.length <= 1024, 'Compact format is ' + json.length + ' bytes, exceeds 1024');
     });
   });
 

@@ -251,7 +251,10 @@ function toCompactFormat(config) {
   for (var role in config.assignments) {
     var a = config.assignments[role];
     if (a && a.addr) {
-      compact.s[role] = { h: a.hostIndex, i: a.componentId };
+      // `a` (addr) is required by SensorAddon.AddPeripheral to bind a specific
+      // physical probe to the chosen component ID. Without it the Add-on
+      // creates an empty peripheral slot and polls return no temperature.
+      compact.s[role] = { h: a.hostIndex, i: a.componentId, a: a.addr };
     }
   }
   return compact;
