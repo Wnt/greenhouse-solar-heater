@@ -565,7 +565,10 @@ modes:
           valves seal, so water is not trapped between closed valves
           (where it could freeze in the freeze-drain case).
     safety:
-      - Always stop pump before switching valves
+      - >-
+        Exit reverses the usual stop-pump-first rule: valves close, pump
+        runs 20 s more, then stops (see step 8). All other modes stop the
+        pump first.
       - Pump power monitoring prevents running dry (Pro 4PM built-in metering)
 
   overheat_drain:
