@@ -2433,6 +2433,93 @@ body[data-role="readonly"] [data-admin-only] {
 .auth-btn-danger:hover { background: #e74c3c; }
 .auth-btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ── Crashes list view ── */
+.crashes-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.crashes-list li {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--outline-variant, rgba(255,255,255,0.08));
+  cursor: pointer;
+}
+.crashes-list li:last-child { border-bottom: none; }
+.crashes-list li:hover { background: rgba(255,255,255,0.04); }
+.crashes-list .crashes-summary { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.crashes-list .crashes-msg { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--on-surface); }
+.crashes-list .crashes-ts { font-size: 12px; color: var(--on-surface-variant); white-space: nowrap; }
+.crashes-list .crashes-resolved { font-size: 11px; color: var(--secondary, #8ab4f8); margin-left: 8px; }
+.crashes-detail {
+  margin-top: 10px;
+  padding: 10px;
+  background: rgba(0,0,0,0.25);
+  border-radius: 8px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  color: var(--on-surface);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 60vh;
+  overflow: auto;
+}
+.crashes-copy {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--outline, #444);
+  background: transparent;
+  color: var(--on-surface);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.crashes-copy:hover { background: rgba(255,255,255,0.06); }
+
+/* ── Script crash banner ── */
+/* Severity above the watchdog banner: the script being down means no
+   automation is running at all. Red border + solid fill, pinned at top. */
+.script-crash-banner {
+  border: 2px solid #c0392b;
+  background: rgba(192, 57, 43, 0.18);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 12px 16px 16px;
+}
+.script-crash-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.script-crash-banner-header .material-symbols-outlined {
+  color: #c0392b;
+  font-size: 28px;
+}
+.script-crash-banner-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--on-surface);
+}
+.script-crash-banner-msg {
+  font-size: 13px;
+  margin: 8px 0 12px;
+  color: var(--on-surface-variant);
+  font-family: ui-monospace, Menlo, monospace;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.script-crash-banner-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.script-crash-banner-actions a {
+  color: var(--primary, #8ab4f8);
+  text-decoration: underline;
+  font-size: 14px;
+}
+
 .watchdog-cooloff-indicator {
   padding: 8px 12px;
   border-radius: 8px;

@@ -42,6 +42,11 @@ export const store = createStore({
   serverHash: null,
   versionDismissed: false,
 
+  // Shelly control-script health. Populated by ws 'script-status'
+  // messages. `null` = not yet known (default). `running: false` shows
+  // the crash banner.
+  scriptStatus: null,
+
   // Internal: staleness tick for periodic re-evaluation
   _staleTick: 0,
 });
@@ -63,6 +68,7 @@ export const derived = {
     const role = store.get('userRole');
     // 'components' is the merged System view (schematic + sensors/valves/actuators).
     // 'device' is the merged Device view (sensor assignment + controller runtime config).
+    // 'crashes' is the script-crash log, only meaningful against a real server.
     // Settings (PWA install, notifications, account) only makes sense when the
     // app is backed by a real server — on GH Pages (isLiveCapable=false) it
     // has nothing to configure, so we hide it.
@@ -70,6 +76,7 @@ export const derived = {
     const views = ['status', 'components'];
     if (phase === 'live' || phase === 'init') views.push('device');
     if (phase === 'simulation') views.push('controls');
+    if (hasSettings) views.push('crashes');
     if (hasSettings) views.push('settings');
     // Read-only users cannot see Controls or Device — they would be useless
     // (server enforces admin-only on every mutating endpoint).

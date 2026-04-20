@@ -9,6 +9,8 @@ import { initSensorsView, destroySensorsView } from './sensors.js';
 import { store, derived } from './app-state.js';
 import { initSubscriptions, setViewLifecycle } from './subscriptions.js';
 import { initNavigation } from './actions/navigation.js';
+import { attachScriptStatusWebSocket, renderScriptCrashBanner } from './actions/script-monitor.js';
+import { mountCrashesView } from './crashes-view.js';
 import { initAuth } from './auth.js';
 import { captureInstallPrompt, triggerInstall, wireInstallModal, initNotifications, subscribePush, updateCategories, unsubscribePush, isSubscribed, getSelectedCategories, sendTest } from './notifications.js';
 import { buildSchematic as buildSchematicFromSvg } from './schematic.js';
@@ -264,6 +266,7 @@ function ensureLiveSource() {
     if (typeof window.__attachWatchdogWS === 'function') {
       window.__attachWatchdogWS();
     }
+    attachScriptStatusWebSocket(liveSource);
   }
   liveSource.start();
 }
@@ -733,6 +736,9 @@ async function init() {
         initSensorsView();
         return () => destroySensorsView();
       }
+    },
+    crashes: {
+      mount: () => mountCrashesView()
     }
   });
 

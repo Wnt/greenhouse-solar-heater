@@ -118,6 +118,25 @@ var SCHEMA_SQL = [
   // stay NULL; the API maps NULL to null.
   "ALTER TABLE state_events ADD COLUMN IF NOT EXISTS cause TEXT",
   "ALTER TABLE state_events ADD COLUMN IF NOT EXISTS sensors JSONB",
+
+  // Shelly control-script crash log. Written by server/lib/script-monitor.js
+  // when the 30-second Script.GetStatus poll first observes running:false
+  // with an error payload. error_msg/error_trace come straight from the
+  // Shelly RPC; sys_status is the full Sys.GetStatus JSON at crash time;
+  // recent_states is the server-side ring buffer of MQTT state snapshots
+  // leading up to the crash — this is the piece that makes post-mortem
+  // debugging tractable.
+  "CREATE TABLE IF NOT EXISTS script_crashes (\n" +
+  "  id            BIGSERIAL PRIMARY KEY,\n" +
+  "  ts            TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n" +
+  "  error_msg     TEXT,\n" +
+  "  error_trace   TEXT,\n" +
+  "  sys_status    JSONB,\n" +
+  "  recent_states JSONB,\n" +
+  "  resolved_at   TIMESTAMPTZ\n" +
+  ")",
+
+  "CREATE INDEX IF NOT EXISTS script_crashes_ts ON script_crashes (ts DESC)",
 ];
 
 // Regular materialized view (no TSL license required, unlike continuous aggregates).
@@ -435,6 +454,85 @@ function getEvents(range, entityType, callback) {
   });
 }
 
+// ── Script crash log ──
+//
+// Writers go through insertScriptCrash; the UI reads via listScriptCrashes
+// / getScriptCrash. Postgres-only: crashes are rare and we prefer a real
+// record over an ephemeral ring buffer. If the DB is down when a crash
+// fires, script-monitor logs the drop and keeps the crash in memory on
+// its own in-process ring buffer for the WS layer.
+function insertScriptCrash(row, callback) {
+  var p = getPool();
+  if (!p) { callback(new Error('no_db')); return; }
+  var sql = 'INSERT INTO script_crashes (ts, error_msg, error_trace, sys_status, recent_states) ' +
+            'VALUES ($1, $2, $3, $4, $5) RETURNING id';
+  var params = [
+    row.ts || new Date(),
+    row.error_msg || null,
+    row.error_trace || null,
+    row.sys_status ? JSON.stringify(row.sys_status) : null,
+    row.recent_states ? JSON.stringify(row.recent_states) : null,
+  ];
+  p.query(sql, params, function (err, result) {
+    if (err) { callback(err); return; }
+    callback(null, result.rows[0].id);
+  });
+}
+
+function listScriptCrashes(limit, callback) {
+  var p = getPool();
+  if (!p) { callback(null, []); return; }
+  var effLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
+  var sql = 'SELECT id, ts, error_msg, resolved_at FROM script_crashes ' +
+            'ORDER BY ts DESC LIMIT $1';
+  p.query(sql, [effLimit], function (err, result) {
+    if (err) { callback(err); return; }
+    callback(null, result.rows.map(function (r) {
+      return {
+        id: r.id,
+        ts: new Date(r.ts).getTime(),
+        error_msg: r.error_msg,
+        resolved_at: r.resolved_at ? new Date(r.resolved_at).getTime() : null,
+      };
+    }));
+  });
+}
+
+function getScriptCrash(id, callback) {
+  var p = getPool();
+  if (!p) { callback(new Error('no_db')); return; }
+  var parsed = parseInt(id, 10);
+  if (!parsed || parsed <= 0) { callback(null, null); return; }
+  var sql = 'SELECT id, ts, error_msg, error_trace, sys_status, recent_states, resolved_at ' +
+            'FROM script_crashes WHERE id = $1';
+  p.query(sql, [parsed], function (err, result) {
+    if (err) { callback(err); return; }
+    var r = result.rows[0];
+    if (!r) { callback(null, null); return; }
+    callback(null, {
+      id: r.id,
+      ts: new Date(r.ts).getTime(),
+      error_msg: r.error_msg,
+      error_trace: r.error_trace,
+      sys_status: r.sys_status,
+      recent_states: r.recent_states,
+      resolved_at: r.resolved_at ? new Date(r.resolved_at).getTime() : null,
+    });
+  });
+}
+
+function resolveScriptCrash(id, callback) {
+  var p = getPool();
+  if (!p) { callback(new Error('no_db')); return; }
+  var parsed = parseInt(id, 10);
+  if (!parsed || parsed <= 0) { callback(null, false); return; }
+  var sql = 'UPDATE script_crashes SET resolved_at = NOW() WHERE id = $1 AND resolved_at IS NULL';
+  p.query(sql, [parsed], function (err, result) {
+    if (err) { callback(err); return; }
+    callback(null, (result && result.rowCount) ? result.rowCount > 0 : false);
+  });
+}
+
 function pivotReadings(rows) {
   var buckets = {};
   for (var i = 0; i < rows.length; i++) {
@@ -496,6 +594,10 @@ module.exports = {
   stopMaintenance: stopMaintenance,
   insertSensorReadings: insertSensorReadings,
   insertStateEvent: insertStateEvent,
+  insertScriptCrash: insertScriptCrash,
+  listScriptCrashes: listScriptCrashes,
+  getScriptCrash: getScriptCrash,
+  resolveScriptCrash: resolveScriptCrash,
   getHistory: getHistory,
   getEvents: getEvents,
   getEventsPaginated: getEventsPaginated,

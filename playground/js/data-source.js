@@ -119,6 +119,13 @@ export class LiveSource extends DataSource {
           if (this._watchdogCallbacks) {
             for (const cb of this._watchdogCallbacks) cb(msg);
           }
+        } else if (msg.type === 'script-status') {
+          // Control-script health broadcasts from script-monitor. Fed
+          // straight to subscribed callbacks; main.js handles banner
+          // updates via a store subscription.
+          if (this._scriptStatusCallbacks) {
+            for (const cb of this._scriptStatusCallbacks) cb(msg.data);
+          }
         }
       } catch (e) {
         // ignore parse errors
@@ -162,6 +169,11 @@ export class LiveSource extends DataSource {
   onWatchdogState(callback) {
     this._watchdogCallbacks = this._watchdogCallbacks || [];
     this._watchdogCallbacks.push(callback);
+  }
+
+  onScriptStatus(callback) {
+    this._scriptStatusCallbacks = this._scriptStatusCallbacks || [];
+    this._scriptStatusCallbacks.push(callback);
   }
 
   _handleState(data) {

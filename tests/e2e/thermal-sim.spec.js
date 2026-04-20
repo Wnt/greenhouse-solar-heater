@@ -155,8 +155,9 @@ test.describe('Thermal Simulation UI', () => {
     expect(box.height).toBeGreaterThan(50);
 
     const sidebarLinks = page.locator('.sidebar-nav a');
-    // status, components (merged system), controls, device (live-only, still in DOM), settings
-    await expect(sidebarLinks).toHaveCount(5);
+    // status, components (merged system), controls, device (live-only),
+    // crashes (live-only), settings
+    await expect(sidebarLinks).toHaveCount(6);
     await expect(page.locator('.sidebar-nav a.active')).toContainText('Status');
   });
 });

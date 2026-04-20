@@ -77,6 +77,10 @@
         <span class="material-symbols-outlined">settings_remote</span>
         Device
       </a>
+      <a data-view="crashes" class="live-only" style="display:none;">
+        <span class="material-symbols-outlined">report</span>
+        Crashes
+      </a>
       <a data-view="settings">
         <span class="material-symbols-outlined">settings</span>
         Settings
@@ -131,6 +135,22 @@
 
   <!-- ── Main Content ── -->
   <main class="main">
+
+    <!-- Global script-health banner: shown across every view when the
+         Pro 4PM control script is not running. Admin-only restart link. -->
+    <div id="script-crash-banner" class="script-crash-banner" style="display:none;" role="alert">
+      <div class="script-crash-banner-header">
+        <span class="material-symbols-outlined">error</span>
+        <h3>Control script is not running</h3>
+      </div>
+      <p id="script-crash-banner-msg" class="script-crash-banner-msg"></p>
+      <div class="script-crash-banner-actions">
+        <button id="script-crash-banner-restart" class="auth-btn auth-btn-danger" data-admin-only type="button">
+          Restart script
+        </button>
+        <a id="script-crash-banner-details" href="#crashes">View crash log</a>
+      </div>
+    </div>
 
     <!-- ═══ STATUS VIEW ═══ -->
     <section id="view-status" class="view active">
@@ -525,6 +545,18 @@
           </button>
         </div>
         <div id="override-expired-msg" style="display:none;font-size:13px;color:var(--on-surface-variant);margin-top:8px;"></div>
+      </div>
+    </section>
+
+    <!-- ═══ CRASHES VIEW ═══ -->
+    <section id="view-crashes" class="view">
+      <div class="view-header">
+        <h2>Script crash log.</h2>
+        <p>Snapshots captured when the Shelly control script stopped running. Click a row to expand the full error, Sys.GetStatus and the last ~100 state snapshots leading up to the crash.</p>
+      </div>
+      <div class="card" id="crashes-card">
+        <div id="crashes-empty" class="settings-desc" style="display:none;">No crashes recorded yet. Good.</div>
+        <ul id="crashes-list" class="crashes-list"></ul>
       </div>
     </section>
 

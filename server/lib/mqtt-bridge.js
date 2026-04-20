@@ -18,6 +18,7 @@ var deviceConfigRef = null;
 var sensorConfigRef = null;
 var pushRef = null;
 var anomalyManagerRef = null;
+var stateSnapshotListener = null;
 var previousState = null;
 var connectionStatus = 'disconnected';
 
@@ -29,6 +30,7 @@ function start(options) {
   sensorConfigRef = options.sensorConfig || null;
   pushRef = options.push || null;
   anomalyManagerRef = options.anomalyManager || null;
+  stateSnapshotListener = options.onStateSnapshot || null;
 
   notifications.init({ push: pushRef, deviceConfig: deviceConfigRef });
 
@@ -134,6 +136,14 @@ function handleStateMessage(payload) {
   }
 
   previousState = payload;
+
+  // Feed the script-monitor ring buffer so a later crash row captures
+  // what the device was doing in the lead-up.
+  if (stateSnapshotListener) {
+    try { stateSnapshotListener(payload); } catch (e) {
+      log.error('state snapshot listener failed', { error: e.message });
+    }
+  }
 
   // Evaluate notification conditions (pre-emergency alerts, scheduled reports)
   if (pushRef) {
@@ -416,6 +426,7 @@ module.exports = {
     sensorConfigRef = null;
     pushRef = null;
     previousState = null;
+    stateSnapshotListener = null;
     connectionStatus = 'disconnected';
     notifications._reset();
     // Clear any pending requests

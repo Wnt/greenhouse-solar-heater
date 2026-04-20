@@ -21,6 +21,7 @@ const sensorDiscovery = require('./lib/sensor-discovery');
 const push = require('./lib/push');
 const anomalyManager = require('./lib/anomaly-manager');
 const { createHistory: createWatchdogHistory } = require('./lib/watchdog-history');
+const { createScriptMonitor } = require('./lib/script-monitor');
 
 const log = createLogger('server');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
@@ -146,6 +147,7 @@ function jsonResponse(res, statusCode, data) {
 // ── History API ──
 
 var db = null;
+var scriptMonitor = null;
 
 function handleHistoryApi(req, res) {
   if (!db) {
@@ -600,6 +602,30 @@ var server = http.createServer(function (req, res) {
           jsonResponse(res, code, { error: err.message });
         });
     });
+  } else if (urlPath === '/api/script/status' && req.method === 'GET') {
+    jsonResponse(res, 200, scriptMonitor ? scriptMonitor.getStatus() : { running: null, reachable: false });
+  } else if (urlPath === '/api/script/crashes' && req.method === 'GET') {
+    if (!db) { jsonResponse(res, 503, { error: 'Database not available' }); return; }
+    var limit = parseInt(new URL(req.url, 'http://localhost').searchParams.get('limit'), 10) || 50;
+    db.listScriptCrashes(limit, function (err, rows) {
+      if (err) { jsonResponse(res, 500, { error: err.message }); return; }
+      jsonResponse(res, 200, { crashes: rows });
+    });
+  } else if (urlPath.startsWith('/api/script/crashes/') && req.method === 'GET') {
+    if (!db) { jsonResponse(res, 503, { error: 'Database not available' }); return; }
+    var crashId = urlPath.substring('/api/script/crashes/'.length);
+    db.getScriptCrash(crashId, function (err, row) {
+      if (err) { jsonResponse(res, 500, { error: err.message }); return; }
+      if (!row) { jsonResponse(res, 404, { error: 'Not found' }); return; }
+      jsonResponse(res, 200, row);
+    });
+  } else if (urlPath === '/api/script/restart' && req.method === 'POST') {
+    if (!isAdminOrReject()) return;
+    if (!scriptMonitor) { jsonResponse(res, 503, { error: 'Script monitor not available' }); return; }
+    scriptMonitor.triggerRestart(function (err, result) {
+      if (err) { jsonResponse(res, 502, { error: err.message }); return; }
+      jsonResponse(res, 200, result);
+    });
   } else if (urlPath === '/api/watchdog/enabled' && req.method === 'PUT') {
     if (!isAdminOrReject()) return;
     readBody(req, function (body) {
@@ -853,6 +879,11 @@ function initWebSocket() {
       if (lastState) {
         ws.send(JSON.stringify({ type: 'state', data: lastState }));
       }
+      // Push the current script health so a late joiner sees the crash
+      // banner immediately instead of waiting for the next poll cycle.
+      if (scriptMonitor) {
+        ws.send(JSON.stringify({ type: 'script-status', data: scriptMonitor.getStatus() }));
+      }
       // Handle incoming commands from clients
       ws.on('message', function (data) {
         handleWsCommand(ws, data);
@@ -974,6 +1005,15 @@ function startMqttBridge() {
 
   var ws = initWebSocket();
 
+  // Script monitor is started alongside the MQTT bridge so its snapshot
+  // buffer is fed by the same stream the bridge handles. The monitor
+  // pushes "script-status" WS messages on every transition — the
+  // playground listens for these to show the crash banner.
+  scriptMonitor = createScriptMonitor({ db: db });
+  scriptMonitor.onStatusChange(function (status) {
+    broadcastToWebSockets({ type: 'script-status', data: status });
+  });
+
   mqttBridge.start({
     mqttHost: MQTT_HOST,
     wsServer: ws,
@@ -982,7 +1022,12 @@ function startMqttBridge() {
     sensorConfig: sensorConfig,
     push: push,
     anomalyManager: anomalyManager,
+    onStateSnapshot: function (payload) {
+      scriptMonitor.recordStateSnapshot(payload);
+    },
   });
+
+  scriptMonitor.start();
 
   log.info('MQTT bridge started', { host: MQTT_HOST });
 }
