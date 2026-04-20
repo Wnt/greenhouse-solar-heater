@@ -2442,6 +2442,7 @@ function initRelayBoard() {
 
       document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(b => b.classList.remove('active'));
       this.classList.add('active');
+      try { if (navigator.vibrate) navigator.vibrate(50); } catch (e) {}
       applyForcedModePreview(mode);
 
       if (forcedModeSendTimer) clearTimeout(forcedModeSendTimer);
