@@ -23,7 +23,7 @@ function makeState(overrides) {
 }
 
 // Simulate what the UI produces when the operator clicks "Save & Push"
-function buildUIConfig({ controlsEnabled, valves, pump, fan, spaceHeater, immersionHeater, forcedMode, allowedModes }) {
+function buildUIConfig({ controlsEnabled, valves, pump, fan, spaceHeater, immersionHeater, allowedModes }) {
   let ea = 0;
   if (valves) ea |= EA_VALVES;
   if (pump) ea |= EA_PUMP;
@@ -43,7 +43,6 @@ function buildUIConfig({ controlsEnabled, valves, pump, fan, spaceHeater, immers
   return {
     ce: !!controlsEnabled,
     ea: ea,
-    fm: forcedMode || null,
     wb: wb,
     v: 1,
   };
@@ -77,16 +76,15 @@ describe('UI config → Shelly control-logic integration', () => {
     assert.strictEqual(freezeResult.safetyOverride, true, 'safety override flag set');
   });
 
-  it('Scenario: step 4 — force solar charging mode', () => {
+  it('Scenario: step 4 — solar charging via natural conditions', () => {
     const config = buildUIConfig({
       controlsEnabled: true,
       valves: true,
       pump: true,
-      forcedMode: 'SC',
     });
-    // Conditions don't trigger solar (collector too cold), but forced mode overrides
+    // Collector hotter than tank → natural solar charging trigger
     const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
     }), null, config);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
     assert.strictEqual(result.actuators.pump, true);
@@ -97,12 +95,11 @@ describe('UI config → Shelly control-logic integration', () => {
     assert.strictEqual(result.valves.vo_coll, true);
   });
 
-  it('Scenario: step 4 — force solar but freeze preempts', () => {
+  it('Scenario: step 4 — freeze preempts solar charging', () => {
     const config = buildUIConfig({
       controlsEnabled: true,
       valves: true,
       pump: true,
-      forcedMode: 'SC',
     });
     // Freeze condition — drain MUST happen regardless of forced mode
     const result = evaluate(makeState({
@@ -163,7 +160,7 @@ describe('UI config → Shelly control-logic integration', () => {
       // no forced mode, no allowed modes restriction
     });
     assert.strictEqual(config.ea, 31, 'all actuator bits set');
-    assert.strictEqual(config.fm, null);
+    assert.strictEqual(config.fm, undefined);
     assert.deepStrictEqual(config.wb, {}, 'no bans → empty wb');
 
     // Emergency heating when greenhouse very cold and tank can't help
@@ -181,9 +178,11 @@ describe('UI config → Shelly control-logic integration', () => {
       controlsEnabled: true,
       pump: true,
       // valves: false — pump runs but valves won't open
-      forcedMode: 'SC',
     });
-    const result = evaluate(makeState({}), null, config);
+    // Collector hotter than tank → natural solar charging trigger
+    const result = evaluate(makeState({
+      temps: { collector: 30, tank_top: 10, tank_bottom: 5, greenhouse: 10, outdoor: 10 },
+    }), null, config);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
     assert.strictEqual(result.actuators.pump, true);
     // Valves should all be false because valve bit not set
@@ -196,9 +195,9 @@ describe('UI config → Shelly control-logic integration', () => {
     const scenarios = [
       buildUIConfig({ controlsEnabled: false }),
       buildUIConfig({ controlsEnabled: true, valves: true, pump: true }),
-      buildUIConfig({ controlsEnabled: true, valves: true, pump: true, forcedMode: 'SC' }),
+      buildUIConfig({ controlsEnabled: true, valves: true, pump: true }),
       buildUIConfig({ controlsEnabled: true, valves: true, pump: true, fan: true, allowedModes: ['I', 'SC'] }),
-      buildUIConfig({ controlsEnabled: true, valves: true, pump: true, fan: true, spaceHeater: true, immersionHeater: true, forcedMode: 'GH', allowedModes: ['I', 'SC', 'GH', 'AD'] }),
+      buildUIConfig({ controlsEnabled: true, valves: true, pump: true, fan: true, spaceHeater: true, immersionHeater: true, allowedModes: ['I', 'SC', 'GH', 'AD'] }),
     ];
     for (const cfg of scenarios) {
       const size = JSON.stringify(cfg).length;
