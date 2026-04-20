@@ -217,18 +217,17 @@ valves:
       type: motorized on/off ball valve
       size: DN15
       actuator: 9-24V DC (A83 2-wire, auto-return close)
-      physical_wiring: normally-open (de-energized = valve open, energized = valve closed)
-      relay_logic: inverted in control.js — relay ON closes valve, relay OFF opens valve
+      physical_wiring: normally-closed (de-energized = valve closed, energized = valve open) — identical to every other motorized valve in the system
       fail_safe: >
-        Power loss opens V_air automatically (normally-open wiring); this
-        admits air to the T joint and breaks the permanent siphon from
-        collector top down to the reservoir. The small volume in the
-        reservoir-side down-leg pipe (~0.5-1 L) drains by gravity into
-        the reservoir. The collector bodies themselves remain filled —
-        full collector drain requires the pump actively running (active
-        drain mode).
+        Power loss closes V_air (normally-closed wiring), so there is no
+        automatic siphon break on power loss. The passive T joint still
+        connects the collector top to the reservoir through water, so the
+        collector-side column remains in hydrostatic equilibrium with the
+        reservoir water level. Freeze-protection drain is driven actively
+        by the pump in active_drain mode; it is NOT triggered by power
+        loss.
       path: collector top T joint → open air
-      purpose: air intake for drain mode
+      purpose: air intake for active drain (admits atmospheric air so the pump can evacuate the collector-side down-leg without cavitating)
 
   # flow_sensor removed — replaced by pump power monitoring on Pro 4PM O1
 
@@ -352,8 +351,8 @@ control:
           O2: vo_tank (pump → tank, drain mode)
         unit_4:
           location: collector top (~280cm, needs weatherproofing or long cable runs)
-          O1: unassigned  # reserved spare — passive T joint connects collector top to reservoir (spec 024 removed the previous collector-top return valve)
-          O2: v_air (collector top → open air, drain air intake)
+          O1: v_air (collector top → open air, drain air intake)
+          O2: unassigned  # reserved spare — passive T joint connects collector top to reservoir (spec 024 removed the previous collector-top return valve)
 
     shelly_1_gen3_addon:
       quantity: 1
@@ -694,7 +693,7 @@ safety:
   - Drain collectors before t_outdoor reaches 0°C (2°C safety margin)
   - Use union fittings for easy valve replacement
   - Collector pipes must slope toward drain point (2–3 cm/m)
-  - V_air is normally-open at the collector top (physical_wiring above). Closed (energized) during all non-drain modes; opens (de-energized) in drain modes and on power loss to break the siphon from collector top to reservoir. The T joint ensures the reservoir-side down-leg drains by gravity when V_air opens.
+  - V_air at the collector top is normally-closed like every other valve. Closed (de-energized) during idle, solar_charging, and greenhouse_heating; opened (energized) only in active_drain to admit atmospheric air so the pump can evacuate the collector-side down-leg. Power loss de-energizes all valves including V_air, leaving the collector column in hydrostatic equilibrium with the reservoir (no automatic drain on power loss).
 
 # =============================================================================
 # WATER TREATMENT

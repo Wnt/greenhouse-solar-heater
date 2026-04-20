@@ -2,7 +2,6 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const { evaluate, MODES, DEFAULT_CONFIG, MODE_VALVES,
         VALVE_TIMING, planValveTransition,
-        toSchedulerView, fromSchedulerView,
         buildSnapshotFromState, runBoundedPool,
         formatDuration, formatTemp, buildDisplayLabels } = require('../shelly/control-logic.js');
 
@@ -1573,15 +1572,14 @@ describe('planValveTransition — SCHEDULE loop integration', () => {
     // The point of this test is the scheduler's elder/youngster behaviour,
     // not the mode invariants. Starting with vi_btm + vo_coll + vo_rad open:
     // vi_btm and vo_coll are elders (open >60s), vo_rad is a youngster.
-    // Target is ACTIVE_DRAIN: vi_coll + vo_tank + v_air logical-open
-    // (scheduler-view v_air=false because of the polarity inversion).
+    // Target is ACTIVE_DRAIN: vi_coll + vo_tank + v_air open.
     const oldOpenSince = 1000000 - 70000; // 70s ago → elders
     const youngOpenSince = 1000000 - 10000; // 10s ago → youngster
     const trace = drivePlanLoop({
       target: {
         vi_btm: false, vi_top: false, vi_coll: true,
         vo_coll: false, vo_rad: false, vo_tank: true,
-        v_air: false // scheduler view: de-energized
+        v_air: true
       },
       current: {
         vi_btm: true, vi_top: false, vi_coll: false,
@@ -1792,39 +1790,17 @@ describe('buildSnapshotFromState — US5 staged-transition fields', () => {
   });
 });
 
-describe('toSchedulerView / fromSchedulerView polarity helpers', () => {
-  it('round-trip is identity for every 7-valve combination', () => {
-    // 2^7 = 128 combinations.
-    const combos = 1 << VALVE_NAMES.length;
-    for (let mask = 0; mask < combos; mask++) {
-      const m = {};
-      for (let i = 0; i < VALVE_NAMES.length; i++) {
-        m[VALVE_NAMES[i]] = ((mask >> i) & 1) === 1;
-      }
-      assert.deepStrictEqual(fromSchedulerView(toSchedulerView(m)), m);
-    }
-  });
-
-  it('v_air is inverted, all others are identity', () => {
+describe('v_air has no polarity inversion (physical valve is normally-closed like every other valve)', () => {
+  it('logical open/close maps 1:1 to scheduler open/close for every valve including v_air', () => {
+    // There is no polarity helper anymore: the scheduler view == the logical
+    // view. A failing assertion here means an inversion sneaked back in.
     const logical = {
       vi_btm: true, vi_top: false, vi_coll: true, vo_coll: false,
-      vo_rad: true, vo_tank: false, v_air: false
+      vo_rad: true, vo_tank: false, v_air: true
     };
-    const scheduler = toSchedulerView(logical);
-    assert.strictEqual(scheduler.vi_btm, true);
-    assert.strictEqual(scheduler.vi_top, false);
-    assert.strictEqual(scheduler.vi_coll, true);
-    assert.strictEqual(scheduler.vo_coll, false);
-    assert.strictEqual(scheduler.vo_rad, true);
-    assert.strictEqual(scheduler.vo_tank, false);
-    assert.strictEqual(scheduler.v_air, true); // inverted
-
-    const flipped = toSchedulerView({ v_air: true });
-    assert.strictEqual(flipped.v_air, false);
-  });
-
-  it('handles null/undefined as passthrough', () => {
-    assert.strictEqual(toSchedulerView(null), null);
-    assert.strictEqual(toSchedulerView(undefined), undefined);
+    assert.strictEqual(typeof require('../shelly/control-logic').toSchedulerView, 'undefined');
+    assert.strictEqual(typeof require('../shelly/control-logic').fromSchedulerView, 'undefined');
+    // The logical map is the canonical form — no wrapper is needed.
+    assert.strictEqual(logical.v_air, true);
   });
 });

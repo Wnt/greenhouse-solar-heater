@@ -438,46 +438,15 @@ function evaluate(state, config, deviceConfig) {
   return result;
 }
 
-// ── Valve polarity translation ──
-//
-// V_air is physically normally-open (de-energized = open) for fail-safe
-// drain on power loss. Every other valve is physically normally-closed
-// (energized = open). The pure scheduler works in a uniform "energized
-// = opening" model: when a valve is "energizing" it is drawing current
-// from the 24 V PSU and its capacitor is charging, regardless of whether
-// that corresponds to a logical open or a logical close. So at the
-// scheduler boundary we swap the v_air entry: logical open ↔ de-
-// energized, logical close ↔ energized. The scheduler sees the energized
-// form; the rest of control.js and MODE_VALVES work in the logical form.
-//
-// The mapping is self-inverse, so `fromSchedulerView` is the same
-// function exposed under a second name for readability at call sites.
-function toSchedulerView(valves) {
-  if (!valves) return valves;
-  var result = {};
-  for (var k in valves) {
-    if (k === "v_air") {
-      result.v_air = !valves.v_air;
-    } else {
-      result[k] = valves[k];
-    }
-  }
-  return result;
-}
-
-function fromSchedulerView(valves) {
-  return toSchedulerView(valves);
-}
-
 // ── Valve transition scheduler (pure, no Shelly calls) ──
 //
 // planValveTransition is the sole decision-maker for staged opens, deferred
 // closes, and resume scheduling. It is pure: no Date.now(), no globals, no
 // platform APIs. Inputs:
-//   target    — desired valve map (keys = valve names, values = bool; for the
-//               scheduler's view, "true" means "energized/opening/open",
-//               not logical open — the shell applies v_air polarity at the
-//               boundary).
+//   target    — desired valve map (keys = valve names, values = bool where
+//               true = open / energized). All valves (including v_air) are
+//               physically normally-closed: energized = open, de-energized
+//               = closed.
 //   current   — current physical valve map (same polarity convention).
 //   openSince — map of valve name → epoch-ms when the valve most recently
 //               finished its opening window. `0` means "unknown / boot" and
@@ -844,8 +813,6 @@ if (typeof module !== "undefined" && module.exports) {
     VALVE_NAMES_SORTED: VALVE_NAMES_SORTED,
     VALVE_TIMING: VALVE_TIMING,
     planValveTransition: planValveTransition,
-    toSchedulerView: toSchedulerView,
-    fromSchedulerView: fromSchedulerView,
     buildSnapshotFromState: buildSnapshotFromState,
     runBoundedPool: runBoundedPool,
     formatDuration: formatDuration,

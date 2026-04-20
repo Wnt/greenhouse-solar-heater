@@ -36,13 +36,9 @@ var VALVES = {
   vo_coll: {ip: "192.168.30.52", id: 1},
   vo_rad:  {ip: "192.168.30.53", id: 0},
   vo_tank: {ip: "192.168.30.53", id: 1},
-  // 192.168.30.54 id 0 is a reserved spare (passive T joint at collector top — spec 024)
-  v_air:   {ip: "192.168.30.54", id: 1},
+  // 192.168.30.54 id 1 is a reserved spare (passive T joint at collector top — spec 024)
+  v_air:   {ip: "192.168.30.54", id: 0},
 };
-
-// toSchedulerView / fromSchedulerView live in control-logic.js (pure). They
-// are globally available in the concatenated Shelly script; Node tests
-// import them from control-logic.js.
 
 // Sensor config from KVS (null = skip polling, safe IDLE default)
 var sensorConfig = null;
@@ -176,11 +172,8 @@ function setValve(name, open, cb) {
   if (open && !deviceConfig.ce) { if (cb) cb(true); return; }
   if (open && !(deviceConfig.ea & EA_VALVES)) { if (cb) cb(true); return; }
   var v = VALVES[name];
-  // V_air physical actuator is normally-open (de-energized = open) for fail-safe
-  // drain on power loss. Invert the relay command so logical true=open works.
-  var cmd = (name === "v_air") ? !open : open;
   var url = "http://" + v.ip + "/rpc/Switch.Set?id=" + v.id +
-    "&on=" + (cmd ? "true" : "false");
+    "&on=" + (open ? "true" : "false");
   Shelly.call("HTTP.GET", {url: url}, function(res, err) {
     if (err || !res || res.code !== 200) {
       Shelly.call("HTTP.GET", {url: url}, function(res2, err2) {
@@ -597,15 +590,15 @@ function finalizeTransitionFail() {
   emitStateUpdate();
 }
 
-// Build the scheduler view of the current physical valve state. Any valve
-// whose state is unknown (e.g. never commanded) is treated as closed.
-function currentSchedulerView() {
+// Build the current physical valve map. Any valve whose state is unknown
+// (e.g. never commanded) is treated as closed.
+function currentValves() {
   var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_air"];
   var cur = {};
   for (var i = 0; i < names.length; i++) {
     cur[names[i]] = !!state.valve_states[names[i]];
   }
-  return toSchedulerView(cur);
+  return cur;
 }
 
 function scheduleStep() {
@@ -620,10 +613,8 @@ function scheduleStep() {
   state.transition_step = "valves_opening";
 
   var now = Date.now();
-  var schedulerTarget = state.targetValves;
-  var schedulerCurrent = currentSchedulerView();
   var plan = planValveTransition(
-    schedulerTarget, schedulerCurrent,
+    state.targetValves, currentValves(),
     state.valveOpenSince, state.valveOpening,
     now, VALVE_TIMING
   );
@@ -656,9 +647,7 @@ function scheduleStep() {
   for (i = 0; i < plan.startOpening.length; i++) {
     var ov = plan.startOpening[i];
     state.valveOpening[ov] = now + VALVE_TIMING.openWindowMs;
-    // Translate scheduler polarity → logical polarity for setValve().
-    var logicalOpen = (ov === "v_air") ? false : true;
-    openPairs.push([ov, logicalOpen]);
+    openPairs.push([ov, true]);
   }
   for (i = 0; i < plan.closeNow.length; i++) {
     var cv = plan.closeNow[i];
@@ -668,8 +657,7 @@ function scheduleStep() {
     if (state.valveOpening[cv] !== undefined && state.valveOpening[cv] > now) {
       continue;
     }
-    var logicalClose = (cv === "v_air") ? true : false;
-    closePairs.push([cv, logicalClose]);
+    closePairs.push([cv, false]);
     // Closing a valve clears the openSince so future opens start fresh.
     state.valveOpenSince[cv] = 0;
   }
@@ -739,7 +727,7 @@ function transitionTo(result, cause) {
   if (state.transitioning) {
     // Allow in-place target change during an in-flight staged transition.
     if (state.targetValves !== null) {
-      state.targetValves = toSchedulerView(result.valves);
+      state.targetValves = result.valves;
       state.targetResult = result;
       // Do not interrupt any live opening windows — the next resume will
       // re-plan against the new target.
@@ -752,7 +740,7 @@ function transitionTo(result, cause) {
   state.transitionFromMode = state.mode;
   state.transitioning = true;
   state.targetResult = result;
-  state.targetValves = toSchedulerView(result.valves);
+  state.targetValves = result.valves;
 
   if (state.drain_timer !== null) {
     Timer.clear(state.drain_timer);
@@ -1235,11 +1223,9 @@ if (typeof __TEST_HARNESS !== "undefined" && __TEST_HARNESS) {
     // finalizeTransitionOK past the test's advance window.
     var srcValves = MODE_VALVES[fromMode];
     if (srcValves && result.valves) {
-      var srcSched = toSchedulerView(srcValves);
-      var tgtSched = toSchedulerView(result.valves);
-      for (var vn in srcSched) {
-        if (srcSched[vn] === true && tgtSched[vn] === false) {
-          state.valve_states[vn] = srcValves[vn];
+      for (var vn in srcValves) {
+        if (srcValves[vn] === true && result.valves[vn] === false) {
+          state.valve_states[vn] = true;
         }
       }
     }
