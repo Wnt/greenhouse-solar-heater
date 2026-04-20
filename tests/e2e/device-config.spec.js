@@ -647,8 +647,9 @@ test.describe('Device config UI', () => {
     const sent = putRequests[0];
     expect(sent.ce).toBe(true);
     expect(sent.ea).toBe(3); // valves(1) + pump(2)
-    expect(sent.fm).toBeNull();
-    // am is no longer sent from Save
+    // fm (forced mode) is no longer sent from Save — it's set via the
+    // manual-override card flow, not the device-config form.
+    expect(sent.fm).toBeUndefined();
     expect(sent.am).toBeUndefined();
 
     // Verify the saved config still fits in KVS (256-byte limit)

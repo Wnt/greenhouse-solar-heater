@@ -1586,8 +1586,10 @@ function updateDisplay(state, result) {
     if (modeCardActive) modeCardActive.classList.remove('mode-card--forced');
   }
 
-  // Status line: use a text node + pulse span, keep exit link
-  // Clear existing text nodes but preserve child elements
+  // Status line: use a text node + pulse span. The exit link is a
+  // sibling of statusEl (not a child — see index.html), so we just
+  // clear text nodes and append fresh; no insertBefore relative to
+  // the exit link.
   Array.from(statusEl.childNodes).forEach(function (node) {
     if (node.nodeType === Node.TEXT_NODE) statusEl.removeChild(node);
   });
@@ -1598,7 +1600,7 @@ function updateDisplay(state, result) {
     statusEl.insertBefore(pulseSpan, statusEl.firstChild);
   }
   var statusText = document.createTextNode(running ? ' System Active' : ' System Ready');
-  statusEl.insertBefore(statusText, exitLinkEl || null);
+  statusEl.appendChild(statusText);
 
   // Exit override link — admin only, visible when override is active
   if (exitLinkEl) {
