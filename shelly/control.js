@@ -98,6 +98,12 @@ var state = {
   transitionTimer: null,    // transition-scoped timer handle
   transitionFromMode: null, // mode snapshot at transitionTo() entry; drives drain-exit branch
   transition_step: null,
+  // What triggered the most recent mode transition. One of:
+  //   boot | automation | forced | watchdog_auto | user_shutdown |
+  //   drain_complete | failed. Published in every state snapshot; server
+  //   records it alongside the mode-change row so the UI can show
+  //   operators why the system changed state.
+  lastTransitionCause: "boot",
 };
 
 // ── Actuator commands with config guards ──
@@ -409,7 +415,11 @@ function applyBanAndShutdown(id, how) {
   });
 
   state.watchdogPending = null;
-  transitionTo(buildIdleTransitionResult());
+  // how is "shutdown_auto" from autoShutdown() or "shutdown_user" from
+  // handleConfigDrivenResolution(). Matches the published "resolved"
+  // event so UI logs line up.
+  transitionTo(buildIdleTransitionResult(),
+    how === "shutdown_user" ? "user_shutdown" : "watchdog_auto");
   publishWatchdogEvent({ t: "resolved", id: id, how: how, ts: nowSec });
 }
 
@@ -469,7 +479,7 @@ function handleConfigDrivenResolution(prevCfg, newCfg) {
     var oldWb = prevCfg && prevCfg.wb && prevCfg.wb[modeCode];
     if (newWb && newWb > nowSec && newWb !== oldWb) {
       state.watchdogPending = null;
-      transitionTo(buildIdleTransitionResult());
+      transitionTo(buildIdleTransitionResult(), "user_shutdown");
       publishWatchdogEvent({
         t: "resolved", id: pid, how: "shutdown_user", ts: nowSec
       });
@@ -487,7 +497,7 @@ function handleForcedModeChange(prev, next) {
   var t = null;
   if (nMo && nMo.a && nFm && nFm !== pFm) t = makeModeResult(nFm);
   else if (pMo && pMo.a && (!nMo || !nMo.a)) t = buildIdleTransitionResult();
-  if (t) Timer.set(1000, false, function() { transitionTo(t); });
+  if (t) Timer.set(1000, false, function() { transitionTo(t, "forced"); });
 }
 
 // ── Staged transitions (023-limit-valve-operations) ──
@@ -580,6 +590,7 @@ function finalizeTransitionFail() {
   setPump(false);
   state.mode = MODES.IDLE;
   state.mode_start = Date.now();
+  state.lastTransitionCause = "failed";
   captureWatchdogBaseline();
   state.transitioning = false;
   state.transition_step = null;
@@ -718,7 +729,13 @@ function resumeTransition() {
   scheduleStep();
 }
 
-function transitionTo(result) {
+function transitionTo(result, cause) {
+  // Record what triggered the transition. Callers pass a short tag
+  // ("automation", "forced", "watchdog_auto", "user_shutdown",
+  // "drain_complete", "failed"). Default is "automation" for legacy
+  // call sites that don't yet annotate themselves.
+  if (cause) state.lastTransitionCause = cause;
+
   if (state.transitioning) {
     // Allow in-place target change during an in-flight staged transition.
     if (state.targetValves !== null) {
@@ -811,7 +828,7 @@ function stopDrain(reason) {
     suppressed: false,
     safetyOverride: false
   };
-  transitionTo(idleResult);
+  transitionTo(idleResult, "drain_complete");
 }
 
 // ── Manual override helpers ──
@@ -922,7 +939,7 @@ function controlLoop() {
             // Safety takes precedence — end override and transition
             deviceConfig.mo = null;
             Shelly.call("KVS.Set", {key: "config", value: JSON.stringify(deviceConfig)});
-            transitionTo(result);
+            transitionTo(result, "safety_override");
             return;
           }
         }
@@ -936,12 +953,12 @@ function controlLoop() {
 
       if (result.nextMode !== state.mode) {
         if (result.safetyOverride) {
-          transitionTo(result);
+          transitionTo(result, "safety_override");
         } else if (result.suppressed) {
           applyFlags(result.flags);
           emitStateUpdate();
         } else {
-          transitionTo(result);
+          transitionTo(result, "automation");
         }
       } else {
         applyFlags(result.flags);
@@ -1214,7 +1231,7 @@ if (typeof __TEST_HARNESS !== "undefined" && __TEST_HARNESS) {
       state.pump_on = !!srcAct.pump;
       state.fan_on = !!srcAct.fan;
     }
-    transitionTo(result);
+    transitionTo(result, "automation");
   };
 }
 

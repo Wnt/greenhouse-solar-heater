@@ -21,8 +21,10 @@ describe('mqtt-bridge', () => {
     it('detects mode changes', () => {
       const events = [];
       const mockDb = {
-        insertStateEvent: function (ts, type, id, oldVal, newVal, cb) {
-          events.push({ type, id, oldVal, newVal });
+        insertStateEvent: function (ts, type, id, oldVal, newVal, optsOrCb, maybeCb) {
+          var opts = typeof optsOrCb === 'function' ? null : optsOrCb;
+          var cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb;
+          events.push({ type, id, oldVal, newVal, opts });
           if (cb) cb(null);
         },
       };
@@ -35,6 +37,52 @@ describe('mqtt-bridge', () => {
       assert.strictEqual(events[0].type, 'mode');
       assert.strictEqual(events[0].oldVal, 'idle');
       assert.strictEqual(events[0].newVal, 'solar_charging');
+    });
+
+    it('records cause and sensor snapshot for mode changes', () => {
+      const events = [];
+      const mockDb = {
+        insertStateEvent: function (ts, type, id, oldVal, newVal, optsOrCb, maybeCb) {
+          var opts = typeof optsOrCb === 'function' ? null : optsOrCb;
+          var cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb;
+          events.push({ type, opts });
+          if (cb) cb(null);
+        },
+      };
+
+      const prev = { mode: 'idle', valves: {}, actuators: {} };
+      const curr = {
+        mode: 'solar_charging',
+        cause: 'automation',
+        temps: { collector: 62.3, tank_top: 41, tank_bottom: 29, greenhouse: 12, outdoor: 8 },
+        valves: {}, actuators: {},
+      };
+
+      bridge.detectStateChanges(new Date(), prev, curr, mockDb);
+      const modeEvt = events.find(e => e.type === 'mode');
+      assert.ok(modeEvt);
+      assert.strictEqual(modeEvt.opts.cause, 'automation');
+      assert.deepStrictEqual(modeEvt.opts.sensors,
+        { collector: 62.3, tank_top: 41, tank_bottom: 29, greenhouse: 12, outdoor: 8 });
+    });
+
+    it('null-fills cause and sensors when the state payload lacks them (old firmware)', () => {
+      const events = [];
+      const mockDb = {
+        insertStateEvent: function (ts, type, id, oldVal, newVal, optsOrCb, maybeCb) {
+          var opts = typeof optsOrCb === 'function' ? null : optsOrCb;
+          var cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb;
+          events.push({ type, opts });
+          if (cb) cb(null);
+        },
+      };
+
+      const prev = { mode: 'idle', valves: {}, actuators: {} };
+      const curr = { mode: 'solar_charging', valves: {}, actuators: {} };
+      bridge.detectStateChanges(new Date(), prev, curr, mockDb);
+      const modeEvt = events.find(e => e.type === 'mode');
+      assert.strictEqual(modeEvt.opts.cause, null);
+      assert.strictEqual(modeEvt.opts.sensors, null);
     });
 
     it('detects valve state changes', () => {

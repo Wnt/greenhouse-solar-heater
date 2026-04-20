@@ -109,9 +109,29 @@ describe('db module', () => {
       assert.ifError(err);
       const insertQ = capturedQueries.find(q => q.sql && q.sql.includes('INSERT INTO state_events'));
       assert.ok(insertQ);
-      assert.deepStrictEqual(insertQ.params, [ts, 'mode', 'mode', 'idle', 'solar_charging']);
+      // cause + sensors default to null when not supplied (e.g. valve/
+      // actuator rows, or mode rows from pre-2026-04-20 firmware).
+      assert.deepStrictEqual(insertQ.params, [ts, 'mode', 'mode', 'idle', 'solar_charging', null, null]);
       done();
     });
+  });
+
+  it('insertStateEvent persists cause and sensors from opts', (t, done) => {
+    process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
+    db._reset();
+    delete require.cache[require.resolve('../server/lib/db.js')];
+    db = require('../server/lib/db.js');
+
+    const ts = new Date();
+    const sensors = { collector: 62.3, tank_top: 41, tank_bottom: 29, greenhouse: 12, outdoor: 8 };
+    db.insertStateEvent(ts, 'mode', 'mode', 'idle', 'solar_charging',
+      { cause: 'automation', sensors }, function (err) {
+        assert.ifError(err);
+        const insertQ = capturedQueries.find(q => q.sql && q.sql.includes('INSERT INTO state_events'));
+        assert.ok(insertQ);
+        assert.deepStrictEqual(insertQ.params, [ts, 'mode', 'mode', 'idle', 'solar_charging', 'automation', sensors]);
+        done();
+      });
   });
 
   it('getHistory uses parameterized query when sensor is provided', (t, done) => {

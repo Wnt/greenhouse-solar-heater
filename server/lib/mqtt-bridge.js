@@ -149,9 +149,18 @@ function handleStateMessage(payload) {
 function detectStateChanges(ts, prev, curr, _db) {
   var d = _db || db;
   if (!d) return;
-  // Mode changes
+  // Mode changes — record cause (why the transition happened) and a
+  // snapshot of the sensor temps at transition time so operators
+  // browsing the log can tell "automation fired SOLAR_CHARGING at
+  // collector=62 °C" vs "user forced IDLE manually". Both fields are
+  // nullable: pre-2026-04-20 payloads don't carry cause; firmware
+  // without sensor polling yields null temps.
   if (prev.mode !== curr.mode) {
-    d.insertStateEvent(ts, 'mode', 'mode', prev.mode, curr.mode, function (err) {
+    var modeOpts = {
+      cause: (typeof curr.cause === 'string' && curr.cause) || null,
+      sensors: (curr.temps && typeof curr.temps === 'object') ? curr.temps : null,
+    };
+    d.insertStateEvent(ts, 'mode', 'mode', prev.mode, curr.mode, modeOpts, function (err) {
       if (err) log.error('db insert mode event failed', { error: err.message });
     });
   }

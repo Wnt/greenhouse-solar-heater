@@ -960,6 +960,10 @@ function fetchLiveEvents(before) {
           mode: e.to,
           from: e.from,
           text: formatLiveTransitionText(e.from, e.to),
+          // cause/sensors may be null for pre-2026-04-20 rows or for
+          // firmware that doesn't yet carry the transition cause.
+          cause: e.cause || null,
+          sensors: e.sensors || null,
         });
       }
       if (events.length > 0) {
@@ -998,6 +1002,11 @@ function detectLiveTransition(result) {
     mode: mode,
     from: lastLiveMode,
     text: formatLiveTransitionText(lastLiveMode, mode),
+    // Carry cause + temps through from the state payload so the log
+    // can show them immediately, without waiting for a /api/events
+    // round-trip.
+    cause: (result && result.cause) || null,
+    sensors: (result && result.temps) ? Object.assign({}, result.temps) : null,
   });
   lastLiveMode = mode;
   renderLogsList();
@@ -1032,11 +1041,14 @@ function renderLogsList() {
       : t.mode === 'greenhouse_heating' ? 'log-dot-heating'
       : t.mode === 'emergency_heating' ? 'log-dot-emergency' : 'log-dot-muted';
     const timeLabel = t.kind === 'live' ? formatClockTime(t.ts) : formatTimeOfDay(t.time);
+    const causeChip = t.cause ? ' <span class="log-cause">' + escapeHtml(formatCauseLabel(t.cause)) + '</span>' : '';
+    const sensorsLine = t.sensors ? '<div class="log-sensors">' + formatSensorsLine(t.sensors) + '</div>' : '';
     html += '<div class="log-item">' +
       '<div class="log-dot ' + dotClass + '"></div>' +
       '<div class="log-content">' +
-        '<div class="log-title">' + escapeHtml(mi.label) + '</div>' +
+        '<div class="log-title">' + escapeHtml(mi.label) + causeChip + '</div>' +
         '<div class="log-desc">' + escapeHtml(t.text || '') + '</div>' +
+        sensorsLine +
       '</div>' +
       '<div class="log-time">' + timeLabel + '</div>' +
     '</div>';
@@ -1051,9 +1063,59 @@ function renderLogsList() {
   container.innerHTML = html;
 }
 
+// Finnish timezone everywhere in the UI. Using Intl rather than
+// getHours() which would follow the browser's locale (typically correct
+// for local operators but wrong when accessed from abroad).
+const HELSINKI_TZ = 'Europe/Helsinki';
+const fmtClockHelsinki = new Intl.DateTimeFormat('fi-FI', {
+  hour: '2-digit', minute: '2-digit', hour12: false, timeZone: HELSINKI_TZ,
+});
+const fmtFullHelsinki = new Intl.DateTimeFormat('fi-FI', {
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+  hour12: false, timeZone: HELSINKI_TZ,
+});
+
 function formatClockTime(unixMs) {
-  const d = new Date(unixMs);
-  return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+  return fmtClockHelsinki.format(new Date(unixMs));
+}
+
+// Short human-readable label for each cause tag. Keep in sync with
+// state.lastTransitionCause values set in shelly/control.js.
+const CAUSE_LABELS = {
+  boot: 'Boot',
+  automation: 'Automation',
+  forced: 'Forced mode',
+  safety_override: 'Safety override',
+  watchdog_auto: 'Watchdog (auto)',
+  user_shutdown: 'User shutdown',
+  drain_complete: 'Drain complete',
+  failed: 'Transition failed',
+};
+function formatCauseLabel(c) {
+  return CAUSE_LABELS[c] || c;
+}
+
+// Render the temp snapshot as "coll 62.3° · tank 41/29° · gh 12° · out 8°"
+function formatSensorsLine(sensors) {
+  if (!sensors) return '';
+  const f = (v) => (typeof v === 'number' ? v.toFixed(1) + '°' : '—');
+  const parts = [];
+  if ('collector' in sensors) parts.push('coll ' + f(sensors.collector));
+  if ('tank_top' in sensors || 'tank_bottom' in sensors) {
+    parts.push('tank ' + f(sensors.tank_top) + '/' + f(sensors.tank_bottom));
+  }
+  if ('greenhouse' in sensors) parts.push('gh ' + f(sensors.greenhouse));
+  if ('outdoor' in sensors) parts.push('out ' + f(sensors.outdoor));
+  return escapeHtml(parts.join(' · '));
+}
+
+// YYYY-MM-DD HH:MM:SS in Europe/Helsinki — used by clipboard export.
+function formatFullTimeHelsinki(unixMs) {
+  const parts = fmtFullHelsinki.formatToParts(new Date(unixMs));
+  const get = (type) => { const p = parts.find(x => x.type === type); return p ? p.value : ''; };
+  return get('year') + '-' + get('month') + '-' + get('day') + ' ' +
+         get('hour') + ':' + get('minute') + ':' + get('second');
 }
 
 function escapeHtml(s) {
@@ -1172,7 +1234,10 @@ function buildLogsClipboardText() {
 
   lines.push('');
 
-  // Transition log — all entries
+  // Transition log — all entries. Live rows include the sim-time
+  // timestamp in Europe/Helsinki, the cause that drove the transition
+  // (when the device reported one), and the sensor snapshot captured
+  // at the moment of the transition.
   lines.push('--- Transition Log ---');
   if (transitionLog.length === 0) {
     lines.push('(no transitions recorded)');
@@ -1181,9 +1246,18 @@ function buildLogsClipboardText() {
       const t = transitionLog[i];
       const mi = MODE_INFO[t.mode] || MODE_INFO.idle;
       const timeLabel = t.kind === 'live'
-        ? new Date(t.ts).toISOString().replace('T', ' ').slice(0, 19)
+        ? formatFullTimeHelsinki(t.ts)
         : formatTimeOfDay(t.time);
-      lines.push(timeLabel + '  ' + mi.label + '  ' + (t.text || ''));
+      const causeSuffix = t.cause ? '  [' + t.cause + ']' : '';
+      lines.push(timeLabel + '  ' + mi.label + '  ' + (t.text || '') + causeSuffix);
+      if (t.sensors) {
+        const s = t.sensors;
+        const fmt = (v) => (typeof v === 'number' ? v.toFixed(1) + '°C' : '—');
+        lines.push('    sensors: collector=' + fmt(s.collector) +
+                   ' tank=' + fmt(s.tank_top) + '/' + fmt(s.tank_bottom) +
+                   ' greenhouse=' + fmt(s.greenhouse) +
+                   ' outdoor=' + fmt(s.outdoor));
+      }
     }
   }
 

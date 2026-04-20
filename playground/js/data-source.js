@@ -189,6 +189,12 @@ export class LiveSource extends DataSource {
       opening: data.opening || [],
       queued_opens: data.queued_opens || [],
       pending_closes: data.pending_closes || [],
+      // 2026-04-20: carry transition-cause tag + temps snapshot through
+      // to detectLiveTransition() so the System Logs card can show why
+      // the controller changed mode and what the sensors read at the
+      // moment of the transition.
+      cause: data.cause || null,
+      temps: data.temps || null,
     };
 
     this._emitUpdate(state, result);

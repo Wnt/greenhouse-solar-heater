@@ -182,4 +182,92 @@ test.describe('System Logs card is backed by live state events', () => {
     await expect(items).toHaveCount(2, { timeout: 3000 });
     await expect(items.first()).toContainText('Heating Greenhouse');
   });
+
+  test('renders cause chip and sensor snapshot from /api/events', async ({ page }) => {
+    const now = Date.now();
+    const rows = [
+      {
+        ts: now - 30_000, type: 'mode', id: 'mode',
+        from: 'idle', to: 'solar_charging',
+        cause: 'automation',
+        sensors: { collector: 62.3, tank_top: 41, tank_bottom: 29.4, greenhouse: 12, outdoor: 8 },
+      },
+      {
+        ts: now - 120_000, type: 'mode', id: 'mode',
+        from: 'solar_charging', to: 'idle',
+        cause: 'user_shutdown',
+        sensors: { collector: 58, tank_top: 52, tank_bottom: 37, greenhouse: 14, outdoor: 9 },
+      },
+    ];
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, rows);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(2, { timeout: 3000 });
+
+    const first = page.locator('#logs-list .log-item').first();
+    // Cause chip visible
+    await expect(first.locator('.log-cause')).toHaveText('Automation');
+    // Sensor line captures all five sensors
+    await expect(first.locator('.log-sensors')).toContainText('coll 62.3°');
+    await expect(first.locator('.log-sensors')).toContainText('tank 41.0°/29.4°');
+    await expect(first.locator('.log-sensors')).toContainText('gh 12.0°');
+    await expect(first.locator('.log-sensors')).toContainText('out 8.0°');
+
+    const second = page.locator('#logs-list .log-item').nth(1);
+    await expect(second.locator('.log-cause')).toHaveText('User shutdown');
+  });
+
+  test('carries cause + temps straight through from a live WS mode change', async ({ page }) => {
+    const now = Date.now();
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, [makeEvent(now - 60_000, 'idle', 'solar_charging')]);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    // Fire a new state with explicit cause+temps — simulates a device
+    // that reports a forced-mode transition to GREENHOUSE_HEATING.
+    await page.evaluate((expiresAt) => {
+      // @ts-ignore
+      const ws = window.__mockWs;
+      ws.onmessage({
+        data: JSON.stringify({
+          type: 'state',
+          data: {
+            mode: 'greenhouse_heating',
+            cause: 'forced',
+            temps: { collector: 20, tank_top: 48, tank_bottom: 32, greenhouse: 7, outdoor: 4 },
+            valves: {}, actuators: { pump: true, fan: true, space_heater: false },
+            controls_enabled: true, manual_override: { active: true, expiresAt },
+          },
+        }),
+      });
+    }, now + 600_000);
+
+    const first = page.locator('#logs-list .log-item').first();
+    await expect(first).toContainText('Heating Greenhouse');
+    await expect(first.locator('.log-cause')).toHaveText('Forced mode');
+    await expect(first.locator('.log-sensors')).toContainText('gh 7.0°');
+  });
+
+  test('omits cause chip and sensor line for legacy rows without them', async ({ page }) => {
+    const now = Date.now();
+    // Simulate a pre-2026-04-20 row: no cause, no sensors.
+    const rows = [makeEvent(now - 60_000, 'idle', 'solar_charging')];
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, rows);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(1, { timeout: 3000 });
+
+    const first = page.locator('#logs-list .log-item').first();
+    await expect(first.locator('.log-cause')).toHaveCount(0);
+    await expect(first.locator('.log-sensors')).toHaveCount(0);
+  });
 });

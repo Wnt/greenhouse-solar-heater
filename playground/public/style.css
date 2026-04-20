@@ -790,6 +790,29 @@ select, input, textarea { max-width: 100%; }
   flex-shrink: 0;
 }
 
+/* Cause chip rendered after the mode label (e.g. "Collecting Solar Energy [Forced mode]") */
+.log-cause {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  background: var(--surface-container-highest);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+/* Sensor snapshot captured at the moment of the transition */
+.log-sensors {
+  font-size: 10px;
+  color: var(--on-surface-variant);
+  opacity: 0.75;
+  line-height: 1.4;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Critical Components ── */
 .components-grid {
   display: grid;

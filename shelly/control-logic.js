@@ -740,7 +740,13 @@ function buildSnapshotFromState(st, dc, now) {
     } : null,
     opening: opening,
     queued_opens: queuedOpens,
-    pending_closes: pendingCloses
+    pending_closes: pendingCloses,
+    // What triggered the most recent mode transition. Consumed by the
+    // server's mqtt-bridge on mode-change detection and written to
+    // state_events.cause. One of: boot | automation | forced |
+    // safety_override | watchdog_auto | user_shutdown | drain_complete
+    // | failed.
+    cause: st.lastTransitionCause || "boot"
   };
 }
 

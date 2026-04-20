@@ -111,6 +111,13 @@ var SCHEMA_SQL = [
   "SELECT create_hypertable('state_events', 'ts', if_not_exists => true)",
 
   "CREATE INDEX IF NOT EXISTS state_events_type_ts ON state_events (entity_type, ts DESC)",
+
+  // 2026-04-20: mode transitions now carry a cause tag + a snapshot of
+  // sensor readings at transition time. Added as ALTER statements so
+  // existing prod deployments upgrade without a full rebuild. Old rows
+  // stay NULL; the API maps NULL to null.
+  "ALTER TABLE state_events ADD COLUMN IF NOT EXISTS cause TEXT",
+  "ALTER TABLE state_events ADD COLUMN IF NOT EXISTS sensors JSONB",
 ];
 
 // Regular materialized view (no TSL license required, unlike continuous aggregates).
@@ -231,10 +238,26 @@ function insertSensorReadings(ts, temps, callback) {
   });
 }
 
-function insertStateEvent(ts, entityType, entityId, oldValue, newValue, callback) {
+// Signature accepts an optional opts object {cause, sensors} so mode
+// rows can carry transition context (what triggered the change + sensor
+// snapshot at transition time). Valve/actuator writes omit opts and
+// store NULL in those columns. Positional signature preserved for
+// callers that don't need the extension.
+function insertStateEvent(ts, entityType, entityId, oldValue, newValue, optsOrCallback, maybeCallback) {
   var p = getPool();
-  var sql = 'INSERT INTO state_events (ts, entity_type, entity_id, old_value, new_value) VALUES ($1, $2, $3, $4, $5)';
-  p.query(sql, [ts, entityType, entityId, oldValue, newValue], function (err) {
+  var opts, callback;
+  if (typeof optsOrCallback === 'function') {
+    opts = null;
+    callback = optsOrCallback;
+  } else {
+    opts = optsOrCallback || null;
+    callback = maybeCallback;
+  }
+  var cause = opts && opts.cause !== undefined ? opts.cause : null;
+  var sensors = opts && opts.sensors !== undefined ? opts.sensors : null;
+  var sql = 'INSERT INTO state_events (ts, entity_type, entity_id, old_value, new_value, cause, sensors) ' +
+            'VALUES ($1, $2, $3, $4, $5, $6, $7)';
+  p.query(sql, [ts, entityType, entityId, oldValue, newValue, cause, sensors], function (err) {
     if (callback) callback(err || null);
   });
 }
@@ -354,7 +377,7 @@ function getEventsPaginated(entityType, limit, before, callback) {
   var fetchLimit = effLimit + 1;
 
   var params = [entityType];
-  var sql = 'SELECT ts, entity_type, entity_id, old_value, new_value FROM state_events WHERE entity_type = $1';
+  var sql = 'SELECT ts, entity_type, entity_id, old_value, new_value, cause, sensors FROM state_events WHERE entity_type = $1';
   if (before !== null && before !== undefined) {
     params.push(new Date(before));
     sql += ' AND ts < $' + params.length;
@@ -374,6 +397,10 @@ function getEventsPaginated(entityType, limit, before, callback) {
         id: row.entity_id,
         from: row.old_value,
         to: row.new_value,
+        // cause / sensors populated only for mode rows written after
+        // 2026-04-20. Older rows and valve/actuator rows carry null.
+        cause: row.cause,
+        sensors: row.sensors,
       };
     });
     callback(null, { events: events, hasMore: hasMore });
