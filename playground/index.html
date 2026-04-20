@@ -183,6 +183,7 @@
               <h3 id="mode-card-title">Idle</h3>
               <div class="mode-status" id="mode-card-status">
                 <span class="pulse"></span> System Ready
+                <a href="#" id="mode-card-exit-link" style="display:none;">Exit override</a>
               </div>
             </div>
           </div>
@@ -467,6 +468,20 @@
             <button class="ttl-btn" data-ttl="900">15 min</button>
             <button class="ttl-btn" data-ttl="1800">30 min</button>
             <button class="ttl-btn" data-ttl="3600">1 hr</button>
+          </div>
+
+          <!-- Forced mode group (gated by override) -->
+          <div id="forced-mode-group" style="display:none;margin-bottom:16px;padding-top:12px;border-top:1px solid var(--outline-variant);">
+            <h4 style="margin:0 0 8px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);font-size:14px;">Forced mode</h4>
+            <div id="forced-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="fm-btn active" data-mode="">Automatic</button>
+              <button class="fm-btn" data-mode="I">Idle</button>
+              <button class="fm-btn" data-mode="SC">Solar charging</button>
+              <button class="fm-btn" data-mode="GH">Greenhouse heating</button>
+              <button class="fm-btn" data-mode="AD">Active drain</button>
+              <button class="fm-btn" data-mode="EH">Emergency heating</button>
+            </div>
+            <p style="font-size:11px;color:var(--on-surface-variant);margin:8px 0 0;">Immediate transition — ignores the 5-min minimum mode duration.</p>
           </div>
         </div>
 

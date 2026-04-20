@@ -1,6 +1,7 @@
 import { loadSystemYaml } from './yaml-loader.js';
 import { ThermalModel } from './physics.js';
 import { ControlStateMachine, initControlLogic } from './control.js';
+import { load as loadControlLogic } from './control-logic-loader.js';
 import { createSlider, formatTime, pickTickStep, formatTick, pickBucketSize } from './ui.js';
 import { LiveSource, SimulationSource } from './data-source.js';
 import { startVersionCheck, triggerVersionCheck } from './version-check.js';
@@ -1538,18 +1539,74 @@ function fmtTemp(v, digits) {
   return isNum(v) ? v.toFixed(digits) : TEMP_PLACEHOLDER;
 }
 
+// ── Forced-mode / override status helpers ──
+var MODE_NAMES_SHORT = {
+  I: 'Idle', SC: 'Solar charging', GH: 'Greenhouse heating',
+  AD: 'Active drain', EH: 'Emergency heating'
+};
+function prettyModeName(code) {
+  if (!code) return 'Idle';
+  if (MODE_NAMES_SHORT[code]) return MODE_NAMES_SHORT[code];
+  return code.toLowerCase().replace(/_/g, ' ').replace(/^./, function (c) { return c.toUpperCase(); });
+}
+function remainingStr(expiresAt) {
+  var remaining = Math.max(0, expiresAt - Math.floor(Date.now() / 1000));
+  var m = Math.floor(remaining / 60);
+  var s = remaining % 60;
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
 function updateDisplay(state, result) {
   const mode = result.mode;
   const info = MODE_INFO[mode] || MODE_INFO.idle;
 
   // ── Status view ──
-  // Active mode card
-  document.getElementById('mode-badge-label').textContent = 'Current Mode';
-  document.getElementById('mode-card-title').textContent = info.label;
-  const statusEl = document.getElementById('mode-card-status');
-  statusEl.innerHTML = running
-    ? `<span class="pulse"></span> System Active`
-    : `<span class="pulse"></span> System Ready`;
+  // Active mode card — handle forced-mode / override indicators
+  var moBadgeEl = document.getElementById('mode-badge-label');
+  var moTitleEl = document.getElementById('mode-card-title');
+  var statusEl = document.getElementById('mode-card-status');
+  var exitLinkEl = document.getElementById('mode-card-exit-link');
+  var modeCardActive = document.getElementById('mode-card-active');
+
+  var mo = result.manual_override;
+  if (mo && mo.active && mo.forcedMode) {
+    // Forced mode active
+    moBadgeEl.textContent = 'Forced \u00b7 ' + remainingStr(mo.expiresAt) + ' left';
+    moTitleEl.textContent = prettyModeName(mo.forcedMode);
+    if (modeCardActive) modeCardActive.classList.add('mode-card--forced');
+  } else if (mo && mo.active) {
+    // Manual override active (no forced mode)
+    moBadgeEl.textContent = 'Manual override \u00b7 ' + remainingStr(mo.expiresAt) + ' left';
+    moTitleEl.textContent = info.label;
+    if (modeCardActive) modeCardActive.classList.remove('mode-card--forced');
+  } else {
+    // Normal operation
+    moBadgeEl.textContent = 'Current Mode';
+    moTitleEl.textContent = info.label;
+    if (modeCardActive) modeCardActive.classList.remove('mode-card--forced');
+  }
+
+  // Status line: use a text node + pulse span, keep exit link
+  // Clear existing text nodes but preserve child elements
+  Array.from(statusEl.childNodes).forEach(function (node) {
+    if (node.nodeType === Node.TEXT_NODE) statusEl.removeChild(node);
+  });
+  var pulseSpan = statusEl.querySelector('.pulse');
+  if (!pulseSpan) {
+    pulseSpan = document.createElement('span');
+    pulseSpan.className = 'pulse';
+    statusEl.insertBefore(pulseSpan, statusEl.firstChild);
+  }
+  var statusText = document.createTextNode(running ? ' System Active' : ' System Ready');
+  statusEl.insertBefore(statusText, exitLinkEl || null);
+
+  // Exit override link — admin only, visible when override is active
+  if (exitLinkEl) {
+    var userRole = store.get('userRole') || 'admin';
+    var showExit = !!(mo && mo.active) && userRole === 'admin';
+    exitLinkEl.style.display = showExit ? '' : 'none';
+  }
+
   const bgIcon = document.querySelector('.mode-card-bg-icon .material-symbols-outlined');
   bgIcon.textContent = info.icon;
   bgIcon.style.fontVariationSettings = info.iconFill
@@ -2230,6 +2287,39 @@ let relayPendingTimers = {}; // relay → timeout ID
 // optimistic re-enable of the Enter button after Exit Override, so the
 // user doesn't wait up to 30s for the next Shelly state broadcast.
 let lastControlsEnabled = false;
+// Currently active forced-mode short code (null = Automatic)
+var currentForcedMode = null;
+
+// Short code → full MODE_VALVES/MODE_ACTUATORS key
+var MODE_CODE_MAP = {
+  I: 'IDLE', SC: 'SOLAR_CHARGING', GH: 'GREENHOUSE_HEATING',
+  AD: 'ACTIVE_DRAIN', EH: 'EMERGENCY_HEATING'
+};
+
+// Original button labels keyed by data-mode value (for restoring after ban suffix)
+var FM_BTN_LABELS = {
+  '': 'Automatic', I: 'Idle', SC: 'Solar charging',
+  GH: 'Greenhouse heating', AD: 'Active drain', EH: 'Emergency heating'
+};
+
+// Apply forced-mode relay preview optimistically (no server round-trip)
+function applyForcedModePreview(modeCode) {
+  if (!modeCode) return; // Automatic — let real state reconcile
+  var fullName = MODE_CODE_MAP[modeCode];
+  if (!fullName) return;
+  // loadControlLogic() is already cached after init()
+  loadControlLogic().then(function (cl) {
+    var valves = cl.MODE_VALVES[fullName] || {};
+    var actuators = cl.MODE_ACTUATORS[fullName] || {};
+    document.querySelectorAll('.relay-btn').forEach(function (btn) {
+      var relay = btn.dataset.relay;
+      var on = (relay === 'pump' || relay === 'fan')
+        ? !!actuators[relay]
+        : !!valves[relay];
+      btn.classList.toggle('on', on);
+    });
+  });
+}
 
 function initRelayBoard() {
   // Enter override
@@ -2259,6 +2349,35 @@ function initRelayBoard() {
       toggleRelay(this);
     });
   });
+
+  // Forced-mode buttons
+  var forcedModeSendTimer = null;
+  document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(btn => {
+    btn.addEventListener('click', function () {
+      if (this.disabled || !overrideActive) return;
+      var mode = this.dataset.mode || null;
+      if (mode === currentForcedMode) return;
+
+      document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      applyForcedModePreview(mode);
+
+      if (forcedModeSendTimer) clearTimeout(forcedModeSendTimer);
+      forcedModeSendTimer = setTimeout(function () {
+        if (liveSource) liveSource.sendCommand({ type: 'override-set-mode', mode: mode });
+      }, 300);
+      currentForcedMode = mode;
+    });
+  });
+
+  // Status-view "Exit override" link
+  var exitLink = document.getElementById('mode-card-exit-link');
+  if (exitLink) {
+    exitLink.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      if (liveSource) liveSource.sendCommand({ type: 'override-exit' });
+    });
+  }
 
   // Command response handler
   if (liveSource) {
@@ -2340,6 +2459,16 @@ function activateOverrideUI(expiresAt, suppressSafety) {
   document.getElementById('relay-board').style.display = '';
   document.getElementById('override-expired-msg').style.display = 'none';
   document.querySelectorAll('.relay-btn').forEach(btn => { btn.disabled = false; });
+
+  // Show forced-mode group; gate buttons for readonly users
+  var fmGroup = document.getElementById('forced-mode-group');
+  if (fmGroup) fmGroup.style.display = '';
+  var userRole = store.get('userRole') || 'admin';
+  var isAdmin = userRole === 'admin';
+  document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(function (b) {
+    b.disabled = !isAdmin;
+  });
+
   startCountdown();
 }
 
@@ -2357,6 +2486,20 @@ function deactivateOverrideUI(msg) {
   relayPendingState = {};
   for (var k in relayPendingTimers) clearTimeout(relayPendingTimers[k]);
   relayPendingTimers = {};
+
+  // Hide forced-mode group and reset its state
+  currentForcedMode = null;
+  var fmGroup = document.getElementById('forced-mode-group');
+  if (fmGroup) fmGroup.style.display = 'none';
+  document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(function (b) {
+    b.classList.remove('active');
+    // Restore original button text (strip any " · banned" suffix)
+    var orig = FM_BTN_LABELS[b.dataset.mode !== undefined ? b.dataset.mode : ''];
+    if (orig) b.textContent = orig;
+    b.disabled = false;
+  });
+  var autoBtn = document.querySelector('#forced-mode-btns .fm-btn[data-mode=""]');
+  if (autoBtn) autoBtn.classList.add('active');
   // Reset the Enter button so the user doesn't see a stale "Connecting..."
   // and doesn't have to wait ~30s for the next state broadcast to recover.
   var enterBtn = document.getElementById('override-enter-btn');
@@ -2483,6 +2626,33 @@ function updateRelayBoard(result) {
     }
 
     btn.classList.toggle('on', actual);
+  });
+
+  // Sync forced-mode button active state from server
+  var fm = (mo && mo.forcedMode) || null;
+  currentForcedMode = fm;
+  var fmCode = fm || '';
+  document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.mode === fmCode);
+  });
+
+  // Apply wb bans to forced-mode buttons
+  var wb = _watchdogSnapshot.wb || {};
+  var now = Math.floor(Date.now() / 1000);
+  document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(function (b) {
+    var code = b.dataset.mode;
+    if (!code) return; // Automatic button is never banned
+    var banUntil = wb[code];
+    var isBanned = banUntil && banUntil > now;
+    var orig = FM_BTN_LABELS[code] || code;
+    if (isBanned) {
+      b.disabled = true;
+      b.textContent = orig + ' · banned';
+    } else {
+      var userRole = store.get('userRole') || 'admin';
+      b.disabled = userRole !== 'admin';
+      b.textContent = orig;
+    }
   });
 }
 
