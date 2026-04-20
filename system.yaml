@@ -381,60 +381,62 @@ control:
       Prices EUR incl. VAT, March 2026.
     electronics:
       source: Nurkan takaa (verkkokauppa.nurkantakaa.fi)
-      - item: Shelly Pro 4PM
-        qty: 1
-        price: ~108€
-      - item: Shelly Pro 2PM
-        qty: 5
-        price: ~89€ each, ~445€ total
-        note: 4 core + 1 spare/expansion
-      - item: Shelly 1 Gen3
-        qty: 2
-        price: ~19€ each, ~38€ total
-        note: replaces discontinued Shelly Plus 1; 1 core + 1 spare
-      - item: Shelly Plus Add-on
-        qty: 2
-        price: ~17€ each, ~34€ total
-      - item: DS18B20 temperature sensors (3m cable)
-        qty: 8
-        price: ~7€ each, ~52€ total
-        note: 5 core + 2 optional radiator + 1 spare
-      - item: Zyxel GS-108BV5 (8-port Gigabit switch)
-        qty: 1
-        price: ~25€
-        note: wall-mount, for Pro device Ethernet
-      - item: DIN rail adapters (PLUS-size, for 1 Gen3)
-        qty: 2
-        price: ~5€ each, ~9€ total
-      - item: Mean Well DIN rail PSU 24V 15W
-        qty: 1
-        price: ~19€
-        note: powers all motorized valve actuators (24V DC)
-      - item: Electronics subtotal
-        price: ~730€
+      items:
+        - item: Shelly Pro 4PM
+          qty: 1
+          price: ~108€
+        - item: Shelly Pro 2PM
+          qty: 5
+          price: ~89€ each, ~445€ total
+          note: 4 core + 1 spare/expansion
+        - item: Shelly 1 Gen3
+          qty: 2
+          price: ~19€ each, ~38€ total
+          note: replaces discontinued Shelly Plus 1; 1 core + 1 spare
+        - item: Shelly Plus Add-on
+          qty: 2
+          price: ~17€ each, ~34€ total
+        - item: DS18B20 temperature sensors (3m cable)
+          qty: 8
+          price: ~7€ each, ~52€ total
+          note: 5 core + 2 optional radiator + 1 spare
+        - item: Zyxel GS-108BV5 (8-port Gigabit switch)
+          qty: 1
+          price: ~25€
+          note: wall-mount, for Pro device Ethernet
+        - item: DIN rail adapters (PLUS-size, for 1 Gen3)
+          qty: 2
+          price: ~5€ each, ~9€ total
+        - item: Mean Well DIN rail PSU 24V 15W
+          qty: 1
+          price: ~19€
+          note: powers all motorized valve actuators (24V DC)
+        - item: Electronics subtotal
+          price: ~730€
     valves:
       source: hpcontrol.fi
-      - item: DN15 ½" brass ball valve + A83 9-24V DC 2-wire actuator
-        qty: 7
-        price: ~65€ each, ~451€ total
-        note: 2-wire (relay ON = open, relay OFF = auto-close). Compatible with 1 relay per valve on Pro 2PM.
-        note: in stock, ships within 24h
-      - item: Valves subtotal
-        price: ~451€
+      items:
+        - item: DN15 ½" brass ball valve + A83 9-24V DC 2-wire actuator
+          qty: 7
+          price: ~65€ each, ~451€ total
+          note: 2-wire (relay ON = open, relay OFF = auto-close). Compatible with 1 relay per valve on Pro 2PM. In stock, ships within 24h.
+        - item: Valves subtotal
+          price: ~451€
     plumbing:
       source: Biltema (in-store)
-      - item: Jakaja 3 putkea (input manifold ¾" → 3× ½")
-        qty: 1
-        price: ~20€
-      - item: Jakaja 4 putkea (output manifold ¾" → 4× ½")
-        qty: 1
-        price: ~26€
-        note: 4th port for future wood burner (VO-wood), capped until needed
-      - item: Manual ball valves, hose barbs, PEX adapters, fittings
-        qty: various
-        price: ~75€
-      - item: Plumbing subtotal
-        price: ~121€
+      items:
+        - item: Jakaja 3 putkea (input manifold ¾" → 3× ½")
+          qty: 1
+          price: ~20€
+        - item: Jakaja 4 putkea (output manifold ¾" → 4× ½")
+          qty: 1
+          price: ~26€
+          note: 4th port for future wood burner (VO-wood), capped until needed
+        - item: Manual ball valves, hose barbs, PEX adapters, fittings
+          qty: various
+          price: ~75€
+        - item: Plumbing subtotal
+          price: ~121€
     # auto air vent removed — sub-atmospheric pressure at collector top
     total_estimate: ~1402€
 
