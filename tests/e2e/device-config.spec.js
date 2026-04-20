@@ -520,9 +520,6 @@ test.describe('Device config UI', () => {
       await expect(page.locator('#' + id)).not.toHaveClass(/active/);
     }
 
-    // Forced mode should be "Automatic"
-    await expect(page.locator('#dc-fm')).toHaveValue('');
-
     // Mode enablement card: with empty wb, all 5 modes show as "allowed"
     const rows = page.locator('.mode-enablement-row');
     await expect(rows).toHaveCount(5);
@@ -553,7 +550,6 @@ test.describe('Device config UI', () => {
     await expect(page.locator('#dc-ea-f')).not.toHaveClass(/active/);
     await expect(page.locator('#dc-ea-sh')).not.toHaveClass(/active/);
     await expect(page.locator('#dc-ea-ih')).not.toHaveClass(/active/);
-    await expect(page.locator('#dc-fm')).toHaveValue('SC');
     // I and SC show as allowed; GH/AD/EH show as disabled-by-user
     await expect(page.locator('.mode-allowed')).toHaveCount(2);
     await expect(page.locator('.mode-disabled')).toHaveCount(3);
@@ -576,7 +572,6 @@ test.describe('Device config UI', () => {
     expect(putRequests).toHaveLength(1);
     expect(putRequests[0].ce).toBe(true);
     expect(putRequests[0].ea).toBe(7); // 1 + 2 + 4
-    expect(putRequests[0].fm).toBeNull();
     // am is no longer sent from the Save button — mode bans live
     // exclusively in wb, edited via the Mode Enablement card.
     expect(putRequests[0].am).toBeUndefined();
@@ -598,28 +593,9 @@ test.describe('Device config UI', () => {
     expect(putRequests[0].ea).toBe(31);
   });
 
-  test('forced mode dropdown sends correct code', async ({ page }) => {
-    const { putRequests } = await setupDeviceView(page);
-
-    await page.locator('#dc-ce').click();
-    await page.locator('#dc-fm').selectOption('GH');
-
-    await page.locator('#dc-save').click();
-    await expect(page.locator('#dc-status')).toContainText('Saved');
-
-    expect(putRequests[0].fm).toBe('GH');
-  });
-
-  test('forced mode "Automatic" sends null', async ({ page }) => {
-    const { putRequests } = await setupDeviceView(page, { fm: 'SC' });
-
-    // Change from SC back to Automatic
-    await page.locator('#dc-fm').selectOption('');
-
-    await page.locator('#dc-save').click();
-    await expect(page.locator('#dc-status')).toContainText('Saved');
-
-    expect(putRequests[0].fm).toBeNull();
+  test('Mode Override block is removed from the device-config card', async ({ page }) => {
+    await page.goto('/#controls');
+    await expect(page.locator('#dc-fm')).toHaveCount(0);
   });
 
   test('Disable button on Mode Enablement card sends wb sentinel', async ({ page }) => {

@@ -2164,9 +2164,6 @@ function populateDeviceForm(cfg) {
   setToggle('dc-ea-sh', !!(ea & 8));
   setToggle('dc-ea-ih', !!(ea & 16));
 
-  // Forced mode
-  document.getElementById('dc-fm').value = cfg.fm || '';
-
   // Mode enablement card (replaces the old allowed-modes checkboxes)
   renderModeEnablement(cfg.wb || {}, _watchdogCurrentUserRole());
 
@@ -2194,14 +2191,11 @@ function saveDeviceConfig() {
   if (document.getElementById('dc-ea-sh').classList.contains('active')) ea |= 8;
   if (document.getElementById('dc-ea-ih').classList.contains('active')) ea |= 16;
 
-  const fmSelect = document.getElementById('dc-fm');
-  const fm = fmSelect.value || null;
-
   // Mode enablement is edited directly via the Mode Enablement card
   // (Disable / Re-enable / Clear cool-off), which calls PUT
   // /api/device-config with a partial wb payload. No am field is
   // computed or sent from this form.
-  const body = { ce, ea, fm };
+  const body = { ce, ea };
 
   fetch('/api/device-config', {
     method: 'PUT',

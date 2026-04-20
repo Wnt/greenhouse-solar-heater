@@ -422,22 +422,8 @@
           <div class="device-config-row"><label class="device-config-label">Immersion Heater</label><div class="device-toggle" id="dc-ea-ih" data-bit="16"></div></div>
           <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Electric immersion heater in the water tank for direct water heating.</p>
 
-          <h4 style="margin:20px 0 12px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Mode Override</h4>
-          <p style="font-size:12px;color:var(--on-surface-variant);margin-bottom:8px;">Override automatic mode selection. When set, the controller stays in the selected mode regardless of sensor readings. Set to Automatic to restore normal operation.</p>
-          <div class="device-config-row">
-            <label class="device-config-label">Forced Mode</label>
-            <select id="dc-fm" class="device-select">
-              <option value="">Automatic</option>
-              <option value="I">Idle &mdash; monitors only, all actuators off</option>
-              <option value="SC">Solar Charging &mdash; circulates water through collectors to capture solar heat</option>
-              <option value="GH">Greenhouse Heating &mdash; circulates hot water through radiators</option>
-              <option value="AD">Active Drain &mdash; drains collectors to prevent freezing</option>
-              <option value="EH">Emergency Heating &mdash; activates backup electric heating</option>
-            </select>
-          </div>
-
           <h4 style="margin:20px 0 12px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Mode enablement</h4>
-          <p style="font-size:12px;color:var(--on-surface-variant);margin-bottom:8px;">Each mode can be permanently disabled, on a watchdog cool-off (temporary auto-ban), or allowed. Forced mode respects bans: a banned mode cannot be forced.</p>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin-bottom:8px;">Each mode can be permanently disabled, on a watchdog cool-off (temporary auto-ban), or allowed. The manual-override Forced mode selector respects bans: a banned mode cannot be forced.</p>
           <div id="mode-enablement-list"></div>
 
           <div style="margin-top:24px;display:flex;gap:12px;align-items:center;">
