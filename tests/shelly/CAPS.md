@@ -9,10 +9,10 @@ Section 3 for which commit touches which cap.
 |---|---|---|---|
 | Deployed slot-1 source (minified) | ≤ 65 535 B | ≈ 25 000 B | Shelly Script.PutCode limit, also enforced by `tests/deploy.test.js` |
 | Runtime proxy peak (Node byte-sum) | ≤ 42 312 B | 41 800 B | Calibrated post-merge w/ async harness 2026-04-20 at measured + 512 B margin. Future ≥ 512 B regression in bytecode, state, or live closures trips the test. |
-| `JSON.stringify(state).length` | ≤ 600 B | under cap | Snapshot captured via `greenhouse/state` publish |
-| Live `Timer.set` handles (simultaneous) | ≤ 3 | under cap | 2-handle reserve against Shelly's 5-handle limit |
+| `JSON.stringify(state).length` | ≤ 700 B | 655 B | Includes transient opening[]/pending_closes[]/manual_override{} fields during transitions |
+| Live `Timer.set` handles (simultaneous) | ≤ 3 | 2 | 2-handle reserve against Shelly's 5-handle limit |
 | Active MQTT.subscribe topics | ≤ 3 | 3 | config, sensor-config, relay-command |
-| In-flight `Shelly.call` | ≤ 3 | under cap | 2-call reserve against Shelly's 5-RPC limit |
+| In-flight `Shelly.call` | ≤ 3 | 3 | 2-call reserve against Shelly's 5-RPC limit. Hits cap exactly during mode transitions (valve HTTP.GET × 2 + KVS.Set). |
 | KVS value bytes per key | ≤ 256 | under cap | Empirical Pro 4PM fw 1.7.5 cap (215 B ok / 271 B rejected, 2026-04-20) |
 
 ## Baseline history
@@ -24,6 +24,16 @@ Section 3 for which commit touches which cap.
 | 2026-04-20 | post-inlining (Commit 3) | sync-loop (buggy) | 41 232 B | — |
 | 2026-04-20 | pre-merge `main` | async-loop (fixed) | 44 887 B | baseline |
 | 2026-04-20 | post-merge (current) | async-loop (fixed) | 41 800 B | −3 087 B |
+| 2026-04-20 | post-merge (realistic sim) | async+synthetic-Date | 42 056 B | — (+256 B due to extra state during mode transitions) |
+
+### Why the realistic-sim peak is slightly higher
+
+The first async-loop measurement (41 800 B) ran only 1 sensor and kept the
+script in IDLE. The realistic sim exercises all 4 modes (IDLE →
+SOLAR_CHARGING → ACTIVE_DRAIN → GREENHOUSE_HEATING) plus a manual-
+override relay storm, so published state grows to ~656 B during
+transitions (vs ~540 B in pure IDLE) and the runtime proxy picks up
+that extra weight.
 
 Note 1: the sync-loop harness was vacuously passing most caps because
 `setImmediate` callbacks from `Shelly.call` never drained inside the

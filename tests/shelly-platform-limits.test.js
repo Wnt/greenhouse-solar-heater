@@ -43,6 +43,49 @@ const FILES = fs.existsSync(path.join(SHELLY_DIR, 'telemetry.js'))
 describe('Shelly platform-limit 24 h simulation', () => {
   let now = 1700000000000;
   let lastStateJson = '{}';
+
+  // Simulated sensor readings over a 24 h diurnal cycle. Returned by the
+  // HTTP responder below for Temperature.GetStatus polls, keyed by the
+  // sensor's component id. Designed to push the control state machine
+  // through IDLE → SOLAR_CHARGING → ACTIVE_DRAIN → GREENHOUSE_HEATING →
+  // IDLE so transition-scoped timers (VALVE_SETTLE, transitionTimer,
+  // drain_timer, pump-prime) actually fire during the sim.
+  //
+  // Compact day model:
+  //   hour 00–06: night (outdoor −5, collector 0, tanks 40/30, greenhouse 5)
+  //   hour 06–09: warming, collector climbs
+  //   hour 09–13: peak sun — collector 65, triggers SOLAR_CHARGING
+  //   hour 13–17: collector cools, exits SOLAR → ACTIVE_DRAIN
+  //   hour 17–24: night again — greenhouse 8 → GREENHOUSE_HEATING
+  function dayTemp(sensor, simMs) {
+    const hour = (simMs / 3600000) % 24;
+    const warm = hour > 5 && hour < 18;
+    const peak = hour > 8 && hour < 14;
+    switch (sensor) {
+      case 'collector':
+        if (peak) return 65 + Math.random() * 5;
+        if (warm) return 20 + Math.random() * 10;
+        return 0 + Math.random() * 3;
+      case 'tank_top':
+        return peak ? 45 + (hour - 9) * 2 : 38 + Math.random() * 2;
+      case 'tank_bottom':
+        return peak ? 30 + (hour - 9) : 28 + Math.random() * 2;
+      case 'greenhouse':
+        return warm ? 18 + Math.random() * 4 : 8 + Math.random() * 2;
+      case 'outdoor':
+        return warm ? 15 : -3 + Math.random() * 2;
+      default: return 20;
+    }
+  }
+
+  // component id → sensor name. Must match kvs.sensor_config below.
+  const CID_TO_SENSOR = {
+    100: 'collector', 101: 'tank_top', 102: 'tank_bottom',
+    103: 'greenhouse', 104: 'outdoor',
+  };
+
+  let simStartMs = 0;
+
   const runtime = createInstrumentedRuntime({
     now: () => now,
     setNow: n => { now = n; },
@@ -52,7 +95,11 @@ describe('Shelly platform-limit 24 h simulation', () => {
     },
     httpResponder: (url) => {
       if (url && url.indexOf('Temperature.GetStatus') >= 0) {
-        return { code: 200, body: JSON.stringify({ tC: 20 + Math.random() * 5 }) };
+        const m = url.match(/id=(\d+)/);
+        const cid = m ? parseInt(m[1], 10) : 0;
+        const sensor = CID_TO_SENSOR[cid] || 'collector';
+        const simMs = now - simStartMs;
+        return { code: 200, body: JSON.stringify({ tC: dayTemp(sensor, simMs) }) };
       }
       // Valve/sensor host RPCs — return success so setValve doesn't
       // retry+fail and infinite-loop the boot chain.
@@ -60,8 +107,15 @@ describe('Shelly platform-limit 24 h simulation', () => {
     },
     kvs: {
       config: JSON.stringify({ ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1 }),
+      // All 5 sensors on a single host. cids match CID_TO_SENSOR above.
       sensor_config: JSON.stringify({
-        s: { collector: { h: 0, i: 100 }, tank_top: { h: 0, i: 101 } },
+        s: {
+          collector:    { h: 0, i: 100 },
+          tank_top:     { h: 0, i: 101 },
+          tank_bottom:  { h: 0, i: 102 },
+          greenhouse:   { h: 0, i: 103 },
+          outdoor:      { h: 0, i: 104 },
+        },
         h: ['192.168.30.20'],
         v: 1,
       }),
@@ -71,6 +125,7 @@ describe('Shelly platform-limit 24 h simulation', () => {
   const minifiedBytes = deployedBytecodeSize(FILES);
   const proxySamples = [];
   const statePeakBytes = { v: 0 };
+  const modesSeen = new Set();
 
   // Drain setImmediate callbacks. Each Shelly.call's cb runs on
   // setImmediate and may schedule the next call in a chain — one
@@ -105,26 +160,47 @@ describe('Shelly platform-limit 24 h simulation', () => {
   before(async () => {
     loadShellyScripts(runtime, FILES);
     await settleBootChain();
+    simStartMs = now; // anchor day-cycle temperatures to after-boot
 
     const TICK_MS = 30000;
     const SAMPLES = 24 * 60 * 60 * 1000 / TICK_MS; // 2880
+    let cfgVersion = 1;
     for (let tick = 0; tick < SAMPLES; tick++) {
+      const simHour = (tick * TICK_MS) / 3600000;
+
       // Every ~45 min push a new device-config via MQTT (v++).
       if (tick > 0 && tick % 90 === 0) {
         try {
           const cfg = JSON.parse(runtime.kvs.config);
-          cfg.v = cfg.v + 1;
+          cfg.v = ++cfgVersion;
           runtime.deliverMqtt('greenhouse/config', JSON.stringify(cfg));
         } catch (_e) {}
       }
-      // Every ~2.5 h fire a 4-command relay storm.
-      if (tick > 0 && tick % 300 === 0) {
+      // At hour 15 (after SOLAR→ACTIVE_DRAIN transition has settled):
+      // activate manual override, fire relay storm, then release.
+      if (tick === Math.floor(15 * 60 * 60 * 1000 / TICK_MS)) {
+        const future = Math.floor(now / 1000) + 600;
+        const cfg = JSON.parse(runtime.kvs.config);
+        cfg.v = ++cfgVersion;
+        cfg.mo = { a: true, ex: future, ss: false };
+        runtime.deliverMqtt('greenhouse/config', JSON.stringify(cfg));
+      }
+      if (tick === Math.floor(15 * 60 * 60 * 1000 / TICK_MS) + 2) {
+        // Relay storm while override is active — exercises the 200 ms
+        // inter-switch gap timer inside processRelayCmdQueue.
         ['pump', 'fan', 'fan', 'pump'].forEach((relay, i) => {
           try {
             runtime.deliverMqtt('greenhouse/relay-command',
               JSON.stringify({ relay, on: i % 2 === 0 }));
           } catch (_e) {}
         });
+      }
+      if (tick === Math.floor(15 * 60 * 60 * 1000 / TICK_MS) + 10) {
+        // Release override so the control loop resumes normal evaluation.
+        const cfg = JSON.parse(runtime.kvs.config);
+        cfg.v = ++cfgVersion;
+        cfg.mo = null;
+        runtime.deliverMqtt('greenhouse/config', JSON.stringify(cfg));
       }
       runtime.advance(TICK_MS);
       // Drain the setImmediate callbacks scheduled by the tick's controlLoop
@@ -135,8 +211,10 @@ describe('Shelly platform-limit 24 h simulation', () => {
 
       if (lastStateJson.length > statePeakBytes.v) statePeakBytes.v = lastStateJson.length;
       const s = runtime.stats();
+      const state = safeParse(lastStateJson);
+      if (state && state.mode) modesSeen.add(state.mode);
       proxySamples.push(runtimeProxy({
-        state: safeParse(lastStateJson),
+        state,
         deviceConfig: safeParse(runtime.kvs.config),
         sensorConfig: safeParse(runtime.kvs.sensor_config),
         liveTimers: s.liveTimers,
@@ -159,6 +237,14 @@ describe('Shelly platform-limit 24 h simulation', () => {
       `expected at least the repeating controlLoop timer live`);
     assert.ok(statePeakBytes.v > 0,
       `expected at least one greenhouse/state publish`);
+  });
+
+  it('sim drove the state machine through multiple modes (not stuck in IDLE)', () => {
+    // If the diurnal sensor pattern is broken, the script stays in IDLE
+    // and we miss the transition-scoped timers (VALVE_SETTLE, pump-prime,
+    // drain monitor). Require ≥ 2 distinct modes observed.
+    assert.ok(modesSeen.size >= 2,
+      `expected ≥ 2 distinct modes seen over 24 h sim; observed: [${[...modesSeen].join(', ')}]`);
   });
 
   it('timer handles stay within cap', () => {

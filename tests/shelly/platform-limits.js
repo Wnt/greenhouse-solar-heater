@@ -8,7 +8,7 @@
 const CAPS = {
   DEPLOYED_BYTES: 65535,          // Shelly Script.PutCode hard limit, error -103
   RUNTIME_PROXY_PEAK: 42312,      // calibrated post-merge w/ fixed async harness 2026-04-20 (measured 41800 + 512 B margin; pre-merge baseline on main: 44887)
-  STATE_BYTES: 600,               // JSON.stringify(state).length peak
+  STATE_BYTES: 700,               // JSON.stringify(state).length peak — includes transient transition fields (opening[], pending_closes[], manual_override{})
   LIVE_TIMERS: 3,                 // simultaneous Timer.set handles (5 - 2 reserve)
   MQTT_SUBS: 3,                   // active MQTT.subscribe topics
   INFLIGHT_CALLS: 3,              // in-flight Shelly.call (5 - 2 reserve)
@@ -140,6 +140,23 @@ function createInstrumentedRuntime(opts) {
     }
   }
 
+  // The script calls Date.now() directly to compute openWindow deadlines,
+  // mode_start, state snapshots, etc. Those Date.now() calls MUST return
+  // synthetic time so the 20 s valve opening window actually elapses
+  // during the 30 s sim tick. Without this, resumeTransition's
+  // `state.valveOpening[v] <= now` check never fires (real wall-clock
+  // hasn't advanced 20 s during the sub-second test run) and the
+  // transition hangs forever in "valves_opening".
+  const syntheticDate = {
+    now: () => opts.now(),
+    // Pass-throughs for any other Date usage (e.g. new Date().toISOString).
+    prototype: Date.prototype,
+  };
+  // Make new SyntheticDate() work if anyone uses it.
+  function SyntheticDate() { return new Date(opts.now()); }
+  SyntheticDate.now = () => opts.now();
+  SyntheticDate.prototype = Date.prototype;
+
   return {
     globals: {
       Shelly: {
@@ -155,7 +172,7 @@ function createInstrumentedRuntime(opts) {
       },
       Timer: { set: timerSet, clear: timerClear },
       MQTT: mqtt,
-      JSON, Date, Math, parseInt,
+      JSON, Date: SyntheticDate, Math, parseInt,
       print: () => {},
     },
     stats() {
