@@ -13,6 +13,13 @@ var SHELL_CFG = {
   DRAIN_EXIT_PUMP_RUN_MS: 20000,
 };
 
+// Minimum delay before resumeTransition fires. Timer.set on Shelly can
+// invoke its callback on almost the same stack for very small delays;
+// keeping this ≥ 20 ms forces an event-loop yield between scheduleStep
+// iterations, which is the only guarantee that the 2026-04-20 stack-
+// overflow recursion cannot re-establish itself from a new pathway.
+var MIN_RESUME_MS = 20;
+
 // ── MQTT topics and KVS keys (absorbed from former telemetry.js) ──
 var CONFIG_TOPIC = "greenhouse/config";
 var SENSOR_CONFIG_TOPIC = "greenhouse/sensor-config";
@@ -664,32 +671,52 @@ function scheduleStep() {
 
   emitStateUpdate();
 
-  // Fire closes in parallel, then fire new opens in parallel. Both batches
-  // obey the bounded worker pool.
-  runValveBatch(closePairs, function(okC) {
-    if (!okC) { finalizeTransitionFail(); return; }
+  // Schedules the next resumeTransition. The minimum delay is kept
+  // generous (20 ms) so Timer.set is guaranteed to yield to the
+  // Espruino event loop — Timer.set(1) on Shelly can fire almost-
+  // synchronously, and combined with the nested-callback chain below
+  // that re-entry used to blow the ~15-frame stack. See MIN_RESUME_MS
+  // above the SHELL_CFG block if you need to retune.
+  function scheduleResume() {
+    clearTransitionTimer();
+    var delay;
+    if (plan.nextResumeAt !== null) {
+      delay = plan.nextResumeAt - Date.now();
+      if (delay < MIN_RESUME_MS) delay = MIN_RESUME_MS;
+    } else {
+      delay = MIN_RESUME_MS;
+    }
+    state.transitionTimer = Timer.set(delay, false, resumeTransition);
+  }
+
+  // No work to actuate this tick: all closes are deferred by
+  // minOpenMs and no new opens fit in the slot budget. Skip the
+  // runValveBatch chain entirely — calling it with empty pairs still
+  // synchronously nests ~5 frames per call (runValveBatch →
+  // runBoundedPool → done inline), and the original control.js had
+  // two of these nested. Drain-exit right after AD entry (2026-04-20
+  // crash) hit exactly this state and overflowed the Espruino stack.
+  if (closePairs.length === 0 && openPairs.length === 0) {
+    scheduleResume();
+    return;
+  }
+
+  // Closes first, then opens — independent batches, but closes
+  // must complete before opens so slot accounting in the scheduler
+  // stays consistent when the same valve is switching direction.
+  function runOpens() {
+    if (openPairs.length === 0) { scheduleResume(); return; }
     runValveBatch(openPairs, function(okO) {
       if (!okO) { finalizeTransitionFail(); return; }
-
-      // Always re-enter scheduleStep via Timer.set so the next step
-      // runs on a fresh JS stack. Shelly's Espruino runtime has a
-      // shallow stack limit (~10-20 frames); synchronously re-entering
-      // scheduleStep from inside the runBoundedPool → HTTP callback
-      // chain pushed the depth past the limit and crashed the script
-      // with "Too much recursion" on the SC → IDLE transition
-      // (2026-04-10). The delay is 1 ms when we just need to
-      // re-evaluate after immediate actions, or the scheduler-chosen
-      // remaining window otherwise.
-      clearTransitionTimer();
-      var delay;
-      if (plan.nextResumeAt !== null) {
-        delay = plan.nextResumeAt - Date.now();
-        if (delay < 1) delay = 1;
-      } else {
-        delay = 1;
-      }
-      state.transitionTimer = Timer.set(delay, false, resumeTransition);
+      scheduleResume();
     });
+  }
+
+  if (closePairs.length === 0) { runOpens(); return; }
+
+  runValveBatch(closePairs, function(okC) {
+    if (!okC) { finalizeTransitionFail(); return; }
+    runOpens();
   });
 }
 
