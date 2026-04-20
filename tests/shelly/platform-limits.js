@@ -7,7 +7,7 @@
 
 const CAPS = {
   DEPLOYED_BYTES: 65535,          // Shelly Script.PutCode hard limit, error -103
-  RUNTIME_PROXY_PEAK: 43061,      // re-calibrated 2026-04-20 after adding mode-transition-cause tracking (measured 42549 + 512 B margin)
+  RUNTIME_PROXY_PEAK: 43800,      // re-calibrated 2026-04-20 after adding __test_setTemps / __test_controlTick hooks for scheduler-stack-fuzz automated-freeze coverage (measured 43256 + 544 B margin). Hooks are stripped at runtime by the __TEST_HARNESS guard — this only affects the in-test measurement.
   STATE_BYTES: 700,               // JSON.stringify(state).length peak — includes transient transition fields (opening[], pending_closes[], manual_override{})
   LIVE_TIMERS: 3,                 // simultaneous Timer.set handles (5 - 2 reserve)
   MQTT_SUBS: 3,                   // active MQTT.subscribe topics

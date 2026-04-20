@@ -1267,6 +1267,31 @@ if (typeof __TEST_HARNESS !== "undefined" && __TEST_HARNESS) {
     }
     transitionTo(result, "automation");
   };
+
+  // Inject sensor temps + optional mode so the controlLoop's next tick
+  // can evaluate() against a deterministic state. Used by the
+  // scheduler-stack-fuzz suite to drive automated (non-forced)
+  // freeze/overheat transitions end-to-end.
+  Shelly.__test_setTemps = function(temps, currentMode, opts) {
+    opts = opts || {};
+    var now = Date.now();
+    var names = ['collector','tank_top','tank_bottom','greenhouse','outdoor'];
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i];
+      if (temps[n] !== undefined) {
+        state.temps[n] = temps[n];
+        state.sensor_last_valid[n] = now;
+      }
+    }
+    if (currentMode) state.mode = MODES[currentMode] || currentMode;
+    if (opts.collectorsDrained !== undefined) state.collectors_drained = !!opts.collectorsDrained;
+  };
+
+  // Manually fire the control-loop tick so the test doesn't have to
+  // find the repeating Timer through the fake runtime.
+  Shelly.__test_controlTick = function() {
+    if (typeof controlLoop === 'function') controlLoop();
+  };
 }
 
 boot();

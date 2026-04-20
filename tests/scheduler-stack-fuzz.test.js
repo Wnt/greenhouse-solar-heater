@@ -368,7 +368,117 @@ describe('scheduler stack safety — mode transition fuzz', function() {
     });
   });
 
-  // Test 4: Rapid override flip — user toggles fm between AD and IDLE
+  // Test 4: AUTOMATED freeze-drain entry — not forced by the user,
+  // triggered by evaluate() returning safetyOverride=true from sensor
+  // values. This is the single most important path to protect: a
+  // crash here means freeze protection fails silently. Covers both
+  // trigger sensors (outdoor and the radiative-cooling collector
+  // path added 2026-04-20), all non-drain source modes, and the
+  // sync-setValve (ea=30) condition that torched the device earlier.
+  var AUTO_FREEZE_SOURCE_MODES = ['IDLE', 'SOLAR_CHARGING', 'GREENHOUSE_HEATING'];
+  var AUTO_FREEZE_SENSORS = [
+    { label: 'cold outdoor (collector warm)', temps: { collector: 10, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: -3 } },
+    { label: 'cold collector (outdoor warm — clear-night radiative)', temps: { collector: -1, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 5 } },
+    { label: 'both below threshold', temps: { collector: -2, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: -2 } },
+  ];
+  // Automated freeze drain is tested with ea=31 (normal operation) only.
+  // ea=30 simulates "valve actuation permission revoked" which cannot
+  // happen in real production — and driving into SC/GH first requires
+  // ea=31 because the entry transition can't complete when valve opens
+  // short-circuit. The sync-dispatch case from the 2026-04-20 crash is
+  // covered by the forced-mode Test 3 (above), which enters AD directly
+  // without needing a prior completed SC/GH transition.
+  var AUTO_FREEZE_EA = [31];
+
+  AUTO_FREEZE_SOURCE_MODES.forEach(function(fromMode) {
+    AUTO_FREEZE_SENSORS.forEach(function(scenario) {
+      AUTO_FREEZE_EA.forEach(function(ea) {
+        it('automated freeze drain from ' + fromMode + ' via ' + scenario.label +
+           ' (ea=' + ea + ') does not violate scheduler invariants', function(t, done) {
+          var rt = createFuzzRuntime();
+          bootAndAdvance(rt, ea, function() {
+            // Prime temps with safe non-freezing values BEFORE the source
+            // mode is driven. Without this the 30 s repeating controlLoop
+            // timer fires during `advance()` with null temps, the sensor-
+            // staleness guard kicks in, and evaluate() redirects to IDLE,
+            // clobbering the source mode we just drove to.
+            rt.globals.Shelly.__test_setTemps(
+              { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+              null
+            );
+            if (fromMode !== 'IDLE') {
+              rt.globals.Shelly.__test_driveTransition(fromMode, {
+                nextMode: fromMode, valves: MODE_VALVES[fromMode],
+                actuators: MODE_ACTUATORS[fromMode], flags: {},
+              });
+              rt.advance(60000, step2);
+            } else {
+              step2();
+            }
+            function step2() {
+              rt.clearEvents();
+              // Inject freezing temps + re-assert the source mode so
+              // evaluate() sees a mid-mode preemption (not a cold boot).
+              rt.globals.Shelly.__test_setTemps(scenario.temps, fromMode, { collectorsDrained: false });
+              // Fire a control-loop tick explicitly. evaluate() now sees
+              // a freeze-drain trigger and calls transitionTo(result,
+              // "safety_override") — this is the automated pathway.
+              rt.globals.Shelly.__test_controlTick();
+              rt.advance(120000, function() {
+                assertNoTimerUnderMinResume(rt,
+                  'automated freeze from ' + fromMode + ' / ' + scenario.label + ' / ea=' + ea);
+                // A real automated freeze drain must produce at least one
+                // valve actuation — otherwise the safety path exited
+                // without actually draining, which defeats the purpose.
+                var evts = rt.events();
+                var actuations = evts.filter(function(e) {
+                  return (e.kind === 'http_get' && /Switch\.Set/.test(e.detail.url)) ||
+                         (e.kind === 'switch_set');
+                });
+                assert.ok(actuations.length > 0,
+                  'freeze drain must actuate something (pump or valves); fromMode=' + fromMode +
+                  ', ea=' + ea + ', events=' + evts.length);
+                done();
+              });
+            }
+          });
+        });
+      });
+    });
+  });
+
+  // Test 5: Safety override preempting an active manual-override. When
+  // the user has `mo.a=true, mo.ss=false` and freezing temps arrive,
+  // controlLoop clears mo and calls transitionTo(result,
+  // "safety_override"). This is the "user forgot they were in
+  // override" scenario and it MUST drain anyway.
+  it('safety override preempts manual override and drains without stack blow', function(t, done) {
+    var rt = createFuzzRuntime();
+    bootAndAdvance(rt, 31, function() {
+      var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+      // User sets override with ss=false (safety preemption allowed).
+      rt.setConfig({
+        ce: true, ea: 31,
+        mo: { a: true, ex: sysUnix + 3600, ss: false, fm: null },
+        we: {}, wz: {}, wb: {},
+      });
+      rt.advance(5000, function() {
+        rt.clearEvents();
+        // Freezing outdoor temps arrive.
+        rt.globals.Shelly.__test_setTemps(
+          { collector: 10, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: -3 },
+          'IDLE', { collectorsDrained: false }
+        );
+        rt.globals.Shelly.__test_controlTick();
+        rt.advance(120000, function() {
+          assertNoTimerUnderMinResume(rt, 'safety override preempts manual override');
+          done();
+        });
+      });
+    });
+  });
+
+  // Test 6: Rapid override flip — user toggles fm between AD and IDLE
   // back-to-back while a prior transition is still in flight. The
   // scheduler must not accidentally re-enter on the same stack no
   // matter how many times the target changes.
