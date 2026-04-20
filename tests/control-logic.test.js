@@ -46,6 +46,40 @@ describe('mode evaluation', () => {
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
   });
 
+  // Radiative-cooling correction: on clear nights the sky-facing
+  // collector runs several K below sheltered ambient. Freeze protection
+  // must trip off the colder of the two sensors.
+  it('enters ACTIVE_DRAIN when collector < 2 even though outdoor is well above freezing', () => {
+    const result = evaluate(makeState({
+      temps: { collector: -1, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 5 }
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
+    assert.strictEqual(result.safetyOverride, true);
+  });
+
+  it('stays IDLE when both outdoor and collector are above the freeze threshold', () => {
+    const result = evaluate(makeState({
+      temps: { collector: 4, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 5 }
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+  });
+
+  it('does NOT refill when collector has radiatively cooled below threshold (outdoor warm)', () => {
+    // Drained collectors + warm outdoor + solar delta would normally
+    // trigger a speculative refill. The new rule requires the collector
+    // ALSO to be above the freeze threshold before refilling — otherwise
+    // the refill would re-expose a near-freezing surface to water that
+    // has to be drained again immediately.
+    const result = evaluate(makeState({
+      temps: { collector: 1, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 8 },
+      collectorsDrained: true,
+      lastRefillAttempt: 0,
+      now: 2000
+    }), null);
+    assert.strictEqual(result.nextMode, MODES.IDLE);
+    assert.strictEqual(result.flags.collectorsDrained, true);
+  });
+
   it('enters EMERGENCY_HEATING when greenhouse < 9 and tank lacks delta', () => {
     // tank_top 12°C is only 4°C above greenhouse 8°C (< 5°C delta)
     const result = evaluate(makeState({

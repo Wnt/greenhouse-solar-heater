@@ -533,7 +533,7 @@ modes:
 
   active_drain:
     description: Pump water out of collectors for freeze protection
-    trigger: t_outdoor < 2°C AND collectors not already drained
+    trigger: min(t_outdoor, t_collector) < 2°C AND collectors not already drained  # collector sensor catches clear-night radiative cooling; outdoor alone misses it
     exit: pump power monitoring detects dry-run (or 3-minute safety timeout)
     valve_states:
       vi_btm: CLOSED
@@ -690,7 +690,7 @@ safety:
   - Always stop pump before switching any valve
   - Never run pump dry (pump power monitoring on Pro 4PM)
   - Exactly ONE input valve and ONE output valve open at a time
-  - Drain collectors before t_outdoor reaches 0°C (2°C safety margin)
+  - Drain collectors before either t_outdoor OR t_collector reaches 0°C (2°C safety margin); clear-night sky radiation can put the collector several degrees colder than ambient
   - Use union fittings for easy valve replacement
   - Collector pipes must slope toward drain point (2–3 cm/m)
   - V_air at the collector top is normally-closed like every other valve. Closed (de-energized) during idle, solar_charging, and greenhouse_heating; opened (energized) only in active_drain to admit atmospheric air so the pump can evacuate the collector-side down-leg. Power loss de-energizes all valves including V_air, leaving the collector column in hydrostatic equilibrium with the reservoir (no automatic drain on power loss).

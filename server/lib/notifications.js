@@ -28,6 +28,7 @@ var deviceConfigRef = null;
 // Temperature history buffers for trend prediction
 var tankTempHistory = [];    // { ts: ms, value: number }
 var outdoorTempHistory = [];
+var collectorTempHistory = [];
 var HISTORY_WINDOW_MS = 10 * 60 * 1000; // 10 minutes of samples
 var PREDICTION_HORIZON_MS = 15 * 60 * 1000; // 15 minutes ahead
 
@@ -160,6 +161,9 @@ function evaluate(payload) {
   if (typeof temps.outdoor === 'number') {
     addSample(outdoorTempHistory, now, temps.outdoor);
   }
+  if (typeof temps.collector === 'number') {
+    addSample(collectorTempHistory, now, temps.collector);
+  }
 
   // Track mode for reports
   var mode = payload.mode || null;
@@ -266,20 +270,34 @@ function checkOverheatWarning(temps) {
 }
 
 function checkFreezeWarning(temps) {
-  if (typeof temps.outdoor !== 'number') return;
+  // Match control-logic's trigger: whichever of outdoor/collector is
+  // colder drives the drain. On clear nights the sky-facing collector
+  // reads several K below sheltered ambient, so warning on outdoor
+  // alone is too late.
   var thresholds = getThresholds();
-  var current = temps.outdoor;
+  var outdoor = typeof temps.outdoor === 'number' ? temps.outdoor : null;
+  var collector = typeof temps.collector === 'number' ? temps.collector : null;
+  if (outdoor === null && collector === null) return;
+
+  var current = outdoor;
+  var history = outdoorTempHistory;
+  var label = 'Outdoor';
+  if (collector !== null && (current === null || collector < current)) {
+    current = collector;
+    history = collectorTempHistory;
+    label = 'Collector';
+  }
 
   // Already past threshold
   if (current <= thresholds.freeze) return;
 
-  var predicted = predictValue(outdoorTempHistory, PREDICTION_HORIZON_MS);
+  var predicted = predictValue(history, PREDICTION_HORIZON_MS);
   if (predicted === null) return;
 
   if (predicted <= thresholds.freeze && current <= thresholds.freeze + 5) {
     pushRef.sendNotification('freeze_warning', {
       title: 'Freeze Warning',
-      body: 'Outdoor temperature is ' + current.toFixed(1) + '\u00b0C and falling. ' +
+      body: label + ' temperature is ' + current.toFixed(1) + '\u00b0C and falling. ' +
             'Freeze drain may activate at ' + thresholds.freeze + '\u00b0C.',
       tag: 'freeze-warning',
       icon: pushRef.iconFor('freeze_warning'),
@@ -374,6 +392,7 @@ function _reset() {
   deviceConfigRef = null;
   tankTempHistory = [];
   outdoorTempHistory = [];
+  collectorTempHistory = [];
   lastEvaluateTs = 0;
   offlineSince = 0;
   offlineNotified = false;

@@ -277,7 +277,18 @@ function evaluate(state, config, deviceConfig) {
 
   // Freeze protection — preempts immediately, ignores min duration
   // safetyOverride=true: MUST NOT be suppressed by device config
-  if (t.outdoor !== null && t.outdoor < cfg.freezeDrainTemp &&
+  //
+  // Trip point: the *colder* of the outdoor and collector sensors. On
+  // clear nights the sky-facing collector radiates to deep space and
+  // can sit 4–8 K below the sheltered outdoor probe — a collector at
+  // -2 °C with an outdoor reading of 4 °C is a real freeze risk, so
+  // checking only outdoor misses it. Either sensor null-guards
+  // independently so a failed outdoor sensor still lets the collector
+  // trigger, and vice versa.
+  var coldest = null;
+  if (t.outdoor !== null) coldest = t.outdoor;
+  if (t.collector !== null && (coldest === null || t.collector < coldest)) coldest = t.collector;
+  if (coldest !== null && coldest < cfg.freezeDrainTemp &&
       !state.collectorsDrained) {
     flags.solarChargePeakTankTop = null;
     flags.solarChargePeakTankTopAt = 0;
@@ -359,9 +370,15 @@ function evaluate(state, config, deviceConfig) {
         }
       }
     } else {
-      // Speculative refill — collectors drained, conditions suggest daylight
+      // Speculative refill — collectors drained, conditions suggest daylight.
+      // Both sensors must be above the freeze threshold before refilling:
+      // a collector that is warming in the sun but still below freezing
+      // would re-trigger the drain immediately after refill, and a warm
+      // outdoor reading doesn't protect a still-cold collector (same
+      // radiative-cooling asymmetry the drain trigger now handles).
       if (t.collector > t.tank_bottom + cfg.solarEnterDelta &&
-          t.outdoor !== null && t.outdoor >= cfg.freezeDrainTemp) {
+          t.outdoor !== null && t.outdoor >= cfg.freezeDrainTemp &&
+          t.collector >= cfg.freezeDrainTemp) {
         if (state.now - state.lastRefillAttempt > cfg.refillRetryCooldown) {
           flags.collectorsDrained = false;
           flags.lastRefillAttempt = state.now;
