@@ -54,10 +54,13 @@ function callExprName(node) {
 
 const UNSUPPORTED_APIS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'Worker', 'localStorage', 'sessionStorage'];
 
+// Only SH-002 remains as a static-count check: `Shelly.addEventHandler`
+// registrations add to the 5-slot budget permanently (unlike timers and
+// Shelly.call which are ephemeral), so counting call sites is a faithful
+// approximation. Runtime concurrency for Timer.set and Shelly.call is
+// authoritatively checked by tests/shelly-platform-limits.test.js.
 const RESOURCE_LIMITS = [
-  { id: 'SH-001', severity: 'warning', desc: 'Max 5 timers per script (static count — actual concurrency may be lower)', apis: ['Timer.set'], limit: 5 },
   { id: 'SH-002', severity: 'error', desc: 'Max 5 event subscriptions per script', apis: ['Shelly.addStatusHandler', 'Shelly.addEventHandler'], limit: 5 },
-  { id: 'SH-003', severity: 'warning', desc: 'Max 5 concurrent RPC/HTTP calls', apis: ['Shelly.call', 'HTTP.GET', 'HTTP.POST', 'HTTP.request'], limit: 5 },
 ];
 
 // ── Main lint function ──
@@ -206,11 +209,10 @@ export function lintScript(source, options = {}) {
     }
   }
 
-  // SH-012: Script size
-  const sizeKB = Buffer.byteLength(source, 'utf-8') / 1024;
-  if (sizeKB > 16) {
-    findings.push({ rule: 'SH-012', severity: 'warning', line: 0, column: 0, message: `Script size ${sizeKB.toFixed(1)}KB exceeds 16KB deployment limit` });
-  }
+  // Script size is checked post-minify by tests/deploy.test.js against
+  // the real 65 535-byte Shelly Script.PutCode limit. The old SH-012
+  // rule flagged pre-minify source > 16 KB which produced false positives
+  // on code that minified to well under the device limit.
 
   // Safety rules with YAML config
   if (options.yamlConfig) {
