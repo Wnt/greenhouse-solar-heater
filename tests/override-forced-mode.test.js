@@ -475,4 +475,61 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
     });
   });
 
+  // Regression: 2026-04-20 the live Pro 4PM crashed with
+  //   "Uncaught Error: Too much recursion - the stack is about to overflow"
+  // at scheduleStep → runValveBatch → runBoundedPool → drain → (sync cb) →
+  // drain → … when the user enabled override forced-mode ACTIVE_DRAIN.
+  //
+  // Reproduction: forced mode AD enters from IDLE with EA_VALVES bit cleared
+  // in `ea`. setValve() then returns synchronously from its "controls not
+  // enabled for valves" guard for every valve, which feeds the bounded pool
+  // items list as an unbroken chain of synchronous completions. The old
+  // runBoundedPool.drain() recursed once per item; Espruino's ~20-frame stack
+  // fell over on the third or fourth valve.
+  //
+  // After the fix drain() iterates instead of recursing, so N synchronous
+  // completions fit in a single stack frame of the bounded-pool call.
+  it('forced ACTIVE_DRAIN with EA_VALVES cleared does not blow the stack', function(t, done) {
+    var rt = createOrderingRuntime();
+    // Seed config with ea=30 (everything enabled EXCEPT EA_VALVES=1). This is
+    // the config shape that reproduced the 2026-04-20 crash: setValve's open
+    // path hits the sync early-return for every valve, so the bounded pool
+    // sees all dispatches complete synchronously.
+    rt.kvs.config = JSON.stringify({
+      ce: true, ea: 30, we: {}, wz: {}, wb: {}, v: 1
+    });
+    rt.kvs.drained = '0';
+    rt.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
+    loadScript(rt, ['control-logic.js', 'control.js']);
+    rt.advance(10000, function() {
+      var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+      var throwsSeen = [];
+      // Wrap every fired Timer.cb so a synchronous stack-overflow throw
+      // surfaces to the test instead of being swallowed by the runtime's
+      // `try { fired.cb(); } catch(e) {}` in advance().
+      var origSet = rt.globals.Timer.set;
+      rt.globals.Timer.set = function(ms, repeat, cb) {
+        return origSet(ms, repeat, function() {
+          try { cb(); } catch (e) { throwsSeen.push(String(e && e.message || e)); throw e; }
+        });
+      };
+      rt.setConfig(Object.assign({}, BASE_CONFIG, {
+        ea: 30,
+        mo: { a: true, ex: sysUnix + 3600, ss: false, fm: 'AD' }
+      }));
+      // Advance through the full AD entry chain. With the recursion fixed
+      // this completes cleanly; with the old drain() it throws before any
+      // of the stages finish.
+      rt.advance(35000, function() {
+        var overflow = throwsSeen.filter(function(m) {
+          return /recursion|stack/i.test(m);
+        });
+        assert.strictEqual(overflow.length, 0,
+          'scheduleStep must not throw a stack-overflow error for forced AD; saw: ' +
+          throwsSeen.join(' | '));
+        done();
+      });
+    });
+  });
+
 });

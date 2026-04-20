@@ -619,20 +619,38 @@ function runBoundedPool(items, limit, dispatch, done) {
   var inFlight = 0;
   var okAll = true;
   var finished = false;
+  // Re-entry guard: when dispatch fires its callback synchronously, the
+  // callback below calls drain() again. Without the guard that would recurse
+  // once per item and blow Espruino's ~20-frame stack on the Shelly Pro 4PM
+  // (2026-04-20 crash: forced-mode ACTIVE_DRAIN with EA_VALVES cleared made
+  // setValve return synchronously for every valve, and drain() recursed all
+  // the way to "Too much recursion - the stack is about to overflow").
+  // With the guard, a sync completion unwinds to the enclosing while-loop
+  // iteration instead of growing the stack.
+  var draining = false;
+  function onItem(ok) {
+    inFlight--;
+    if (!ok) okAll = false;
+    if (idx >= items.length && inFlight === 0) {
+      if (!finished) { finished = true; if (done) done(okAll); }
+      return;
+    }
+    drain();
+  }
   function drain() {
-    if (finished) return;
-    while (inFlight < limit && idx < items.length) {
+    if (finished || draining) return;
+    draining = true;
+    while (inFlight < limit && idx < items.length && !finished) {
       var it = items[idx]; idx++;
       inFlight++;
-      dispatch(it, function(ok) {
-        inFlight--;
-        if (!ok) okAll = false;
-        if (idx >= items.length && inFlight === 0) {
-          if (!finished) { finished = true; if (done) done(okAll); }
-          return;
-        }
-        drain();
-      });
+      dispatch(it, onItem);
+    }
+    draining = false;
+    // A synchronous dispatch that drained every slot may have finished the
+    // pool while we were in the loop above — check terminal condition now.
+    if (!finished && idx >= items.length && inFlight === 0) {
+      finished = true;
+      if (done) done(okAll);
     }
   }
   drain();

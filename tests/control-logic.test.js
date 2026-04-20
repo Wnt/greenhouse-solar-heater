@@ -1723,6 +1723,50 @@ describe('runBoundedPool — bounded parallelism (T050b)', () => {
       done();
     });
   });
+
+  // Regression: 2026-04-20 the live Pro 4PM crashed with
+  //   "Too much recursion - the stack is about to overflow"
+  // at scheduleStep → runValveBatch → runBoundedPool → drain → dispatch → cb
+  // → drain → … when forced-mode ACTIVE_DRAIN was activated from override.
+  // Espruino's stack tops out around 20 frames; drain() recursing once per
+  // item via a synchronous dispatch callback blows right past that.
+  //
+  // The pool must tolerate arbitrarily many synchronously-completing items
+  // without letting stack depth grow with N. We assert that by capturing
+  // the stack height at each dispatch and requiring the spread to stay
+  // small no matter how many items run through.
+  it('synchronous dispatch does not recurse: stack depth stays bounded across N items', (t, done) => {
+    // V8 caps stack traces at 10 frames by default — raise it so we see
+    // every frame below the dispatch call.
+    const prevLimit = Error.stackTraceLimit;
+    Error.stackTraceLimit = Infinity;
+    try {
+      const N = 500;
+      const depths = [];
+      const items = [];
+      for (let i = 0; i < N; i++) items.push(i);
+      const dispatch = (item, cb) => {
+        depths.push(new Error().stack.split('\n').length);
+        cb(true);
+      };
+      runBoundedPool(items, 4, dispatch, (ok) => {
+        assert.strictEqual(ok, true);
+        const minD = Math.min(...depths);
+        const maxD = Math.max(...depths);
+        // Espruino on Shelly tops out at ~20 frames. A correct pool keeps
+        // stack depth flat regardless of N; a recursive drain() grows
+        // linearly. Allow minor slack for engine bookkeeping frames.
+        assert.ok(
+          maxD - minD <= 4,
+          'synchronous dispatch must not grow the stack per item; ' +
+          'saw min=' + minD + ' max=' + maxD + ' over ' + N + ' items'
+        );
+        done();
+      });
+    } finally {
+      Error.stackTraceLimit = prevLimit;
+    }
+  });
 });
 
 describe('buildSnapshotFromState — US5 staged-transition fields', () => {
