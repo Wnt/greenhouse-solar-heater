@@ -378,21 +378,11 @@ function buildIdleTransitionResult() {
   };
 }
 
-// Build a transitionTo-shaped result for a forced mode inside manual
-// override. Bypasses evaluate() — we already hand the scheduler the
-// mode's canonical valve + actuator table, no sensor logic required.
-function makeModeResult(modeCode) {
-  var expanded = (typeof expandModeCode === 'function') ? expandModeCode(modeCode) : null;
-  if (!expanded || !MODES[expanded]) return null;
-  var mode = MODES[expanded];
-  var valves = {};
-  var k;
-  var mv = MODE_VALVES[mode];
-  for (k in mv) valves[k] = mv[k];
-  var actuators = {};
-  var ma = MODE_ACTUATORS[mode];
-  for (k in ma) actuators[k] = ma[k];
-  return { nextMode: mode, valves: valves, actuators: actuators, flags: {} };
+// Forced-mode transitionTo-shaped result (bypasses evaluate()).
+function makeModeResult(code) {
+  var m = MODE_CODE[code];
+  if (!m || !MODES[m]) return null;
+  return { nextMode: MODES[m], valves: MODE_VALVES[MODES[m]], actuators: MODE_ACTUATORS[MODES[m]], flags: {} };
 }
 
 // Auto-shutdown path: called from watchdogTick() after the 5-minute
@@ -487,31 +477,17 @@ function handleConfigDrivenResolution(prevCfg, newCfg) {
   }
 }
 
-// mo.fm change handler — called from the config_changed event handler
-// AFTER handleConfigDrivenResolution() so watchdog resolution paths
-// still take priority. Only fires when a forced-mode change is detected
-// inside an active override, or when the override is cleared.
-function handleForcedModeChange(prevCfg, newCfg) {
-  var prevMo = prevCfg && prevCfg.mo;
-  var nextMo = newCfg && newCfg.mo;
-  var prevFm = (prevMo && prevMo.fm) ? prevMo.fm : null;
-  var nextFm = (nextMo && nextMo.fm) ? nextMo.fm : null;
-
-  // mo.fm diff: forced-mode change inside an active override.
-  if (nextMo && nextMo.a && nextFm && nextFm !== prevFm) {
-    var mrResult = makeModeResult(nextFm);
-    if (mrResult) {
-      transitionTo(mrResult);
-      return;
-    }
-  }
-
-  // mo cleared while it was previously active → force IDLE transition so
-  // the greenhouse does not linger in whatever relay state the user left.
-  if (prevMo && prevMo.a && (!nextMo || !nextMo.a)) {
-    transitionTo(buildIdleTransitionResult());
-    return;
-  }
+// mo.fm change / mo clear → staged transition. Called from applyConfig
+// AFTER handleConfigDrivenResolution so watchdog paths take priority.
+// Deferred 1 s so the caller's in-flight KVS.Set drains before we fire
+// Switch.Set/HTTP.GET, keeping under the 3-call in-flight cap.
+function handleForcedModeChange(prev, next) {
+  var pMo = prev && prev.mo, nMo = next && next.mo;
+  var pFm = (pMo && pMo.fm) || null, nFm = (nMo && nMo.fm) || null;
+  var t = null;
+  if (nMo && nMo.a && nFm && nFm !== pFm) t = makeModeResult(nFm);
+  else if (pMo && pMo.a && (!nMo || !nMo.a)) t = buildIdleTransitionResult();
+  if (t) Timer.set(1000, false, function() { transitionTo(t); });
 }
 
 // ── Staged transitions (023-limit-valve-operations) ──
@@ -844,16 +820,13 @@ function isManualOverrideActive() {
   if (!deviceConfig.mo || !deviceConfig.mo.a) return false;
   var now = Shelly.getComponentStatus("sys").unixtime || 0;
   if (now >= deviceConfig.mo.ex) {
-    // TTL expired — clear override and persist
+    // TTL expired: clear mo, persist, force IDLE inside the KVS.Set cb
+    // so HTTP.GETs don't overlap with the KVS.Set (stays under cap).
+    // AD→IDLE auto-uses valves-first via state.transitionFromMode.
     deviceConfig.mo = null;
-    Shelly.call("KVS.Set", {key: "config", value: JSON.stringify(deviceConfig)});
-    // TTL-expiry exit path: force IDLE transition so relays don't linger
-    // in whatever state the user left. For AD→IDLE this uses the
-    // valves-first + DRAIN_EXIT_PUMP_RUN_MS sequence automatically via
-    // state.transitionFromMode.
-    if (!state.transitioning) {
-      transitionTo(buildIdleTransitionResult());
-    }
+    Shelly.call("KVS.Set", {key: "config", value: JSON.stringify(deviceConfig)}, function() {
+      if (!state.transitioning) transitionTo(buildIdleTransitionResult());
+    });
     return false;
   }
   return true;
@@ -1065,11 +1038,8 @@ function isSafetyCritical(oldCfg, newCfg) {
   if (!oldCfg) return true;
   if (oldCfg.ce !== newCfg.ce) return true;
   if (oldCfg.ea !== newCfg.ea) return true;
-  // mo.fm drives the forced-mode transition on-device. Mark changes
-  // safety-critical so the config_changed handler fires immediately.
-  var oldMf = (oldCfg.mo) ? oldCfg.mo.fm : null;
-  var newMf = (newCfg.mo) ? newCfg.mo.fm : null;
-  if (oldMf !== newMf) return true;
+  // mo.fm changes are handled synchronously inside applyConfig via
+  // handleForcedModeChange — no need to re-fire controlLoop().
   // Mode bans (wb) gate evaluate() immediately — a newly-enforced ban
   // must take effect on the next tick rather than waiting for the next
   // unrelated mode change.

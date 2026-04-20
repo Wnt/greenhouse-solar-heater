@@ -46,6 +46,7 @@ function createOrderingRuntime(opts) {
   var timers = []; // { id, dueAt, cb, repeat, ms }
   var timerIdCounter = 0;
   var kvs = {};
+  var configVersion = 100; // bumped by setConfig() — must exceed the BASE_CONFIG v seeded into KVS
   var eventHandlers = [];
   var httpResponder = opts.httpResponder || function(url) {
     return { ok: true, body: '' };
@@ -124,10 +125,13 @@ function createOrderingRuntime(opts) {
     },
     Timer: { set: timerSet, clear: timerClear },
     MQTT: {
-      subscribe: function() {},
+      _subs: {},
+      _connectHandler: null,
+      subscribe: function(topic, cb) { globals.MQTT._subs[topic] = cb; },
+      unsubscribe: function(topic) { delete globals.MQTT._subs[topic]; },
       publish: function() {},
-      isConnected: function() { return false; },
-      setConnectHandler: function() {},
+      isConnected: function() { return true; },
+      setConnectHandler: function(cb) { globals.MQTT._connectHandler = cb; if (cb) cb(); },
     },
     JSON: JSON,
     Date: { now: function() { return now; } },
@@ -143,42 +147,47 @@ function createOrderingRuntime(opts) {
     setComponentStatus: function(fn) { componentStatus = fn; },
     setHttpResponder: function(fn) { httpResponder = fn; },
     // Push a new config into the script's in-memory deviceConfig by
-    // emitting a config_changed event (same path the real MQTT bridge uses).
+    // invoking the MQTT CONFIG_TOPIC subscription callback the script
+    // registered at boot — this is the same path the real MQTT bridge uses.
+    // Each call auto-increments the version so applyConfig's no-op guard
+    // (newCfg.v === deviceConfig.v) doesn't skip the update.
     setConfig: function(cfg) {
-      emitEvent('config_changed', { config: cfg, safety_critical: false });
+      cfg = Object.assign({}, cfg, { v: (configVersion++) });
+      var cb = globals.MQTT._subs['greenhouse/config'];
+      if (cb) cb('greenhouse/config', JSON.stringify(cfg));
     },
     advance: function(ms, done) {
-      // Advance the synthetic clock in 1 ms hops and fire any timer whose
-      // dueAt has passed. Uses setImmediate between hops so async Shelly.call
-      // callbacks (which run via setImmediate in the mock) have a chance to
-      // resolve before the next hop. done() is invoked on the next tick after
-      // the advance completes.
+      // Advance the synthetic clock by jumping to the next-due timer
+      // (or endAt). After each fired timer, drain async Shelly.call
+      // callbacks via a short setImmediate chain (3 yields) so callback
+      // chains complete before the next timer fires. Much faster than
+      // 1 ms hops for long advances.
       var endAt = now + ms;
+      function drainAndContinue(n) {
+        if (n <= 0) return hop();
+        setImmediate(function() { drainAndContinue(n - 1); });
+      }
       function hop() {
-        if (now >= endAt) {
-          setImmediate(done);
-          return;
+        if (now >= endAt) { setImmediate(done); return; }
+        var nextDue = endAt;
+        for (var i = 0; i < timers.length; i++) {
+          if (timers[i].dueAt < nextDue) nextDue = timers[i].dueAt;
         }
-        now += 1;
+        if (nextDue > now) now = (nextDue <= endAt) ? nextDue : endAt;
         var fired;
         do {
           fired = null;
-          for (var i = 0; i < timers.length; i++) {
-            if (timers[i].dueAt <= now) {
-              fired = timers[i];
-              if (fired.repeat) {
-                fired.dueAt = now + fired.ms;
-              } else {
-                timers.splice(i, 1);
-              }
+          for (var j = 0; j < timers.length; j++) {
+            if (timers[j].dueAt <= now) {
+              fired = timers[j];
+              if (fired.repeat) fired.dueAt = now + fired.ms;
+              else timers.splice(j, 1);
               break;
             }
           }
-          if (fired) {
-            try { fired.cb(); } catch(e) {}
-          }
+          if (fired) { try { fired.cb(); } catch(e) {} }
         } while (fired);
-        setImmediate(hop);
+        drainAndContinue(20);
       }
       hop();
     },
