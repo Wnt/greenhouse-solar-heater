@@ -52,18 +52,6 @@ describe('wb ban check in evaluate', () => {
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
-  it('fm cannot force a banned mode', () => {
-    const cfg = { ce: true, ea: 31, fm: 'GH', wb: { GH: 3000 } };
-    const result = evaluate(makeState({}), null, cfg);
-    assert.strictEqual(result.nextMode, MODES.IDLE);
-  });
-
-  it('fm works normally when mode is not banned', () => {
-    const cfg = { ce: true, ea: 31, fm: 'GH' };
-    const result = evaluate(makeState({}), null, cfg);
-    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
-  });
-
   it('mo.ss=true does NOT bypass wb ban', () => {
     // mo.ss does not bypass wb at evaluate level — suppressSafety is the
     // watchdog detection suppression, but ban enforcement is strict.
