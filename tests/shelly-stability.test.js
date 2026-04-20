@@ -352,6 +352,52 @@ describe('Shelly merged-control MQTT stability', function() {
     });
   });
 
+  it('survives firmware where MQTT.unsubscribe is ineffective (subscribe throws Invalid topic)', function(t, done) {
+    // 2026-04-20 production incident: after Script.Stop then Script.Start,
+    // the Pro 4PM retained its 3 device-side MQTT subscriptions. The new
+    // JS session's MQTT.unsubscribe() call did not clear them in time
+    // (firmware quirk), so the subsequent MQTT.subscribe() threw
+    // "Invalid topic" and the whole script crashed with:
+    //
+    //   Uncaught Error: Invalid topic
+    //    at });
+    //    ^
+    //   in function "setupMqttSubscriptions" called from setupMqttSubscriptions();
+    //
+    // Simulate the firmware behaviour by pre-seeding the mock's
+    // subscription table as if a prior session left them there, and
+    // neutering unsubscribe() so it refuses to clear them. The script
+    // MUST NOT crash; it should gracefully leave the subscriptions in
+    // their pre-existing state and keep the control loop running.
+    var rt = createShellyRuntime({ mqttConnected: true });
+    // Pre-populate 3 subscriptions as though from a prior script.
+    rt.globals.MQTT.subscribe('greenhouse/config', function() {});
+    rt.globals.MQTT.subscribe('greenhouse/sensor-config', function() {});
+    rt.globals.MQTT.subscribe('greenhouse/relay-command', function() {});
+    // Disable unsubscribe — model the firmware bug.
+    rt.globals.MQTT.unsubscribe = function() {};
+
+    assert.doesNotThrow(function() {
+      loadScript(rt, ['control-logic.js', 'control.js']);
+    }, 'script must not propagate Invalid topic to the runtime');
+
+    // After the boot settle, the mqtt subscription table still has 3
+    // entries — the pre-seeded ones. No duplicates were added.
+    var rounds = 0;
+    function loop() {
+      rt.flushTimers();
+      if (++rounds >= 20) {
+        var stats = rt.stats();
+        assert.strictEqual(stats.mqttSubscriptionCount, 3,
+          'stale pre-seeded subscriptions should remain; no duplicates. got: ' + stats.mqttSubscriptionCount);
+        done();
+        return;
+      }
+      setImmediate(loop);
+    }
+    setImmediate(loop);
+  });
+
   it('publishes greenhouse/state directly via MQTT.publish (no emitEvent IPC bridge)', function(t, done) {
     var rt = createShellyRuntime({ mqttConnected: true });
     var publishes = [];

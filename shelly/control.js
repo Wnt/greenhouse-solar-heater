@@ -1089,33 +1089,54 @@ function applySensorConfig(newCfg) {
   Shelly.call("KVS.Set", { key: SENSOR_CONFIG_KVS_KEY, value: JSON.stringify(newCfg) });
 }
 
+// Tracks whether the device-side subscription for each topic is known
+// to be live on the CURRENT JS callback. Persists across connectHandler
+// re-invocations so we don't redo work if the handler fires on the
+// same connection.
+var mqttSubscribed = { };
+
+function safeSubscribe(topic, cb) {
+  if (mqttSubscribed[topic]) return true;
+  // Belt-and-suspenders: try to clear any stale device-side
+  // registration left over from Script.Stop/Start first, then attempt
+  // subscribe. Both calls are wrapped — MQTT.unsubscribe may not exist
+  // on every firmware, and MQTT.subscribe throws "Invalid topic" if
+  // the device still thinks it's subscribed. On failure we leave the
+  // flag false so connectHandler can retry.
+  try { MQTT.unsubscribe(topic); } catch (e) {}
+  try {
+    MQTT.subscribe(topic, cb);
+    mqttSubscribed[topic] = true;
+    return true;
+  } catch (e) {
+    // 2026-04-20 incident: live Pro 4PM crashed with uncaught
+    // "Invalid topic" here because the MQTT.unsubscribe above is not
+    // synchronously honored by the firmware's MQTT client. Trap it
+    // instead of propagating. Script keeps running and retries on the
+    // next connectHandler callback — messages delivered to the stale
+    // device-side subscription are silently dropped until then, but
+    // the control loop continues on KVS-loaded config.
+    state.last_error = "mqtt_subscribe_" + topic;
+    return false;
+  }
+}
+
 function setupMqttSubscriptions() {
   if (!MQTT.isConnected()) return;
 
-  // Subscribe-orphan fix (2026-04-20): after Script.Stop/Start (but not
-  // Shelly.Reboot) the device retains topic subscriptions while the JS
-  // callback is garbage-collected. Calling MQTT.subscribe on a still-
-  // registered topic then throws "Invalid topic". Explicitly unsubscribe
-  // first — wrapped in try/catch for the first-boot case where there is
-  // nothing to unsubscribe.
-  var topics = [CONFIG_TOPIC, SENSOR_CONFIG_TOPIC, RELAY_COMMAND_TOPIC];
-  for (var i = 0; i < topics.length; i++) {
-    try { MQTT.unsubscribe(topics[i]); } catch (e) {}
-  }
-
-  MQTT.subscribe(CONFIG_TOPIC, function(topic, message) {
+  safeSubscribe(CONFIG_TOPIC, function(topic, message) {
     try {
       var newCfg = JSON.parse(message);
       if (newCfg.v && newCfg.v !== deviceConfig.v) applyConfig(newCfg);
     } catch (e) {}
   });
-  MQTT.subscribe(SENSOR_CONFIG_TOPIC, function(topic, message) {
+  safeSubscribe(SENSOR_CONFIG_TOPIC, function(topic, message) {
     try {
       var newCfg = JSON.parse(message);
       if (newCfg.v && (!sensorConfig || newCfg.v !== sensorConfig.v)) applySensorConfig(newCfg);
     } catch (e) {}
   });
-  MQTT.subscribe(RELAY_COMMAND_TOPIC, function(topic, message) {
+  safeSubscribe(RELAY_COMMAND_TOPIC, function(topic, message) {
     try {
       var cmd = JSON.parse(message);
       if (cmd && typeof cmd.relay === "string" && typeof cmd.on === "boolean") {
