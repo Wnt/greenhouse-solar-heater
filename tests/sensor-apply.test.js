@@ -64,6 +64,11 @@ function makeFakeHub({ existing = {}, simulateStaleCache = false } = {}) {
 
     if (method === 'Shelly.GetDeviceInfo') return reply({ id: 'fake', ver: '1.7.4' });
     if (method === 'SensorAddon.GetPeripherals') return reply({ ds18b20: state });
+    if (method === 'Temperature.SetConfig') {
+      // Name persistence is verified via the request log, not the peripheral
+      // state, so deepEqual(state, ...) in legacy assertions still holds.
+      return reply({ restart_required: false });
+    }
     if (method === 'SensorAddon.RemovePeripheral') {
       const comp = params.component;
       if (!state[comp]) return replyErr(-105, `Argument '${comp}' not found!`);
@@ -130,7 +135,8 @@ describe('sensor-apply (direct HTTP)', () => {
         {
           collector: { addr: 'aa:01', hostIndex: 0, componentId: 100 },
           tank_top: { addr: 'aa:02', hostIndex: 0, componentId: 101 },
-        }
+        },
+        { collector: 'Collector Outlet', tank_top: 'Tank Top' }
       );
       assert.strictEqual(result.success, true);
       assert.strictEqual(result.results[0].ok, true);
@@ -140,6 +146,48 @@ describe('sensor-apply (direct HTTP)', () => {
         'temperature:100': { addr: 'aa:01' },
         'temperature:101': { addr: 'aa:02' },
       });
+
+      // Each AddPeripheral is followed by a Temperature.SetConfig naming the
+      // new component so the Shelly app shows "Tank Top" instead of
+      // "Temperature 101".
+      const tempSetConfigs = fake.log().filter((m) => m.method === 'Temperature.SetConfig');
+      assert.strictEqual(tempSetConfigs.length, 2,
+        'expected one Temperature.SetConfig per added peripheral');
+      const byId = {};
+      for (const m of tempSetConfigs) byId[m.params.id] = m.params.config.name;
+      assert.strictEqual(byId[100], 'Collector Outlet');
+      assert.strictEqual(byId[101], 'Tank Top');
+    });
+
+  });
+
+  describe('naming fallback — no roleLabels provided', () => {
+    let fake, loaded, port;
+
+    before(async () => {
+      fake = makeFakeHub();
+      port = await listen(fake.server);
+      loaded = loadWithRedirect({ '127.0.0.1': port });
+    });
+
+    after(async () => {
+      loaded.restore();
+      await new Promise((r) => fake.server.close(r));
+    });
+
+    it('uses the role key as the label when no roleLabels are given', async () => {
+      // Simulate a caller that forgot to pass roleLabels. The peripheral
+      // should still be named — using the role key as the label — so the
+      // app never shows the raw "Temperature 100" default.
+      const result = await loaded.mod.applyAll(
+        [{ ip: '127.0.0.1' }],
+        { outdoor: { addr: 'aa:03', hostIndex: 0, componentId: 102 } }
+        // no roleLabels arg
+      );
+      assert.strictEqual(result.success, true);
+      const tempSetConfigs = fake.log().filter((m) => m.method === 'Temperature.SetConfig');
+      assert.strictEqual(tempSetConfigs.length, 1);
+      assert.strictEqual(tempSetConfigs[0].params.config.name, 'outdoor');
     });
   });
 

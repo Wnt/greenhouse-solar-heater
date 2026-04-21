@@ -93,16 +93,24 @@ async function waitForHubReady(host, timeoutMs) {
   return false;
 }
 
-function buildTargetMap(hosts, assignments) {
-  // Returns { hostIp: { cid: { addr, role }, ... }, ... }.
+function buildTargetMap(hosts, assignments, roleLabels) {
+  // Returns { hostIp: { cid: { addr, role, label }, ... }, ... }.
+  // `label` is the human-readable role label (e.g. "Tank Top") that the
+  // Shelly app shows as the Temperature component name. Falls back to the
+  // role key if no label is supplied.
   const byHost = {};
+  const labels = roleLabels || {};
   for (const role in assignments) {
     const a = assignments[role];
     if (!a || !a.addr) continue;
     const h = hosts[a.hostIndex];
     if (!h || !h.ip) continue;
     if (!byHost[h.ip]) byHost[h.ip] = {};
-    byHost[h.ip][String(a.componentId)] = { addr: a.addr, role: role };
+    byHost[h.ip][String(a.componentId)] = {
+      addr: a.addr,
+      role: role,
+      label: labels[role] || role,
+    };
   }
   return byHost;
 }
@@ -162,7 +170,12 @@ async function applyHost(hostIp, target) {
     }
   }
 
-  // Phase 2 — add all target peripherals with explicit cid + addr.
+  // Phase 2 — add all target peripherals with explicit cid + addr, and
+  // immediately name each Temperature component after its role (e.g.
+  // "Tank Top"). SetConfig persists even before the Temperature.GetStatus
+  // handlers register, so the label survives the phase-3 reboot.
+  // Naming failures are non-fatal: the peripheral is bound, the routing
+  // works, only the app-side label is missing.
   for (const cid of Object.keys(target)) {
     const t = target[cid];
     try {
@@ -173,6 +186,17 @@ async function applyHost(hostIp, target) {
       added++;
     } catch (e) {
       errors.push('add ' + t.role + ' (cid ' + cid + ', addr ' + t.addr + '): ' + e.message);
+      continue;
+    }
+    try {
+      await httpRpc(hostIp, 'Temperature.SetConfig', {
+        id: parseInt(cid, 10),
+        config: { name: t.label },
+      });
+    } catch (e) {
+      log.warn('failed to label temperature component', {
+        host: hostIp, cid: cid, role: t.role, error: e.message,
+      });
     }
   }
 
@@ -191,8 +215,8 @@ async function applyHost(hostIp, target) {
   return out;
 }
 
-async function applyAll(hosts, assignments) {
-  const targetByHost = buildTargetMap(hosts, assignments);
+async function applyAll(hosts, assignments, roleLabels) {
+  const targetByHost = buildTargetMap(hosts, assignments, roleLabels);
   const ips = hosts.map(function (h) { return h.ip; });
   const results = await Promise.all(ips.map(function (ip) {
     return applyHost(ip, targetByHost[ip] || {}).catch(function (e) {
@@ -206,8 +230,8 @@ async function applyAll(hosts, assignments) {
   };
 }
 
-async function applyOne(hosts, assignments, hostIp) {
-  const targetByHost = buildTargetMap(hosts, assignments);
+async function applyOne(hosts, assignments, hostIp, roleLabels) {
+  const targetByHost = buildTargetMap(hosts, assignments, roleLabels);
   const result = await applyHost(hostIp, targetByHost[hostIp] || {});
   return { id: 'apply-' + Date.now(), success: result.ok, results: [result] };
 }
