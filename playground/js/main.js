@@ -305,6 +305,8 @@ function clearLiveDisplay() {
   document.getElementById('tank-temp-message').textContent = '';
   document.getElementById('tank-stat-energy').textContent = '--';
   document.getElementById('tank-stat-greenhouse').textContent = '--';
+  var ghTrendResetEl = document.getElementById('tank-stat-greenhouse-trend');
+  if (ghTrendResetEl) ghTrendResetEl.innerHTML = '';
   document.getElementById('inactive-modes').innerHTML = '';
   document.getElementById('graph-peak-label').textContent = "Yesterday's High: --";
   var arc = document.getElementById('tank-gauge-arc');
@@ -1619,6 +1621,58 @@ function fmtTemp(v, digits) {
   return isNum(v) ? v.toFixed(digits) : TEMP_PLACEHOLDER;
 }
 
+// ── Temperature trend helpers ──
+// 5-minute rolling window, 1 °C/hr threshold → anything moving faster than
+// ~0.083 °C per 5 min counts as rising/falling, otherwise stable. Reused by
+// the gauge status label, the Components-view sensor table, and the Status-
+// view greenhouse chip so every reading expresses trend the same way.
+const TREND_WINDOW_S = 300;
+const TREND_THRESHOLD = 1 / 12;  // °C per 5 min
+
+// Read series value by key (e.g. 't_tank_bottom') or a resolver function
+// that takes a store-entry object and returns a number | null. The resolver
+// form is what lets the gauge track the tank top+bottom average.
+function trendFor(resolver) {
+  if (timeSeriesStore.times.length < 2) return null;
+  const now = timeSeriesStore.times[timeSeriesStore.times.length - 1];
+  const windowStart = now - TREND_WINDOW_S;
+  let startIdx = timeSeriesStore.times.length - 1;
+  for (let i = timeSeriesStore.times.length - 2; i >= 0; i--) {
+    if (timeSeriesStore.times[i] < windowStart) break;
+    startIdx = i;
+  }
+  if (startIdx >= timeSeriesStore.times.length - 1) return null;
+  const fn = typeof resolver === 'function'
+    ? resolver
+    : (entry) => entry[resolver];
+  const latest = fn(timeSeriesStore.values[timeSeriesStore.values.length - 1]);
+  const earlier = fn(timeSeriesStore.values[startIdx]);
+  if (!isNum(latest) || !isNum(earlier)) return null;
+  const delta = latest - earlier;
+  if (delta >= TREND_THRESHOLD) return 'rising';
+  if (delta <= -TREND_THRESHOLD) return 'falling';
+  return 'stable';
+}
+
+function avgTank(entry) {
+  if (!isNum(entry.t_tank_top) || !isNum(entry.t_tank_bottom)) return null;
+  return (entry.t_tank_top + entry.t_tank_bottom) / 2;
+}
+
+// Small inline arrow next to a reading. Empty string when trend can't be
+// computed yet (< 2 samples or not enough window) so the UI doesn't lie with
+// a fake "stable" on startup.
+function renderTrendIcon(trend) {
+  if (!trend) return '';
+  const icon = trend === 'rising' ? 'trending_up'
+             : trend === 'falling' ? 'trending_down'
+             : 'trending_flat';
+  const title = trend === 'rising' ? 'Rising' : trend === 'falling' ? 'Dropping' : 'Stable';
+  return '<span class="trend-icon trend-' + trend +
+         '" title="' + title +
+         '"><span class="material-symbols-outlined">' + icon + '</span></span>';
+}
+
 // ── Forced-mode / override status helpers ──
 var MODE_NAMES_SHORT = {
   I: 'Idle', SC: 'Solar charging', GH: 'Greenhouse heating',
@@ -1708,8 +1762,14 @@ function updateDisplay(state, result) {
     </div>`;
   }).join('');
 
-  // Tank temperature gauge (shows tank bottom)
-  document.getElementById('tank-temp-val').textContent = fmtTemp(state.t_tank_bottom, 0);
+  // Tank temperature gauge — average of tank_top and tank_bottom. Using the
+  // average instead of just the bottom makes the gauge track what the user
+  // actually cares about (usable thermal storage), and it lines up with the
+  // "Energy Stored" calc below which already uses the top/bottom average.
+  const tankAvg = (isNum(state.t_tank_top) && isNum(state.t_tank_bottom))
+    ? (state.t_tank_top + state.t_tank_bottom) / 2
+    : null;
+  document.getElementById('tank-temp-val').textContent = fmtTemp(tankAvg, 0);
 
   // Energy stored: Q = m * c * (T_avg - T_base), 300L water, base 12°C
   // Heat loss: estimated from 24h temperature history in store
@@ -1747,16 +1807,21 @@ function updateDisplay(state, result) {
     energyEl.textContent = TEMP_PLACEHOLDER;
   }
 
-  // Greenhouse current temperature
+  // Greenhouse current temperature + trend
   document.getElementById('tank-stat-greenhouse').textContent = fmtTemp(state.t_greenhouse, 0);
+  // Render the arrow into the adjacent container (created statically in
+  // index.html). Falls back to empty when trend can't be computed yet.
+  const ghTrendEl = document.getElementById('tank-stat-greenhouse-trend');
+  if (ghTrendEl) ghTrendEl.innerHTML = renderTrendIcon(trendFor('t_greenhouse'));
 
-  // Track yesterday's high (peak from previous 24h simulated day)
-  if (isNum(state.t_tank_bottom)) {
-    if (state.t_tank_bottom > yesterdayHigh) yesterdayHigh = state.t_tank_bottom;
+  // Track yesterday's high (peak from previous 24h simulated day) — uses the
+  // tank average so it stays consistent with the gauge reading.
+  if (isNum(tankAvg)) {
+    if (tankAvg > yesterdayHigh) yesterdayHigh = tankAvg;
     const simDay = Math.floor(state.simTime / 86400);
     if (simDay > lastDay) {
       confirmedYesterdayHigh = yesterdayHigh;
-      yesterdayHigh = state.t_tank_bottom;
+      yesterdayHigh = tankAvg;
       lastDay = simDay;
     }
   }
@@ -1764,8 +1829,8 @@ function updateDisplay(state, result) {
   // Gauge arc: 0°C = empty, 100°C = full circle (628 circumference)
   const arc = document.getElementById('tank-gauge-arc');
   if (arc) {
-    if (isNum(state.t_tank_bottom)) {
-      const tempFrac = Math.max(0, Math.min(1, state.t_tank_bottom / 100));
+    if (isNum(tankAvg)) {
+      const tempFrac = Math.max(0, Math.min(1, tankAvg / 100));
       const dashOffset = 628 - (tempFrac * 628);
       arc.setAttribute('stroke-dashoffset', dashOffset.toFixed(0));
     } else {
@@ -1773,41 +1838,25 @@ function updateDisplay(state, result) {
     }
   }
 
-  // Status label: Rising/Falling/Stable based on rate of change
-  // Check last 5 minutes (300s) of store data; threshold: 1°C/hr = 300/3600 ≈ 0.083°C per 5 min
+  // Status label: Rising/Falling/Stable — derived from the same tank average
+  // so the label and the central number move together.
   const statusLabel = document.getElementById('tank-temp-status');
-  const ROC_WINDOW = 300; // 5 minutes in seconds
-  const ROC_THRESHOLD = 1 / 12; // 1°C/hr expressed as °C per 5 min
-  let rateStatus = 'STABLE';
-  let rateColor = '#43aea4';
-  if (timeSeriesStore.times.length >= 2) {
-    const now = timeSeriesStore.times[timeSeriesStore.times.length - 1];
-    const windowStart = now - ROC_WINDOW;
-    // Find the earliest point within the window
-    let startIdx = timeSeriesStore.times.length - 1;
-    for (let i = timeSeriesStore.times.length - 2; i >= 0; i--) {
-      if (timeSeriesStore.times[i] < windowStart) break;
-      startIdx = i;
-    }
-    if (startIdx < timeSeriesStore.times.length - 1) {
-      const latest = timeSeriesStore.values[timeSeriesStore.values.length - 1].t_tank_bottom;
-      const earlier = timeSeriesStore.values[startIdx].t_tank_bottom;
-      if (isNum(latest) && isNum(earlier)) {
-        const tempChange = latest - earlier;
-        if (tempChange >= ROC_THRESHOLD) { rateStatus = 'RISING'; rateColor = '#e9c349'; }
-        else if (tempChange <= -ROC_THRESHOLD) { rateStatus = 'FALLING'; rateColor = '#ee7d77'; }
-      }
-    }
-  }
+  const tankTrend = trendFor(avgTank);
+  const rateStatus = tankTrend === 'rising' ? 'RISING'
+                   : tankTrend === 'falling' ? 'FALLING'
+                   : 'STABLE';
+  const rateColor = tankTrend === 'rising' ? '#e9c349'
+                  : tankTrend === 'falling' ? '#ee7d77'
+                  : '#43aea4';
   statusLabel.textContent = rateStatus;
   statusLabel.style.color = rateColor;
 
-  // Message
+  // Message — thresholds applied to the tank average.
   const msgEl = document.getElementById('tank-temp-message');
-  if (!isNum(state.t_tank_bottom)) msgEl.textContent = 'Waiting for sensor data — assign sensors in the Sensors view.';
-  else if (state.t_tank_bottom > 80) msgEl.textContent = 'Approaching maximum temperature.';
-  else if (state.t_tank_bottom > 50) msgEl.textContent = 'Tank is well charged.';
-  else if (state.t_tank_bottom > 25) msgEl.textContent = 'Moderate thermal storage.';
+  if (!isNum(tankAvg)) msgEl.textContent = 'Waiting for sensor data — assign sensors in the Sensors view.';
+  else if (tankAvg > 80) msgEl.textContent = 'Approaching maximum temperature.';
+  else if (tankAvg > 50) msgEl.textContent = 'Tank is well charged.';
+  else if (tankAvg > 25) msgEl.textContent = 'Moderate thermal storage.';
   else msgEl.textContent = 'Tank is cold — waiting for solar gain.';
 
   // Graph yesterday's high label
@@ -1838,18 +1887,22 @@ function updateDisplay(state, result) {
   renderLogsList();
 
   // ── Components view ──
-  // Temperatures
+  // Temperatures — each row carries a rising/stable/dropping arrow based on
+  // the same 5-min window the gauge uses, so all readings express trend the
+  // same way.
   const tempBody = document.getElementById('temp-table');
   const temps = [
-    ['Collector', state.t_collector],
-    ['Tank Top', state.t_tank_top],
-    ['Tank Bottom', state.t_tank_bottom],
-    ['Greenhouse', state.t_greenhouse],
-    ['Outdoor', state.t_outdoor],
+    ['Collector', state.t_collector, 't_collector'],
+    ['Tank Top', state.t_tank_top, 't_tank_top'],
+    ['Tank Bottom', state.t_tank_bottom, 't_tank_bottom'],
+    ['Greenhouse', state.t_greenhouse, 't_greenhouse'],
+    ['Outdoor', state.t_outdoor, 't_outdoor'],
   ];
-  tempBody.innerHTML = temps.map(([n, v]) =>
-    `<tr><td>${n}</td><td class="val">${isNum(v) ? v.toFixed(1) + '°C' : TEMP_PLACEHOLDER}</td></tr>`
-  ).join('');
+  tempBody.innerHTML = temps.map(([n, v, key]) => {
+    const valText = isNum(v) ? v.toFixed(1) + '°C' : TEMP_PLACEHOLDER;
+    const trend = isNum(v) ? renderTrendIcon(trendFor(key)) : '';
+    return `<tr><td>${n}</td><td class="val">${valText}${trend}</td></tr>`;
+  }).join('');
 
   // Valve grid
   const VALVE_LABELS = {
