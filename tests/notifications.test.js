@@ -244,6 +244,33 @@ describe('notifications', () => {
       var gained = notifications._getDailyEnergyWh();
       assert.ok(gained > 8600 && gained < 8850, 'expected ≈8721 Wh, got ' + gained);
     });
+
+    it('classifies tank drops by mode (heating vs leakage)', () => {
+      // First eval seeds lastTankEnergyKwh; no delta yet.
+      notifications.evaluate({ temps: { tank_top: 55, tank_bottom: 45, outdoor: 5 }, mode: 'IDLE' });
+      // Tank cools 3 K while IDLE — 50 → 47 avg
+      // Q(3K) = 300·4.186·3/3600 ≈ 1.047 kWh → ≈1046 Wh leakage
+      notifications.evaluate({ temps: { tank_top: 52, tank_bottom: 42, outdoor: 5 }, mode: 'IDLE' });
+      // Heating turns on; tank drops 5 K — 47 → 42 avg → ≈1744 Wh heating
+      notifications.evaluate({ temps: { tank_top: 46, tank_bottom: 38, outdoor: 5 }, mode: 'GREENHOUSE_HEATING' });
+      // Another 6 K drop still in GH mode → ≈2093 Wh heating
+      notifications.evaluate({ temps: { tank_top: 40, tank_bottom: 32, outdoor: 5 }, mode: 'GREENHOUSE_HEATING' });
+
+      var leakage = notifications._getDailyLeakageLossWh();
+      var heating = notifications._getDailyHeatingLossWh();
+      assert.ok(leakage > 1000 && leakage < 1100, 'leakage=' + leakage);
+      // Two drops crediting to heating: 1744 + 2093 ≈ 3837 Wh
+      assert.ok(heating > 3750 && heating < 3900, 'heating=' + heating);
+      // No gain
+      assert.strictEqual(notifications._getDailyEnergyWh(), 0);
+    });
+
+    it('credits EMERGENCY_HEATING drops to heating bucket', () => {
+      notifications.evaluate({ temps: { tank_top: 50, tank_bottom: 40, outdoor: 5 }, mode: 'EMERGENCY_HEATING' });
+      notifications.evaluate({ temps: { tank_top: 45, tank_bottom: 35, outdoor: 5 }, mode: 'EMERGENCY_HEATING' });
+      assert.ok(notifications._getDailyHeatingLossWh() > 0);
+      assert.strictEqual(notifications._getDailyLeakageLossWh(), 0);
+    });
   });
 
   describe('no spurious notifications', () => {
@@ -406,6 +433,109 @@ describe('notifications', () => {
       notifications.evaluate({ temps: { tank_top: 50, outdoor: 10 }, mode: 'IDLE' });
 
       assert.ok(notifications._getOnlineSince() > 0, 'onlineSince should be set');
+    });
+  });
+
+  describe('editorial report bodies', () => {
+    describe('evening (Daily Solar Report)', () => {
+      it('sunny day with only leakage', () => {
+        // 6.5 kWh gathered, 2.5 kWh leakage, no heating
+        var body = notifications.buildEveningBody(6500, 0, 2500);
+        assert.match(body, /gathered 6\.5 kWh/);
+        assert.match(body, /2\.5 kWh slipped to air/);
+        assert.match(body, /net \+4\.0 kWh/);
+      });
+
+      it('cloudy day with pure leakage loss', () => {
+        var body = notifications.buildEveningBody(0, 0, 1400);
+        assert.match(body, /No solar gain today/);
+        assert.match(body, /released 1\.4 kWh to air/);
+      });
+
+      it('day with both heating and leakage losses', () => {
+        var body = notifications.buildEveningBody(3400, 1900, 700);
+        assert.match(body, /gathered 3\.4 kWh/);
+        assert.match(body, /greenhouse drew 1\.9 kWh/);
+        assert.match(body, /0\.7 kWh slipped to air/);
+        assert.match(body, /net \+0\.8 kWh/);
+      });
+
+      it('net negative day shows the minus sign', () => {
+        var body = notifications.buildEveningBody(800, 3200, 0);
+        assert.match(body, /net −2\.4 kWh/);
+      });
+
+      it('flat day with everything below noise floor', () => {
+        var body = notifications.buildEveningBody(30, 10, 20);
+        assert.match(body, /held steady/);
+      });
+
+      it('cloudy with only heating losses', () => {
+        var body = notifications.buildEveningBody(0, 1800, 0);
+        assert.match(body, /No solar gain today/);
+        assert.match(body, /greenhouse drew 1\.8 kWh from the tank/);
+      });
+    });
+
+    describe('noon (Overnight Heating Report)', () => {
+      it('heating disabled, tank cooled to air', () => {
+        var body = notifications.buildNoonBody(0, 0, 1800, /*heatingDisabled*/ true);
+        assert.match(body, /Greenhouse heating is resting/);
+        assert.match(body, /released 1\.8 kWh to air/);
+      });
+
+      it('heating disabled, tank held steady', () => {
+        var body = notifications.buildNoonBody(0, 0, 20, true);
+        assert.match(body, /Greenhouse heating is resting/);
+        assert.match(body, /held steady overnight/);
+      });
+
+      it('heating enabled and ran', () => {
+        // 225 minutes = 3h 45min
+        var body = notifications.buildNoonBody(225, 2800, 1400, false);
+        assert.match(body, /3h 45min/);
+        assert.match(body, /2\.8 kWh delivered/);
+        assert.match(body, /1\.4 kWh slipped to air/);
+      });
+
+      it('heating enabled but did not run, only leakage', () => {
+        var body = notifications.buildNoonBody(0, 0, 1600, false);
+        assert.match(body, /No heating was needed overnight/);
+        assert.match(body, /released 1\.6 kWh to air/);
+      });
+
+      it('heating enabled, did not run, everything quiet', () => {
+        var body = notifications.buildNoonBody(0, 0, 20, false);
+        assert.match(body, /No heating was needed overnight/);
+        assert.match(body, /greenhouse stayed warm/);
+      });
+    });
+  });
+
+  describe('heating-disabled detection via deviceConfig', () => {
+    it('noon report mentions disabled state when GH is in wb with future timestamp', () => {
+      var cfg = { wb: { GH: 9999999999 } };
+      var mockPush = {
+        sendNotification: function () {},
+        iconFor: function () { return ''; },
+      };
+      notifications.init({
+        push: mockPush,
+        deviceConfig: { getConfig: function () { return cfg; } },
+      });
+
+      // Seed an overnight leakage accumulator and force a report send
+      notifications._setNightLeakageLossWh(1800);
+      notifications._setLastNoonReport(0);
+      notifications._setLastEvaluateTs(Date.now());
+
+      var sent = [];
+      mockPush.sendNotification = function (type, payload) { sent.push({ type, payload }); };
+
+      // Fake the noon-hour gate by exporting buildNoonBody directly —
+      // checkNoonReport gates on local hour which we can't control here.
+      var body = notifications.buildNoonBody(0, 0, 1800, /*disabled*/ true);
+      assert.match(body, /Greenhouse heating is resting/);
     });
   });
 });

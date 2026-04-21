@@ -47,12 +47,24 @@ var tickTimer = null;
 // Report scheduling state
 var lastEveningReport = 0;  // day-of-year when last sent
 var lastNoonReport = 0;
-// Sum of positive deltas in the tank's stored thermal energy since the last
-// evening report. Matches the "Energy Stored" formula used by the Status
-// view (300 L · 4.186 kJ/kg·K · max(0, avgTank − 12 °C) / 3600). Credits only
-// energy that actually landed in the tank; cooling periods (greenhouse
-// heating, overnight loss) do not subtract.
+// Daily tank-energy accounting. Accumulators reset after each evening report.
+// Classification is by the mode that was active during each delta (credited
+// to lastMode, since the drop happened between the last eval and now):
+//   gathered         — all positive deltas
+//   heating loss     — negative deltas while mode was GREENHOUSE_HEATING or
+//                      EMERGENCY_HEATING (tank water actively drawn for heat)
+//   leakage loss     — negative deltas while mode was anything else (IDLE /
+//                      SOLAR_CHARGING / ACTIVE_DRAIN) — heat quietly leaving
+//                      the tank to the surrounding air.
+// All three use the same Status-view formula (300 L · 4.186 kJ/kg·K ·
+// max(0, avgTank − 12 °C) / 3600).
 var dailyEnergyWh = 0;
+var dailyHeatingLossWh = 0;
+var dailyLeakageLossWh = 0;
+// Noon report covers the night just past — separate overnight accumulators
+// reset after each noon report.
+var nightHeatingLossWh = 0;
+var nightLeakageLossWh = 0;
 var lastTankEnergyKwh = null; // last observed stored-energy reading
 var nightHeatingMinutes = 0;
 var lastModeCheckTs = 0;
@@ -192,17 +204,28 @@ function evaluate(payload) {
   lastMode = mode;
   lastModeCheckTs = now;
 
-  // Daily energy gathered = integral of positive changes in the tank's
-  // stored thermal energy. Any drop (greenhouse heating, overnight loss)
-  // simply resets the baseline without subtracting from the total — so
-  // the final figure represents cumulative heat actually delivered to the
-  // tank today, matching what the user sees on the Status view.
+  // Tank-energy deltas: positive → gathered, negative → bucketed by the
+  // mode that was active during the drop (heating vs. quiet leakage).
+  // The drop is credited to the current sample's mode; state frames
+  // arrive every few seconds so a single delta straddling a mode change
+  // biases at most ~1 frame's worth of energy the wrong way.
   if (typeof temps.tank_top === 'number' && typeof temps.tank_bottom === 'number') {
     var avgTankC = (temps.tank_top + temps.tank_bottom) / 2;
     var currentKwh = tankStoredEnergyKwh(avgTankC);
     if (lastTankEnergyKwh !== null) {
       var delta = currentKwh - lastTankEnergyKwh;
-      if (delta > 0) dailyEnergyWh += delta * 1000;
+      if (delta > 0) {
+        dailyEnergyWh += delta * 1000;
+      } else if (delta < 0) {
+        var lossWh = -delta * 1000;
+        if (lastMode === 'GREENHOUSE_HEATING' || lastMode === 'EMERGENCY_HEATING') {
+          dailyHeatingLossWh += lossWh;
+          nightHeatingLossWh += lossWh;
+        } else {
+          dailyLeakageLossWh += lossWh;
+          nightLeakageLossWh += lossWh;
+        }
+      }
     }
     lastTankEnergyKwh = currentKwh;
   }
@@ -332,6 +355,93 @@ function checkFreezeWarning(temps) {
   }
 }
 
+// True if the operator has permanently banned GREENHOUSE_HEATING via the
+// device config — i.e. greenhouse heating is intentionally off. The short
+// code for GH is 'GH' and `wb` uses WB_PERMANENT_SENTINEL (9999999999) for
+// indefinite bans; any timestamp >1 day in the future counts as disabled
+// from the notification's point of view.
+function isHeatingDisabled() {
+  if (!deviceConfigRef || typeof deviceConfigRef.getConfig !== 'function') return false;
+  var cfg = deviceConfigRef.getConfig();
+  if (!cfg || !cfg.wb) return false;
+  var until = cfg.wb.GH;
+  if (!until) return false;
+  var nowSec = Math.floor(Date.now() / 1000);
+  return until > nowSec + 86400;
+}
+
+function fmtKwh(wh) { return (Math.round(wh) / 1000).toFixed(1); }
+
+// Threshold below which we treat an accumulator as "held steady" and don't
+// mention it. 50 Wh = 0.05 kWh, which rounds to 0.1 at display resolution.
+var KWH_NOISE_FLOOR_WH = 50;
+
+function buildEveningBody(gatheredWh, heatingLossWh, leakageLossWh) {
+  var gained = gatheredWh >= KWH_NOISE_FLOOR_WH;
+  var heating = heatingLossWh >= KWH_NOISE_FLOOR_WH;
+  var leakage = leakageLossWh >= KWH_NOISE_FLOOR_WH;
+  var netWh = gatheredWh - heatingLossWh - leakageLossWh;
+  var netSign = netWh >= 0 ? '+' : '−';
+  var netAbs = fmtKwh(Math.abs(netWh));
+
+  if (!gained) {
+    if (!heating && !leakage) return 'Tank energy held steady today.';
+    if (heating && leakage) {
+      return 'No solar gain today. The greenhouse drew ' + fmtKwh(heatingLossWh) +
+        ' kWh from the tank; another ' + fmtKwh(leakageLossWh) + ' kWh slipped to air.';
+    }
+    if (heating) {
+      return 'No solar gain today. The greenhouse drew ' + fmtKwh(heatingLossWh) +
+        ' kWh from the tank.';
+    }
+    return 'No solar gain today. The tank released ' + fmtKwh(leakageLossWh) + ' kWh to air.';
+  }
+
+  // We gathered something.
+  if (!heating && !leakage) {
+    return 'Today your collectors gathered ' + fmtKwh(gatheredWh) + ' kWh. The tank is holding steady.';
+  }
+  if (heating && leakage) {
+    return 'Today your collectors gathered ' + fmtKwh(gatheredWh) +
+      ' kWh. The greenhouse drew ' + fmtKwh(heatingLossWh) + ' kWh of warmth, ' +
+      fmtKwh(leakageLossWh) + ' kWh slipped to air (net ' + netSign + netAbs + ' kWh).';
+  }
+  if (heating) {
+    return 'Today your collectors gathered ' + fmtKwh(gatheredWh) +
+      ' kWh. The greenhouse drew ' + fmtKwh(heatingLossWh) +
+      ' kWh of warmth (net ' + netSign + netAbs + ' kWh).';
+  }
+  return 'Today your collectors gathered ' + fmtKwh(gatheredWh) +
+    ' kWh. ' + fmtKwh(leakageLossWh) + ' kWh slipped to air since peak (net ' +
+    netSign + netAbs + ' kWh).';
+}
+
+function buildNoonBody(minutes, heatingLossWh, leakageLossWh, heatingDisabled) {
+  var heating = heatingLossWh >= KWH_NOISE_FLOOR_WH;
+  var leakage = leakageLossWh >= KWH_NOISE_FLOOR_WH;
+
+  if (heatingDisabled) {
+    if (!leakage) return 'Greenhouse heating is resting. The tank held steady overnight.';
+    return 'Greenhouse heating is resting. Overnight the tank released ' +
+      fmtKwh(leakageLossWh) + ' kWh to air.';
+  }
+
+  if (minutes > 0) {
+    var hrs = Math.floor(minutes / 60);
+    var mins = minutes % 60;
+    var duration = hrs > 0 ? hrs + 'h ' + mins + 'min' : mins + ' minutes';
+    var tail = heating
+      ? ' — ' + fmtKwh(heatingLossWh) + ' kWh delivered' +
+        (leakage ? ', ' + fmtKwh(leakageLossWh) + ' kWh slipped to air' : '') + '.'
+      : '.';
+    return 'Overnight the greenhouse drew warmth for ' + duration + tail;
+  }
+
+  if (!leakage) return 'No heating was needed overnight. The greenhouse stayed warm.';
+  return 'No heating was needed overnight. The tank released ' +
+    fmtKwh(leakageLossWh) + ' kWh to air.';
+}
+
 function checkEveningReport() {
   if (!isDataFresh()) return;
 
@@ -342,21 +452,20 @@ function checkEveningReport() {
   if (hour !== 20 || day === lastEveningReport) return;
 
   lastEveningReport = day;
-  var energy = Math.round(dailyEnergyWh);
-  var kwh = (energy / 1000).toFixed(1);
 
   pushRef.sendNotification('evening_report', {
     title: 'Daily Solar Report',
-    body: 'Today your collectors gathered approximately ' + kwh + ' kWh' +
-          ' (' + energy + ' Wh) of thermal energy.',
+    body: buildEveningBody(dailyEnergyWh, dailyHeatingLossWh, dailyLeakageLossWh),
     tag: 'evening-report',
     icon: pushRef.iconFor('evening_report'),
     url: '/#status',
   });
 
-  // Reset daily counter. Keep lastTankEnergyKwh so the next sample
+  // Reset daily counters. Keep lastTankEnergyKwh so the next sample
   // doesn't treat the reset as a huge "gain" on re-accumulation.
   dailyEnergyWh = 0;
+  dailyHeatingLossWh = 0;
+  dailyLeakageLossWh = 0;
 }
 
 function checkNoonReport() {
@@ -371,26 +480,18 @@ function checkNoonReport() {
   lastNoonReport = day;
   var minutes = Math.round(nightHeatingMinutes);
 
-  var body;
-  if (minutes > 0) {
-    var hrs = Math.floor(minutes / 60);
-    var mins = minutes % 60;
-    var duration = hrs > 0 ? hrs + 'h ' + mins + 'min' : mins + ' minutes';
-    body = 'Overnight the greenhouse heating ran for ' + duration + '.';
-  } else {
-    body = 'No heating was needed overnight. The greenhouse stayed warm.';
-  }
-
   pushRef.sendNotification('noon_report', {
     title: 'Overnight Heating Report',
-    body: body,
+    body: buildNoonBody(minutes, nightHeatingLossWh, nightLeakageLossWh, isHeatingDisabled()),
     tag: 'noon-report',
     icon: pushRef.iconFor('noon_report'),
     url: '/#status',
   });
 
-  // Reset night counter
+  // Reset night counters
   nightHeatingMinutes = 0;
+  nightHeatingLossWh = 0;
+  nightLeakageLossWh = 0;
 }
 
 // ── Lifecycle ──
@@ -428,6 +529,10 @@ function _reset() {
   lastEveningReport = 0;
   lastNoonReport = 0;
   dailyEnergyWh = 0;
+  dailyHeatingLossWh = 0;
+  dailyLeakageLossWh = 0;
+  nightHeatingLossWh = 0;
+  nightLeakageLossWh = 0;
   lastTankEnergyKwh = null;
   nightHeatingMinutes = 0;
   lastModeCheckTs = 0;
@@ -453,8 +558,18 @@ module.exports = {
   _setOutdoorHistory: function (h) { outdoorTempHistory = h; },
   _setDailyEnergyWh: function (v) { dailyEnergyWh = v; },
   _getDailyEnergyWh: function () { return dailyEnergyWh; },
+  _setDailyHeatingLossWh: function (v) { dailyHeatingLossWh = v; },
+  _getDailyHeatingLossWh: function () { return dailyHeatingLossWh; },
+  _setDailyLeakageLossWh: function (v) { dailyLeakageLossWh = v; },
+  _getDailyLeakageLossWh: function () { return dailyLeakageLossWh; },
+  _setNightHeatingLossWh: function (v) { nightHeatingLossWh = v; },
+  _getNightHeatingLossWh: function () { return nightHeatingLossWh; },
+  _setNightLeakageLossWh: function (v) { nightLeakageLossWh = v; },
+  _getNightLeakageLossWh: function () { return nightLeakageLossWh; },
   _setNightHeatingMinutes: function (v) { nightHeatingMinutes = v; },
   _getNightHeatingMinutes: function () { return nightHeatingMinutes; },
+  buildEveningBody: buildEveningBody,
+  buildNoonBody: buildNoonBody,
   _setLastEveningReport: function (v) { lastEveningReport = v; },
   _setLastNoonReport: function (v) { lastNoonReport = v; },
   _setLastEvaluateTs: function (v) { lastEvaluateTs = v; },

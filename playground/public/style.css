@@ -715,6 +715,105 @@ select, input, textarea { max-width: 100%; }
   margin: 4px 0;
 }
 
+/* ── Today's balance card ── */
+.balance-card {
+  padding: 24px 24px 16px;
+}
+
+.balance-title {
+  font-family: 'Newsreader', Georgia, serif;
+  font-style: italic;
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--on-surface);
+  text-transform: none;
+  letter-spacing: -0.02em;
+  margin: 0 0 16px;
+}
+
+.balance-section + .balance-section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--outline-variant, rgba(255,255,255,0.08));
+}
+
+.balance-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.balance-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--secondary);
+}
+
+.balance-section-window {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.balance-sentence {
+  font-family: 'Newsreader', Georgia, serif;
+  font-style: italic;
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--on-surface-variant);
+  margin: 0 0 12px;
+}
+
+.balance-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.balance-stat {
+  background: var(--surface-container-high);
+  border-radius: 0.75rem;
+  padding: 12px 16px;
+}
+
+.balance-stat-label {
+  font-size: 10px;
+  color: var(--on-surface-variant);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-weight: 700;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.balance-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.balance-stat-value.positive { color: var(--secondary); }
+.balance-stat-value.negative { color: var(--primary); }
+
+.balance-stat-unit {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  font-weight: 400;
+  margin-left: 2px;
+}
+
+.balance-stat-caption {
+  font-family: 'Newsreader', Georgia, serif;
+  font-style: italic;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  margin-top: 4px;
+  display: block;
+}
+
 /* ── System Logs ── */
 .copy-logs-btn {
   display: flex;
