@@ -241,6 +241,7 @@ function ensureLiveSource() {
     liveSource.onUpdate(function (state, result) {
       lastDataTime = Date.now();
       if (store.get('phase') !== 'live') return;
+      liveFrameSeen = true;
       // Defense-in-depth: each step is independent. A bug in updateDisplay
       // must not break the manual override controls (or vice versa).
       var steps = [
@@ -298,6 +299,7 @@ function switchToLive() {
 
 function clearLiveDisplay() {
   // Reset display to placeholder values — never show simulation defaults in live mode
+  liveFrameSeen = false;
   document.getElementById('mode-card-title').textContent = '--';
   document.getElementById('mode-card-status').innerHTML = '';
   document.getElementById('tank-temp-val').textContent = '--';
@@ -425,6 +427,12 @@ let simTimeAccum = 0;
 let schematicHandle = null;
 let lastState = null;
 let lastResult = null;
+// True after the first real live WebSocket frame has rendered. Used by
+// rerenderWithHistoryFallback to decide whether to trust `lastState` (a
+// live WS frame) or fall back to the last history point (the initial
+// updateDisplay call at boot seeds lastState with the sim model defaults,
+// which we do NOT want to show in live mode).
+let liveFrameSeen = false;
 const DT = 1;
 let graphRange = 86400; // default 24h
 let yesterdayHigh = 0;
@@ -881,8 +889,49 @@ function fetchLiveHistory(rangeSeconds) {
       liveHistoryData = data;
       loadLiveHistoryIntoStore(data);
       drawHistoryGraph();
+      // The history fetch is async; the first WebSocket state frame may
+      // have already rendered the UI with empty trend arrows (because the
+      // store was empty at that moment). Re-render now so trends and the
+      // tank-avg gauge reflect the freshly-loaded 15-min window instead
+      // of waiting for the next ~1 Hz WS frame to trigger a refresh.
+      rerenderWithHistoryFallback();
     })
     .catch(() => { liveHistoryData = null; });
+}
+
+// Re-render the status/components views after something refills the
+// timeSeriesStore (currently just the live-history fetch). Uses the most
+// recent observed state when available; otherwise synthesizes a minimal
+// state from the last history point so the gauge and sensor table show
+// something immediately instead of "--".
+function rerenderWithHistoryFallback() {
+  // Only trust lastState if it came from a real live frame. The initial
+  // updateDisplay() call during init() seeds lastState with the sim model
+  // defaults — using those in live mode before the first WS frame would
+  // show (e.g.) a gauge of "11 °C" instead of the freshly-loaded history.
+  if (liveFrameSeen && lastState && lastResult) {
+    updateDisplay(lastState, lastResult);
+    return;
+  }
+  const n = timeSeriesStore.times.length;
+  if (n === 0) return;
+  const lastVals = timeSeriesStore.values[n - 1];
+  const lastMode = timeSeriesStore.modes[n - 1] || 'idle';
+  const synth = {
+    t_tank_top: lastVals.t_tank_top,
+    t_tank_bottom: lastVals.t_tank_bottom,
+    t_collector: lastVals.t_collector,
+    t_greenhouse: lastVals.t_greenhouse,
+    t_outdoor: lastVals.t_outdoor,
+    simTime: 0,
+  };
+  const idleResult = {
+    mode: lastMode,
+    actuators: { pump: false, fan: false, space_heater: false },
+    valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
+    transition: null,
+  };
+  updateDisplay(synth, idleResult);
 }
 
 // Convert /api/history response into timeSeriesStore format.
@@ -1622,12 +1671,17 @@ function fmtTemp(v, digits) {
 }
 
 // ── Temperature trend helpers ──
-// 5-minute rolling window, 1 °C/hr threshold → anything moving faster than
-// ~0.083 °C per 5 min counts as rising/falling, otherwise stable. Reused by
-// the gauge status label, the Components-view sensor table, and the Status-
-// view greenhouse chip so every reading expresses trend the same way.
-const TREND_WINDOW_S = 300;
-const TREND_THRESHOLD = 1 / 12;  // °C per 5 min
+// 15-minute rolling window, 1 °C/hr threshold → anything moving faster than
+// 0.25 °C per 15 min counts as rising/falling, otherwise stable. 15 min is
+// long enough that trends are already computable from the first page load
+// (the live-history fetch and the simulation bootstrap snapshot both pre-
+// populate the store with samples well within the window) and short enough
+// that real changes in weather or charging state surface within a minute or
+// two. Reused by the gauge status label, the Components-view sensor table,
+// and the Status-view greenhouse chip so every reading expresses trend the
+// same way.
+const TREND_WINDOW_S = 900;
+const TREND_THRESHOLD = 0.25;  // °C per 15 min (== 1 °C/hr)
 
 // Read series value by key (e.g. 't_tank_bottom') or a resolver function
 // that takes a store-entry object and returns a number | null. The resolver
