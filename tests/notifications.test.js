@@ -207,6 +207,43 @@ describe('notifications', () => {
     it('tracks night heating minutes', () => {
       assert.strictEqual(notifications._getNightHeatingMinutes(), 0);
     });
+
+    it('daily energy is the positive delta of tank stored energy', () => {
+      // Formula: Q = 300 kg × 4.186 kJ/(kg·K) × ΔT / 3600
+      //   start: avg=20 °C  → ΔT=8  → 2.790 kWh
+      //   end  : avg=40 °C  → ΔT=28 → 9.767 kWh
+      //   gain : 6.977 kWh  → 6977 Wh
+      notifications.evaluate({ temps: { tank_top: 22, tank_bottom: 18, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+      assert.strictEqual(notifications._getDailyEnergyWh(), 0);
+
+      notifications.evaluate({ temps: { tank_top: 45, tank_bottom: 35, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+      var gained = notifications._getDailyEnergyWh();
+      assert.ok(gained > 6900 && gained < 7100, 'expected ≈6977 Wh, got ' + gained);
+    });
+
+    it('ignores tank cooling (does not subtract from daily gathered)', () => {
+      notifications.evaluate({ temps: { tank_top: 60, tank_bottom: 50, outdoor: 10 }, mode: 'IDLE' });
+      var before = notifications._getDailyEnergyWh();
+
+      notifications.evaluate({ temps: { tank_top: 45, tank_bottom: 35, outdoor: 10 }, mode: 'GREENHOUSE_HEATING' });
+      assert.strictEqual(notifications._getDailyEnergyWh(), before,
+        'cooling must not decrease dailyEnergyWh');
+    });
+
+    it('accumulates gain across multiple heating pulses', () => {
+      // First pulse: 20 → 30 °C avg
+      notifications.evaluate({ temps: { tank_top: 22, tank_bottom: 18, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+      notifications.evaluate({ temps: { tank_top: 34, tank_bottom: 26, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+      // Tank cools overnight: 30 → 25 °C avg (no negative credit)
+      notifications.evaluate({ temps: { tank_top: 28, tank_bottom: 22, outdoor: 10 }, mode: 'IDLE' });
+      // Next morning heats again: 25 → 40 °C avg
+      notifications.evaluate({ temps: { tank_top: 45, tank_bottom: 35, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+
+      // Total positive delta: (30-20) + (40-25) = 25 K of heating
+      // Q = 300 × 4.186 × 25 / 3600 ≈ 8.721 kWh → 8721 Wh
+      var gained = notifications._getDailyEnergyWh();
+      assert.ok(gained > 8600 && gained < 8850, 'expected ≈8721 Wh, got ' + gained);
+    });
   });
 
   describe('no spurious notifications', () => {

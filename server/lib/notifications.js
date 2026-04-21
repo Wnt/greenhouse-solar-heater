@@ -47,10 +47,26 @@ var tickTimer = null;
 // Report scheduling state
 var lastEveningReport = 0;  // day-of-year when last sent
 var lastNoonReport = 0;
+// Sum of positive deltas in the tank's stored thermal energy since the last
+// evening report. Matches the "Energy Stored" formula used by the Status
+// view (300 L · 4.186 kJ/kg·K · max(0, avgTank − 12 °C) / 3600). Credits only
+// energy that actually landed in the tank; cooling periods (greenhouse
+// heating, overnight loss) do not subtract.
 var dailyEnergyWh = 0;
+var lastTankEnergyKwh = null; // last observed stored-energy reading
 var nightHeatingMinutes = 0;
 var lastModeCheckTs = 0;
 var lastMode = null;
+
+// Tank energy helper — kept local so the CommonJS notifications module
+// doesn't depend on the ES-module physics.js. Must stay in sync with
+// tankStoredEnergyKwh() in playground/js/physics.js.
+function tankStoredEnergyKwh(avgTankC) {
+  if (typeof avgTankC !== 'number' || !isFinite(avgTankC)) return 0;
+  var dT = avgTankC - 12;
+  if (dT < 0) dT = 0;
+  return 300 * 4.186 * dT / 3600;
+}
 
 // Timezone offset for Finland (EET = UTC+2, EEST = UTC+3)
 // We use a simple approximation: UTC+2 in winter, UTC+3 in summer
@@ -169,17 +185,27 @@ function evaluate(payload) {
   var mode = payload.mode || null;
   if (lastModeCheckTs > 0 && mode && lastMode) {
     var elapsed = (now - lastModeCheckTs) / 60000; // minutes
-    if (mode === 'SOLAR_CHARGING') {
-      // Estimate energy: rough approximation from pump runtime
-      // ~2kW thermal power when solar charging
-      dailyEnergyWh += (elapsed / 60) * 2000;
-    }
     if (lastMode === 'GREENHOUSE_HEATING' || lastMode === 'EMERGENCY_HEATING') {
       nightHeatingMinutes += elapsed;
     }
   }
   lastMode = mode;
   lastModeCheckTs = now;
+
+  // Daily energy gathered = integral of positive changes in the tank's
+  // stored thermal energy. Any drop (greenhouse heating, overnight loss)
+  // simply resets the baseline without subtracting from the total — so
+  // the final figure represents cumulative heat actually delivered to the
+  // tank today, matching what the user sees on the Status view.
+  if (typeof temps.tank_top === 'number' && typeof temps.tank_bottom === 'number') {
+    var avgTankC = (temps.tank_top + temps.tank_bottom) / 2;
+    var currentKwh = tankStoredEnergyKwh(avgTankC);
+    if (lastTankEnergyKwh !== null) {
+      var delta = currentKwh - lastTankEnergyKwh;
+      if (delta > 0) dailyEnergyWh += delta * 1000;
+    }
+    lastTankEnergyKwh = currentKwh;
+  }
 
   // ── Pre-emergency alerts (only with fresh data) ──
   checkOverheatWarning(temps);
@@ -328,7 +354,8 @@ function checkEveningReport() {
     url: '/#status',
   });
 
-  // Reset daily counter
+  // Reset daily counter. Keep lastTankEnergyKwh so the next sample
+  // doesn't treat the reset as a huge "gain" on re-accumulation.
   dailyEnergyWh = 0;
 }
 
@@ -401,6 +428,7 @@ function _reset() {
   lastEveningReport = 0;
   lastNoonReport = 0;
   dailyEnergyWh = 0;
+  lastTankEnergyKwh = null;
   nightHeatingMinutes = 0;
   lastModeCheckTs = 0;
   lastMode = null;

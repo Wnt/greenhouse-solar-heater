@@ -1,5 +1,5 @@
 import { loadSystemYaml } from './yaml-loader.js';
-import { ThermalModel } from './physics.js';
+import { ThermalModel, tankStoredEnergyKwh } from './physics.js';
 import { ControlStateMachine, initControlLogic } from './control.js';
 import { load as loadControlLogic } from './control-logic-loader.js';
 import { createSlider, formatTime, pickTickStep, formatTick, pickBucketSize } from './ui.js';
@@ -1874,38 +1874,17 @@ function updateDisplay(state, result) {
     : null;
   document.getElementById('tank-temp-val').textContent = fmtTemp(tankAvg, 0);
 
-  // Energy stored: Q = m * c * (T_avg - T_base), 300L water, base 12°C
-  // Heat loss: estimated from 24h temperature history in store
-  const TANK_MASS = 300; // kg
-  const SPECIFIC_HEAT = 4.186; // kJ/(kg·K)
-  const BASE_TEMP = 12; // °C
+  // Energy stored: Q = m · c · (T_avg − T_base), 300 L water, base 12 °C.
+  // Reflects the *current* tank state only — past cooling is already baked
+  // into the current temperatures, so there is no separate "loss" term to
+  // subtract. Earlier revisions accumulated idle-period temperature drops
+  // across the time-series store as a pseudo loss, which both
+  // double-counted energy and made the number depend on the 1 H/24 H/etc.
+  // graph range (the range trimmed the store).
   const energyEl = document.getElementById('tank-stat-energy');
   if (isNum(state.t_tank_top) && isNum(state.t_tank_bottom)) {
     const avgTankTemp = (state.t_tank_top + state.t_tank_bottom) / 2;
-    const grossKwh = TANK_MASS * SPECIFIC_HEAT * Math.max(0, avgTankTemp - BASE_TEMP) / 3600;
-    // Estimate 24h heat loss from stored data
-    let lossKwh = 0;
-    if (timeSeriesStore.times.length > 1) {
-      const now = timeSeriesStore.times[timeSeriesStore.times.length - 1];
-      const dayAgo = now - 86400;
-      // Sum temperature drops during idle periods (no active heating/charging)
-      for (let i = 1; i < timeSeriesStore.times.length; i++) {
-        if (timeSeriesStore.times[i] < dayAgo) continue;
-        const m = timeSeriesStore.modes[i];
-        if (m === 'idle' || m === 'greenhouse_heating') {
-          const prev = timeSeriesStore.values[i - 1];
-          const curr = timeSeriesStore.values[i];
-          if (!isNum(prev.t_tank_top) || !isNum(prev.t_tank_bottom) ||
-              !isNum(curr.t_tank_top) || !isNum(curr.t_tank_bottom)) continue;
-          const prevAvg = (prev.t_tank_top + prev.t_tank_bottom) / 2;
-          const currAvg = (curr.t_tank_top + curr.t_tank_bottom) / 2;
-          const drop = prevAvg - currAvg;
-          if (drop > 0) lossKwh += TANK_MASS * SPECIFIC_HEAT * drop / 3600;
-        }
-      }
-    }
-    const netKwh = Math.max(0, grossKwh - lossKwh);
-    energyEl.textContent = netKwh.toFixed(1);
+    energyEl.textContent = tankStoredEnergyKwh(avgTankTemp).toFixed(1);
   } else {
     energyEl.textContent = TEMP_PLACEHOLDER;
   }

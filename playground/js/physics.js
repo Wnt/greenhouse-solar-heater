@@ -12,6 +12,20 @@
 const WATER_CP = 4186;       // J/(kg·K)
 const WATER_DENSITY = 1000;  // kg/m³
 
+// Energy-stored math for the 300 L Jäspi tank, referenced to 12 °C
+// (the practical floor below which stored heat is no longer useful for
+// greenhouse heating). Used by the Status view's "Energy Stored" card
+// and the Daily Solar Report notification.
+const TANK_VOLUME_L = 300;
+const TANK_BASE_TEMP_C = 12;
+const WATER_SPECIFIC_HEAT_KJ = 4.186; // kJ/(kg·K)
+
+export function tankStoredEnergyKwh(avgTankC) {
+  if (typeof avgTankC !== 'number' || !isFinite(avgTankC)) return 0;
+  const dT = Math.max(0, avgTankC - TANK_BASE_TEMP_C);
+  return TANK_VOLUME_L * WATER_SPECIFIC_HEAT_KJ * dT / 3600;
+}
+
 // System parameters (from system.yaml, with sensible defaults)
 const DEFAULTS = {
   collector_area: 4.0,          // m²
