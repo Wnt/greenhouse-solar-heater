@@ -30,9 +30,9 @@ process.on('exit', () => {
   try { fs.writeFileSync(CONF_PATH, ORIGINAL_CONF); } catch (_) {}
 });
 
-function runDeploy(ip, scriptId) {
+function spawnDeploy(args) {
   return new Promise((resolve, reject) => {
-    const child = spawn('bash', [DEPLOY_SH, ip, String(scriptId)], {
+    const child = spawn('bash', [DEPLOY_SH, ...args], {
       cwd: SCRIPTS_DIR,
       env: { ...process.env, DEPLOY_STOP_DELAY: '0' },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -50,6 +50,18 @@ function runDeploy(ip, scriptId) {
       resolve({ code, stdout, stderr });
     });
   });
+}
+
+// Run deploy.sh with no argument so it takes the full default path
+// (USER_TARGET=""), which includes the multi-device naming phase.
+function runDeployNoArg() {
+  return spawnDeploy([]);
+}
+
+// Run deploy.sh with an explicit target IP. This path skips the naming
+// phase — matching the real-world behavior of "rename only on full deploys."
+function runDeploy(ip) {
+  return spawnDeploy([ip]);
 }
 
 function createMockServer(handler) {
@@ -82,6 +94,9 @@ function createMockServer(handler) {
     } else if (url.includes('Script.Start')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ was_running: false }));
+    } else if (url.includes('Sys.SetConfig') || url.includes('Switch.SetConfig')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ restart_required: false }));
     } else {
       res.writeHead(404);
       res.end('Not found');
@@ -118,10 +133,24 @@ describe('deploy.sh', () => {
         resolve();
       });
     });
-    fs.writeFileSync(CONF_PATH,
-      `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\nPRO4PM_VPN=127.0.0.1:${port}\n`
-    );
-    deployResult = await runDeploy(`127.0.0.1:${port}`, 1);
+    // Point every device at the mock so the naming phase exercises real
+    // RPC calls against it. deploy.sh skips naming when a specific device
+    // IP is passed as $1, so the main "deployResult" run (below) passes no
+    // argument and targets PRO4PM implicitly — exercising the full path.
+    const addr = `127.0.0.1:${port}`;
+    fs.writeFileSync(CONF_PATH, [
+      `PRO4PM=${addr}`,
+      `PRO2PM_1=${addr}`,
+      `PRO2PM_2=${addr}`,
+      `PRO2PM_3=${addr}`,
+      `PRO2PM_4=${addr}`,
+      `PRO2PM_5=${addr}`,
+      `SENSOR_1=${addr}`,
+      `SENSOR_2=${addr}`,
+      `PRO4PM_VPN=${addr}`,
+      '',
+    ].join('\n'));
+    deployResult = await runDeployNoArg();
   });
 
   after(async () => {
@@ -231,6 +260,120 @@ describe('deploy.sh', () => {
     assert.strictEqual(putCalls.length, 0,
       'No id=2 PutCode should occur after the telemetry merge');
   });
+
+  // Device + channel naming phase. The deploy run in before() was launched
+  // with no arg so naming executes against every device in devices.conf
+  // (all pointed at the mock). Naming ordering is not asserted — it runs
+  // after MQTT config, which runs after script upload.
+  it('names the Pro 4PM and its four switches with meaningful labels', () => {
+    const sysCalls = mock.calls.filter(c => c.url.includes('Sys.SetConfig'));
+    assert.ok(sysCalls.length >= 1, 'should call Sys.SetConfig at least once');
+    const deviceNames = sysCalls
+      .map(c => { try { return JSON.parse(c.body).config.device.name; } catch (_) { return null; } })
+      .filter(Boolean);
+    assert.ok(deviceNames.includes('GH Controller'),
+      'Pro 4PM should be named "GH Controller", got: ' + deviceNames.join(', '));
+
+    const switchCalls = mock.calls.filter(c => c.url.includes('Switch.SetConfig'));
+    const switchNames = {};
+    for (const c of switchCalls) {
+      try {
+        const p = JSON.parse(c.body);
+        switchNames[p.id] = (switchNames[p.id] || []).concat(p.config.name);
+      } catch (_) { /* ignore */ }
+    }
+    assert.ok((switchNames[0] || []).includes('Pump'), 'switch 0 should include "Pump"');
+    assert.ok((switchNames[1] || []).includes('Fan'), 'switch 1 should include "Fan"');
+    assert.ok((switchNames[2] || []).includes('Heater (immersion)'),
+      'switch 2 should include "Heater (immersion)"');
+    assert.ok((switchNames[3] || []).includes('Heater (space)'),
+      'switch 3 should include "Heater (space)"');
+  });
+
+  it('names every Pro 2PM valve controller with role-specific labels', () => {
+    const sysCalls = mock.calls.filter(c => c.url.includes('Sys.SetConfig'));
+    const deviceNames = sysCalls
+      .map(c => { try { return JSON.parse(c.body).config.device.name; } catch (_) { return null; } })
+      .filter(Boolean);
+    for (const expected of [
+      'GH Valves 1 (input low)',
+      'GH Valves 2 (input/coll)',
+      'GH Valves 3 (output)',
+      'GH Valves 4 (collector top)',
+      'GH Valves 5 (spare)',
+    ]) {
+      assert.ok(deviceNames.includes(expected),
+        `expected device name "${expected}", got: ${deviceNames.join(', ')}`);
+    }
+
+    const switchCalls = mock.calls.filter(c => c.url.includes('Switch.SetConfig'));
+    const switchNamesSeen = new Set();
+    for (const c of switchCalls) {
+      try { switchNamesSeen.add(JSON.parse(c.body).config.name); } catch (_) { /* ignore */ }
+    }
+    for (const expected of ['VI-btm', 'VI-top', 'VI-coll', 'VO-coll', 'VO-rad', 'VO-tank', 'V-air']) {
+      assert.ok(switchNamesSeen.has(expected),
+        `expected valve label "${expected}" in switch names, got: ${[...switchNamesSeen].join(', ')}`);
+    }
+  });
+
+  it('names both sensor hubs at the device level only (no switch rename)', () => {
+    const sysCalls = mock.calls.filter(c => c.url.includes('Sys.SetConfig'));
+    const deviceNames = sysCalls
+      .map(c => { try { return JSON.parse(c.body).config.device.name; } catch (_) { return null; } })
+      .filter(Boolean);
+    assert.ok(deviceNames.includes('GH Sensors 1'), 'sensor hub 1 should be named');
+    assert.ok(deviceNames.includes('GH Sensors 2'), 'sensor hub 2 should be named');
+  });
+});
+
+describe('deploy.sh naming opt-out', () => {
+  let mock;
+  let port;
+
+  before(async () => {
+    mock = createMockServer();
+    await new Promise((resolve) => {
+      mock.server.listen(0, '127.0.0.1', () => {
+        port = mock.server.address().port;
+        resolve();
+      });
+    });
+    const addr = `127.0.0.1:${port}`;
+    fs.writeFileSync(CONF_PATH, [
+      `PRO4PM=${addr}`,
+      `PRO2PM_1=${addr}`,
+      `PRO4PM_VPN=${addr}`,
+      '',
+    ].join('\n'));
+  });
+
+  after(async () => {
+    fs.writeFileSync(CONF_PATH, ORIGINAL_CONF);
+    await new Promise((resolve) => mock.server.close(resolve));
+  });
+
+  it('skips naming when DEPLOY_SET_NAMES=false', async () => {
+    mock.calls.length = 0;
+    const child = spawn('bash', [DEPLOY_SH], {
+      cwd: SCRIPTS_DIR,
+      env: { ...process.env, DEPLOY_STOP_DELAY: '0', DEPLOY_SET_NAMES: 'false' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    await new Promise((resolve) => child.on('close', resolve));
+    const sysCalls = mock.calls.filter(c => c.url.includes('Sys.SetConfig'));
+    const switchSetConfigCalls = mock.calls.filter(c => c.url.includes('Switch.SetConfig'));
+    assert.strictEqual(sysCalls.length, 0, 'no Sys.SetConfig calls when naming disabled');
+    assert.strictEqual(switchSetConfigCalls.length, 0, 'no Switch.SetConfig calls when naming disabled');
+  });
+
+  it('skips naming when a specific device IP is passed', async () => {
+    mock.calls.length = 0;
+    await runDeploy(`127.0.0.1:${port}`);
+    const sysCalls = mock.calls.filter(c => c.url.includes('Sys.SetConfig'));
+    assert.strictEqual(sysCalls.length, 0,
+      'targeting a single IP should skip the multi-device naming phase');
+  });
 });
 
 // Separate deploy run for error handling
@@ -271,7 +414,7 @@ describe('deploy.sh error handling', () => {
   });
 
   it('fails on PutCode HTTP error', async () => {
-    const result = await runDeploy(`127.0.0.1:${port}`, 1);
+    const result = await runDeploy(`127.0.0.1:${port}`);
     assert.ok(result.code !== 0, 'should exit with non-zero status');
     assert.ok(result.stdout.includes('ERROR'), 'should print error message');
   });

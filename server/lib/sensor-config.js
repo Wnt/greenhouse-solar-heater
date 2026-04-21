@@ -276,6 +276,16 @@ function toCompactFormat(config) {
 
 var sensorApply = require('./sensor-apply');
 
+// Role → human-readable label map, used by sensor-apply to name each
+// Temperature component in the Shelly app when roles are applied.
+function buildRoleLabels() {
+  var labels = {};
+  for (var i = 0; i < SENSOR_ROLES.length; i++) {
+    labels[SENSOR_ROLES[i].name] = SENSOR_ROLES[i].label;
+  }
+  return labels;
+}
+
 function formatHostResult(config, r) {
   var hostInfo = config.hosts.find(function (h) { return h.ip === r.host; });
   var hostId = hostInfo ? hostInfo.id : r.host;
@@ -293,7 +303,7 @@ function applyConfig(mqttBridge, callback) {
   var config = getConfig();
   var compact = toCompactFormat(config);
 
-  sensorApply.applyAll(config.hosts, config.assignments).then(function (result) {
+  sensorApply.applyAll(config.hosts, config.assignments, buildRoleLabels()).then(function (result) {
     var results = {};
     for (var i = 0; i < result.results.length; i++) {
       var f = formatHostResult(config, result.results[i]);
@@ -348,7 +358,7 @@ function applySingleTarget(targetId, mqttBridge, callback) {
     return;
   }
 
-  sensorApply.applyOne(config.hosts, config.assignments, host.ip).then(function (result) {
+  sensorApply.applyOne(config.hosts, config.assignments, host.ip, buildRoleLabels()).then(function (result) {
     var results = {};
     if (result.results && result.results[0]) {
       var f = formatHostResult(config, result.results[0]);
