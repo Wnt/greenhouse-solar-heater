@@ -403,17 +403,22 @@
     </section>
 
     <!-- ═══ DEVICE VIEW (live mode only) ═══ -->
+    <!--
+      Section order (top → bottom):
+        1. Manual relay testing   — fastest-feedback diagnostic, used during commissioning
+        2. Controller settings    — runtime toggles and mode bans
+        3. Sensor configuration   — scan + assign probes (usually one-time setup)
+      Keep this order: the reorg in claude/reorganize-device-view-eTLeU puts
+      hands-on testing first and the noisier sensor block last.
+    -->
     <section id="view-device" class="view" data-admin-only>
       <div class="view-header">
         <h2>Device configuration.</h2>
-        <p>Sensor assignment and runtime settings for the Shelly controller. Changes are pushed instantly via MQTT.</p>
+        <p>Runtime settings for the Shelly controller. Changes are pushed instantly via MQTT.</p>
       </div>
 
-      <!-- Sensor discovery & assignment: merged from former Sensors view -->
-      <div id="sensors-content">
-        <div class="card"><p style="color:var(--on-surface-variant);">Loading sensor configuration...</p></div>
-      </div>
-
+      <!-- Conditional: visible only during a valve transition. Stays near the top
+           because it's a transient status indicator the operator needs to see. -->
       <div class="card" id="staged-valve-detail-card" style="display:none;">
         <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;font-size:20px;color:var(--on-surface);margin-bottom:12px;text-transform:none;letter-spacing:-0.02em;">Staged valve progress</h3>
         <div id="staged-valve-detail-opening" class="staged-valve-list"></div>
@@ -421,47 +426,10 @@
         <div id="staged-valve-detail-pending-close" class="staged-valve-list"></div>
       </div>
 
-      <div class="card" id="device-config-card">
-        <div id="device-config-loading" style="color:var(--on-surface-variant);font-size:14px;">Loading device config...</div>
-        <div id="device-config-form" style="display:none;">
-          <div class="device-config-row">
-            <label class="device-config-label">Controls Enabled</label>
-            <div class="device-toggle" id="dc-ce" data-field="ce"></div>
-          </div>
-          <p style="font-size:12px;color:var(--on-surface-variant);margin:-4px 0 8px;">Master switch for all hardware control. When disabled, the controller monitors sensors but does not actuate any relays &mdash; valves stay closed, pump stays off. Use this to safely disable all automation while keeping monitoring active.</p>
-
-          <h4 style="margin:20px 0 12px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Enabled Actuators</h4>
-          <p style="font-size:12px;color:var(--on-surface-variant);margin-bottom:8px;">Selectively enable or disable individual actuators. Disabled actuators will not be activated by any operating mode, even if the mode would normally use them.</p>
-          <div class="device-config-row"><label class="device-config-label">Valves</label><div class="device-toggle" id="dc-ea-v" data-bit="1"></div></div>
-          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Motorized ball valves that direct water flow between tank, collectors, and radiators.</p>
-          <div class="device-config-row"><label class="device-config-label">Pump</label><div class="device-toggle" id="dc-ea-p" data-bit="2"></div></div>
-          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Circulation pump that moves water through the system.</p>
-          <div class="device-config-row"><label class="device-config-label">Fan</label><div class="device-toggle" id="dc-ea-f" data-bit="4"></div></div>
-          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Greenhouse ventilation fan for forced air circulation.</p>
-          <div class="device-config-row"><label class="device-config-label">Space Heater</label><div class="device-toggle" id="dc-ea-sh" data-bit="8"></div></div>
-          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Electric space heater for greenhouse backup heating.</p>
-          <div class="device-config-row"><label class="device-config-label">Immersion Heater</label><div class="device-toggle" id="dc-ea-ih" data-bit="16"></div></div>
-          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Electric immersion heater in the water tank for direct water heating.</p>
-
-          <h4 style="margin:20px 0 12px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Mode enablement</h4>
-          <p style="font-size:12px;color:var(--on-surface-variant);margin-bottom:8px;">Each mode can be permanently disabled, on a watchdog cool-off (temporary auto-ban), or allowed. The manual-override Forced mode selector respects bans: a banned mode cannot be forced.</p>
-          <div id="mode-enablement-list"></div>
-
-          <div style="margin-top:24px;display:flex;gap:12px;align-items:center;">
-            <button class="primary" id="dc-save">Save &amp; Push to Device</button>
-            <span id="dc-status" style="font-size:13px;color:var(--on-surface-variant);"></span>
-          </div>
-          <div id="dc-connection-warning" class="dc-connection-warning" style="display:none;">Cannot reach the controller. <a id="dc-try-anyway" class="dc-try-anyway" href="#">Try anyway</a></div>
-          <div style="margin-top:8px;font-size:11px;color:var(--on-surface-variant);">
-            Version: <span id="dc-version">-</span> | Size: <span id="dc-size">-</span>/256 bytes
-          </div>
-        </div>
-      </div>
-
-      <!-- Manual Override / Relay Toggle Board -->
-      <div class="card" id="relay-override-card" style="margin-top:20px;">
+      <!-- ── 1. Manual relay testing ── -->
+      <div class="card" id="relay-override-card">
         <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);margin:0 0 8px;">Manual relay testing.</h3>
-        <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 16px;">All automation — <strong>including freeze-drain safety</strong> — is suspended while active. Pick a forced mode to enter.</p>
+        <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 16px;">Directly toggle individual relays to verify wiring and valve actuation. All automation — <strong>including freeze-drain safety</strong> — is suspended while active. Pick a forced mode to enter.</p>
 
         <!-- Entry controls -->
         <div id="override-entry" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">
@@ -547,6 +515,51 @@
           </button>
         </div>
         <div id="override-expired-msg" style="display:none;font-size:13px;color:var(--on-surface-variant);margin-top:8px;"></div>
+      </div>
+
+      <!-- ── 2. Controller settings ── -->
+      <div class="card" id="device-config-card" style="margin-top:20px;">
+        <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);margin:0 0 8px;">Controller settings.</h3>
+        <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 16px;">Enable or disable hardware control, individual actuators, and operating modes. Pushed to the controller over MQTT.</p>
+        <div id="device-config-loading" style="color:var(--on-surface-variant);font-size:14px;">Loading device config...</div>
+        <div id="device-config-form" style="display:none;">
+          <div class="device-config-row">
+            <label class="device-config-label">Controls Enabled</label>
+            <div class="device-toggle" id="dc-ce" data-field="ce"></div>
+          </div>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin:-4px 0 8px;">Master switch for all hardware control. When disabled, the controller monitors sensors but does not actuate any relays &mdash; valves stay closed, pump stays off. Use this to safely disable all automation while keeping monitoring active.</p>
+
+          <h4 style="margin:24px 0 4px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Enabled actuators</h4>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 12px;">Selectively enable or disable individual actuators. Disabled actuators will not be activated by any operating mode, even if the mode would normally use them.</p>
+          <div class="device-config-row"><label class="device-config-label">Valves</label><div class="device-toggle" id="dc-ea-v" data-bit="1"></div></div>
+          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Motorized ball valves that direct water flow between tank, collectors, and radiators.</p>
+          <div class="device-config-row"><label class="device-config-label">Pump</label><div class="device-toggle" id="dc-ea-p" data-bit="2"></div></div>
+          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Circulation pump that moves water through the system.</p>
+          <div class="device-config-row"><label class="device-config-label">Fan</label><div class="device-toggle" id="dc-ea-f" data-bit="4"></div></div>
+          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Greenhouse ventilation fan for forced air circulation.</p>
+          <div class="device-config-row"><label class="device-config-label">Space Heater</label><div class="device-toggle" id="dc-ea-sh" data-bit="8"></div></div>
+          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Electric space heater for greenhouse backup heating.</p>
+          <div class="device-config-row"><label class="device-config-label">Immersion Heater</label><div class="device-toggle" id="dc-ea-ih" data-bit="16"></div></div>
+          <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Electric immersion heater in the water tank for direct water heating.</p>
+
+          <h4 style="margin:24px 0 4px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Mode enablement</h4>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 12px;">Each mode can be permanently disabled, on a watchdog cool-off (temporary auto-ban), or allowed. The manual-override Forced mode selector respects bans: a banned mode cannot be forced.</p>
+          <div id="mode-enablement-list"></div>
+
+          <div style="margin-top:24px;display:flex;gap:12px;align-items:center;">
+            <button class="primary" id="dc-save">Save &amp; Push to Device</button>
+            <span id="dc-status" style="font-size:13px;color:var(--on-surface-variant);"></span>
+          </div>
+          <div id="dc-connection-warning" class="dc-connection-warning" style="display:none;">Cannot reach the controller. <a id="dc-try-anyway" class="dc-try-anyway" href="#">Try anyway</a></div>
+          <div style="margin-top:8px;font-size:11px;color:var(--on-surface-variant);">
+            Version: <span id="dc-version">-</span> | Size: <span id="dc-size">-</span>/256 bytes
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 3. Sensor configuration (rendered by sensors.js into #sensors-content) ── -->
+      <div id="sensors-content" style="margin-top:20px;">
+        <div class="card"><p style="color:var(--on-surface-variant);">Loading sensor configuration...</p></div>
       </div>
     </section>
 

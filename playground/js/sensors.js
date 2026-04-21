@@ -19,6 +19,10 @@ let sensorConfig = null;
 let detectedSensors = {};  // hostId -> [{addr, component, tC, error}]
 let scanning = false;
 let scanInFlight = false;  // guards against concurrent scan requests
+// True once a scan has completed at least once this session. Used to gate the
+// red "Sensor missing: …" warning — before the first scan, detectedSensors is
+// empty so every saved assignment would otherwise look "missing".
+let scanAttempted = false;
 
 // ── Sensor discovery via MQTT (routed through server API) ──
 
@@ -155,51 +159,30 @@ function renderSensorsView() {
 
   const assignedAddrs = getAssignedAddrs();
   const allDetected = getAllDetectedSensors();
+  const missing = getMissingRequiredRoles();
 
+  // One card with four internal sections (Scan → Detected → Roles → Save/Apply).
+  // Each section has its own heading + short description and is separated by a
+  // top border via .sensor-section.
   let html = '';
+  html += '<div class="card sensor-config-card">';
+  html += '<h3 style="font-family:\'Newsreader\',Georgia,serif;font-style:italic;color:var(--on-surface);margin:0 0 8px;">Sensor configuration.</h3>';
+  html += '<p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 8px;">Discover DS18B20 probes on the Shelly sensor hubs, assign them to system roles, then push the routing to the controller.</p>';
 
-  // ── Sensor Roles section ──
-  html += '<div class="card"><h3>Sensor Roles</h3>';
-  html += '<div class="sensor-roles">';
-  for (const role of SENSOR_ROLES) {
-    const assignedAddr = getAssignedAddr(role.name);
-    const detected = allDetected.find(s => s.addr === assignedAddr);
-    const isMissing = assignedAddr && !detected;
+  // ── 3a. Scan ──
+  html += '<div class="sensor-section">';
+  html += '<h4 class="sensor-section-title">Scan sensor hubs</h4>';
+  html += '<p class="sensor-section-desc">Queries each hub for connected 1-Wire probes and reads a temperature so you can physically identify each one.</p>';
+  html += '<div class="sensor-actions">';
+  html += '<button class="primary' + (scanning ? ' scanning' : '') + '" id="btn-scan-sensors"' + (scanning ? ' disabled' : '') + '>' + (scanning ? '<span class="scan-spinner"></span>Scanning…' : 'Scan Sensors') + '</button>';
+  html += '</div>';
+  html += '<div id="sensor-status" style="margin-top:12px;"></div>';
+  html += '</div>';
 
-    html += '<div class="sensor-role-row" data-required="' + (!role.optional) + '">';
-    html += '<div class="role-info">';
-    html += '<strong>' + role.label + (role.optional ? '' : ' <span class="role-required-badge">required</span>') + '</strong>';
-    html += '<span class="role-location">' + role.location + (role.optional ? ' (optional)' : '') + '</span>';
-    html += '</div>';
-    html += '<div class="role-assignment">';
-
-    // Dropdown to select a sensor
-    html += '<select data-role="' + role.name + '" class="sensor-select">';
-    html += '<option value="">— unassigned —</option>';
-    for (const s of allDetected) {
-      const inUse = assignedAddrs[s.addr] && assignedAddrs[s.addr] !== role.name;
-      const tempStr = s.tC !== null ? ' (' + s.tC.toFixed(1) + '\u00B0C)' : s.error ? ' (error)' : '';
-      const label = s.addr + tempStr + (inUse ? ' [' + assignedAddrs[s.addr] + ']' : '');
-      const selected = s.addr === assignedAddr ? ' selected' : '';
-      const disabled = inUse ? ' disabled' : '';
-      // Option value omits the component ID — it's resolved in collectAssignments
-      // so unbound probes get unique cids instead of all defaulting to 100.
-      html += '<option value="' + s.addr + '|' + s.hostIndex + '"' + selected + disabled + '>' + label + '</option>';
-    }
-    html += '</select>';
-
-    if (isMissing) {
-      html += '<span class="sensor-warning">Sensor missing: ' + assignedAddr + '</span>';
-    } else if (detected && detected.tC !== null) {
-      html += '<span class="sensor-temp">' + detected.tC.toFixed(1) + '\u00B0C</span>';
-    }
-
-    html += '</div></div>';
-  }
-  html += '</div></div>';
-
-  // ── Detected Sensors section ──
-  html += '<div class="card" style="margin-top:16px;"><h3>Detected Sensors</h3>';
+  // ── 3b. Detected sensors ──
+  html += '<div class="sensor-section">';
+  html += '<h4 class="sensor-section-title">Detected Sensors</h4>';
+  html += '<p class="sensor-section-desc">Probes found on each hub during the last scan. Assignment status shows which role (if any) each probe is mapped to.</p>';
   if (!sensorConfig || !sensorConfig.hosts || sensorConfig.hosts.length === 0) {
     html += '<p style="color:var(--on-surface-variant);">No sensor hosts configured.</p>';
   } else {
@@ -212,7 +195,7 @@ function renderSensorsView() {
         // Never scanned in this session — distinct from "scan in flight" (null).
         html += '<p style="color:var(--on-surface-variant);">Not yet scanned. Click <strong>Scan Sensors</strong> to discover.</p>';
       } else if (result === null) {
-        html += '<p style="color:var(--on-surface-variant);"><span class="scan-spinner"></span>Scanning\u2026</p>';
+        html += '<p style="color:var(--on-surface-variant);"><span class="scan-spinner"></span>Scanning…</p>';
       } else if (result.error) {
         html += '<p class="host-error">' + result.error + '</p>';
       } else if (result.sensors.length === 0) {
@@ -225,7 +208,7 @@ function renderSensorsView() {
           const statusText = role ? 'Assigned: ' + role : 'Available';
           html += '<tr class="' + statusClass + '">';
           html += '<td class="addr">' + s.addr + '</td>';
-          html += '<td>' + (s.tC !== null ? s.tC.toFixed(1) + '\u00B0C' : s.error || '—') + '</td>';
+          html += '<td>' + (s.tC !== null ? s.tC.toFixed(1) + '°C' : s.error || '—') + '</td>';
           html += '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>';
           html += '</tr>';
         }
@@ -236,23 +219,77 @@ function renderSensorsView() {
   }
   html += '</div>';
 
-  // ── Actions section ──
-  const missing = getMissingRequiredRoles();
-  html += '<div class="card" style="margin-top:16px;"><h3>Actions</h3>';
+  // ── 3c. Sensor role assignments ──
+  html += '<div class="sensor-section">';
+  html += '<h4 class="sensor-section-title">Sensor Roles</h4>';
+  html += '<p class="sensor-section-desc">Map each detected probe to the physical location it measures. Required roles are highlighted; optional ones can be left unassigned.</p>';
+  html += '<div class="sensor-roles">';
+  for (const role of SENSOR_ROLES) {
+    const assignedAddr = getAssignedAddr(role.name);
+    const detected = allDetected.find(s => s.addr === assignedAddr);
+    // Only flag as missing once we've actually scanned — otherwise every saved
+    // assignment would look "missing" on the initial page load.
+    const isMissing = scanAttempted && assignedAddr && !detected;
+
+    html += '<div class="sensor-role-row" data-required="' + (!role.optional) + '">';
+    html += '<div class="role-info">';
+    html += '<strong>' + role.label + (role.optional ? '' : ' <span class="role-required-badge">required</span>') + '</strong>';
+    html += '<span class="role-location">' + role.location + (role.optional ? ' (optional)' : '') + '</span>';
+    html += '</div>';
+    html += '<div class="role-assignment">';
+
+    // Dropdown to select a sensor
+    html += '<select data-role="' + role.name + '" class="sensor-select">';
+    html += '<option value="">— unassigned —</option>';
+    // Before the first scan, keep the stored addr selectable so the dropdown
+    // reflects saved state instead of silently appearing unassigned.
+    if (!scanAttempted && assignedAddr && !detected) {
+      const storedHi = (sensorConfig && sensorConfig.assignments && sensorConfig.assignments[role.name] && typeof sensorConfig.assignments[role.name].hostIndex === 'number')
+        ? sensorConfig.assignments[role.name].hostIndex
+        : 0;
+      html += '<option value="' + assignedAddr + '|' + storedHi + '" selected>' + assignedAddr + ' (not yet scanned)</option>';
+    }
+    for (const s of allDetected) {
+      const inUse = assignedAddrs[s.addr] && assignedAddrs[s.addr] !== role.name;
+      const tempStr = s.tC !== null ? ' (' + s.tC.toFixed(1) + '°C)' : s.error ? ' (error)' : '';
+      const label = s.addr + tempStr + (inUse ? ' [' + assignedAddrs[s.addr] + ']' : '');
+      const selected = s.addr === assignedAddr ? ' selected' : '';
+      const disabled = inUse ? ' disabled' : '';
+      // Option value omits the component ID — it's resolved in collectAssignments
+      // so unbound probes get unique cids instead of all defaulting to 100.
+      html += '<option value="' + s.addr + '|' + s.hostIndex + '"' + selected + disabled + '>' + label + '</option>';
+    }
+    html += '</select>';
+
+    if (isMissing) {
+      html += '<span class="sensor-warning">Sensor missing: ' + assignedAddr + '</span>';
+    } else if (detected && detected.tC !== null) {
+      html += '<span class="sensor-temp">' + detected.tC.toFixed(1) + '°C</span>';
+    }
+
+    html += '</div></div>';
+  }
+  html += '</div>';
+  html += '</div>';
+
+  // ── 3d. Save / Apply actions ──
+  html += '<div class="sensor-section">';
+  html += '<h4 class="sensor-section-title">Save &amp; apply</h4>';
+  html += '<p class="sensor-section-desc"><strong>Save Assignments</strong> stores the role mapping on the server. <strong>Apply Configuration</strong> reprograms the sensor hubs and publishes the routing to the controller.</p>';
   html += '<div class="sensor-actions">';
-  html += '<button class="secondary' + (scanning ? ' scanning' : '') + '" id="btn-scan-sensors"' + (scanning ? ' disabled' : '') + '>' + (scanning ? '<span class="scan-spinner"></span>Scanning\u2026' : 'Scan Sensors') + '</button>';
   html += '<button class="primary" id="btn-save-sensors">Save Assignments</button>';
   html += '<button class="primary" id="btn-apply-sensors"' + (missing.length > 0 ? ' disabled' : '') + '>Apply Configuration</button>';
   if (missing.length > 0) {
     html += '<span class="sensor-warning">Required roles unassigned: ' + missing.join(', ') + '</span>';
   }
   html += '</div>';
-  html += '<div id="sensor-status" style="margin-top:12px;"></div>';
   html += '<div id="apply-results" style="margin-top:12px;"></div>';
   html += '<div class="sensor-meta" style="margin-top:8px;font-size:12px;color:var(--on-surface-variant);">';
   html += 'Version: ' + (sensorConfig ? sensorConfig.version : 0);
   html += '</div>';
   html += '</div>';
+
+  html += '</div>';  // .sensor-config-card
 
   container.innerHTML = html;
 
@@ -399,6 +436,9 @@ async function handleScan() {
     // can use to identify which physical sensor is which (vs raw 1-Wire ROM IDs).
     await scanAllHosts({ withTemp: true });
     scanning = false;
+    // Gate "Sensor missing" warnings only after we actually have scan results —
+    // flipping this earlier would show red warnings during the in-flight render.
+    scanAttempted = true;
     renderSensorsView();
 
     // Build informative status message
@@ -463,7 +503,7 @@ async function handleSave() {
   // Skip the round-trip when nothing changed — no version bump, no S3 write,
   // no MQTT republish. Saves users from accidentally pushing redundant configs.
   if (sensorConfig && assignmentsEqual(assignments, sensorConfig.assignments)) {
-    showStatus('No changes to save \u2014 click Apply Configuration to re-push to hubs.');
+    showStatus('No changes to save — click Apply Configuration to re-push to hubs.');
     return;
   }
   showStatus('Saving...');
@@ -490,7 +530,7 @@ async function handleApply() {
     // assume nothing happened.
     var isNetErr = /fetch|network|abort/i.test(e.message || '');
     var hint = isNetErr
-      ? 'Network error during apply \u2014 the hubs may have applied the changes anyway. Scan again to verify.'
+      ? 'Network error during apply — the hubs may have applied the changes anyway. Scan again to verify.'
       : 'Apply failed: ' + e.message;
     showStatus(hint, true);
   }

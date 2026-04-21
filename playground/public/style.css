@@ -1627,6 +1627,35 @@ button.primary.disabled {
 
 /* ── Sensors View ── */
 
+/* Internal sub-sections inside the consolidated Sensor configuration card.
+   Each sub-section has its own heading + short description and is separated
+   from the next by a thin top border — reads as distinct steps rather than
+   one wall of text. */
+.sensor-config-card .sensor-section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--outline-variant);
+}
+.sensor-config-card .sensor-section:first-of-type {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: none;
+}
+.sensor-section-title {
+  font-family: 'Newsreader', Georgia, serif;
+  font-style: italic;
+  font-size: 15px;
+  color: var(--on-surface);
+  margin: 0 0 4px;
+  text-transform: none;
+  letter-spacing: -0.01em;
+}
+.sensor-section-desc {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  margin: 0 0 12px;
+}
+
 .sensor-roles { display: flex; flex-direction: column; gap: 12px; }
 
 .sensor-role-row {
