@@ -25,11 +25,14 @@ describe('mode evaluation', () => {
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
-  it('enters SOLAR_CHARGING when collector > tank_bottom + 10', () => {
+  it('enters SOLAR_CHARGING when collector > tank_bottom + solarEnterDelta', () => {
+    // DEFAULT_CONFIG.solarEnterDelta = 5 K. collector 36 vs tank_bottom
+    // 30 gives a 6 K delta — above the new entry bar.
     const result = evaluate(makeState({
-      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+      temps: { collector: 36, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.reason, 'solar_enter');
   });
 
   it('enters GREENHOUSE_HEATING when greenhouse < 10 and tank has delta > 5', () => {
@@ -100,16 +103,18 @@ describe('mode evaluation', () => {
 });
 
 describe('hysteresis', () => {
-  it('enters solar charging at collector > tank_bottom + 10', () => {
+  it('enters solar charging at collector > tank_bottom + solarEnterDelta', () => {
     const result = evaluate(makeState({
-      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+      temps: { collector: 36, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.reason, 'solar_enter');
   });
 
-  it('does not enter solar at collector = tank_bottom + 10 (needs strictly greater)', () => {
+  it('does not enter solar at collector = tank_bottom + solarEnterDelta (needs strictly greater)', () => {
+    // delta exactly at threshold (5 K): 35 - 30 = 5. Must not enter.
     const result = evaluate(makeState({
-      temps: { collector: 40, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+      temps: { collector: 35, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
@@ -1861,6 +1866,204 @@ describe('buildSnapshotFromState — US5 staged-transition fields', () => {
     assert.strictEqual(snap.valves.vo_coll, true);
     assert.strictEqual(snap.valves.vi_top, false);
     assert.strictEqual(snap.actuators.pump, true);
+  });
+});
+
+describe('evaluate() emits a decision reason for each path', () => {
+  function evalWith(overrides) {
+    return evaluate(makeState(overrides), null);
+  }
+
+  it('solar_enter when collector crosses tank_bottom + solarEnterDelta', () => {
+    const r = evalWith({
+      temps: { collector: 36, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+    });
+    assert.strictEqual(r.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(r.reason, 'solar_enter');
+  });
+
+  it('solar_active while tank_top is still gaining heat', () => {
+    const r = evalWith({
+      temps: { collector: 50, tank_top: 42, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      solarChargePeakTankTop: 40, solarChargePeakTankTopAt: 1500, now: 2000
+    });
+    assert.strictEqual(r.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(r.reason, 'solar_active');
+  });
+
+  it('solar_stall when tank_top has not risen for solarExitStallSeconds', () => {
+    const r = evalWith({
+      temps: { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      solarChargePeakTankTop: 40, solarChargePeakTankTopAt: 1700, now: 2000
+    });
+    assert.strictEqual(r.nextMode, MODES.IDLE);
+    assert.strictEqual(r.reason, 'solar_stall');
+  });
+
+  it('solar_drop_from_peak when tank_top falls solarExitTankDrop below peak', () => {
+    const r = evalWith({
+      temps: { collector: 50, tank_top: 38, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      solarChargePeakTankTop: 40, solarChargePeakTankTopAt: 1900, now: 2000
+    });
+    assert.strictEqual(r.nextMode, MODES.IDLE);
+    assert.strictEqual(r.reason, 'solar_drop_from_peak');
+  });
+
+  it('freeze_drain when coldest sensor drops below freezeDrainTemp', () => {
+    const r = evalWith({
+      temps: { collector: -1, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 5 }
+    });
+    assert.strictEqual(r.nextMode, MODES.ACTIVE_DRAIN);
+    assert.strictEqual(r.reason, 'freeze_drain');
+    assert.strictEqual(r.safetyOverride, true);
+  });
+
+  it('overheat_drain when collector > overheatDrainTemp during SOLAR_CHARGING', () => {
+    const r = evalWith({
+      temps: { collector: 96, tank_top: 90, tank_bottom: 80, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 100000
+    });
+    assert.strictEqual(r.nextMode, MODES.ACTIVE_DRAIN);
+    assert.strictEqual(r.reason, 'overheat_drain');
+  });
+
+  it('overheat_circulate forces SOLAR_CHARGING when collector is dangerously hot but solar entry did not fire', () => {
+    // tank_bottom already near boiling leaves the entry delta unsatisfied
+    // (96 is not > 95 + 5). The overheat_circulate override still fires so
+    // the pump dumps heat rather than letting the collector boil.
+    const r = evalWith({
+      temps: { collector: 96, tank_top: 90, tank_bottom: 95, greenhouse: 15, outdoor: 10 }
+    });
+    assert.strictEqual(r.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(r.reason, 'overheat_circulate');
+  });
+
+  it('greenhouse_enter when greenhouse is cold and tank has delta', () => {
+    const r = evalWith({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 9, outdoor: 10 }
+    });
+    assert.strictEqual(r.nextMode, MODES.GREENHOUSE_HEATING);
+    assert.strictEqual(r.reason, 'greenhouse_enter');
+  });
+
+  it('greenhouse_active while in GH and not yet at exit', () => {
+    const r = evalWith({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 11, outdoor: 10 },
+      currentMode: MODES.GREENHOUSE_HEATING,
+      modeEnteredAt: 0, now: 2000
+    });
+    assert.strictEqual(r.nextMode, MODES.GREENHOUSE_HEATING);
+    assert.strictEqual(r.reason, 'greenhouse_active');
+  });
+
+  it('greenhouse_warm when greenhouse crosses exit temp', () => {
+    const r = evalWith({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 13, outdoor: 10 },
+      currentMode: MODES.GREENHOUSE_HEATING,
+      modeEnteredAt: 0, now: 2000
+    });
+    assert.strictEqual(r.nextMode, MODES.IDLE);
+    assert.strictEqual(r.reason, 'greenhouse_warm');
+  });
+
+  it('greenhouse_tank_depleted when tank drops below greenhouse + exit delta', () => {
+    const r = evalWith({
+      temps: { collector: 5, tank_top: 12, tank_bottom: 10, greenhouse: 11, outdoor: 10 },
+      currentMode: MODES.GREENHOUSE_HEATING,
+      modeEnteredAt: 0, now: 2000,
+      collectorsDrained: true
+    });
+    assert.strictEqual(r.nextMode, MODES.IDLE);
+    assert.strictEqual(r.reason, 'greenhouse_tank_depleted');
+  });
+
+  it('emergency_enter when greenhouse is critically cold and pump mode is IDLE', () => {
+    const r = evalWith({
+      temps: { collector: 5, tank_top: 12, tank_bottom: 10, greenhouse: 8, outdoor: -5 },
+      collectorsDrained: true
+    });
+    assert.strictEqual(r.nextMode, MODES.EMERGENCY_HEATING);
+    assert.strictEqual(r.reason, 'emergency_enter');
+  });
+
+  it('sensor_stale forces IDLE with reason sensor_stale', () => {
+    const r = evaluate(makeState({
+      temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      sensorAge: { collector: 999, tank_top: 0, tank_bottom: 0, greenhouse: 0, outdoor: 0 }
+    }), null);
+    assert.strictEqual(r.nextMode, MODES.IDLE);
+    assert.strictEqual(r.reason, 'sensor_stale');
+  });
+
+  it('min_duration when a non-IDLE mode is within its hold window', () => {
+    // 30s into a SOLAR_CHARGING session, min duration is 300s → hold.
+    const r = evalWith({
+      temps: { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 1970, now: 2000,
+      solarChargePeakTankTop: 40, solarChargePeakTankTopAt: 1970
+    });
+    assert.strictEqual(r.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(r.reason, 'min_duration');
+  });
+
+  it('drain_running while still inside an ACTIVE_DRAIN', () => {
+    const r = evalWith({
+      temps: { collector: 5, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 5 },
+      currentMode: MODES.ACTIVE_DRAIN,
+      modeEnteredAt: 1900, now: 2000
+    });
+    assert.strictEqual(r.nextMode, MODES.ACTIVE_DRAIN);
+    assert.strictEqual(r.reason, 'drain_running');
+  });
+
+  it('watchdog_ban when evaluator chose a mode that is banned', () => {
+    const dc = { ce: true, wb: { SC: 9999999999 } };
+    const r = evaluate(makeState({
+      temps: { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+    }), null, dc);
+    assert.strictEqual(r.nextMode, MODES.IDLE);
+    assert.strictEqual(r.reason, 'watchdog_ban');
+  });
+
+  it('idle when no trigger is active', () => {
+    const r = evalWith({});
+    assert.strictEqual(r.nextMode, MODES.IDLE);
+    assert.strictEqual(r.reason, 'idle');
+  });
+});
+
+describe('buildSnapshotFromState exposes reason alongside cause', () => {
+  function baseState() {
+    return {
+      mode: MODES.IDLE, mode_start: 0, transitioning: false, transition_step: null,
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      valve_states: {}, pump_on: false, fan_on: false, space_heater_on: false, immersion_heater_on: false,
+      collectors_drained: false, emergency_heating_active: false,
+      valveOpening: {}, valveOpenSince: {}, valvePendingOpen: [], valvePendingClose: [],
+    };
+  }
+  const dc = { ce: true, mo: null };
+
+  it('publishes null reason when lastTransitionReason is unset', () => {
+    const st = baseState();
+    st.lastTransitionCause = 'boot';
+    const snap = buildSnapshotFromState(st, dc, 123);
+    assert.strictEqual(snap.cause, 'boot');
+    assert.strictEqual(snap.reason, null);
+  });
+
+  it('publishes the stashed reason', () => {
+    const st = baseState();
+    st.lastTransitionCause = 'automation';
+    st.lastTransitionReason = 'solar_stall';
+    const snap = buildSnapshotFromState(st, dc, 123);
+    assert.strictEqual(snap.cause, 'automation');
+    assert.strictEqual(snap.reason, 'solar_stall');
   });
 });
 

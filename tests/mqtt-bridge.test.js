@@ -39,7 +39,7 @@ describe('mqtt-bridge', () => {
       assert.strictEqual(events[0].newVal, 'solar_charging');
     });
 
-    it('records cause and sensor snapshot for mode changes', () => {
+    it('records cause, reason, and sensor snapshot for mode changes', () => {
       const events = [];
       const mockDb = {
         insertStateEvent: function (ts, type, id, oldVal, newVal, optsOrCb, maybeCb) {
@@ -54,6 +54,7 @@ describe('mqtt-bridge', () => {
       const curr = {
         mode: 'solar_charging',
         cause: 'automation',
+        reason: 'solar_enter',
         temps: { collector: 62.3, tank_top: 41, tank_bottom: 29, greenhouse: 12, outdoor: 8 },
         valves: {}, actuators: {},
       };
@@ -62,11 +63,12 @@ describe('mqtt-bridge', () => {
       const modeEvt = events.find(e => e.type === 'mode');
       assert.ok(modeEvt);
       assert.strictEqual(modeEvt.opts.cause, 'automation');
+      assert.strictEqual(modeEvt.opts.reason, 'solar_enter');
       assert.deepStrictEqual(modeEvt.opts.sensors,
         { collector: 62.3, tank_top: 41, tank_bottom: 29, greenhouse: 12, outdoor: 8 });
     });
 
-    it('null-fills cause and sensors when the state payload lacks them (old firmware)', () => {
+    it('null-fills cause, reason, and sensors when the state payload lacks them (old firmware)', () => {
       const events = [];
       const mockDb = {
         insertStateEvent: function (ts, type, id, oldVal, newVal, optsOrCb, maybeCb) {
@@ -82,6 +84,7 @@ describe('mqtt-bridge', () => {
       bridge.detectStateChanges(new Date(), prev, curr, mockDb);
       const modeEvt = events.find(e => e.type === 'mode');
       assert.strictEqual(modeEvt.opts.cause, null);
+      assert.strictEqual(modeEvt.opts.reason, null);
       assert.strictEqual(modeEvt.opts.sensors, null);
     });
 
