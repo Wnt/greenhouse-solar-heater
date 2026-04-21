@@ -777,7 +777,7 @@ describe('edge cases', () => {
   it('drain timeout sets collectorsDrained and returns IDLE', () => {
     const result = evaluate(makeState({
       currentMode: MODES.ACTIVE_DRAIN,
-      modeEnteredAt: 0, now: 200  // 200s > drainTimeout 180s
+      modeEnteredAt: 0, now: 700  // 700s > drainTimeout 600s
     }), null);
     assert.strictEqual(result.nextMode, MODES.IDLE);
     assert.strictEqual(result.flags.collectorsDrained, true);
@@ -786,7 +786,7 @@ describe('edge cases', () => {
   it('stays in ACTIVE_DRAIN before timeout', () => {
     const result = evaluate(makeState({
       currentMode: MODES.ACTIVE_DRAIN,
-      modeEnteredAt: 0, now: 100  // 100s < 180s
+      modeEnteredAt: 0, now: 100  // 100s < 600s
     }), null);
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
   });

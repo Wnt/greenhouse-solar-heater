@@ -5,8 +5,14 @@ var SHELL_CFG = {
   POLL_INTERVAL: 30000,
   VALVE_SETTLE_MS: 1000,
   PUMP_PRIME_MS: 5000,
-  DRAIN_MONITOR_INTERVAL: 200,
-  DRAIN_POWER_THRESHOLD: 20,
+  // Fixed pump run duration inside ACTIVE_DRAIN. Replaces the
+  // earlier pump-power-threshold heuristic — the Wilo Star Z20/4's
+  // power draw drops only a few watts when the collectors go dry,
+  // which is well inside the noise floor of the Pro 4PM's aenergy
+  // metering (verified 2026-04-20 field log). 5 minutes is an
+  // empirical figure that fully evacuates the ~12 L collector loop
+  // at Wilo spec flow rate with margin.
+  DRAIN_PUMP_RUN_MS: 5 * 60 * 1000,
   // Post-valve pump-run window on ACTIVE_DRAIN exit. See CLAUDE.md
   // "Safety: stop pump BEFORE switching valves" for the one-sentence rule
   // and system.yaml active_drain.sequence step 8 for the physical reason.
@@ -796,21 +802,16 @@ function transitionTo(result, cause) {
   });
 }
 
+// Run the drain pump for a fixed duration, then hand off to
+// stopDrain() which stages the valves-first exit back to IDLE. The
+// old power-threshold heuristic was retired after the 2026-04-20
+// field log showed pump apower only drops a few watts on dry-run —
+// well inside the metering noise floor, so "low_count >= 3" was
+// firing unpredictably (early or never) and the drain timing
+// became a wall-clock guarantee instead of a sensor reading.
 function startDrainMonitor() {
-  var drain_start = Date.now();
-  var low_count = 0;
-  state.drain_timer = Timer.set(SHELL_CFG.DRAIN_MONITOR_INTERVAL, true, function() {
-    if (Date.now() - drain_start > DEFAULT_CONFIG.drainTimeout * 1000) {
-      stopDrain("timeout");
-      return;
-    }
-    var sw = Shelly.getComponentStatus("switch", 0);
-    if (sw && sw.apower < SHELL_CFG.DRAIN_POWER_THRESHOLD) {
-      low_count++;
-      if (low_count >= 3) stopDrain("dry_run");
-    } else {
-      low_count = 0;
-    }
+  state.drain_timer = Timer.set(SHELL_CFG.DRAIN_PUMP_RUN_MS, false, function() {
+    stopDrain("complete");
   });
 }
 
@@ -821,7 +822,7 @@ function stopDrain(reason) {
   }
   state.collectors_drained = true;
   Shelly.call("KVS.Set", {key: "drained", value: "1"});
-  state.last_error = (reason === "timeout") ? "drain_timeout" : null;
+  state.last_error = null;
   // Route through the staged transition so that valve closes honor the
   // PSU slot budget (trivially satisfied for closes) and the min-open
   // hold (FR-007) — same hardware rules as any other mode transition.

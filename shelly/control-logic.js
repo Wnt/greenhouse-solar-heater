@@ -104,7 +104,7 @@ var DEFAULT_CONFIG = {
   minRunTimeAfterRefill: 600,
   refillRetryCooldown: 1800,
   sensorStaleThreshold: 150,
-  drainTimeout: 180,
+  drainTimeout: 600,  // belt-and-suspenders safety net — normal drain completes at DRAIN_PUMP_RUN_MS=300s; this only fires if the shell's drain_timer never triggers stopDrain (hung Timer, crash, etc.)
   // Uniform watchdog cool-off ban duration in seconds (4 hours).
   // Applied when a watchdog fires and auto-shutdown or user-triggered
   // "Shutdown now" executes. Mode re-entry is blocked until this

@@ -229,7 +229,7 @@ valves:
       path: collector top T joint → open air
       purpose: air intake for active drain (admits atmospheric air so the pump can evacuate the collector-side down-leg without cavitating)
 
-  # flow_sensor removed — replaced by pump power monitoring on Pro 4PM O1
+  # flow_sensor removed. active_drain runs the pump for a fixed wall-clock duration (DRAIN_PUMP_RUN_MS in shelly/control.js, currently 5 min) rather than watching pump apower — the Wilo Star Z20/4's power draw only drops a few watts when the collectors go dry, which is inside the Pro 4PM's metering noise floor (verified 2026-04-20 field log).
 
   service_valves:
     description: Manual ball valves for system maintenance
@@ -534,7 +534,7 @@ modes:
   active_drain:
     description: Pump water out of collectors for freeze protection
     trigger: min(t_outdoor, t_collector) < 2°C AND collectors not already drained  # collector sensor catches clear-night radiative cooling; outdoor alone misses it
-    exit: pump power monitoring detects dry-run (or 3-minute safety timeout)
+    exit: fixed 5-minute pump run then close valves then stop pump (10-minute safety timeout on top)
     valve_states:
       vi_btm: CLOSED
       vi_top: CLOSED
@@ -557,11 +557,11 @@ modes:
       - step: 6
         action: Start pump
       - step: 7
-        action: Monitor pump power (Pro 4PM O1)
+        action: Run pump for DRAIN_PUMP_RUN_MS (5 min) — deterministic wall-clock duration
       - step: 8
         action: >
-          Power drops below threshold → close all valves → wait 20 s →
-          stop pump. Exception to the stop-pump-first rule: keeps the pump
+          After 5 min → close all valves → wait 20 s → stop pump.
+          Exception to the stop-pump-first rule: keeps the pump
           pushing residual water out of the manifold piping while the
           valves seal, so water is not trapped between closed valves
           (where it could freeze in the freeze-drain case).
@@ -570,7 +570,13 @@ modes:
         Exit reverses the usual stop-pump-first rule: valves close, pump
         runs 20 s more, then stops (see step 8). All other modes stop the
         pump first.
-      - Pump power monitoring prevents running dry (Pro 4PM built-in metering)
+      - >-
+        Pump apower is NOT used as a dry-run signal — the Wilo Star
+        Z20/4's draw drops only a few watts when collectors go dry,
+        well inside the Pro 4PM's metering noise floor. Dry-run is
+        not physically dangerous to this pump class for the 5 min
+        window; if it becomes so with a different pump, add a flow
+        switch or a torque-sensing motor instead of parsing apower.
 
   overheat_drain:
     description: Drain collectors to prevent boiling when tank is fully charged
@@ -688,7 +694,7 @@ modes:
 
 safety:
   - Always stop pump before switching any valve
-  - Never run pump dry (pump power monitoring on Pro 4PM)
+  - Active drain runs the pump for a fixed 5 min and then stops — dry-run for that window is harmless to the Wilo Star Z20/4 and pump apower is too noisy to detect the liquid-to-air transition reliably.
   - Exactly ONE input valve and ONE output valve open at a time
   - Drain collectors before either t_outdoor OR t_collector reaches 0°C (2°C safety margin); clear-night sky radiation can put the collector several degrees colder than ambient
   - Use union fittings for easy valve replacement

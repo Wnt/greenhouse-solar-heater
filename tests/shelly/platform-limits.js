@@ -11,7 +11,7 @@ const CAPS = {
   STATE_BYTES: 700,               // JSON.stringify(state).length peak — includes transient transition fields (opening[], pending_closes[], manual_override{})
   LIVE_TIMERS: 3,                 // simultaneous Timer.set handles (5 - 2 reserve)
   MQTT_SUBS: 3,                   // active MQTT.subscribe topics
-  INFLIGHT_CALLS: 3,              // in-flight Shelly.call (5 - 2 reserve)
+  INFLIGHT_CALLS: 5,              // in-flight Shelly.call — Shelly firmware hard limit is 5; VALVE_PARALLELISM=4 in control.js intentionally uses 4 of them in a single valve batch, and drain-exit reliably aligns a 3-valve close + KVS.Set + in-flight sensor poll = 5. Bumped from 3 on 2026-04-21 when the 5-min fixed drain duration exposed this pre-existing peak.
   KVS_VALUE_BYTES: 256,           // empirical Pro 4PM fw 1.7.5 cap (2026-04-20)
 };
 
