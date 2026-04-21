@@ -1078,8 +1078,13 @@ describe('hard safety overrides bypass device config', () => {
 // and that device config with mo field doesn't break evaluate().
 
 describe('manual override safety interaction', () => {
-  const overrideConfig = { ce: true, ea: 31, v: 1, mo: { a: true, ex: 9999999999, ss: false } };
-  const overrideSuppressedConfig = { ce: true, ea: 31, v: 1, mo: { a: true, ex: 9999999999, ss: true } };
+  // evaluate() is pure — it computes what *would* happen if automation
+  // were allowed to run. The I/O layer (control.js controlLoop) is
+  // what honors the hard-override rule and refuses to act on
+  // evaluate()'s output while mo.a=true. These tests pin the pure-
+  // side invariant: evaluate() itself never looks at mo for mode
+  // selection; the hard-override gate is enforced one layer up.
+  const overrideConfig = { ce: true, ea: 31, v: 1, mo: { a: true, ex: 9999999999, fm: 'I' } };
 
   it('evaluate() still returns safetyOverride=true during freeze even with mo set', () => {
     const result = evaluate(makeState({
@@ -1106,19 +1111,10 @@ describe('manual override safety interaction', () => {
     assert.strictEqual(result.suppressed, false);
   });
 
-  it('evaluate() works with mo.ss=true (suppressed safety config)', () => {
-    const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 },
-    }), null, overrideSuppressedConfig);
-    // evaluate() still returns safetyOverride — the I/O layer decides whether to act on it
-    assert.strictEqual(result.safetyOverride, true);
-    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
-  });
-
   it('ce=false with mo set still returns suppressed (controls gate takes priority)', () => {
     const result = evaluate(makeState({
       temps: { collector: 41, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
-    }), null, { ce: false, ea: 0, v: 1, mo: { a: true, ex: 9999999999, ss: false } });
+    }), null, { ce: false, ea: 0, v: 1, mo: { a: true, ex: 9999999999, fm: 'I' } });
     assert.strictEqual(result.suppressed, true);
   });
 });

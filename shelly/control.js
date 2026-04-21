@@ -69,9 +69,11 @@ var state = {
   // flight. Auto-shutdown fires at firedAt + 300s (5 min) from the
   // 30s controlLoop tick (no new Timer.set).
   watchdogPending: null,
-  // Previous mo.ss value used to detect transitions from
-  // suppressSafety=true → false so we can re-capture the baseline.
-  prev_ss: false,
+  // Previous mo.a value used to detect override-exit so the watchdog
+  // baseline can be re-captured on the NEXT automation tick. Same role
+  // prev_ss had before hard override was introduced (2026-04-21) —
+  // now keyed on the override itself, since the ss flag is gone.
+  prev_mo_active: false,
   temps: {
     collector: null, tank_top: null, tank_bottom: null,
     greenhouse: null, outdoor: null,
@@ -945,21 +947,14 @@ function controlLoop() {
     updateDisplay(function() {
       if (state.transitioning) return;
 
-      // Manual override guard: skip evaluate() when override is active
+      // Manual override is HARD (2026-04-21): automation — including
+      // freeze/overheat drain — is fully suspended until the user
+      // clears override or the TTL expires. The user asked for this
+      // explicitly, trading safety-net behaviour for deterministic
+      // manual control. Freeze hazard is mitigated by the confirmation
+      // dialog + TTL countdown in the playground, not by server-side
+      // preemption.
       if (isManualOverrideActive()) {
-        if (!deviceConfig.mo.ss) {
-          // Safety not suppressed — check for safety overrides only
-          var evalState = buildEvalState();
-          var result = evaluate(evalState, null, deviceConfig);
-          if (result.safetyOverride) {
-            // Safety takes precedence — end override and transition
-            deviceConfig.mo = null;
-            Shelly.call("KVS.Set", {key: "config", value: JSON.stringify(deviceConfig)});
-            transitionTo(result, "safety_override");
-            return;
-          }
-        }
-        // Override active, no safety intervention — just emit state
         emitStateUpdate();
         return;
       }
@@ -1012,12 +1007,15 @@ function watchdogTick() {
     }
   }
 
-  // (b) Override-exit baseline reset
-  var ssNow = !!(deviceConfig.mo && deviceConfig.mo.a && deviceConfig.mo.ss);
-  if (state.prev_ss && !ssNow && state.watchdog_baseline) {
+  // (b) Override-exit baseline reset — when the user leaves manual
+  // override, the sensor readings captured before they started
+  // poking relays are almost certainly stale; re-baseline so the
+  // watchdog doesn't compare current temps against an hour-old entry.
+  var moActiveNow = !!(deviceConfig.mo && deviceConfig.mo.a);
+  if (state.prev_mo_active && !moActiveNow && state.watchdog_baseline) {
     captureWatchdogBaseline();
   }
-  state.prev_ss = ssNow;
+  state.prev_mo_active = moActiveNow;
 
   // (c) Pending check OR detection — mutually exclusive
   if (state.watchdogPending) {

@@ -275,7 +275,7 @@ describe('Shelly control script stability', function() {
     var future = Math.floor(Date.now() / 1000) + 600;
     rt.deliverMqtt('greenhouse/config', JSON.stringify({
       ce: true, ea: 31, fm: null, am: null, v: 99,
-      mo: { a: true, ex: future, ss: false }
+      mo: { a: true, ex: future, fm: 'I' }
     }));
 
     rt.reset();

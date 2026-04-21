@@ -176,6 +176,7 @@ async function setupMobileRelayView(page, stateOverrides) {
 test.describe('Mobile: relay override UI', () => {
 
   test('override enter button is clickable on mobile', async ({ page }) => {
+    page.on('dialog', d => d.accept());
     await setupMobileRelayView(page);
     const btn = page.locator('#override-enter-btn');
     await expect(btn).toBeVisible();
@@ -188,6 +189,7 @@ test.describe('Mobile: relay override UI', () => {
   });
 
   test('relay board buttons are clickable on mobile', async ({ page }) => {
+    page.on('dialog', d => d.accept());
     await setupMobileRelayView(page);
     // Enter override
     await page.locator('#override-enter-btn').click();

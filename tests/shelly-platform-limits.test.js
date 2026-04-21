@@ -182,7 +182,7 @@ describe('Shelly platform-limit 24 h simulation', () => {
         const future = Math.floor(now / 1000) + 600;
         const cfg = JSON.parse(runtime.kvs.config);
         cfg.v = ++cfgVersion;
-        cfg.mo = { a: true, ex: future, ss: false };
+        cfg.mo = { a: true, ex: future, fm: 'I' };
         runtime.deliverMqtt('greenhouse/config', JSON.stringify(cfg));
       }
       if (tick === Math.floor(15 * 60 * 60 * 1000 / TICK_MS) + 2) {

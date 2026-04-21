@@ -740,7 +740,7 @@ function buildSnapshotFromState(st, dc, now) {
     manual_override: (dc.mo && dc.mo.a) ? {
       active: true,
       expiresAt: dc.mo.ex,
-      suppressSafety: dc.mo.ss
+      forcedMode: dc.mo.fm || null
     } : null,
     opening: opening,
     queued_opens: queuedOpens,
@@ -812,13 +812,13 @@ function buildDisplayLabels(displayState) {
 // Early-exits:
 //   - null entry  -> not in a mode yet
 //   - !cfg.ce     -> controls disabled (commissioning)
-//   - mo.ss=true  -> user explicitly suppressing safety
+//   - mo.a=true   -> manual override hard-blocks all automation (2026-04-21)
 //
 // Priority: first-fires-wins by shortest window.
 function detectAnomaly(entry, now, s, cfg) {
   if (!entry) return null;
   if (!cfg.ce) return null;
-  if (cfg.mo && cfg.mo.a && cfg.mo.ss) return null;
+  if (cfg.mo && cfg.mo.a) return null;
 
   var el = now - entry.at;
   var we = cfg.we || {};

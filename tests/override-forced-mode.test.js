@@ -248,7 +248,7 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
       rt.clearEvents();
       var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
       var overrideCfg = Object.assign({}, BASE_CONFIG, {
-        mo: { a: true, ex: sysUnix + 3600, ss: false, fm: 'SC' }
+        mo: { a: true, ex: sysUnix + 3600, fm: 'SC' }
       });
       rt.setConfig(overrideCfg);
       rt.advance(35000, function() {
@@ -285,7 +285,7 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
     bootScript(rt, function() {
       var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
       var cfgSC = Object.assign({}, BASE_CONFIG, {
-        mo: { a: true, ex: sysUnix + 3600, ss: false, fm: 'SC' }
+        mo: { a: true, ex: sysUnix + 3600, fm: 'SC' }
       });
       rt.setConfig(cfgSC);
       // Advance 2 s: SC pump-stop fires; settle timer not yet expired —
@@ -293,7 +293,7 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
       rt.advance(2000, function() {
         rt.clearEvents();
         var cfgGH = Object.assign({}, BASE_CONFIG, {
-          mo: { a: true, ex: sysUnix + 3600, ss: false, fm: 'GH' }
+          mo: { a: true, ex: sysUnix + 3600, fm: 'GH' }
         });
         rt.setConfig(cfgGH);
         // Advance 30 s: GH valve commands must appear within the 20 s open
@@ -325,7 +325,7 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
       var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
       // Establish override in in-memory config so prevMo.a=true on next update
       rt.setConfig(Object.assign({}, BASE_CONFIG, {
-        mo: { a: true, ex: sysUnix + 3600, ss: false, fm: 'SC' }
+        mo: { a: true, ex: sysUnix + 3600, fm: 'SC' }
       }));
       // Drive state.mode = SOLAR_CHARGING and kick off the SC transition
       rt.globals.Shelly.__test_driveTransition('SOLAR_CHARGING', {
@@ -374,7 +374,7 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
     bootScript(rt, function() {
       var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
       rt.setConfig(Object.assign({}, BASE_CONFIG, {
-        mo: { a: true, ex: sysUnix + 3600, ss: false, fm: 'AD' }
+        mo: { a: true, ex: sysUnix + 3600, fm: 'AD' }
       }));
       rt.globals.Shelly.__test_driveTransition('ACTIVE_DRAIN', {
         nextMode: 'ACTIVE_DRAIN',
@@ -445,7 +445,7 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
       // Override with no fm (plain relay-testing session, no mode forced)
       var shortTtl = sysUnix + 5;
       rt.setConfig(Object.assign({}, BASE_CONFIG, {
-        mo: { a: true, ex: shortTtl, ss: false }
+        mo: { a: true, ex: shortTtl, fm: 'I' }
       }));
       // Advance 6 s: sys.unixtime advances to 10+6=16 s > shortTtl=15 s
       rt.advance(6000, function() {
@@ -515,7 +515,7 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
       };
       rt.setConfig(Object.assign({}, BASE_CONFIG, {
         ea: 30,
-        mo: { a: true, ex: sysUnix + 3600, ss: false, fm: 'AD' }
+        mo: { a: true, ex: sysUnix + 3600, fm: 'AD' }
       }));
       // Advance through the full AD entry chain. With the recursion fixed
       // this completes cleanly; with the old drain() it throws before any

@@ -280,7 +280,7 @@ describe('scheduler stack safety — mode transition fuzz', function() {
                             ACTIVE_DRAIN: 'AD', EMERGENCY_HEATING: 'EH' })[toMode];
               rt.setConfig({
                 ce: true, ea: 31,
-                mo: { a: true, ex: sysUnix + 3600, ss: false, fm: code },
+                mo: { a: true, ex: sysUnix + 3600, fm: code },
                 we: {}, wz: {}, wb: {}
               });
               // Long advance so any delayed Timer.set from the transition
@@ -321,7 +321,7 @@ describe('scheduler stack safety — mode transition fuzz', function() {
         var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
         rt.setConfig({
           ce: true, ea: 31, fm: null,
-          mo: { a: true, ex: sysUnix + 3600, ss: false, fm: 'AD' },
+          mo: { a: true, ex: sysUnix + 3600, fm: 'AD' },
           we: {}, wz: {}, wb: {},
         });
         rt.globals.Shelly.__test_driveTransition('ACTIVE_DRAIN', {
@@ -357,7 +357,7 @@ describe('scheduler stack safety — mode transition fuzz', function() {
         rt.clearEvents();
         rt.setConfig({
           ce: true, ea: ea,
-          mo: { a: true, ex: sysUnix + 3600, ss: false, fm: 'AD' },
+          mo: { a: true, ex: sysUnix + 3600, fm: 'AD' },
           we: {}, wz: {}, wb: {},
         });
         rt.advance(120000, function() {
@@ -447,31 +447,39 @@ describe('scheduler stack safety — mode transition fuzz', function() {
     });
   });
 
-  // Test 5: Safety override preempting an active manual-override. When
-  // the user has `mo.a=true, mo.ss=false` and freezing temps arrive,
-  // controlLoop clears mo and calls transitionTo(result,
-  // "safety_override"). This is the "user forgot they were in
-  // override" scenario and it MUST drain anyway.
-  it('safety override preempts manual override and drains without stack blow', function(t, done) {
+  // Test 5: Hard-override blocks freeze-drain. As of 2026-04-21 the
+  // user's active override suspends ALL automation including
+  // safety-override drains — the opposite of the old mo.ss=false
+  // semantics. This test pins that down: freezing temps arrive while
+  // override is active, and controlLoop MUST NOT call transitionTo.
+  // No Switch.Set / HTTP.GET valve events may fire. The only escape
+  // is a user-triggered exit or TTL expiry.
+  it('manual override blocks freeze-drain safety automation', function(t, done) {
     var rt = createFuzzRuntime();
     bootAndAdvance(rt, 31, function() {
       var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
-      // User sets override with ss=false (safety preemption allowed).
       rt.setConfig({
         ce: true, ea: 31,
-        mo: { a: true, ex: sysUnix + 3600, ss: false, fm: null },
+        mo: { a: true, ex: sysUnix + 3600, fm: 'I' },
         we: {}, wz: {}, wb: {},
       });
       rt.advance(5000, function() {
         rt.clearEvents();
-        // Freezing outdoor temps arrive.
+        // Freezing outdoor AND collector temps arrive.
         rt.globals.Shelly.__test_setTemps(
-          { collector: 10, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: -3 },
+          { collector: -3, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: -3 },
           'IDLE', { collectorsDrained: false }
         );
         rt.globals.Shelly.__test_controlTick();
         rt.advance(120000, function() {
-          assertNoTimerUnderMinResume(rt, 'safety override preempts manual override');
+          assertNoTimerUnderMinResume(rt, 'override blocks freeze');
+          var evts = rt.events();
+          var valveActs = evts.filter(function(e) {
+            return (e.kind === 'http_get' && /Switch\.Set/.test(e.detail.url));
+          });
+          assert.strictEqual(valveActs.length, 0,
+            'override must block valve actuation even on freeze; got ' +
+            valveActs.length + ' Switch.Set HTTP calls');
           done();
         });
       });
@@ -502,7 +510,7 @@ describe('scheduler stack safety — mode transition fuzz', function() {
         } else {
           rt.setConfig({
             ce: true, ea: 31,
-            mo: { a: true, ex: sysUnix + 3600, ss: false, fm: target },
+            mo: { a: true, ex: sysUnix + 3600, fm: target },
             we: {}, wz: {}, wb: {},
           });
         }

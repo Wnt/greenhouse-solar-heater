@@ -168,6 +168,9 @@ async function mockLiveConnectionWithRelay(page, stateOverrides) {
 
 /** Set up relay override tests: mock WS, mock APIs, navigate to device view. */
 async function setupRelayView(page, stateOverrides) {
+  // Hard-override confirmation dialog (2026-04-21). Auto-accept so
+  // the click path proceeds in every test that enters override.
+  page.on('dialog', d => d.accept());
   await mockLiveConnectionWithRelay(page, stateOverrides);
 
   await page.route('**/api/device-config', async (route) => {
@@ -224,7 +227,7 @@ test.describe('Relay toggle board', () => {
     const enterCmd = sent.find(m => m.type === 'override-enter');
     expect(enterCmd).toBeTruthy();
     expect(enterCmd.ttl).toBe(300);
-    expect(enterCmd.suppressSafety).toBe(false);
+    expect(enterCmd.forcedMode).toBe('I');
   });
 
   test('toggle board appears on override-ack', async ({ page }) => {
@@ -235,7 +238,7 @@ test.describe('Relay toggle board', () => {
 
     // Simulate server ack
     await page.evaluate(() => {
-      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, });
     });
 
     // Board and relay buttons visible
@@ -254,7 +257,7 @@ test.describe('Relay toggle board', () => {
     await expect(page.locator('#override-enter-btn')).toBeEnabled();
     await page.locator('#override-enter-btn').click();
     await page.evaluate(() => {
-      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, });
     });
     await expect(page.locator('#relay-board')).toBeVisible();
 
@@ -273,7 +276,7 @@ test.describe('Relay toggle board', () => {
     await expect(page.locator('#override-enter-btn')).toBeEnabled();
     await page.locator('#override-enter-btn').click();
     await page.evaluate(() => {
-      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, });
     });
     await expect(page.locator('#relay-board')).toBeVisible();
 
@@ -300,7 +303,7 @@ test.describe('Relay toggle board', () => {
     await expect(page.locator('#override-enter-btn')).toBeEnabled();
     await page.locator('#override-enter-btn').click();
     await page.evaluate(() => {
-      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, });
     });
     await expect(page.locator('#relay-board')).toBeVisible();
 
@@ -315,7 +318,7 @@ test.describe('Relay toggle board', () => {
         valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
         actuators: { pump: true, fan: false, space_heater: false },
         controls_enabled: true,
-        manual_override: { active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false },
+        manual_override: { active: true, expiresAt: Math.floor(Date.now()/1000) + 300, },
       }});
     });
 
@@ -329,7 +332,7 @@ test.describe('Relay toggle board', () => {
     await expect(page.locator('#override-enter-btn')).toBeEnabled();
     await page.locator('#override-enter-btn').click();
     await page.evaluate(() => {
-      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, });
     });
     await expect(page.locator('#relay-board')).toBeVisible();
 
@@ -344,7 +347,7 @@ test.describe('Relay toggle board', () => {
         valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
         actuators: { pump: false, fan: false, space_heater: false },
         controls_enabled: true,
-        manual_override: { active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false },
+        manual_override: { active: true, expiresAt: Math.floor(Date.now()/1000) + 300, },
       }});
     });
 
@@ -361,7 +364,7 @@ test.describe('Relay toggle board', () => {
     await expect(page.locator('#override-enter-btn')).toBeEnabled();
     await page.locator('#override-enter-btn').click();
     await page.evaluate(() => {
-      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, });
     });
 
     const countdown = page.locator('#override-countdown');
@@ -375,7 +378,7 @@ test.describe('Relay toggle board', () => {
     await expect(page.locator('#override-enter-btn')).toBeEnabled();
     await page.locator('#override-enter-btn').click();
     await page.evaluate(() => {
-      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, });
     });
 
     const ttlBtns = page.locator('.ttl-btn');
@@ -395,7 +398,7 @@ test.describe('Relay toggle board', () => {
     await expect(page.locator('#override-enter-btn')).toBeEnabled();
     await page.locator('#override-enter-btn').click();
     await page.evaluate(() => {
-      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, });
     });
     await expect(page.locator('#relay-board')).toBeVisible();
 
@@ -426,7 +429,7 @@ test.describe('Relay toggle board', () => {
     await page.locator('#override-enter-btn').click();
     await expect(page.locator('#override-enter-btn')).toContainText('Connecting');
     await page.evaluate(() => {
-      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, });
     });
     await expect(page.locator('#relay-board')).toBeVisible();
 
@@ -442,13 +445,13 @@ test.describe('Relay toggle board', () => {
     await expect(enterBtn).toBeEnabled();
   });
 
-  test('suppress safety toggle sends correct flag', async ({ page }) => {
+  test('entry select sends the chosen forcedMode', async ({ page }) => {
+    // Replaces the old "suppress safety toggle" test. As of
+    // 2026-04-21 override is always hard; `ss` is gone and the entry
+    // UI is now a mode <select>. This checks the send path.
     await setupRelayView(page);
     await expect(page.locator('#override-enter-btn')).toBeEnabled();
-
-    // Enable suppress safety
-    await page.locator('#override-suppress-safety').click();
-    await expect(page.locator('#override-suppress-safety')).toHaveClass(/active/);
+    await page.locator('#override-entry-fm').selectOption('AD');
 
     await page.locator('#override-enter-btn').click();
     await expect(page.locator('#override-enter-btn')).toContainText('Connecting');
@@ -456,7 +459,7 @@ test.describe('Relay toggle board', () => {
     const sent = await page.evaluate(() => window.__wsSent);
     const enterCmd = sent.find(m => m.type === 'override-enter');
     expect(enterCmd).toBeTruthy();
-    expect(enterCmd.suppressSafety).toBe(true);
+    expect(enterCmd.forcedMode).toBe('AD');
   });
 
   test('board deactivates when override ends externally via state broadcast', async ({ page }) => {
@@ -464,7 +467,7 @@ test.describe('Relay toggle board', () => {
     await expect(page.locator('#override-enter-btn')).toBeEnabled();
     await page.locator('#override-enter-btn').click();
     await page.evaluate(() => {
-      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, });
     });
     await expect(page.locator('#relay-board')).toBeVisible();
 
@@ -486,7 +489,7 @@ test.describe('Relay toggle board', () => {
     await expect(page.locator('#override-enter-btn')).toBeEnabled();
     await page.locator('#override-enter-btn').click();
     await page.evaluate(() => {
-      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, suppressSafety: false });
+      window.__wsInject({ type: 'override-ack', active: true, expiresAt: Math.floor(Date.now()/1000) + 300, });
     });
     await expect(page.locator('#relay-board')).toBeVisible();
 

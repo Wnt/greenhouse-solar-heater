@@ -700,6 +700,7 @@ safety:
   - Use union fittings for easy valve replacement
   - Collector pipes must slope toward drain point (2–3 cm/m)
   - V_air at the collector top is normally-closed like every other valve. Closed (de-energized) during idle, solar_charging, and greenhouse_heating; opened (energized) only in active_drain to admit atmospheric air so the pump can evacuate the collector-side down-leg. Power loss de-energizes all valves including V_air, leaving the collector column in hydrostatic equilibrium with the reservoir (no automatic drain on power loss).
+  - Manual override is HARD (2026-04-21): when the user enters override, ALL automation is suspended — including freeze-drain and overheat-drain safety. The user is responsible for exiting override or setting a short TTL before leaving the system unattended. On a clear cold night an active override can let the collectors freeze. The playground shows a confirmation dialog before activating override and a live TTL countdown while it's active.
 
 # =============================================================================
 # WATER TREATMENT

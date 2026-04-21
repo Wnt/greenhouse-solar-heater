@@ -52,13 +52,17 @@ describe('wb ban check in evaluate', () => {
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
-  it('mo.ss=true does NOT bypass wb ban', () => {
-    // mo.ss does not bypass wb at evaluate level — suppressSafety is the
-    // watchdog detection suppression, but ban enforcement is strict.
+  it('active manual override does NOT bypass wb ban at the pure-evaluate level', () => {
+    // evaluate() is I/O-layer agnostic: it doesn't treat mo as a
+    // bypass of wb bans, because wb bans and override live in
+    // different conceptual layers. The I/O layer (controlLoop)
+    // short-circuits on mo.a anyway, so evaluate()'s verdict here
+    // only matters if mo is cleared mid-tick — and then wb MUST
+    // still hold.
     const cfg = {
       ce: true, ea: 31,
       wb: { SC: 3000 },
-      mo: { a: true, ss: true, ex: 9999999999 }
+      mo: { a: true, fm: 'I', ex: 9999999999 }
     };
     const result = evaluate(makeState({}), null, cfg);
     assert.strictEqual(result.nextMode, MODES.IDLE);

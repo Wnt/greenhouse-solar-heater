@@ -10,22 +10,23 @@ test.describe('forced-mode button group (override card)', () => {
     await page.goto('/playground/#controls');
   });
 
-  test('group exists with all 6 mode buttons', async ({ page }) => {
+  test('group exists with 5 mode buttons (no Automatic under hard override)', async ({ page }) => {
+    // Hard override (2026-04-21) dropped the "Automatic" tile —
+    // override always implies a specific fm. The remaining 5 are
+    // the five valid mode codes.
     const group = page.locator('#forced-mode-group');
     await expect(group).toHaveCount(1);
     const buttons = page.locator('#forced-mode-btns .fm-btn');
-    await expect(buttons).toHaveCount(6);
+    await expect(buttons).toHaveCount(5);
     const codes = await buttons.evaluateAll(bs => bs.map(b => b.getAttribute('data-mode')));
-    expect(codes).toEqual(['', 'I', 'SC', 'GH', 'AD', 'EH']);
+    expect(codes).toEqual(['I', 'SC', 'GH', 'AD', 'EH']);
   });
 
-  test('Automatic is the default active button', async ({ page }) => {
-    const automatic = page.locator('#forced-mode-btns .fm-btn[data-mode=""]');
-    await expect(automatic).toHaveClass(/active/);
-    const others = page.locator('#forced-mode-btns .fm-btn:not([data-mode=""])');
-    const count = await others.count();
+  test('no mode button is active on static load (hidden group)', async ({ page }) => {
+    const buttons = page.locator('#forced-mode-btns .fm-btn');
+    const count = await buttons.count();
     for (let i = 0; i < count; i++) {
-      await expect(others.nth(i)).not.toHaveClass(/active/);
+      await expect(buttons.nth(i)).not.toHaveClass(/active/);
     }
   });
 

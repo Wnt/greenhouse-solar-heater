@@ -693,17 +693,27 @@ function handleOverrideEnter(ws, msg) {
     return;
   }
 
+  // `fm` is REQUIRED when entering override (2026-04-21 hard-override
+  // semantics): automation is fully suspended for the duration, so the
+  // user must pick a concrete mode. The old "Automatic" state (fm=null
+  // while mo.a=true) is gone.
+  var VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
+  var fm = msg.forcedMode;
+  if (typeof fm !== 'string' || VALID_MODES.indexOf(fm) === -1) {
+    wsSend(ws, { type: 'override-error', message: 'forcedMode required: one of I,SC,GH,AD,EH' });
+    return;
+  }
+
   var ttl = Math.max(60, Math.min(3600, parseInt(msg.ttl, 10) || 300));
-  var ss = !!msg.suppressSafety;
   var ex = Math.floor(Date.now() / 1000) + ttl;
 
-  deviceConfig.updateConfig({ mo: { a: true, ex: ex, ss: ss } }, function (err, updated) {
+  deviceConfig.updateConfig({ mo: { a: true, ex: ex, fm: fm } }, function (err, updated) {
     if (err) {
       wsSend(ws, { type: 'override-error', message: err.message });
       return;
     }
     mqttBridge.publishConfig(updated);
-    wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, suppressSafety: ss, forcedMode: (updated.mo && updated.mo.fm) || null });
+    wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, forcedMode: fm });
 
     // Secondary server-side TTL tracking
     clearOverrideTtlTimer();
@@ -741,15 +751,14 @@ function handleOverrideUpdate(ws, msg) {
   var ttl = Math.max(60, Math.min(3600, parseInt(msg.ttl, 10) || 300));
   var ex = Math.floor(Date.now() / 1000) + ttl;
 
-  var newMo = { a: cfg.mo.a, ex: ex, ss: cfg.mo.ss };
-  if (cfg.mo.fm) newMo.fm = cfg.mo.fm;
+  var newMo = { a: cfg.mo.a, ex: ex, fm: cfg.mo.fm };
   deviceConfig.updateConfig({ mo: newMo }, function (err, updated) {
     if (err) {
       wsSend(ws, { type: 'override-error', message: err.message });
       return;
     }
     mqttBridge.publishConfig(updated);
-    wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, suppressSafety: cfg.mo.ss, forcedMode: (updated.mo && updated.mo.fm) || null });
+    wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, forcedMode: (updated.mo && updated.mo.fm) || null });
 
     // Reset secondary TTL timer
     clearOverrideTtlTimer();
@@ -774,17 +783,19 @@ function handleOverrideSetMode(ws, msg) {
 
   var mode = msg.mode;
   var VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
-  if (mode !== null && VALID_MODES.indexOf(mode) === -1) {
-    wsSend(ws, { type: 'override-error', message: 'Invalid mo.fm: must be one of I,SC,GH,AD,EH' });
+  // With hard override, `fm` is required while active. Null/omit is no
+  // longer a legal state — server rejects it. If the user wants
+  // automation back, they must exit override.
+  if (typeof mode !== 'string' || VALID_MODES.indexOf(mode) === -1) {
+    wsSend(ws, { type: 'override-error', message: 'mode required: one of I,SC,GH,AD,EH' });
     return;
   }
-  if (mode !== null && cfg.wb && cfg.wb[mode] && cfg.wb[mode] > Math.floor(Date.now() / 1000)) {
+  if (cfg.wb && cfg.wb[mode] && cfg.wb[mode] > Math.floor(Date.now() / 1000)) {
     wsSend(ws, { type: 'override-error', message: 'Mode banned' });
     return;
   }
 
-  var newMo = { a: cfg.mo.a, ex: cfg.mo.ex, ss: cfg.mo.ss };
-  if (mode !== null) newMo.fm = mode;
+  var newMo = { a: cfg.mo.a, ex: cfg.mo.ex, fm: mode };
 
   deviceConfig.updateConfig({ mo: newMo }, function (err, updated) {
     if (err) {
@@ -796,7 +807,6 @@ function handleOverrideSetMode(ws, msg) {
       type: 'override-ack',
       active: true,
       expiresAt: updated.mo.ex,
-      suppressSafety: updated.mo.ss,
       forcedMode: updated.mo.fm || null,
     });
   });

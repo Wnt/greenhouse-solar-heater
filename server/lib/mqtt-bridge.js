@@ -216,7 +216,6 @@ function enrichState(payload) {
       manual_override: {
         active: true,
         expiresAt: cfg.mo.ex,
-        suppressSafety: cfg.mo.ss,
         forcedMode: cfg.mo.fm || null,
       },
     });

@@ -45,10 +45,10 @@ describe('detectAnomaly', () => {
     );
   });
 
-  it('returns null when mo.ss=true (suppressSafety)', () => {
+  it('returns null when manual override is active (hard override)', () => {
     assert.strictEqual(
       detectAnomaly(entry({ at: 1000 }), 1400, sensors({ collector: 80 }),
-                    cfg({ mo: { a: true, ss: true, ex: 9999999999 } })),
+                    cfg({ mo: { a: true, fm: 'I', ex: 9999999999 } })),
       null
     );
   });

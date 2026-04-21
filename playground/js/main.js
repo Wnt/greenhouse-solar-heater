@@ -2380,7 +2380,7 @@ var MODE_CODE_MAP = {
 
 // Original button labels keyed by data-mode value (for restoring after ban suffix)
 var FM_BTN_LABELS = {
-  '': 'Automatic', I: 'Idle', SC: 'Solar charging',
+  I: 'Idle', SC: 'Solar charging',
   GH: 'Greenhouse heating', AD: 'Active drain', EH: 'Emergency heating'
 };
 
@@ -2410,11 +2410,6 @@ function initRelayBoard() {
   // Exit override
   document.getElementById('override-exit-btn').addEventListener('click', exitOverride);
 
-  // Suppress safety toggle
-  document.getElementById('override-suppress-safety').addEventListener('click', function () {
-    this.classList.toggle('active');
-  });
-
   // TTL buttons
   document.querySelectorAll('.ttl-btn').forEach(btn => {
     btn.addEventListener('click', function () {
@@ -2437,8 +2432,8 @@ function initRelayBoard() {
   document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(btn => {
     btn.addEventListener('click', function () {
       if (this.disabled || !overrideActive) return;
-      var mode = this.dataset.mode || null;
-      if (mode === currentForcedMode) return;
+      var mode = this.dataset.mode;
+      if (!mode || mode === currentForcedMode) return;
 
       document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(b => b.classList.remove('active'));
       this.classList.add('active');
@@ -2472,14 +2467,28 @@ var overrideAckTimer = null;
 
 function enterOverride() {
   if (!liveSource) return;
+  // Hard-override confirmation. Automation including freeze-drain is
+  // off while in override; the user needs to acknowledge that each
+  // time so it's not triggered by a stray click. No confirmation on
+  // subsequent fm changes within the same override session — we
+  // trust the first "yes, I meant it" for the whole TTL window.
+  var ok = window.confirm(
+    'Manual override disables ALL automation until you exit (or the TTL expires) — ' +
+    'including freeze-drain safety. On a cold night an active override can let the ' +
+    'collectors freeze.\n\nContinue?'
+  );
+  if (!ok) return;
+
+  var fmSelect = document.getElementById('override-entry-fm');
+  var fm = fmSelect ? fmSelect.value : 'I';
+
   var btn = document.getElementById('override-enter-btn');
   btn.disabled = true;
   btn.textContent = 'Connecting...';
 
-  var ss = document.getElementById('override-suppress-safety').classList.contains('active');
   var activeTtlBtn = document.querySelector('.ttl-btn.active');
   var ttl = activeTtlBtn ? parseInt(activeTtlBtn.dataset.ttl, 10) : 300;
-  var sent = liveSource.sendCommand({ type: 'override-enter', ttl: ttl, suppressSafety: ss });
+  var sent = liveSource.sendCommand({ type: 'override-enter', ttl: ttl, forcedMode: fm });
 
   if (!sent) {
     btn.disabled = false;
@@ -2521,7 +2530,7 @@ function handleOverrideResponse(msg) {
   clearTimeout(overrideAckTimer);
   if (msg.type === 'override-ack') {
     if (msg.active) {
-      activateOverrideUI(msg.expiresAt, msg.suppressSafety);
+      activateOverrideUI(msg.expiresAt, msg.forcedMode);
     } else {
       deactivateOverrideUI();
     }
@@ -2534,22 +2543,26 @@ function handleOverrideResponse(msg) {
   }
 }
 
-function activateOverrideUI(expiresAt, suppressSafety) {
+function activateOverrideUI(expiresAt, forcedMode) {
   overrideActive = true;
   overrideExpiresAt = expiresAt;
+  currentForcedMode = forcedMode || null;
   document.getElementById('override-entry').style.display = 'none';
   document.getElementById('override-active-header').style.display = '';
   document.getElementById('relay-board').style.display = '';
   document.getElementById('override-expired-msg').style.display = 'none';
   document.querySelectorAll('.relay-btn').forEach(btn => { btn.disabled = false; });
 
-  // Show forced-mode group; gate buttons for readonly users
+  // Show forced-mode group; gate buttons for readonly users. Reflect
+  // the active fm from the server so the button highlight matches the
+  // mode we actually entered with.
   var fmGroup = document.getElementById('forced-mode-group');
   if (fmGroup) fmGroup.style.display = '';
   var userRole = store.get('userRole') || 'admin';
   var isAdmin = userRole === 'admin';
   document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(function (b) {
     b.disabled = !isAdmin;
+    b.classList.toggle('active', b.dataset.mode === forcedMode);
   });
 
   startCountdown();
@@ -2581,8 +2594,8 @@ function deactivateOverrideUI(msg) {
     if (orig) b.textContent = orig;
     b.disabled = false;
   });
-  var autoBtn = document.querySelector('#forced-mode-btns .fm-btn[data-mode=""]');
-  if (autoBtn) autoBtn.classList.add('active');
+  // No Automatic tile anymore — with hard override, fm is required
+  // whenever override is active. On deactivation the whole group hides.
   // Reset the Enter button so the user doesn't see a stale "Connecting..."
   // and doesn't have to wait ~30s for the next state broadcast to recover.
   var enterBtn = document.getElementById('override-enter-btn');
@@ -2654,7 +2667,7 @@ function updateRelayBoard(result) {
   // Handle override state from server
   if (mo && mo.active && !overrideActive) {
     // Override started externally or on reconnect
-    activateOverrideUI(mo.expiresAt, mo.suppressSafety);
+    activateOverrideUI(mo.expiresAt, mo.forcedMode);
   } else if ((!mo || !mo.active) && overrideActive) {
     // Override ended externally
     deactivateOverrideUI('Override ended — automation resumed.');

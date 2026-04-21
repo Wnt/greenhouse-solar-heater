@@ -194,14 +194,14 @@ describe('mqtt-bridge', () => {
     it('getLastState enriches with manual_override from deviceConfig (active session)', () => {
       bridge._setDeviceConfigRefForTest({
         getConfig: function () {
-          return { ce: true, ea: 31, mo: { a: true, ex: 9999, ss: false } };
+          return { ce: true, ea: 31, mo: { a: true, ex: 9999, fm: 'I' } };
         },
       });
       bridge.handleStateMessage({
         ts: 1, mode: 'idle', temps: {}, valves: {}, actuators: {}, controls_enabled: true,
       });
       const last = bridge.getLastState();
-      assert.deepStrictEqual(last.manual_override, { active: true, expiresAt: 9999, suppressSafety: false, forcedMode: null });
+      assert.deepStrictEqual(last.manual_override, { active: true, expiresAt: 9999, forcedMode: 'I' });
     });
 
     it('getLastState enriches manual_override as null when no active override', () => {
@@ -215,30 +215,17 @@ describe('mqtt-bridge', () => {
       assert.strictEqual(last.manual_override, null);
     });
 
-    it('getLastState includes forcedMode in manual_override when mo.fm is set', () => {
+    it('getLastState reports the forcedMode in manual_override', () => {
       bridge._setDeviceConfigRefForTest({
         getConfig: function () {
-          return { ce: true, ea: 31, mo: { a: true, ex: 9999, ss: false, fm: 'SC' } };
+          return { ce: true, ea: 31, mo: { a: true, ex: 9999, fm: 'SC' } };
         },
       });
       bridge.handleStateMessage({
         ts: 1, mode: 'idle', temps: {}, valves: {}, actuators: {}, controls_enabled: true,
       });
       const last = bridge.getLastState();
-      assert.deepStrictEqual(last.manual_override, { active: true, expiresAt: 9999, suppressSafety: false, forcedMode: 'SC' });
-    });
-
-    it('getLastState includes forcedMode: null in manual_override when mo.fm is unset', () => {
-      bridge._setDeviceConfigRefForTest({
-        getConfig: function () {
-          return { ce: true, ea: 31, mo: { a: true, ex: 9999, ss: false } };
-        },
-      });
-      bridge.handleStateMessage({
-        ts: 1, mode: 'idle', temps: {}, valves: {}, actuators: {}, controls_enabled: true,
-      });
-      const last = bridge.getLastState();
-      assert.deepStrictEqual(last.manual_override, { active: true, expiresAt: 9999, suppressSafety: false, forcedMode: null });
+      assert.deepStrictEqual(last.manual_override, { active: true, expiresAt: 9999, forcedMode: 'SC' });
     });
 
     it('subsequent state messages overwrite the cache so the latest is always served', () => {

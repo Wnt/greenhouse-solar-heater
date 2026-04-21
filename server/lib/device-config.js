@@ -259,23 +259,28 @@ function updateConfig(newConfig, callback) {
       config.mo = null;
     } else if (typeof newConfig.mo === 'object') {
       var mo = newConfig.mo;
-      if (typeof mo.a !== 'boolean' || typeof mo.ex !== 'number' || typeof mo.ss !== 'boolean') {
-        callback(validationError('Invalid mo: requires {a: bool, ex: int, ss: bool}'));
+      if (typeof mo.a !== 'boolean' || typeof mo.ex !== 'number') {
+        callback(validationError('Invalid mo: requires {a: bool, ex: int, fm: string}'));
         return;
       }
-      var newMo = { a: mo.a, ex: Math.floor(mo.ex), ss: mo.ss };
-      if (mo.fm !== undefined && mo.fm !== null) {
-        var VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
-        if (VALID_MODES.indexOf(mo.fm) === -1) {
-          callback(validationError('Invalid mo.fm: must be one of I,SC,GH,AD,EH'));
-          return;
-        }
-        if (!mo.a) {
-          callback(validationError('mo.fm cannot be set when mo.a is false'));
-          return;
-        }
-        newMo.fm = mo.fm;
+      if (mo.ss !== undefined) {
+        // ss was removed 2026-04-21 (hard override). Reject explicitly
+        // so stale clients fail fast rather than silently losing it.
+        callback(validationError('mo.ss is not supported — override now always blocks automation'));
+        return;
       }
+      if (mo.a) {
+        var VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
+        if (typeof mo.fm !== 'string' || VALID_MODES.indexOf(mo.fm) === -1) {
+          callback(validationError('mo.fm required when mo.a=true: one of I,SC,GH,AD,EH'));
+          return;
+        }
+      } else if (mo.fm !== undefined && mo.fm !== null) {
+        callback(validationError('mo.fm cannot be set when mo.a is false'));
+        return;
+      }
+      var newMo = { a: mo.a, ex: Math.floor(mo.ex) };
+      if (mo.a) newMo.fm = mo.fm;
       config.mo = newMo;
     }
   }

@@ -113,7 +113,7 @@ describe('device-config', () => {
   it('mo field accepted and persisted', (t, done) => {
     deviceConfig.load(function (err) {
       assert.ifError(err);
-      const mo = { a: true, ex: 1712505600, ss: false };
+      const mo = { a: true, ex: 1712505600, fm: 'I' };
       deviceConfig.updateConfig({ mo: mo }, function (err2, config) {
         assert.ifError(err2);
         assert.deepStrictEqual(config.mo, mo);
@@ -128,7 +128,7 @@ describe('device-config', () => {
   it('mo: null clears override', (t, done) => {
     deviceConfig.load(function (err) {
       assert.ifError(err);
-      deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: true } }, function (err2) {
+      deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, fm: 'I' } }, function (err2) {
         assert.ifError(err2);
         deviceConfig.updateConfig({ mo: null }, function (err3, config) {
           assert.ifError(err3);
@@ -150,10 +150,32 @@ describe('device-config', () => {
     });
   });
 
+  it('mo rejected when ss is present (legacy field, dropped 2026-04-21)', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: false, fm: 'I' } }, function (err2) {
+        assert.ok(err2, 'should reject mo.ss');
+        assert.match(err2.message, /mo\.ss/);
+        done();
+      });
+    });
+  });
+
+  it('mo rejected when a=true but fm missing', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999 } }, function (err2) {
+        assert.ok(err2, 'should reject mo without fm when active');
+        assert.match(err2.message, /mo\.fm required/);
+        done();
+      });
+    });
+  });
+
   it('mo preserved through unrelated config updates', (t, done) => {
     deviceConfig.load(function (err) {
       assert.ifError(err);
-      const mo = { a: true, ex: 1712505600, ss: false };
+      const mo = { a: true, ex: 1712505600, fm: 'I' };
       deviceConfig.updateConfig({ mo: mo }, function (err2) {
         assert.ifError(err2);
         // Update ce without touching mo
@@ -254,7 +276,7 @@ describe('device-config', () => {
         we: { sng: 1, scs: 1, ggr: 1 },
         wz: { sng: 1713050000, scs: 1713050000, ggr: 1713053400 },
         wb: { SC: 9999999999, GH: 1713094215, AD: 9999999999 },
-        mo: { a: true, ex: 9999999999, ss: true, fm: 'EH' },
+        mo: { a: true, ex: 9999999999, fm: 'EH' },
       }, function (err2, config) {
         assert.ifError(err2);
         const size = JSON.stringify(config).length;
@@ -291,17 +313,17 @@ describe('device-config mo.fm', () => {
   });
 
   it('accepts mo.fm when mo.a is true', (t, done) => {
-    deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: false, fm: 'SC' } }, (err, cfg) => {
+    deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, fm: 'SC' } }, (err, cfg) => {
       assert.ifError(err);
-      assert.deepStrictEqual(cfg.mo, { a: true, ex: 9999999999, ss: false, fm: 'SC' });
+      assert.deepStrictEqual(cfg.mo, { a: true, ex: 9999999999, fm: 'SC' });
       done();
     });
   });
 
   it('accepts mo.fm update while override is active', (t, done) => {
-    deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: false } }, (err) => {
+    deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, fm: 'I' } }, (err) => {
       assert.ifError(err);
-      deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: false, fm: 'GH' } }, (err2, cfg) => {
+      deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, fm: 'GH' } }, (err2, cfg) => {
         assert.ifError(err2);
         assert.strictEqual(cfg.mo.fm, 'GH');
         done();
@@ -310,7 +332,7 @@ describe('device-config mo.fm', () => {
   });
 
   it('rejects mo.fm when mo.a is false', (t, done) => {
-    deviceConfig.updateConfig({ mo: { a: false, ex: 0, ss: false, fm: 'SC' } }, (err) => {
+    deviceConfig.updateConfig({ mo: { a: false, ex: 0, fm: 'SC' } }, (err) => {
       assert.ok(err);
       assert.match(err.message, /mo\.fm/);
       assert.strictEqual(err.code, 'VALIDATION');
@@ -319,7 +341,7 @@ describe('device-config mo.fm', () => {
   });
 
   it('rejects unknown mode codes in mo.fm', (t, done) => {
-    deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: false, fm: 'XX' } }, (err) => {
+    deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, fm: 'XX' } }, (err) => {
       assert.ok(err);
       assert.match(err.message, /mo\.fm/);
       done();
@@ -327,7 +349,7 @@ describe('device-config mo.fm', () => {
   });
 
   it('clears mo.fm when mo is cleared', (t, done) => {
-    deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, ss: false, fm: 'SC' } }, (err) => {
+    deviceConfig.updateConfig({ mo: { a: true, ex: 9999999999, fm: 'SC' } }, (err) => {
       assert.ifError(err);
       deviceConfig.updateConfig({ mo: null }, (err2, cfg) => {
         assert.ifError(err2);

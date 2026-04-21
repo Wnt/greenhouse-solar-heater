@@ -83,14 +83,17 @@ describe('watchdog simulation scenarios', () => {
     assert.strictEqual(firedAfter, 'ggr');
   });
 
-  it('mo.ss=true fully suspends detection even when the condition would fire', () => {
+  it('active manual override fully suspends watchdog detection', () => {
+    // Hard override (2026-04-21): mo.a=true alone is the suppression
+    // signal; the old mo.ss field is gone. Watchdog must not fire
+    // while the user is driving the system manually.
     const entry = {
       mode: 'GREENHOUSE_HEATING', at: 1000,
       tankTop: 48, collector: 20, greenhouse: 8
     };
     const s = { collector: 20, tank_top: 48, greenhouse: 8.1 };
     const cfgOverride = Object.assign({}, cfg, {
-      mo: { a: true, ss: true, ex: 9999999999 }
+      mo: { a: true, fm: 'I', ex: 9999999999 }
     });
     const fired = detectAnomaly(entry, 1900, s, cfgOverride);
     assert.strictEqual(fired, null);
