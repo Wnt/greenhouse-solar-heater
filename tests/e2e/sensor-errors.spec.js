@@ -54,6 +54,12 @@ test.describe('Sensor view does not auto-scan', () => {
   });
 
   test('no periodic polling happens while view is open', async ({ page }) => {
+    // Explicit 10s budget: the assertion needs 4 s of real waits (1 s post-
+    // click + 3 s to prove no interval polling fires) on top of the page
+    // load. The 5 s global timeout in playwright.config.js left this test
+    // routinely sitting ~200 ms below the limit on developer machines and
+    // tipping over under CI worker contention.
+    test.setTimeout(10000);
     let discoveryCallCount = 0;
     await page.route('**/api/sensor-config', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sensorConfigResponse) });
