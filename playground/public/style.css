@@ -813,6 +813,15 @@ select, input, textarea { max-width: 100%; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Evaluator decision reason (plain-English label from REASON_LABELS) */
+.log-reason {
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  line-height: 1.4;
+  margin-top: 2px;
+  font-style: italic;
+}
+
 /* ── Critical Components ── */
 .components-grid {
   display: grid;

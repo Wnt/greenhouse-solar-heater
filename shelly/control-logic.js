@@ -83,7 +83,13 @@ var VALVE_TIMING = {
 };
 
 var DEFAULT_CONFIG = {
-  solarEnterDelta: 10,
+  // Collector must exceed tank_bottom by this many K to start a solar
+  // charging session. Raised from 5 → 10 in early testing to avoid
+  // short-cycle entries on marginal irradiance; lowered back to 5 on
+  // 2026-04-21 after logs showed the controller bypassing obvious
+  // charging opportunities (e.g. 40 °C collector vs 32 °C bottom was
+  // still below the 10 K bar).
+  solarEnterDelta: 5,
   // Solar charging exits when the tank has stopped accepting heat:
   //   - tank_top has not risen for solarExitStallSeconds, OR
   //   - tank_top has dropped solarExitTankDrop °C from the session peak
@@ -170,7 +176,7 @@ function shortCodeOf(mode) {
   return null;
 }
 
-function makeResult(mode, flags, deviceConfig, safetyOverride) {
+function makeResult(mode, flags, deviceConfig, safetyOverride, reason) {
   var valves = {};
   var actuators = {};
   var key;
@@ -188,7 +194,12 @@ function makeResult(mode, flags, deviceConfig, safetyOverride) {
     actuators: actuators,
     flags: flags,
     suppressed: false,
-    safetyOverride: !!safetyOverride
+    safetyOverride: !!safetyOverride,
+    // Reason code explaining which decision path the evaluator took this
+    // tick. The server copies it alongside state_events.cause so the
+    // System Logs UI can show "automation: solar_stall" instead of a
+    // bare "automation" tag. Null only for legacy/missing paths.
+    reason: reason || null
   };
   // Safety overrides (freeze drain, overheat drain) bypass all device config
   // suppression — they MUST actuate even when controls are disabled.
@@ -263,16 +274,16 @@ function evaluate(state, config, deviceConfig) {
     flags.emergencyHeatingActive = false;
     flags.solarChargePeakTankTop = null;
     flags.solarChargePeakTankTopAt = 0;
-    return makeResult(MODES.IDLE, flags, dc);
+    return makeResult(MODES.IDLE, flags, dc, false, "sensor_stale");
   }
 
   // Already draining — stay until shell completes or timeout
   if (state.currentMode === MODES.ACTIVE_DRAIN) {
     if (elapsed > cfg.drainTimeout) {
       flags.collectorsDrained = true;
-      return makeResult(MODES.IDLE, flags, dc);
+      return makeResult(MODES.IDLE, flags, dc, false, "drain_timeout");
     }
-    return makeResult(MODES.ACTIVE_DRAIN, flags, dc);
+    return makeResult(MODES.ACTIVE_DRAIN, flags, dc, false, "drain_running");
   }
 
   // Freeze protection — preempts immediately, ignores min duration
@@ -292,7 +303,7 @@ function evaluate(state, config, deviceConfig) {
       !state.collectorsDrained) {
     flags.solarChargePeakTankTop = null;
     flags.solarChargePeakTankTopAt = 0;
-    return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true);
+    return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "freeze_drain");
   }
 
   // Collector overheat protection — drain only as a last resort.
@@ -303,14 +314,14 @@ function evaluate(state, config, deviceConfig) {
       state.currentMode === MODES.SOLAR_CHARGING && !state.collectorsDrained) {
     flags.solarChargePeakTankTop = null;
     flags.solarChargePeakTankTopAt = 0;
-    return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true);
+    return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "overheat_drain");
   }
 
   // Minimum mode duration (not for IDLE or EMERGENCY_HEATING, not for drain above)
   if (state.currentMode !== MODES.IDLE &&
       state.currentMode !== MODES.EMERGENCY_HEATING &&
       elapsed < getMinDuration(state, cfg)) {
-    var result = makeResult(state.currentMode, flags, dc);
+    var result = makeResult(state.currentMode, flags, dc, false, "min_duration");
     // Emergency overlay still applies during min-duration hold
     if (t.greenhouse !== null && flags.emergencyHeatingActive) {
       result.actuators.space_heater = true;
@@ -335,6 +346,11 @@ function evaluate(state, config, deviceConfig) {
   // Solar charging has priority: free energy, time-limited (daylight only).
   // Greenhouse heating uses stored energy and can run any time.
   var pumpMode = MODES.IDLE;
+  // Decision reason for this tick. Updated as the evaluator progresses
+  // through the branches below; the final value is attached to the result
+  // and published with every state snapshot. See CAUSE_LABELS /
+  // REASON_LABELS for the stable, UI-mapped codes.
+  var reason = "idle";
 
   // Solar charging — capture free energy first
   if (t.collector !== null && t.tank_bottom !== null) {
@@ -358,12 +374,20 @@ function evaluate(state, config, deviceConfig) {
       }
       if (!stalled && !droppedFromPeak) {
         pumpMode = MODES.SOLAR_CHARGING;
+        reason = "solar_active";
+      } else if (droppedFromPeak) {
+        // droppedFromPeak wins over stalled when both are true — it's the
+        // more decisive signal (tank is actively cooling).
+        reason = "solar_drop_from_peak";
+      } else {
+        reason = "solar_stall";
       }
       // Otherwise fall through to IDLE / other modes
     } else if (!state.collectorsDrained) {
       // Normal solar entry — collector clearly hotter than tank bottom
       if (t.collector > t.tank_bottom + cfg.solarEnterDelta) {
         pumpMode = MODES.SOLAR_CHARGING;
+        reason = "solar_enter";
         if (t.tank_top !== null) {
           flags.solarChargePeakTankTop = t.tank_top;
           flags.solarChargePeakTankTopAt = state.now;
@@ -383,6 +407,7 @@ function evaluate(state, config, deviceConfig) {
           flags.collectorsDrained = false;
           flags.lastRefillAttempt = state.now;
           pumpMode = MODES.SOLAR_CHARGING;
+          reason = "solar_refill";
           if (t.tank_top !== null) {
             flags.solarChargePeakTankTop = t.tank_top;
             flags.solarChargePeakTankTopAt = state.now;
@@ -399,11 +424,19 @@ function evaluate(state, config, deviceConfig) {
       if (t.greenhouse <= cfg.greenhouseExitTemp &&
           t.tank_top >= t.greenhouse + cfg.greenhouseExitTankDelta) {
         pumpMode = MODES.GREENHOUSE_HEATING;
+        reason = "greenhouse_active";
+      } else if (t.greenhouse > cfg.greenhouseExitTemp) {
+        // Greenhouse crossed the warm-enough threshold — stop heating.
+        reason = "greenhouse_warm";
+      } else {
+        // Tank dropped below greenhouse + exit delta — no longer useful
+        // energy available (further pumping would cool via radiator).
+        reason = "greenhouse_tank_depleted";
       }
-      // Above exit temp or tank too close to greenhouse, fall through
     } else if (t.greenhouse < cfg.greenhouseEnterTemp &&
                t.tank_top > t.greenhouse + cfg.greenhouseMinTankDelta) {
       pumpMode = MODES.GREENHOUSE_HEATING;
+      reason = "greenhouse_enter";
     }
   }
 
@@ -413,6 +446,7 @@ function evaluate(state, config, deviceConfig) {
   if (t.collector !== null && t.collector > cfg.overheatDrainTemp &&
       !state.collectorsDrained && pumpMode !== MODES.SOLAR_CHARGING) {
     pumpMode = MODES.SOLAR_CHARGING;
+    reason = "overheat_circulate";
     if (t.tank_top !== null && flags.solarChargePeakTankTop === null) {
       flags.solarChargePeakTankTop = t.tank_top;
       flags.solarChargePeakTankTopAt = state.now;
@@ -430,12 +464,12 @@ function evaluate(state, config, deviceConfig) {
     // Emergency heating is also subject to wb
     if (dc && dc.wb && dc.wb.EH && dc.wb.EH > state.now) {
       flags.emergencyHeatingActive = false;
-      return makeResult(MODES.IDLE, flags, dc);
+      return makeResult(MODES.IDLE, flags, dc, false, "watchdog_ban");
     }
-    return makeResult(MODES.EMERGENCY_HEATING, flags, dc);
+    return makeResult(MODES.EMERGENCY_HEATING, flags, dc, false, "emergency_enter");
   }
 
-  var result = makeResult(pumpMode, flags, dc);
+  var result = makeResult(pumpMode, flags, dc, false, reason);
   if (flags.emergencyHeatingActive) {
     result.actuators.space_heater = true;
   }
@@ -448,7 +482,7 @@ function evaluate(state, config, deviceConfig) {
     if (natCode && dc.wb[natCode] && dc.wb[natCode] > state.now) {
       flags.solarChargePeakTankTop = null;
       flags.solarChargePeakTankTopAt = 0;
-      return makeResult(MODES.IDLE, flags, dc);
+      return makeResult(MODES.IDLE, flags, dc, false, "watchdog_ban");
     }
   }
 
@@ -750,7 +784,13 @@ function buildSnapshotFromState(st, dc, now) {
     // state_events.cause. One of: boot | automation | forced |
     // safety_override | watchdog_auto | user_shutdown | drain_complete
     // | failed.
-    cause: st.lastTransitionCause || "boot"
+    cause: st.lastTransitionCause || "boot",
+    // Finer-grained decision code from the evaluator (solar_enter,
+    // solar_stall, freeze_drain, greenhouse_enter, ...). Null when the
+    // transition was not produced by evaluate() — e.g. user_shutdown,
+    // drain_complete, failed. Written to state_events.reason on mode
+    // change. See REASON_LABELS in playground/js/main.js for UI mapping.
+    reason: st.lastTransitionReason || null
   };
 }
 

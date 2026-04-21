@@ -1019,7 +1019,10 @@ function fetchLiveEvents(before) {
           text: formatLiveTransitionText(e.from, e.to),
           // cause/sensors may be null for pre-2026-04-20 rows or for
           // firmware that doesn't yet carry the transition cause.
+          // reason (added 2026-04-21) is the evaluator's decision code;
+          // null when the transition did not come from evaluate().
           cause: e.cause || null,
+          reason: e.reason || null,
           sensors: e.sensors || null,
         });
       }
@@ -1059,10 +1062,11 @@ function detectLiveTransition(result) {
     mode: mode,
     from: lastLiveMode,
     text: formatLiveTransitionText(lastLiveMode, mode),
-    // Carry cause + temps through from the state payload so the log
-    // can show them immediately, without waiting for a /api/events
+    // Carry cause + reason + temps through from the state payload so the
+    // log can show them immediately, without waiting for a /api/events
     // round-trip.
     cause: (result && result.cause) || null,
+    reason: (result && result.reason) || null,
     sensors: (result && result.temps) ? Object.assign({}, result.temps) : null,
   });
   lastLiveMode = mode;
@@ -1099,12 +1103,18 @@ function renderLogsList() {
       : t.mode === 'emergency_heating' ? 'log-dot-emergency' : 'log-dot-muted';
     const timeLabel = t.kind === 'live' ? formatClockTime(t.ts) : formatTimeOfDay(t.time);
     const causeChip = t.cause ? ' <span class="log-cause">' + escapeHtml(formatCauseLabel(t.cause)) + '</span>' : '';
+    // reason sits on its own line so operators can skim the cause chip
+    // row and dive into the decision code only when needed.
+    const reasonLine = t.reason
+      ? '<div class="log-reason">' + escapeHtml(formatReasonLabel(t.reason)) + '</div>'
+      : '';
     const sensorsLine = t.sensors ? '<div class="log-sensors">' + formatSensorsLine(t.sensors) + '</div>' : '';
     html += '<div class="log-item">' +
       '<div class="log-dot ' + dotClass + '"></div>' +
       '<div class="log-content">' +
         '<div class="log-title">' + escapeHtml(mi.label) + causeChip + '</div>' +
         '<div class="log-desc">' + escapeHtml(t.text || '') + '</div>' +
+        reasonLine +
         sensorsLine +
       '</div>' +
       '<div class="log-time">' + timeLabel + '</div>' +
@@ -1151,6 +1161,36 @@ const CAUSE_LABELS = {
 };
 function formatCauseLabel(c) {
   return CAUSE_LABELS[c] || c;
+}
+
+// Finer-grained decision codes from the evaluator (shelly/control-logic.js).
+// Paired with CAUSE_LABELS in the System Logs UI to turn a bare
+// "automation" tag into "Automation — solar stall". Keep the keys in
+// sync with the `reason` string set at each return path inside
+// evaluate().
+const REASON_LABELS = {
+  solar_enter: 'collector hot enough to charge',
+  solar_refill: 'refilling drained collectors',
+  solar_active: 'tank still gaining heat',
+  solar_stall: 'tank stopped gaining heat',
+  solar_drop_from_peak: 'tank cooling below peak',
+  overheat_circulate: 'collector overheat — circulating to cool',
+  overheat_drain: 'collector overheat — draining',
+  freeze_drain: 'freeze risk — draining',
+  drain_running: 'drain in progress',
+  drain_timeout: 'drain timeout fallback',
+  greenhouse_enter: 'greenhouse cold — heating',
+  greenhouse_active: 'greenhouse still cold',
+  greenhouse_warm: 'greenhouse warm enough',
+  greenhouse_tank_depleted: 'tank too cool to heat greenhouse',
+  emergency_enter: 'greenhouse critical — emergency heat',
+  sensor_stale: 'sensor reading stale',
+  watchdog_ban: 'mode blocked by watchdog',
+  min_duration: 'holding minimum run time',
+  idle: 'no trigger active',
+};
+function formatReasonLabel(r) {
+  return REASON_LABELS[r] || r;
 }
 
 // Render the temp snapshot as "coll 62.3° · tank 41/29° · gh 12° · out 8°"
@@ -1305,8 +1345,17 @@ function buildLogsClipboardText() {
       const timeLabel = t.kind === 'live'
         ? formatFullTimeHelsinki(t.ts)
         : formatTimeOfDay(t.time);
-      const causeSuffix = t.cause ? '  [' + t.cause + ']' : '';
+      // Header row carries cause and, when present, the evaluator's
+      // decision code in the form `[cause: reason]` so `grep` on a
+      // single bracketed pair still matches the cause.
+      let causeSuffix = '';
+      if (t.cause && t.reason) causeSuffix = '  [' + t.cause + ': ' + t.reason + ']';
+      else if (t.cause) causeSuffix = '  [' + t.cause + ']';
+      else if (t.reason) causeSuffix = '  [' + t.reason + ']';
       lines.push(timeLabel + '  ' + mi.label + '  ' + (t.text || '') + causeSuffix);
+      if (t.reason) {
+        lines.push('    reason: ' + formatReasonLabel(t.reason));
+      }
       if (t.sensors) {
         const s = t.sensors;
         const fmt = (v) => (typeof v === 'number' ? v.toFixed(1) + '°C' : '—');

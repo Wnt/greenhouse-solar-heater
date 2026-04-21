@@ -168,6 +168,10 @@ function detectStateChanges(ts, prev, curr, _db) {
   if (prev.mode !== curr.mode) {
     var modeOpts = {
       cause: (typeof curr.cause === 'string' && curr.cause) || null,
+      // reason is the evaluator's decision code (e.g. "solar_stall").
+      // Only meaningful when cause is "automation" or "safety_override";
+      // older payloads without the field store null.
+      reason: (typeof curr.reason === 'string' && curr.reason) || null,
       sensors: (curr.temps && typeof curr.temps === 'object') ? curr.temps : null,
     };
     d.insertStateEvent(ts, 'mode', 'mode', prev.mode, curr.mode, modeOpts, function (err) {

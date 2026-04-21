@@ -118,6 +118,11 @@ var SCHEMA_SQL = [
   // stay NULL; the API maps NULL to null.
   "ALTER TABLE state_events ADD COLUMN IF NOT EXISTS cause TEXT",
   "ALTER TABLE state_events ADD COLUMN IF NOT EXISTS sensors JSONB",
+  // 2026-04-21: reason carries the evaluator's finer-grained decision
+  // code (solar_stall, freeze_drain, greenhouse_enter, ...) paired with
+  // cause. Null for non-evaluator transitions (user_shutdown, forced,
+  // drain_complete, failed) and for pre-2026-04-21 rows.
+  "ALTER TABLE state_events ADD COLUMN IF NOT EXISTS reason TEXT",
 
   // Shelly control-script crash log. Written by server/lib/script-monitor.js
   // when the 30-second Script.GetStatus poll first observes running:false
@@ -257,11 +262,12 @@ function insertSensorReadings(ts, temps, callback) {
   });
 }
 
-// Signature accepts an optional opts object {cause, sensors} so mode
-// rows can carry transition context (what triggered the change + sensor
-// snapshot at transition time). Valve/actuator writes omit opts and
-// store NULL in those columns. Positional signature preserved for
-// callers that don't need the extension.
+// Signature accepts an optional opts object {cause, reason, sensors} so
+// mode rows can carry transition context (what triggered the change,
+// the evaluator's decision code, and the sensor snapshot at transition
+// time). Valve/actuator writes omit opts and store NULL in those
+// columns. Positional signature preserved for callers that don't need
+// the extension.
 function insertStateEvent(ts, entityType, entityId, oldValue, newValue, optsOrCallback, maybeCallback) {
   var p = getPool();
   var opts, callback;
@@ -273,10 +279,11 @@ function insertStateEvent(ts, entityType, entityId, oldValue, newValue, optsOrCa
     callback = maybeCallback;
   }
   var cause = opts && opts.cause !== undefined ? opts.cause : null;
+  var reason = opts && opts.reason !== undefined ? opts.reason : null;
   var sensors = opts && opts.sensors !== undefined ? opts.sensors : null;
-  var sql = 'INSERT INTO state_events (ts, entity_type, entity_id, old_value, new_value, cause, sensors) ' +
-            'VALUES ($1, $2, $3, $4, $5, $6, $7)';
-  p.query(sql, [ts, entityType, entityId, oldValue, newValue, cause, sensors], function (err) {
+  var sql = 'INSERT INTO state_events (ts, entity_type, entity_id, old_value, new_value, cause, reason, sensors) ' +
+            'VALUES ($1, $2, $3, $4, $5, $6, $7, $8)';
+  p.query(sql, [ts, entityType, entityId, oldValue, newValue, cause, reason, sensors], function (err) {
     if (callback) callback(err || null);
   });
 }
@@ -396,7 +403,7 @@ function getEventsPaginated(entityType, limit, before, callback) {
   var fetchLimit = effLimit + 1;
 
   var params = [entityType];
-  var sql = 'SELECT ts, entity_type, entity_id, old_value, new_value, cause, sensors FROM state_events WHERE entity_type = $1';
+  var sql = 'SELECT ts, entity_type, entity_id, old_value, new_value, cause, reason, sensors FROM state_events WHERE entity_type = $1';
   if (before !== null && before !== undefined) {
     params.push(new Date(before));
     sql += ' AND ts < $' + params.length;
@@ -417,8 +424,10 @@ function getEventsPaginated(entityType, limit, before, callback) {
         from: row.old_value,
         to: row.new_value,
         // cause / sensors populated only for mode rows written after
-        // 2026-04-20. Older rows and valve/actuator rows carry null.
+        // 2026-04-20; reason added 2026-04-21. Older rows and
+        // valve/actuator rows carry null.
         cause: row.cause,
+        reason: row.reason,
         sensors: row.sensors,
       };
     });

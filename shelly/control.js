@@ -115,6 +115,12 @@ var state = {
   //   records it alongside the mode-change row so the UI can show
   //   operators why the system changed state.
   lastTransitionCause: "boot",
+  // Finer-grained decision code from control-logic.evaluate() for the
+  // most recent automation/safety transition (e.g. "solar_stall",
+  // "freeze_drain", "greenhouse_enter"). Null when the transition was
+  // driven by a non-evaluator code path (user_shutdown, drain_complete,
+  // failed, boot). Published alongside lastTransitionCause.
+  lastTransitionReason: null,
 };
 
 // ── Actuator commands with config guards ──
@@ -599,6 +605,7 @@ function finalizeTransitionFail() {
   state.mode = MODES.IDLE;
   state.mode_start = Date.now();
   state.lastTransitionCause = "failed";
+  state.lastTransitionReason = null;
   captureWatchdogBaseline();
   state.transitioning = false;
   state.transition_step = null;
@@ -758,6 +765,12 @@ function transitionTo(result, cause) {
   // "drain_complete", "failed"). Default is "automation" for legacy
   // call sites that don't yet annotate themselves.
   if (cause) state.lastTransitionCause = cause;
+  // Pair the cause with the evaluator's finer-grained reason code when
+  // the transition came from evaluate(). Manual paths (drain_complete,
+  // user_shutdown, forced mode from the UI) pass results without a
+  // reason; clear the stored reason in that case so the published
+  // snapshot doesn't misattribute the transition.
+  state.lastTransitionReason = (result && result.reason) ? result.reason : null;
 
   if (state.transitioning) {
     // Allow in-place target change during an in-flight staged transition.
