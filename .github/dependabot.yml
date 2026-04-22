@@ -35,3 +35,11 @@ updates:
     directory: /deploy/openvpn
     schedule:
       interval: weekly
+
+  - package-ecosystem: terraform
+    directory: /deploy/terraform
+    schedule:
+      interval: weekly
+    groups:
+      terraform:
+        patterns: ["*"]
