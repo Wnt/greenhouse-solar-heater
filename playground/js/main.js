@@ -448,6 +448,10 @@ let lastResult = null;
 let liveFrameSeen = false;
 const DT = 1;
 let graphRange = 86400; // default 24h
+// Graph "All sensors" toggle — when true, the Tank Top and Tank Bottom
+// individual lines are drawn alongside the tank average and their
+// legend / inspector rows become visible. Off by default.
+let showAllSensors = false;
 let yesterdayHigh = 0;
 let confirmedYesterdayHigh = 0;
 let lastDay = 0;
@@ -537,6 +541,10 @@ function setupInspector() {
     const fmtInspTemp = function (x) { return isNum(x) ? x.toFixed(1) + '\u00b0C' : TEMP_PLACEHOLDER; };
     document.getElementById('inspector-coll').textContent = fmtInspTemp(v.t_collector);
     document.getElementById('inspector-tank').textContent = fmtInspTemp(tankAvgOf(v));
+    if (showAllSensors) {
+      document.getElementById('inspector-tank-top').textContent = fmtInspTemp(v.t_tank_top);
+      document.getElementById('inspector-tank-bottom').textContent = fmtInspTemp(v.t_tank_bottom);
+    }
     document.getElementById('inspector-gh').textContent = fmtInspTemp(v.t_greenhouse);
     document.getElementById('inspector-out').textContent = fmtInspTemp(v.t_outdoor);
 
@@ -778,6 +786,7 @@ async function init() {
 
   setupControls();
   setupTimeRangePills();
+  setupAllSensorsToggle();
   setupFAB();
   resetSim();
   // Schematic view — async build, handle held in module scope
@@ -1648,6 +1657,25 @@ function setupTimeRangePills() {
     } else {
       drawHistoryGraph();
     }
+  });
+}
+
+function setupAllSensorsToggle() {
+  const el = document.getElementById('graph-show-all-sensors');
+  if (!el) return;
+  el.checked = showAllSensors;
+  applyAllSensorsVisibility();
+  el.addEventListener('change', () => {
+    showAllSensors = el.checked;
+    applyAllSensorsVisibility();
+    drawHistoryGraph();
+  });
+}
+
+function applyAllSensorsVisibility() {
+  const display = showAllSensors ? '' : 'none';
+  document.querySelectorAll('.sensor-detail').forEach((el) => {
+    el.style.display = display;
   });
 }
 
@@ -2536,6 +2564,12 @@ function drawHistoryGraph() {
     ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
     ctx.fillStyle = '#e9c349';
     ctx.fill();
+  }
+
+  // ── Tank sub-sensor lines (only with the "All sensors" toggle) ──
+  if (showAllSensors) {
+    drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_tank_top', '#ff9f43', 1);
+    drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_tank_bottom', '#b088d6', 1);
   }
 
   // ── Collector line (red) ──

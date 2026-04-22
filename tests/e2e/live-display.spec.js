@@ -254,3 +254,48 @@ test.describe("Yesterday's High label in live mode", () => {
     await expect(page.locator('#graph-peak-label')).toHaveText("Yesterday's High: --");
   });
 });
+
+test.describe("Graph 'All sensors' toggle", () => {
+  test("is off by default and hides Tank Top / Tank Bottom legend entries", async ({ page }) => {
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    await expect(page.locator('#graph-show-all-sensors')).not.toBeChecked();
+    await expect(page.locator('#legend-tank-top')).toBeHidden();
+    await expect(page.locator('#legend-tank-bottom')).toBeHidden();
+    await expect(page.locator('#inspector-tank-top-row')).toBeHidden();
+    await expect(page.locator('#inspector-tank-bottom-row')).toBeHidden();
+  });
+
+  test("enabling the toggle reveals Tank Top / Tank Bottom legend + inspector rows", async ({ page }) => {
+    const now = Date.now();
+    const points = [
+      { ts: now - 7200_000, collector: 25.0, tank_top: 52.0, tank_bottom: 34.0, greenhouse: 17.0, outdoor: 9.0 },
+      { ts: now - 3600_000, collector: 45.0, tank_top: 58.0, tank_bottom: 36.0, greenhouse: 18.5, outdoor: 10.0 },
+      { ts: now - 1800_000, collector: 60.0, tank_top: 62.0, tank_bottom: 38.0, greenhouse: 20.0, outdoor: 11.0 },
+    ];
+    await installMockWs(page);
+    await mockHistoryApi(page, points);
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    await page.locator('#graph-show-all-sensors').check();
+
+    await expect(page.locator('#legend-tank-top')).toBeVisible();
+    await expect(page.locator('#legend-tank-bottom')).toBeVisible();
+
+    // Hover the graph to surface the inspector and assert the new rows
+    // show individual top/bottom values (not just the average).
+    const canvas = page.locator('#chart');
+    await canvas.hover({ position: { x: 200, y: 100 } });
+
+    await expect(page.locator('#inspector-tank-top-row')).toBeVisible();
+    await expect(page.locator('#inspector-tank-bottom-row')).toBeVisible();
+    await expect(page.locator('#inspector-tank-top')).toHaveText(/\d+\.\d°C/);
+    await expect(page.locator('#inspector-tank-bottom')).toHaveText(/\d+\.\d°C/);
+  });
+});
