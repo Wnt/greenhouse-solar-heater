@@ -43,6 +43,10 @@ styles:
   # Valves (single style for all motorized on/off valves)
   valve:              "rounded=1;whiteSpace=wrap;html=1;fillColor=#e040fb20;strokeColor=#e040fb;strokeWidth=1.5;fontColor=#e040fb;fontSize=10;"
 
+  # T-joint (junction) shape. Rotation is set per-joint in the `joints:` section.
+  # The `dx=12;dy=12;` parameters control the tee's arm thickness.
+  tee:                "shape=tee;whiteSpace=wrap;html=1;dx=12;dy=12;"
+
   # Sensors: single 10×10 green dot with label positioned to the right by default.
   # Override per-sensor with `label_side: left` to flip the label to the other side.
   sensor:             "ellipse;whiteSpace=wrap;html=1;fillColor=#76ff03;strokeColor=#76ff03;fontColor=#76ff03;fontSize=9;labelPosition=right;verticalLabelPosition=middle;align=left;verticalAlign=middle;spacingLeft=4;"
@@ -198,13 +202,17 @@ components:
     # Sits on top of the tank — communicating vessels means the water level
     # in the reservoir equals the water level inside the tank's dip tube.
     geometry: {x: 450, y: 48, width: 150, height: 60}
+    # Three dedicated left-side ports, top-to-bottom: collector-top inlet,
+    # tank dip-tube inlet (at the water line where gas separates), and the
+    # submerged outlet that feeds VI-top.
     ports:
       left:             {x: 0,   y: 0.5}
       right:            {x: 1,   y: 0.5}
       bottom:           {x: 0.5, y: 1}
       top:              {x: 0.5, y: 0}
-      left_upper:       {x: 0,   y: 0.25} # used by the passive collector-top → reservoir pipe (entry above water line)
-      left_submerged:   {x: 0,   y: 0.7}  # below water line — kept for future use
+      left_upper:       {x: 0,   y: 0.25} # pipe_coll_top_reservoir inlet (above water line)
+      left_dip:         {x: 0,   y: 0.5}  # pipe_dip_reservoir inlet (at the water line)
+      left_submerged:   {x: 0,   y: 0.75} # pipe_reservoir_vitop outlet (below water line)
 
   pump:
     label: "PUMP"
@@ -242,11 +250,6 @@ components:
 # Names must match `system.yaml` valves section (the generator warns on mismatch).
 # ------------------------------------------------------------------------------
 valves:
-  # Note: v_air still exists as a physical valve in system.yaml, but its
-  # visualization (valve box + pipe to collector top + legend entry) was
-  # removed from this layout — the atmosphere intake path is conceptual for
-  # drain-mode operation and doesn't need to appear in the topology diagram.
-  # generate-topology.js drops v_air from the validateLayout expected set.
   vi_btm:
     label: "VI-btm"
     geometry: {x: 160, y: 568, width: 60, height: 30}
@@ -272,6 +275,77 @@ valves:
     label: "VO-tank"
     geometry: {x: 422, y: 648, width: 60, height: 30}
     ports: {left: {x: 0, y: 0.5}, right: {x: 1, y: 0.5}}
+
+  # Atmospheric air intake at the top of the collector pipe. Closed except in
+  # drain modes, when it opens to let air replace the water being pumped out
+  # of the collectors. Sits just below the collector-top tee with a short
+  # passive red stub (pipe_vair_colltee) connecting them.
+  v_air:
+    label: "V-air"
+    geometry: {x: 160, y: 90, width: 60, height: 30}
+    ports:
+      top:   {x: 0.5, y: 0}
+      left:  {x: 0,   y: 0.5}
+      right: {x: 1,   y: 0.5}
+
+# ------------------------------------------------------------------------------
+# Joints: T-junction shapes placed at pipe confluences. Each joint exposes
+# three named ports — two arms and a trunk — whose anchor positions are fixed
+# pixel offsets from the cell corner (matching the drawio `shape=tee` geometry
+# with dx=12/dy=12). The `rotation` field orients the tee in screen space
+# (drawio's `shape=tee` has trunk pointing DOWN at rotation=0):
+#   rotation   0  → trunk points down, arms run horizontally
+#   rotation  90  → trunk points left,  arms run vertically
+#   rotation -90  → trunk points right, arms run vertically
+#   rotation -180 → trunk points up,    arms run horizontally
+# Pipes reference joints via `{joint: <id>, port: arm_left|arm_right|trunk}`.
+# ------------------------------------------------------------------------------
+joints:
+  # Lower tee below the output manifold: joins the horizontal VO-tank output
+  # line with the tank-bottom drain and the rising leg to tee_output_upper.
+  tee_output_lower:
+    style: tee
+    geometry: {x: 530, y: 663, width: 40, height: 35}
+    rotation: 90
+    ports:
+      arm_left:  {x: 0,   y: 0, dx: 0,  dy: 6, perimeter: 0}
+      arm_right: {x: 0,   y: 0, dx: 40, dy: 6, perimeter: 0}
+      trunk:     {x: 0.5, y: 1,                perimeter: 0}
+
+  # Upper tee above tee_output_lower: intercepts the radiator return and
+  # bridges to the tank-bottom drain pipe.
+  tee_output_upper:
+    style: tee
+    geometry: {x: 553, y: 613, width: 40, height: 35}
+    rotation: -90
+    ports:
+      arm_left:  {x: 0,     y: 0,     dx: 0,  dy: 6, perimeter: 0}
+      arm_right: {x: 0,     y: 0,     dx: 40, dy: 6, perimeter: 0}
+      trunk:     {x: 0.488, y: 1.067,                perimeter: 0}
+
+  # Collector bottom tee: joins the VO-coll supply (trunk, coming down from
+  # above) with the VI-coll drain (arm to the valve) and the passive
+  # collector-bottom stub.
+  tee_collectors:
+    style: tee
+    geometry: {x: 65, y: 475, width: 40, height: 35}
+    rotation: -90
+    ports:
+      arm_left:  {x: 0,   y: 0, dx: 0,  dy: 6, perimeter: 0}
+      arm_right: {x: 0,   y: 0, dx: 40, dy: 6, perimeter: 0}
+      trunk:     {x: 0.5, y: 1,                perimeter: 0}
+
+  # Collector-top tee: sits above the collector block. Joins the collector
+  # top (arm_left), the V-air valve stub (trunk, hanging down to V-air), and
+  # the passive link to the reservoir-top tee (arm_right).
+  tee_collector_top:
+    style: tee
+    geometry: {x: 170, y: 29, width: 40, height: 35}
+    rotation: 0
+    ports:
+      arm_left:  {x: 0,   y: 0, dx: 0,  dy: 6, perimeter: 0}
+      arm_right: {x: 0,   y: 0, dx: 40, dy: 6, perimeter: 0}
+      trunk:     {x: 0.5, y: 1,                perimeter: 0}
 
 # ------------------------------------------------------------------------------
 # Sensors: 10×10 ellipse dots with drawio-attached labels.
@@ -304,64 +378,85 @@ sensors:
 # Waypoints (optional) pin specific intermediate points for complex routes.
 # ------------------------------------------------------------------------------
 pipes:
-  # -- Collector loop (top) ----------------------------------------------------
-  # Passive T joint at collector top (spec 024): permanent pipe down to the
-  # reservoir's submerged port. The V_air branch is implicit in system.yaml
-  # but not drawn (see `valves:` note above).
-  - id: pipe_coll_top_reservoir
+  # -- Collector top group -----------------------------------------------------
+  # The collector top is joined at tee_collector_top:
+  #   arm_left  ← collectors.top              (pipe_coll_top_tee)
+  #   arm_right → reservoir.left_upper        (pipe_coll_top_reservoir)
+  #   trunk     → V-air valve                 (pipe_vair_colltee)
+
+  # Both collector-top segments are bidirectional (hot water out during
+  # solar_charging, cold air in during active_drain) — they carry no static
+  # arrow. The playground attaches a directional arrow head dynamically when
+  # the pipe is active.
+  - id: pipe_coll_top_tee
     from: {component: collectors, port: top}
+    to:   {joint: tee_collector_top, port: arm_left}
+    style: pipe_hot_plain
+
+  - id: pipe_coll_top_reservoir
+    from: {joint: tee_collector_top, port: arm_right}
     to:   {component: reservoir, port: left_upper}
     style: pipe_hot_plain
     waypoints:
-      - {x: 330, y: 18}
+      - {x: 330, y: 35}
       - {x: 330, y: 63}
 
-  # -- Reservoir ↔ tank dip tube (gas vent path) -------------------------------
-  # Anchored to the gas pocket at the top of the tank (gas_out port). The pipe
-  # drops down along the left side of the tank, wraps around the tank's right
-  # side, and enters the reservoir's right port.
+  # Passive stub down from the collector-top tee to the V-air atmospheric
+  # intake. No arrow; flow direction depends on mode (air in during drain).
+  - id: pipe_vair_colltee
+    from: {joint: tee_collector_top, port: trunk}
+    to:   {valve: v_air, port: top}
+    style: pipe_hot_plain
+
+  # -- Tank dip-tube → reservoir (direct, no intermediate tee) -----------------
+  # The physical dip-tube pipe drops from the tank's external 0cm port all the
+  # way around to the reservoir's water-line port. Routes via y=470 to model
+  # the real pipe wrapping under the tank before rising to reservoir height.
   - id: pipe_dip_reservoir
     from: {component: tank, port: gas_out}
-    to:   {component: reservoir, port: right}
+    to:   {component: reservoir, port: left_dip}
     style: pipe_hot_plain
     label: "dip tube port → reservoir"
     waypoints:
       - {x: 480, y: 470}
-      - {x: 660, y: 468}
-      - {x: 660, y: 78}
+      - {x: 400, y: 470}
+      - {x: 400, y: 78}
 
-  # -- Reservoir → VI-top (de-aired supply for greenhouse heating) -------------
-  # Exits the reservoir's left face (bottom port would dive into the tank now
-  # that the reservoir sits on top) and routes around the collectors to reach
-  # the input manifold.
+  # -- Reservoir (submerged) → VI-top valve (direct, no intermediate tee) ------
+  # Runs from below the water line, down to tank-bottom-level routing, then
+  # across and up to VI-top. Only active in greenhouse_heating.
   - id: pipe_reservoir_vitop
-    from: {component: reservoir, port: left}
+    from: {component: reservoir, port: left_submerged}
     to:   {valve: vi_top, port: left}
     style: pipe_reservoir_return
     label: "reservoir bottom → VI-top"
     waypoints:
-      - {x: 330, y: 78}
-      - {x: 330, y: 428}
-      - {x: 110, y: 428}
+      - {x: 340, y: 93}
+      - {x: 340, y: 470}
+      - {x: 110, y: 470}
       - {x: 110, y: 623}
 
-  # -- Tank bottom → VI-btm (cool water supply for solar charging) -------------
+  # -- Tank bottom → VI-btm via tee_output_lower -------------------------------
+  # Sourced from the lower output tee (which also carries the VO-tank drain
+  # and the rising leg to tee_output_upper). The pipe hugs the bottom of the
+  # page on its way back to VI-btm.
   - id: pipe_tank_vibtm
-    from: {component: tank, port: supply_out}
+    from: {joint: tee_output_lower, port: arm_right}
     to:   {valve: vi_btm, port: left}
     style: pipe_supply
     waypoints:
-      - {x: 540, y: 728}
+      - {x: 560, y: 730}
       - {x: 40, y: 728}
       - {x: 40, y: 583}
 
-  # -- Collector bottom → VI-coll (drain mode supply) --------------------------
+  # -- Collector bottom → tee_collectors (passive stub) ------------------------
+  # Short plain (no arrow) pipe that terminates at the collector-bottom tee.
+  # The tee's other arm continues to VI-coll (see pipe_tee_collectors_vicoll)
+  # and its trunk receives the VO-coll supply.
   - id: pipe_collbtm_vicoll
     from: {component: collectors, port: bottom_drain}
-    to:   {valve: vi_coll, port: left}
-    style: pipe_supply
-    waypoints:
-      - {x: 74, y: 663}
+    to:   {joint: tee_collectors, port: arm_right}
+    style: pipe_supply_plain
 
   # -- Input manifold valves → pump input (conceptual single pipe) -------------
   - id: pipe_vibtm_pump
@@ -404,15 +499,25 @@ pipes:
       - {x: 380, y: 663}
 
   # -- Output manifold → destinations ------------------------------------------
+  # VO-coll supply arcs over the top of the output manifold, runs across the
+  # diagram, and drops into tee_collectors at the collector bottom.
   - id: pipe_vocoll_collbtm
     from: {valve: vo_coll, port: right}
-    to:   {component: collectors, port: bottom_supply}
+    to:   {joint: tee_collectors, port: trunk}
     style: pipe_supply
     label: "supply to collectors"
     waypoints:
       - {x: 520, y: 583}
       - {x: 520, y: 493}
-      - {x: 91, y: 493}
+
+  # tee_collectors → VI-coll: carries drained water from the collector
+  # bottom to the drain input valve.
+  - id: pipe_tee_collectors_vicoll
+    from: {joint: tee_collectors, port: arm_left}
+    to:   {valve: vi_coll, port: left}
+    style: pipe_supply
+    waypoints:
+      - {x: 74, y: 663}
 
   - id: pipe_vorad_radiator
     from: {valve: vo_rad, port: right}
@@ -421,22 +526,37 @@ pipes:
     waypoints:
       - {x: 690, y: 623}
 
-  - id: pipe_votank_tank
+  # VO-tank → tee_output_lower trunk: the drain water enters the lower tee,
+  # which then distributes via its two arms (arm_left → tee_output_upper →
+  # tank btm_port; arm_right → pipe_tank_vibtm around to VI-btm).
+  - id: pipe_votank_tee_lower
     from: {valve: vo_tank, port: right}
-    to:   {component: tank, port: btm_port}
-    style: pipe_drain
-    label: "drain → tank bottom"
-    waypoints:
-      - {x: 561, y: 663}
+    to:   {joint: tee_output_lower, port: trunk}
+    style: pipe_supply
 
-  # -- Radiator return → tank bottom port --------------------------------------
+  # tee_output_lower ↔ tee_output_upper: short vertical link between the two
+  # output tees. Plain (no arrow) because flow direction depends on mode.
+  - id: pipe_tee_lower_tee_upper
+    from: {joint: tee_output_lower, port: arm_left}
+    to:   {joint: tee_output_upper, port: arm_left}
+    style: pipe_supply_plain
+
+  # tee_output_upper → tank bottom port. Bidirectional: flows into the tank
+  # during greenhouse_heating / active_drain, flows OUT of the tank during
+  # solar_charging (cold draw from the tank bottom into the output tee chain).
+  # No static arrow — the playground paints a directional one when active.
+  - id: pipe_votank_tank
+    from: {joint: tee_output_upper, port: arm_right}
+    to:   {component: tank, port: btm_port}
+    style: pipe_supply_plain
+    label: "drain → tank bottom"
+
+  # -- Radiator return → tee_output_upper (merges into the drain path) ---------
   - id: pipe_rad_return
     from: {component: radiator, port: out}
-    to:   {component: tank, port: rad_return}
+    to:   {joint: tee_output_upper, port: trunk}
     style: pipe_supply
     label: "radiator return → tank bottom"
-    waypoints:
-      - {x: 610, y: 648}
 
 # Legend removed — the diagram elements are labeled inline and the legend
 # added visual noise without explanatory value.

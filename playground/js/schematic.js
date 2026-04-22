@@ -176,6 +176,7 @@ export async function buildSchematic({ container, svgUrl }) {
   svgEl.style.colorScheme = 'light';
 
   installBaseStyles(svgEl);
+  installFlowMarkers(svgEl);
   initializeManagedCells(svgEl);
   installFlowOverlays(svgEl);
 
@@ -201,6 +202,44 @@ function installBaseStyles(svgEl) {
 // Both the default dark theme (#ef5350) and the playground theme
 // (#ee7d77 after substitution) use these colors for the "hot water" red.
 const HOT_PIPE_STROKES = new Set(['#ef5350', '#ee7d77']);
+
+// Bidirectional pipes (those with `reverseWhen` in PIPES) carry no static
+// arrow in the generated SVG — their style is `endArrow=none`. At runtime
+// we add a single arrowhead to their base <path> via `marker-end` or
+// `marker-start`, whichever matches the current flow direction. Inactive
+// bidirectional pipes render without any arrow.
+//
+// `orient="auto-start-reverse"` makes the SAME marker usable at either end:
+// at marker-end the arrow points outward along the path; at marker-start it
+// flips so the arrow still points away from the path's body.
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function installFlowMarkers(svgEl) {
+  let defs = svgEl.querySelector('defs');
+  if (!defs) {
+    defs = document.createElementNS(SVG_NS, 'defs');
+    svgEl.insertBefore(defs, svgEl.firstChild);
+  }
+  if (defs.querySelector('#schematic-arrow-hot')) return;
+
+  const mkMarker = (id, fill) => {
+    const m = document.createElementNS(SVG_NS, 'marker');
+    m.setAttribute('id', id);
+    m.setAttribute('viewBox', '0 0 10 10');
+    m.setAttribute('refX', '9');
+    m.setAttribute('refY', '5');
+    m.setAttribute('markerWidth', '7');
+    m.setAttribute('markerHeight', '7');
+    m.setAttribute('orient', 'auto-start-reverse');
+    const tri = document.createElementNS(SVG_NS, 'path');
+    tri.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+    tri.setAttribute('fill', fill);
+    m.appendChild(tri);
+    return m;
+  };
+  defs.appendChild(mkMarker('schematic-arrow-hot',  '#ef5350'));
+  defs.appendChild(mkMarker('schematic-arrow-cold', '#42a5f5'));
+}
 
 function installFlowOverlays(svgEl) {
   // Every active pipe gets a "core" overlay — a dashed stroke in a lighter
@@ -296,6 +335,10 @@ function applyState(svgEl, state) {
     // solar_charging but cold water in active_drain).
     const cold = !!(rule.coldWhen && rule.coldWhen.some((v) => valves[v]));
     cell.setAttribute('data-flow-cold', cold ? 'true' : 'false');
+    // Bidirectional pipes carry no static arrow in the SVG. When they go
+    // active we paint a dynamic arrowhead at the flow-end; when they go
+    // inactive we strip the marker so nothing misleading remains.
+    applyDirectionalArrow(cell, rule, isActive, reversed, cold);
   }
 
   // Non-pipe components (radiator, …) — same rule shape, separate map
@@ -318,6 +361,41 @@ function applyState(svgEl, state) {
 function formatTemp(v) {
   if (v == null || !Number.isFinite(v)) return '--°C';
   return v.toFixed(1) + '°C';
+}
+
+// For bidirectional pipes (PIPES entries with a non-empty `reverseWhen`),
+// toggle an SVG marker on the base <path>. marker-end places it at the
+// drawn `to` endpoint; marker-start places it at the drawn `from` endpoint.
+// `orient=auto-start-reverse` on the marker itself handles the rotation so
+// the tip always points AWAY from the pipe body regardless of which end it
+// sits on. Unidirectional pipes keep their drawio-baked static arrows and
+// are left untouched here.
+function applyDirectionalArrow(cell, rule, isActive, reversed, cold) {
+  const isBidirectional = !!(rule.reverseWhen && rule.reverseWhen.length);
+  if (!isBidirectional) return;
+  const basePath = cell.querySelector('path:not([data-flow-overlay])');
+  if (!basePath) return;
+
+  if (!isActive) {
+    basePath.removeAttribute('marker-start');
+    basePath.removeAttribute('marker-end');
+    return;
+  }
+
+  // Pick a marker color that matches the CURRENT rendered pipe color. Cold
+  // override wins; otherwise inspect the pipe's base stroke.
+  const baseStroke = (basePath.getAttribute('stroke') || '').toLowerCase();
+  const renderedCold = cold || !HOT_PIPE_STROKES.has(baseStroke);
+  const markerId = renderedCold ? 'schematic-arrow-cold' : 'schematic-arrow-hot';
+  const markerRef = `url(#${markerId})`;
+
+  if (reversed) {
+    basePath.setAttribute('marker-start', markerRef);
+    basePath.removeAttribute('marker-end');
+  } else {
+    basePath.setAttribute('marker-end', markerRef);
+    basePath.removeAttribute('marker-start');
+  }
 }
 
 function updateSensorLabel(svgEl, cellId, text) {

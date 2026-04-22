@@ -65,6 +65,7 @@ function generateTopology({
   cells.push(...valveCells(layout));
   cells.push(...sensorCells(layout));
   cells.push(...pipeCells(layout));
+  cells.push(...jointCells(layout));
   cells.push(...legendCells(layout));
 
   // Theme overrides. The default 'dark' theme is a no-op so the committed
@@ -561,24 +562,18 @@ function sensorCells(layout) {
 // inject exitX/exitY/entryX/entryY into the style so drawio anchors the edge
 // to those exact points. When the source or target vertex moves, the edge
 // endpoints move with it.
+//
+// Ports may additionally carry `dx`, `dy`, and `perimeter` — used for joints
+// (tees) whose anchor points are specified as pixel offsets from the top-left
+// of the cell rather than fractional positions.
 function pipeCells(layout) {
   const cells = [];
   for (const p of layout.pipes || []) {
     const src = resolveEndpoint(p.from, layout);
     const tgt = resolveEndpoint(p.to, layout);
     const extras = {};
-    if (src.port) {
-      extras.exitX = src.port.x;
-      extras.exitY = src.port.y;
-      extras.exitDx = 0;
-      extras.exitDy = 0;
-    }
-    if (tgt.port) {
-      extras.entryX = tgt.port.x;
-      extras.entryY = tgt.port.y;
-      extras.entryDx = 0;
-      extras.entryDy = 0;
-    }
+    applyPortExtras(extras, src.port, 'exit');
+    applyPortExtras(extras, tgt.port, 'entry');
     const style = mergeStyle(layout.styles[p.style], extras);
     cells.push(
       edge({
@@ -588,6 +583,44 @@ function pipeCells(layout) {
         source: src.id,
         target: tgt.id,
         waypoints: p.waypoints || [],
+      }),
+    );
+  }
+  return cells;
+}
+
+function applyPortExtras(extras, port, prefix) {
+  if (!port) return;
+  extras[`${prefix}X`] = port.x;
+  extras[`${prefix}Y`] = port.y;
+  extras[`${prefix}Dx`] = port.dx || 0;
+  extras[`${prefix}Dy`] = port.dy || 0;
+  if (port.perimeter !== undefined) {
+    extras[`${prefix}Perimeter`] = port.perimeter;
+  }
+}
+
+// Joints: inline tee shapes that act as pipe junctions. Each joint has its
+// own geometry + rotation and exposes named ports (arm_left / arm_right /
+// trunk) that pipes connect to. Because the tee shape anchors its arms at
+// fixed pixel offsets from the cell corner, joint ports typically carry
+// `dx`/`dy`/`perimeter` rather than the usual fractional x/y.
+function jointCells(layout) {
+  const cells = [];
+  for (const [id, j] of Object.entries(layout.joints || {})) {
+    let style = layout.styles[j.style] || '';
+    if (j.rotation !== undefined) {
+      style = mergeStyle(style, { rotation: j.rotation });
+    }
+    cells.push(
+      vertex({
+        id,
+        value: '',
+        style,
+        x: j.geometry.x,
+        y: j.geometry.y,
+        w: j.geometry.width,
+        h: j.geometry.height,
       }),
     );
   }
@@ -617,6 +650,9 @@ function resolveEndpoint(ref, layout) {
   } else if (ref.sensor) {
     ownerId = ref.sensor;
     owner = layout.sensors[ownerId];
+  } else if (ref.joint) {
+    ownerId = ref.joint;
+    owner = (layout.joints || {})[ownerId];
   } else {
     throw new Error(`bad pipe endpoint: ${JSON.stringify(ref)}`);
   }

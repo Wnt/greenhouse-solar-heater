@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flow tester — Solar Heater</title>
+  <link rel="stylesheet" href="./public/style.css">
+  <style>
+    /*
+     * Standalone page (not linked from the SPA nav) that renders one
+     * schematic per operating mode so every pipe highlight + flow
+     * direction can be eyeballed in one view. Uses the same
+     * buildSchematic() module as the main Components view.
+     */
+    body {
+      margin: 0;
+      background: var(--surface-container-lowest);
+      color: var(--on-surface);
+      font-family: 'Manrope', sans-serif;
+    }
+    header {
+      padding: 20px 24px 8px;
+    }
+    header h1 {
+      font-family: 'Newsreader', Georgia, serif;
+      font-style: italic;
+      font-size: 28px;
+      margin: 0 0 6px;
+    }
+    header p {
+      margin: 0;
+      color: var(--on-surface-variant);
+      font-size: 13px;
+      max-width: 720px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+      gap: 20px;
+      padding: 20px 24px 40px;
+    }
+    .mode-card {
+      background: var(--surface-container);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .mode-card h2 {
+      font-family: 'Newsreader', Georgia, serif;
+      font-style: italic;
+      font-size: 20px;
+      margin: 0;
+    }
+    .mode-card .valve-summary {
+      font-size: 12px;
+      color: var(--on-surface-variant);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 10px;
+    }
+    .mode-card .valve-summary .open {
+      color: var(--primary);
+      font-weight: 600;
+    }
+    .mode-card .schematic-host {
+      background: var(--surface-container-lowest);
+      border-radius: 10px;
+      padding: 8px;
+      overflow: hidden;
+    }
+    .mode-card .schematic-host svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .mode-card .notes {
+      font-size: 12px;
+      color: var(--on-surface-variant);
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Flow tester</h1>
+    <p>
+      One schematic per mode, each driven through the real
+      <code>buildSchematic()</code> module with its canonical valve +
+      actuator state. Use this page to verify pipe highlights and
+      flow directions after any topology or rule changes.
+    </p>
+  </header>
+  <main id="modes-grid"></main>
+  <script type="module" src="./js/flow-tester.js"></script>
+</body>
+</html>
