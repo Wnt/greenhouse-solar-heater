@@ -1,8 +1,4 @@
 {
   "_comment": "Frontend JS files that bypass the 50% coverage gate enforced by scripts/coverage-check.mjs. Paths are relative to the repo root; each key maps to a written reason. Prefer adding a test over adding an entry here. CI also fails if an excluded file has climbed above the threshold — delete stale entries when that happens.",
-  "files": {
-    "playground/js/flow-tester.js": "Standalone visual-verification page that is not linked from the SPA navigation. The production logic it exercises (schematic.js, schematic-topology.js) is covered via the Components view specs. Meaningful coverage would require a dedicated visual-regression spec.",
-    "playground/js/crashes-view.js": "TODO: add a frontend spec that injects a `script-crash` WS broadcast and asserts the crashes view renders. Currently ~16% covered (the module loads but no spec drives the user interactions it wires up).",
-    "playground/js/notifications.js": "TODO: add spec coverage for the notification payload renderers. Currently ~44% covered — the registration/subscription paths run, but several category-specific payload builders never fire under the existing specs."
-  }
+  "files": {}
 }
