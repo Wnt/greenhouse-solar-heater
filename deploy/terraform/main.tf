@@ -289,6 +289,8 @@ resource "kubernetes_secret" "app_secrets" {
     S3_SECRET_ACCESS_KEY = upcloud_managed_object_storage_user_access_key.app.secret_access_key
     S3_REGION            = var.objsto_region
     NEW_RELIC_LICENSE_KEY = var.new_relic_license_key
+    SHELLY_CLOUD_REFRESH_TOKEN = var.shelly_cloud_refresh_token
+    SHELLY_CLOUD_API_URL       = var.shelly_cloud_api_url
   }
 
   depends_on = [upcloud_kubernetes_node_group.default]

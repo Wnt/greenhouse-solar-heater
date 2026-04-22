@@ -254,15 +254,20 @@ describe('sensor-config', () => {
 
   describe('Direct-HTTP apply (via sensor-apply module)', () => {
     const sensorApply = require('../server/lib/sensor-apply');
-    let origApplyAll, origApplyOne;
+    const shellyCloud = require('../server/lib/shelly-cloud');
+    let origApplyAll, origApplyOne, origRename;
 
     beforeEach(() => {
       origApplyAll = sensorApply.applyAll;
       origApplyOne = sensorApply.applyOne;
+      origRename = shellyCloud.renameCloudDevices;
+      // Stub so tests don't spawn the real script. Default: no warning.
+      shellyCloud.renameCloudDevices = function () { return Promise.resolve(null); };
     });
     afterEach(() => {
       sensorApply.applyAll = origApplyAll;
       sensorApply.applyOne = origApplyOne;
+      shellyCloud.renameCloudDevices = origRename;
     });
 
     it('applyConfig calls sensor-apply.applyAll with hosts + assignments and publishes routing to MQTT', (t, done) => {
@@ -292,13 +297,14 @@ describe('sensor-config', () => {
             return true;
           },
         };
-        sensorConfig.applyConfig(mockBridge, function (err, results) {
+        sensorConfig.applyConfig(mockBridge, function (err, out) {
           assert.ifError(err);
           assert.ok(applyCalled, 'sensor-apply.applyAll must be invoked');
           assert.ok(mqttRoutingPublished, 'MQTT routing config must be published');
-          assert.equal(results.sensor_1.status, 'success');
-          assert.equal(results.sensor_2.status, 'success');
-          assert.equal(results.control.status, 'success');
+          assert.equal(out.results.sensor_1.status, 'success');
+          assert.equal(out.results.sensor_2.status, 'success');
+          assert.equal(out.results.control.status, 'success');
+          assert.equal(out.warning, null);
           done();
         });
       });
@@ -318,10 +324,10 @@ describe('sensor-config', () => {
           });
         };
         const mockBridge = { publishSensorConfig: function () { return true; } };
-        sensorConfig.applyConfig(mockBridge, function (err, results) {
+        sensorConfig.applyConfig(mockBridge, function (err, out) {
           assert.ifError(err);
-          assert.match(results.sensor_1.message, /rebooted/);
-          assert.doesNotMatch(results.sensor_2.message, /rebooted/);
+          assert.match(out.results.sensor_1.message, /rebooted/);
+          assert.doesNotMatch(out.results.sensor_2.message, /rebooted/);
           done();
         });
       });
@@ -341,11 +347,11 @@ describe('sensor-config', () => {
           });
         };
         const mockBridge = { publishSensorConfig: function () { return true; } };
-        sensorConfig.applyConfig(mockBridge, function (err, results) {
+        sensorConfig.applyConfig(mockBridge, function (err, out) {
           assert.ifError(err);
-          assert.equal(results.sensor_1.status, 'success');
-          assert.equal(results.sensor_2.status, 'error');
-          assert.match(results.sensor_2.message, /ECONNREFUSED/);
+          assert.equal(out.results.sensor_1.status, 'success');
+          assert.equal(out.results.sensor_2.status, 'error');
+          assert.match(out.results.sensor_2.message, /ECONNREFUSED/);
           done();
         });
       });
@@ -361,11 +367,35 @@ describe('sensor-config', () => {
             results: [{ host: '192.168.30.20', ok: true, peripherals: 2 }],
           });
         };
-        sensorConfig.applyConfig(null, function (err, results) {
+        sensorConfig.applyConfig(null, function (err, out) {
           assert.ifError(err);
-          assert.equal(results.sensor_1.status, 'success');
-          assert.equal(results.control.status, 'error');
-          assert.match(results.control.message, /MQTT bridge not available/);
+          assert.equal(out.results.sensor_1.status, 'success');
+          assert.equal(out.results.control.status, 'error');
+          assert.match(out.results.control.message, /MQTT bridge not available/);
+          done();
+        });
+      });
+    });
+
+    it('applyConfig surfaces a cloud-rename warning when shelly-cloud returns one', (t, done) => {
+      sensorConfig.load(function (err) {
+        assert.ifError(err);
+        sensorApply.applyAll = function () {
+          return Promise.resolve({
+            id: 'apply-1',
+            success: true,
+            results: [{ host: '192.168.30.20', ok: true, peripherals: 2 }],
+          });
+        };
+        shellyCloud.renameCloudDevices = function () {
+          return Promise.resolve({ id: 'cloud-rename', message: 'creds missing', reason: 'missing-credentials' });
+        };
+        const mockBridge = { publishSensorConfig: function () { return true; } };
+        sensorConfig.applyConfig(mockBridge, function (err, out) {
+          assert.ifError(err);
+          assert.equal(out.warning.id, 'cloud-rename');
+          assert.match(out.warning.message, /creds missing/);
+          assert.equal(out.warning.reason, 'missing-credentials');
           done();
         });
       });

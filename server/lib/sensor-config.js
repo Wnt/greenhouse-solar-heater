@@ -275,6 +275,7 @@ function toCompactFormat(config) {
 // controller can drive its polling loop.
 
 var sensorApply = require('./sensor-apply');
+var shellyCloud = require('./shelly-cloud');
 
 // Role → human-readable label map, used by sensor-apply to name each
 // Temperature component in the Shelly app when roles are applied.
@@ -324,7 +325,13 @@ function applyConfig(mqttBridge, callback) {
     } else {
       results.control = { status: 'error', message: 'MQTT bridge not available' };
     }
-    callback(null, results);
+    // Keep the Shelly Cloud app's channel names in sync with the role
+    // mapping. Non-fatal; any problem is surfaced as a dismissible UI
+    // warning (not a hub-level error) because it's cosmetic and the user
+    // may not care about the cloud app.
+    shellyCloud.renameCloudDevices(log).then(function (warning) {
+      callback(null, { results: results, warning: warning || null });
+    });
   }).catch(function (err) {
     callback(err);
   });
@@ -410,16 +417,16 @@ function handlePut(req, res, body, onUpdate) {
 }
 
 function handleApply(req, res, mqttBridge) {
-  applyConfig(mqttBridge, function (err, results) {
+  applyConfig(mqttBridge, function (err, out) {
     if (err) {
       var statusCode = err.message === 'Request timed out' ? 504 : 500;
       res.writeHead(statusCode, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message === 'Request timed out' ? 'Config apply timed out' : err.message }));
       return;
     }
-    log.info('sensor config applied', { results: results });
+    log.info('sensor config applied', { results: out.results, warning: out.warning });
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ results: results }));
+    res.end(JSON.stringify({ results: out.results, warning: out.warning }));
   });
 }
 

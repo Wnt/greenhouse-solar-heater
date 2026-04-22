@@ -19,6 +19,9 @@ COPY system.yaml ./
 # Copy Shelly scripts (for simulation support and device deployment)
 COPY shelly/ ./shelly/
 
+# Copy repo scripts (deploy.sh and sensor-apply invoke rename-cloud-devices.mjs from here)
+COPY scripts/ ./scripts/
+
 # Make app directory owned by node user
 RUN chown -R node:node /app
 
