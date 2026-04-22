@@ -111,6 +111,7 @@ npm test                           # unit + frontend + e2e
 npm run test:unit                  # fast, no browser
 npm run test:frontend              # Playwright against static serve — frontend with mocked APIs
 npm run test:e2e                   # Playwright against real server + pg-mem + aedes MQTT
+npm run coverage:frontend          # V8 JS coverage for playground/js/** driven by the frontend suite — HTML + lcov in coverage/
 npm run screenshots                # regenerate screenshots (runs 24 h sim, ~1–2 min)
 npm run diagram                    # regenerate system-topology.drawio (dark theme)
 npm run topology-pdf               # printable light-theme PDF of the topology
