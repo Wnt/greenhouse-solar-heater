@@ -4,6 +4,7 @@
 tests/output/
 test-results/
 node_modules/
+coverage/
 
 # ── Runtime-generated secrets — NEVER commit ───────────────────────
 # Files in these patterns are created on first run with freshly
