@@ -136,6 +136,8 @@ A threshold change in `control-logic.js` without a regenerated snapshot fails CI
 
 ## Test Setup Gotchas
 
+- **Run `npm ci` first if `node_modules/` is missing.** With deps installed, the full unit suite (`npm run test:unit`, 788 tests) completes in **~20 s** locally; individual files are sub-second to a few seconds. If a run is taking materially longer, something is wrong — don't "wait it out." Common causes: missing deps (several tests hang indefinitely on missing transitive requires rather than erroring; `sensor-apply` and `sensor-discovery` are the usual offenders because they build local HTTP servers that wait on a peer module that never loads), or stale `node` processes from a previous killed run (check `ps -C node` and `pkill -9 node`).
+- **Use tight Bash timeouts for tests.** Full suite: `timeout 30` (20 s baseline + headroom). Single file: `timeout 10`. A test that times out is a signal to investigate, not to retry with a bigger budget. 5-minute timeouts burn minutes of wall clock and hide real issues.
 - **`import { test, expect } from './fixtures.js'`** for all e2e tests — NOT from `@playwright/test`. The fixture blocks Google Fonts so page loads don't hang in offline environments.
 - **Playwright version must match the cached Chromium revision.** Currently `@playwright/test@1.56.0` ↔ `chromium-1194`. On "browser not found" errors, check `~/.cache/ms-playwright/` and pin Playwright to match.
 - **Use plain `serve`, NOT `serve -s`.** SPA mode rewrites `/schematic-tester.html` → `/schematic-tester` → `index.html`, so standalone pages (schematic-tester, liquid-glass-test) become unreachable. Playwright config auto-starts plain `serve` on port 3210.

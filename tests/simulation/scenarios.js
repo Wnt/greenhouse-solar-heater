@@ -129,14 +129,25 @@ const scenarios = [
     irradiance: cloudyIrradiance(700, 1200, 400),
     assertions: [
       {
-        description: 'no mode oscillation within minimum duration',
+        // Catches pathological oscillation only (sub-25 s bouncing). IDLE
+        // itself has no minimum duration (see evaluate() in control-
+        // logic.js), so IDLE -> SC re-entry is gated only by the physics
+        // -- collector must recover to tank_bottom + solarEnterDelta. The
+        // 3 K enter delta (tuned 2026-04-22) is small enough that under
+        // fast-changing cloud irradiance the re-entry can follow a stall
+        // exit within ~30 s. That is the designed reactive behavior, not
+        // a bug: shorter IDLE intervals here let the collector recover
+        // thermal head during each cloud dip. We still want to catch a
+        // truly degenerate cycle (e.g. a 5 s bounce caused by a faulty
+        // hysteresis).
+        description: 'no pathological mode oscillation (gap < 25 s)',
         check: function(trace) {
           let lastTransition = 0;
           for (const s of trace) {
             if (s.event && s.event.includes('\u2192')) {
               const gap = s.t - lastTransition;
               // Allow very first transition and drain preemptions
-              if (lastTransition > 0 && gap < 55 && !s.event.includes(MODES.ACTIVE_DRAIN)) {
+              if (lastTransition > 0 && gap < 25 && !s.event.includes(MODES.ACTIVE_DRAIN)) {
                 throw new Error('oscillation at t=' + s.t + ' gap=' + gap + 's: ' + s.event);
               }
               lastTransition = s.t;

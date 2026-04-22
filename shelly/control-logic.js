@@ -88,22 +88,39 @@ var DEFAULT_CONFIG = {
   // short-cycle entries on marginal irradiance; lowered back to 5 on
   // 2026-04-21 after logs showed the controller bypassing obvious
   // charging opportunities (e.g. 40 °C collector vs 32 °C bottom was
-  // still below the 10 K bar).
-  solarEnterDelta: 5,
+  // still below the 10 K bar). Lowered further 5 → 3 on 2026-04-22
+  // after a diurnal simulation sweep showed ~1% more daily capture
+  // with ~6 min earlier morning refill; below 3 K the refill pumping
+  // is net-negative (pipe loss + flow-pinned collector exceed gain).
+  solarEnterDelta: 3,
   // Solar charging exits when the tank has stopped accepting heat:
   //   - tank_top has not risen for solarExitStallSeconds, OR
   //   - tank_top has dropped solarExitTankDrop °C from the session peak
   // This replaces the old collector/tank_bottom delta exit so we keep
   // pumping until the tank itself signals diminishing returns.
+  //
+  // solarExitStallSeconds lowered 300 → 180 on 2026-04-22: constant-
+  // irradiance simulation at 300 W/m² shows shorter stalls pulse the
+  // pump more aggressively, letting the collector rebuild thermal head
+  // between sessions. 180 s captures ~6% more energy than 300 s while
+  // keeping cycle count within ~10%; going shorter (60 s) gains another
+  // ~8% but costs ~25% more relay cycles.
   solarExitTankDrop: 2,
-  solarExitStallSeconds: 300,
+  solarExitStallSeconds: 180,
   greenhouseEnterTemp: 10,
   greenhouseExitTemp: 12,
   greenhouseMinTankDelta: 5,
   greenhouseExitTankDelta: 2,
   emergencyEnterTemp: 9,
   emergencyExitTemp: 12,
-  freezeDrainTemp: 2,
+  // Drain threshold for the colder of (outdoor, collector). Raised
+  // 2 → 4 on 2026-04-22 for a safety margin: at 2 °C the collector is
+  // already close enough to freezing that a sharp cooling transient
+  // could reach the ice point before the next 30 s eval tick. 4 °C
+  // drains ~48 min earlier in a typical spring night with negligible
+  // energy cost (refill fires 17 min later; charging minutes over a
+  // diurnal cycle drop ~2%).
+  freezeDrainTemp: 4,
   overheatDrainTemp: 95,
   overheatResumeTemp: 75,
   minModeDuration: 300,

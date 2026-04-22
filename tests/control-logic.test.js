@@ -26,8 +26,8 @@ describe('mode evaluation', () => {
   });
 
   it('enters SOLAR_CHARGING when collector > tank_bottom + solarEnterDelta', () => {
-    // DEFAULT_CONFIG.solarEnterDelta = 5 K. collector 36 vs tank_bottom
-    // 30 gives a 6 K delta — above the new entry bar.
+    // DEFAULT_CONFIG.solarEnterDelta = 3 K. collector 36 vs tank_bottom
+    // 30 gives a 6 K delta — well above the entry bar.
     const result = evaluate(makeState({
       temps: { collector: 36, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null);
@@ -42,9 +42,10 @@ describe('mode evaluation', () => {
     assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
   });
 
-  it('enters ACTIVE_DRAIN when outdoor < 2 and collectors not drained', () => {
+  it('enters ACTIVE_DRAIN when outdoor < freezeDrainTemp and collectors not drained', () => {
+    // DEFAULT_CONFIG.freezeDrainTemp = 4 °C. outdoor 3 is below threshold.
     const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 1 }
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 3 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
   });
@@ -52,17 +53,18 @@ describe('mode evaluation', () => {
   // Radiative-cooling correction: on clear nights the sky-facing
   // collector runs several K below sheltered ambient. Freeze protection
   // must trip off the colder of the two sensors.
-  it('enters ACTIVE_DRAIN when collector < 2 even though outdoor is well above freezing', () => {
+  it('enters ACTIVE_DRAIN when collector < freezeDrainTemp even though outdoor is well above', () => {
     const result = evaluate(makeState({
-      temps: { collector: -1, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 5 }
+      temps: { collector: 1, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 8 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
     assert.strictEqual(result.safetyOverride, true);
   });
 
   it('stays IDLE when both outdoor and collector are above the freeze threshold', () => {
+    // both >= 5 °C with freezeDrainTemp=4 → no drain
     const result = evaluate(makeState({
-      temps: { collector: 4, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 5 }
+      temps: { collector: 5, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 6 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
@@ -102,6 +104,69 @@ describe('mode evaluation', () => {
   });
 });
 
+describe('DEFAULT_CONFIG thresholds', () => {
+  // Lock in the three values tuned from the 2026-04-22 diurnal sim
+  // sweep. Changing a default is a user-visible behavior change —
+  // these tests force a deliberate test edit alongside the config bump.
+  it('solarEnterDelta default is 3 K', () => {
+    assert.strictEqual(DEFAULT_CONFIG.solarEnterDelta, 3);
+  });
+  it('solarExitStallSeconds default is 180 s', () => {
+    assert.strictEqual(DEFAULT_CONFIG.solarExitStallSeconds, 180);
+  });
+  it('freezeDrainTemp default is 4 °C', () => {
+    assert.strictEqual(DEFAULT_CONFIG.freezeDrainTemp, 4);
+  });
+
+  // Boundary checks against the default config (no overrides) — these
+  // verify the evaluator actually reads the new numbers, not just that
+  // DEFAULT_CONFIG holds them.
+  it('solar_enter fires at 3.1 K delta but not at 3.0 K', () => {
+    const at = evaluate(makeState({
+      temps: { collector: 33.1, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+    }), null);
+    assert.strictEqual(at.nextMode, MODES.SOLAR_CHARGING);
+    const below = evaluate(makeState({
+      temps: { collector: 33, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+    }), null);
+    assert.strictEqual(below.nextMode, MODES.IDLE);
+  });
+
+  it('solar_stall fires at 180 s elapsed but not at 179 s', () => {
+    const at = evaluate(makeState({
+      temps: { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 2000,
+      solarChargePeakTankTop: 40,
+      solarChargePeakTankTopAt: 1820  // 180s ago
+    }), null);
+    assert.strictEqual(at.nextMode, MODES.IDLE);
+    assert.strictEqual(at.reason, 'solar_stall');
+
+    const below = evaluate(makeState({
+      temps: { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 0, now: 2000,
+      solarChargePeakTankTop: 40,
+      solarChargePeakTankTopAt: 1821  // 179s ago
+    }), null);
+    assert.strictEqual(below.nextMode, MODES.SOLAR_CHARGING);
+  });
+
+  it('freeze_drain fires at outdoor=3.9 °C but not at 4.0 °C', () => {
+    const at = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 3.9 }
+    }), null);
+    assert.strictEqual(at.nextMode, MODES.ACTIVE_DRAIN);
+    assert.strictEqual(at.reason, 'freeze_drain');
+
+    const below = evaluate(makeState({
+      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 4 }
+    }), null);
+    assert.strictEqual(below.nextMode, MODES.IDLE);
+  });
+});
+
 describe('hysteresis', () => {
   it('enters solar charging at collector > tank_bottom + solarEnterDelta', () => {
     const result = evaluate(makeState({
@@ -112,18 +177,19 @@ describe('hysteresis', () => {
   });
 
   it('does not enter solar at collector = tank_bottom + solarEnterDelta (needs strictly greater)', () => {
-    // delta exactly at threshold (5 K): 35 - 30 = 5. Must not enter.
+    // delta exactly at threshold (3 K): 33 - 30 = 3. Must not enter.
     const result = evaluate(makeState({
-      temps: { collector: 35, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
+      temps: { collector: 33, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null);
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
 
   it('stays in solar even when collector falls below tank_bottom + 2 if tank still rising', () => {
-    // New exit criteria: stay in solar until tank_top stops rising for 5 min
-    // or drops 2°C from peak — NOT based on collector/tank_bottom delta.
-    // Here the collector is barely warmer than tank_bottom but tank_top just
-    // rose, so we keep harvesting.
+    // Exit criteria: stay in solar until tank_top stops rising for
+    // solarExitStallSeconds (3 min default) or drops 2°C from peak —
+    // NOT based on collector/tank_bottom delta. Here the collector is
+    // barely warmer than tank_bottom but tank_top just rose, so we
+    // keep harvesting.
     const result = evaluate(makeState({
       temps: { collector: 31, tank_top: 41, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
@@ -134,14 +200,15 @@ describe('hysteresis', () => {
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
 
-  it('exits solar when tank_top has not risen for 5 minutes', () => {
-    // Peak was set 5 minutes ago and tank_top has not exceeded it since
+  it('exits solar when tank_top has not risen for solarExitStallSeconds', () => {
+    // Peak was set 200 s ago (> 180 s stall threshold) and tank_top has
+    // not exceeded it since.
     const result = evaluate(makeState({
       temps: { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 2000,
       solarChargePeakTankTop: 40,
-      solarChargePeakTankTopAt: 1700  // 300s ago
+      solarChargePeakTankTopAt: 1800  // 200s ago
     }), null);
     assert.strictEqual(result.nextMode, MODES.IDLE);
   });
