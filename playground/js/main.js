@@ -1658,13 +1658,14 @@ const sliderRefs = {};
 function setupControls() {
   const el = document.getElementById('controls');
   const sliders = [
-    { id: 'outdoor', label: 'Outdoor Temp', min: -30, max: 40, step: 0.5, value: params.t_outdoor, unit: '°C', key: 't_outdoor' },
-    { id: 'irradiance', label: 'Solar Irradiance', min: 0, max: 1000, step: 10, value: params.irradiance, unit: ' W/m²', key: 'irradiance' },
-    { id: 'tank-top', label: 'Tank Top', min: 5, max: 95, step: 1, value: params.t_tank_top, unit: '°C', key: 't_tank_top' },
-    { id: 'tank-bot', label: 'Tank Bottom', min: 5, max: 95, step: 1, value: params.t_tank_bottom, unit: '°C', key: 't_tank_bottom' },
-    { id: 'greenhouse', label: 'Greenhouse', min: -10, max: 40, step: 0.5, value: params.t_greenhouse, unit: '°C', key: 't_greenhouse' },
-    { id: 'gh-thermal-mass', label: 'GH Thermal Mass', min: 10000, max: 500000, value: params.gh_thermal_mass, unit: ' J/K', key: 'gh_thermal_mass', log: true },
-    { id: 'gh-heat-loss', label: 'GH Night Heat Loss', min: 5, max: 750, step: 5, value: params.gh_heat_loss, unit: ' W/K', key: 'gh_heat_loss' },
+    { id: 'outdoor', label: 'Outdoor Temp', min: -30, max: 40, step: 2, value: params.t_outdoor, unit: '°C', key: 't_outdoor' },
+    { id: 'irradiance', label: 'Solar Irradiance', min: 0, max: 1000, step: 50, value: params.irradiance, unit: ' W/m²', key: 'irradiance' },
+    { id: 'tank-top', label: 'Tank Top', min: 5, max: 95, step: 5, value: params.t_tank_top, unit: '°C', key: 't_tank_top' },
+    { id: 'tank-bot', label: 'Tank Bottom', min: 5, max: 95, step: 5, value: params.t_tank_bottom, unit: '°C', key: 't_tank_bottom' },
+    { id: 'greenhouse', label: 'Greenhouse', min: -10, max: 40, step: 2, value: params.t_greenhouse, unit: '°C', key: 't_greenhouse' },
+    { id: 'gh-thermal-mass', label: 'GH Thermal Mass', value: params.gh_thermal_mass, unit: ' J/K', key: 'gh_thermal_mass',
+      steps: [10000, 25000, 50000, 100000, 250000, 500000] },
+    { id: 'gh-heat-loss', label: 'GH Night Heat Loss', min: 5, max: 750, step: 25, value: params.gh_heat_loss, unit: ' W/K', key: 'gh_heat_loss' },
     { id: 'speed', label: 'Sim Speed', min: 1, max: 10000, step: 1, value: params.sim_speed, unit: '×', key: 'sim_speed',
       steps: [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 3000, 5000, 10000] },
   ];
