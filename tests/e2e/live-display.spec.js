@@ -210,3 +210,46 @@ test.describe('Live mode is the default data source', () => {
     await expect(page.locator('#fab-play')).not.toBeVisible();
   });
 });
+
+test.describe("Yesterday's High label in live mode", () => {
+  test("shows peak tank-average from yesterday's history points", async ({ page }) => {
+    const yAt = (h) => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      d.setHours(h, 0, 0, 0);
+      return d.getTime();
+    };
+    const now = Date.now();
+    const points = [
+      // Yesterday's readings — peak tank avg = (80 + 60) / 2 = 70°C at 15:00
+      { ts: yAt(9),  collector: 40.0, tank_top: 50.0, tank_bottom: 40.0, greenhouse: 18.0, outdoor: 10.0 },
+      { ts: yAt(12), collector: 55.0, tank_top: 70.0, tank_bottom: 50.0, greenhouse: 22.0, outdoor: 12.0 },
+      { ts: yAt(15), collector: 62.0, tank_top: 80.0, tank_bottom: 60.0, greenhouse: 24.0, outdoor: 14.0 },
+      // Today's readings — must not count toward yesterday's high
+      { ts: now - 3600_000, collector: 50.0, tank_top: 90.0, tank_bottom: 70.0, greenhouse: 20.0, outdoor: 11.0 },
+    ];
+    await installMockWs(page);
+    await mockHistoryApi(page, points);
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    await expect(page.locator('#graph-peak-label')).toHaveText(/Yesterday's High: 70°C/, { timeout: 5000 });
+  });
+
+  test("stays at -- when history has no points from yesterday", async ({ page }) => {
+    const now = Date.now();
+    // All points are from today (within the last 2 hours).
+    const points = [
+      { ts: now - 7200_000, collector: 50.0, tank_top: 60.0, tank_bottom: 40.0, greenhouse: 20.0, outdoor: 11.0 },
+      { ts: now - 1800_000, collector: 55.0, tank_top: 65.0, tank_bottom: 45.0, greenhouse: 21.0, outdoor: 12.0 },
+    ];
+    await installMockWs(page);
+    await mockHistoryApi(page, points);
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    await expect(page.locator('#graph-peak-label')).toHaveText("Yesterday's High: --");
+  });
+});

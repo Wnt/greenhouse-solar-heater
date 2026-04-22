@@ -316,6 +316,7 @@ function clearLiveDisplay() {
   var ghTrendResetEl = document.getElementById('tank-stat-greenhouse-trend');
   if (ghTrendResetEl) ghTrendResetEl.innerHTML = '';
   document.getElementById('inactive-modes').innerHTML = '';
+  liveYesterdayHigh = null;
   document.getElementById('graph-peak-label').textContent = "Yesterday's High: --";
   var arc = document.getElementById('tank-gauge-arc');
   if (arc) arc.setAttribute('stroke-dashoffset', '628');
@@ -347,6 +348,7 @@ function switchToSimulation() {
   balanceLivePoints = [];
   balanceLiveEvents = [];
   balanceLiveLastMode = null;
+  liveYesterdayHigh = null;
   renderBalanceCard();
   stopStalenessTimer();
   const banner = document.getElementById('staleness-banner');
@@ -449,6 +451,11 @@ let graphRange = 86400; // default 24h
 let yesterdayHigh = 0;
 let confirmedYesterdayHigh = 0;
 let lastDay = 0;
+// Live-mode counterpart of confirmedYesterdayHigh. Recomputed from the
+// 48h /api/history response (see fetchBalanceHistory) as the peak tank
+// average across yesterday's local calendar day. null when no points
+// from yesterday are available.
+let liveYesterdayHigh = null;
 
 // ── Graph Inspector state ──
 let inspectorX = null; // null = hidden, otherwise CSS pixel x relative to canvas
@@ -936,9 +943,34 @@ function fetchBalanceHistory() {
       balanceLivePoints = [];
       balanceLiveEvents = [];
       balanceLiveLastMode = null;
+      liveYesterdayHigh = computeLiveYesterdayHigh(data && data.points);
       renderBalanceCard();
+      // Balance fetch completes independently of the WS state stream,
+      // so re-render so the peak label reflects the freshly-computed
+      // yesterdayHigh instead of waiting for the next state frame.
+      rerenderWithHistoryFallback();
     })
     .catch(() => { balanceHistory = null; });
+}
+
+// Peak tank average ((tank_top + tank_bottom) / 2) across points whose
+// timestamps fall within yesterday's local calendar day. Returns null
+// when no qualifying points exist.
+function computeLiveYesterdayHigh(points) {
+  if (!Array.isArray(points) || points.length === 0) return null;
+  const now = new Date();
+  const yStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime();
+  const yEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  let peak = null;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    if (!p || typeof p.ts !== 'number') continue;
+    if (p.ts < yStart || p.ts >= yEnd) continue;
+    if (!isNum(p.tank_top) || !isNum(p.tank_bottom)) continue;
+    const avg = (p.tank_top + p.tank_bottom) / 2;
+    if (peak === null || avg > peak) peak = avg;
+  }
+  return peak;
 }
 
 function appendBalanceLivePoint(state, result) {
@@ -2138,9 +2170,12 @@ function updateDisplay(state, result) {
   else if (tankAvg > 25) msgEl.textContent = 'Moderate thermal storage.';
   else msgEl.textContent = 'Tank is cold — waiting for solar gain.';
 
-  // Graph yesterday's high label
+  // Graph yesterday's high label. Simulation tracks a per-sim-day peak
+  // via confirmedYesterdayHigh; live mode derives it from the 48h
+  // history fetch (liveYesterdayHigh) since state.simTime does not tick.
+  const peakVal = store.get('phase') === 'live' ? liveYesterdayHigh : confirmedYesterdayHigh;
   document.getElementById('graph-peak-label').textContent =
-    confirmedYesterdayHigh > 0 ? `Yesterday's High: ${confirmedYesterdayHigh.toFixed(0)}°C` : 'Yesterday\'s High: --';
+    isNum(peakVal) && peakVal > 0 ? `Yesterday's High: ${peakVal.toFixed(0)}°C` : 'Yesterday\'s High: --';
 
   // Critical components
   updateComponent('comp-pump', result.actuators.pump, 'ACTIVE', 'OFF');
