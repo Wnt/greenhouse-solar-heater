@@ -12,6 +12,11 @@ jobs:
       image: mcr.microsoft.com/playwright:v1.56.0-noble
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Mark workspace as safe for git
+        # Container runs as a different user than the checkout owner,
+        # which triggers `fatal: detected dubious ownership` when any
+        # script (tests, lint:debt) calls `git ls-files`.
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
