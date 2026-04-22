@@ -27,3 +27,4 @@ monitor/device-config.json
 # Environment files
 .env
 .env.*
+server/push-config.json
