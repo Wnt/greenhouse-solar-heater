@@ -1,0 +1,38 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "server/server.js",
+    "server/lib/tracing.js",
+    "playground/index.html",
+    "playground/flow-tester.html",
+    "playground/schematic-tester.html",
+    "playground/liquid-glass-test.html",
+    "playground/public/login.html",
+    "playground/sw.js",
+    "playground/js/main.js",
+    "playground/js/flow-tester.js",
+    "playground/js/schematic-tester.js",
+    "playground/js/control-logic-loader.js",
+    "playground/public/login.js",
+    "scripts/*.mjs",
+    "tests/**/*.test.js",
+    "tests/**/*.test.mjs",
+    "tests/simulation/*.js",
+    "design/docs/pdf/*.js"
+  ],
+  "project": [
+    "server/**/*.js",
+    "playground/js/**/*.js",
+    "scripts/*.{js,mjs}",
+    "tests/**/*.{js,mjs}"
+  ],
+  "ignore": [
+    "playground/public/**",
+    "shelly/**"
+  ],
+  "ignoreDependencies": [
+    "playwright",
+    "qrcode-generator",
+    "serve"
+  ]
+}
