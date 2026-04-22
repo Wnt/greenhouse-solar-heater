@@ -150,7 +150,7 @@ async function init() {
   // time by `scripts/generate-bootstrap-history.mjs` and a drift test
   // in `tests/bootstrap-history-drift.test.js` ensures it stays in
   // sync with the current control logic + thermal model.
-  if (!isLiveCapable) {
+  if (!store.get('isLiveCapable')) {
     // Fire-and-forget — async fetch + render. init() doesn't await it
     // so the rest of the page stays interactive.
     loadBootstrapSnapshotAndAutoStart();
