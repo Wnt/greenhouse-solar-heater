@@ -92,6 +92,14 @@ Users with role `readonly` can browse but the following must reject with 403. Se
 
 When adding a new mutating endpoint, add the same guard.
 
+### History aggregate must persist beyond raw retention
+
+`sensor_readings_30s` is a real (hyper)table, not a materialized view. Raw `sensor_readings` is pruned at 48 h, but the 30-second aggregate must accumulate forever — the 7d/30d/1y graph views draw from it and fill in over time.
+
+**Never** add a cleanup / retention policy / TRUNCATE / `DELETE FROM sensor_readings_30s` anywhere. `runMaintenance` in `server/lib/db-maintenance.js` only ever does `INSERT … ON CONFLICT DO UPDATE` on the aggregate, and the retention `DELETE` targets raw `sensor_readings` only. Guard tests in `tests/history-retention.test.js` enforce both halves — if you need to change the maintenance flow, keep those guards passing.
+
+The original bug (PR #64): aggregate was a MATERIALIZED VIEW refreshed from raw, so each refresh silently discarded everything older than 48 h and long-range graphs only ever showed ~2 days.
+
 ## Testing Policy
 
 **Bug fixes and behavior changes follow test-first:**
