@@ -1661,14 +1661,33 @@ function setupTimeRangePills() {
 }
 
 function setupAllSensorsToggle() {
-  const el = document.getElementById('graph-show-all-sensors');
-  if (!el) return;
-  el.checked = showAllSensors;
-  applyAllSensorsVisibility();
-  el.addEventListener('change', () => {
-    showAllSensors = el.checked;
+  // Reuse the same pill-switch component the mode-toggle uses. The switch
+  // itself (#graph-show-all-sensors) is a <div> whose `.active` class drives
+  // the visual + aria state; the surrounding container (-toggle) captures
+  // clicks on both the label text and the switch.
+  const sw = document.getElementById('graph-show-all-sensors');
+  const container = document.getElementById('graph-show-all-sensors-toggle');
+  if (!sw || !container) return;
+
+  const render = () => {
+    sw.classList.toggle('active', showAllSensors);
+    sw.setAttribute('aria-checked', showAllSensors ? 'true' : 'false');
+  };
+  const toggle = () => {
+    showAllSensors = !showAllSensors;
+    render();
     applyAllSensorsVisibility();
     drawHistoryGraph();
+  };
+
+  render();
+  applyAllSensorsVisibility();
+  container.addEventListener('click', toggle);
+  sw.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      toggle();
+    }
   });
 }
 

@@ -601,11 +601,6 @@ select, input, textarea { max-width: 100%; }
   user-select: none;
 }
 
-.graph-option-toggle input[type="checkbox"] {
-  margin: 0;
-  cursor: pointer;
-  accent-color: var(--secondary);
-}
 
 .graph-container {
   position: relative;

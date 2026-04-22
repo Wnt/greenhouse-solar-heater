@@ -263,7 +263,7 @@ test.describe("Graph 'All sensors' toggle", () => {
 
     await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
 
-    await expect(page.locator('#graph-show-all-sensors')).not.toBeChecked();
+    await expect(page.locator('#graph-show-all-sensors')).not.toHaveClass(/active/);
     await expect(page.locator('#legend-tank-top')).toBeHidden();
     await expect(page.locator('#legend-tank-bottom')).toBeHidden();
     await expect(page.locator('#inspector-tank-top-row')).toBeHidden();
@@ -283,7 +283,8 @@ test.describe("Graph 'All sensors' toggle", () => {
 
     await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
 
-    await page.locator('#graph-show-all-sensors').check();
+    await page.locator('#graph-show-all-sensors').click();
+    await expect(page.locator('#graph-show-all-sensors')).toHaveClass(/active/);
 
     await expect(page.locator('#legend-tank-top')).toBeVisible();
     await expect(page.locator('#legend-tank-bottom')).toBeVisible();

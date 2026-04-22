@@ -263,10 +263,10 @@
               <button data-range="2592000" class="live-only" style="display:none;">30d</button>
               <button data-range="31536000" class="live-only" style="display:none;">1y</button>
             </div>
-            <label class="graph-option-toggle" for="graph-show-all-sensors">
-              <input type="checkbox" id="graph-show-all-sensors">
+            <div class="graph-option-toggle" id="graph-show-all-sensors-toggle">
               <span>All sensors</span>
-            </label>
+              <div class="mode-toggle-switch" id="graph-show-all-sensors" role="switch" tabindex="0" aria-checked="false"></div>
+            </div>
           </div>
           <div class="graph-container">
             <canvas id="chart"></canvas>
