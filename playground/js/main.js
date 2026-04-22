@@ -12,9 +12,9 @@ import { initNavigation } from './actions/navigation.js';
 import { attachScriptStatusWebSocket, renderScriptCrashBanner } from './actions/script-monitor.js';
 import { mountCrashesView } from './crashes-view.js';
 import { initAuth } from './auth.js';
-import { captureInstallPrompt, triggerInstall, wireInstallModal, initNotifications, subscribePush, updateCategories, unsubscribePush, isSubscribed, getSelectedCategories, sendTest } from './notifications.js';
+import { captureInstallPrompt, initNotifications } from './notifications.js';
 import { buildSchematic as buildSchematicFromSvg } from './schematic.js';
-import { SIM_START_HOUR, getDayNightEnv } from './sim-bootstrap.js';
+import { setupFAB, togglePlay, updateFABIcon, resetSimulationTime } from './main/simulation.js';
 import {
   formatClockTime, formatCauseLabel, formatReasonLabel,
   formatSensorsLine, formatFullTimeHelsinki, escapeHtml,
@@ -25,6 +25,7 @@ import {
 } from './main/watchdog-ui.js';
 import { initRelayBoard, updateRelayBoard } from './main/relay-board.js';
 import { initDeviceConfig } from './main/device-config.js';
+import { wireNotificationUI } from './main/notifications-ui.js';
 import { drawHistoryGraph, tankAvgOf, toSchematicState } from './main/history-graph.js';
 import {
   transitionLog, fetchLiveEvents, detectLiveTransition, renderLogsList,
@@ -56,9 +57,9 @@ let config = null;
 export let model = null;
 let controller = null;
 export let running = false;
-let lastFrame = 0;
-let simSpeed = 3000;
-let simTimeAccum = 0;
+export function setRunning(v) { running = v; }
+export let simSpeed = 3000;
+// lastFrame, simTimeAccum moved to ./main/simulation.js
 
 // schematicHandle, lastState, lastResult, liveFrameSeen,
 // yesterdayHigh/confirmedYesterdayHigh/lastDay moved to
@@ -123,74 +124,6 @@ export const MODE_INFO = {
   overheat_drain: { label: 'Overheat Drain', desc: 'Draining to prevent overheating.', icon: 'warning', iconFill: false },
   emergency_heating: { label: 'Emergency Heating', desc: 'Space heater active — tank too cold.', icon: 'local_fire_department', iconFill: true },
 };
-
-// ── PWA + Notification UI wiring ──
-// The install button is always visible; when beforeinstallprompt is not
-// available (Safari/Firefox) the handler shows a platform-specific
-// instructions modal. The notifications section is also always visible;
-// if push isn't supported the toggle stays disabled with an explanation.
-
-function wireNotificationUI() {
-  wireInstallModal();
-
-  var installBtn = document.getElementById('pwa-install-btn');
-  if (installBtn) {
-    installBtn.addEventListener('click', function () {
-      triggerInstall();
-    });
-  }
-
-  var toggleBtn = document.getElementById('notif-toggle-btn');
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', function () {
-      if (toggleBtn.disabled) return;
-      if (isSubscribed()) {
-        unsubscribePush();
-      } else {
-        var cats = getSelectedCategories();
-        subscribePush(cats);
-      }
-    });
-  }
-
-  // Category checkboxes — update server on change
-  var checkboxes = document.querySelectorAll('[id^="notif-cat-"]');
-  checkboxes.forEach(function (cb) {
-    cb.addEventListener('change', function () {
-      if (isSubscribed()) {
-        updateCategories(getSelectedCategories());
-      }
-    });
-  });
-
-  // Per-category test buttons — send a mock notification of the
-  // selected category to this device's subscription.
-  var testButtons = document.querySelectorAll('[data-test-category]');
-  testButtons.forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      if (btn.disabled) return;
-      if (!isSubscribed()) {
-        flashTestBtn(btn, 'error');
-        return;
-      }
-      var category = btn.dataset.testCategory;
-      btn.disabled = true;
-      sendTest(category).then(function (ok) {
-        flashTestBtn(btn, ok ? 'sent' : 'error');
-      }).catch(function () {
-        flashTestBtn(btn, 'error');
-      });
-    });
-  });
-}
-
-function flashTestBtn(btn, state) {
-  btn.dataset.testing = state;
-  setTimeout(function () {
-    btn.dataset.testing = '';
-    btn.disabled = false;
-  }, state === 'sent' ? 1500 : 2500);
-}
 
 // ── Init ──
 async function init() {
@@ -309,43 +242,6 @@ function buildFallbackConfig() {
 
 // ── Navigation is now store-driven via js/actions/navigation.js + js/subscriptions.js ──
 
-// ── FAB ──
-function setupFAB() {
-  document.getElementById('fab-play').addEventListener('click', togglePlay);
-}
-
-function togglePlay() {
-  running = !running;
-  updateFABIcon();
-  if (running) {
-    lastFrame = 0;
-    simTimeAccum = 0;
-    if (model.state.simTime === 0) {
-      model.reset({
-        t_tank_top: params.t_tank_top,
-        t_tank_bottom: params.t_tank_bottom,
-        t_greenhouse: params.t_greenhouse,
-        t_outdoor: params.t_outdoor,
-        irradiance: params.irradiance,
-      });
-      controller.reset();
-      timeSeriesStore.reset();
-      transitionLog.length = 0;
-    }
-    document.getElementById('sim-status-text').textContent = 'Running — press pause to stop';
-    updateSidebarSubtitle();
-    requestAnimationFrame(simLoop);
-  } else {
-    document.getElementById('sim-status-text').textContent = 'Paused — press play to resume';
-    updateSidebarSubtitle();
-  }
-}
-
-function updateFABIcon() {
-  const fab = document.getElementById('fab-play');
-  fab.querySelector('.material-symbols-outlined').textContent = running ? 'pause' : 'play_arrow';
-  fab.title = running ? 'Pause simulation' : 'Start simulation';
-}
 
 // ── Time range pills ──
 
@@ -498,8 +394,7 @@ function resetSim() {
   transitionLog.length = 0;
   resetYesterdayTracking();
   running = false;
-  lastFrame = 0;
-  simTimeAccum = 0;
+  resetSimulationTime();
   updateFABIcon();
   document.getElementById('sim-status-text').textContent = 'Ready — press play to start';
   updateSidebarSubtitle();
@@ -603,95 +498,6 @@ function updatePresetHighlight(activeKey) {
     btn.classList.toggle('preset-active', btn.dataset.preset === activeKey);
   }
 }
-
-// ── Day/Night ──
-// SIM_START_HOUR + getDayNightEnv live in sim-bootstrap.js so the
-// pre-baked snapshot generator and simLoop share one source of truth.
-
-export function formatTimeOfDay(simSeconds) {
-  const totalHours = SIM_START_HOUR + simSeconds / 3600;
-  const h = Math.floor(totalHours % 24);
-  const m = Math.floor((totalHours * 60) % 60);
-  return h.toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0');
-}
-
-function getTimeOfDay(simTime) {
-  const h = SIM_START_HOUR + simTime / 3600;
-  return `${Math.floor(h % 24).toString().padStart(2, '0')}:${Math.floor((h * 60) % 60).toString().padStart(2, '0')}`;
-}
-
-// ── Sim loop ──
-function simLoop(timestamp) {
-  if (!running) return;
-  if (!lastFrame) lastFrame = timestamp;
-  const realDt = (timestamp - lastFrame) / 1000;
-  lastFrame = timestamp;
-
-  simTimeAccum += realDt * simSpeed;
-  const steps = Math.min(Math.floor(simTimeAccum / DT), 50);
-  simTimeAccum -= steps * DT;
-
-  let result;
-  for (let i = 0; i < steps; i++) {
-    let env;
-    if (params.day_night_cycle) {
-      env = getDayNightEnv(model.state.simTime, params.t_outdoor, params.irradiance);
-    } else {
-      env = { t_outdoor: params.t_outdoor, irradiance: params.irradiance };
-    }
-
-    const sensors = {
-      t_collector: model.state.t_collector,
-      t_tank_top: model.state.t_tank_top,
-      t_tank_bottom: model.state.t_tank_bottom,
-      t_greenhouse: model.state.t_greenhouse,
-      t_outdoor: model.state.t_outdoor,
-    };
-
-    result = controller.evaluate(sensors, model.state.simTime);
-
-    if (result.transition) {
-      transitionLog.unshift({ kind: 'sim', time: model.state.simTime, text: result.transition, mode: result.mode });
-      // Prune sim entries older than 24h of simulated time
-      const SIM_LOG_HORIZON = 86400; // 24h in seconds
-      while (transitionLog.length > 0) {
-        const oldest = transitionLog[transitionLog.length - 1];
-        if (oldest.kind === 'sim' && (model.state.simTime - oldest.time) > SIM_LOG_HORIZON) {
-          transitionLog.pop();
-        } else {
-          break;
-        }
-      }
-    }
-
-    model.step(DT, env, result.actuators, result.mode);
-
-    // Record every ~5 seconds of sim time
-    if (Math.floor(model.state.simTime) % 5 === 0) {
-      timeSeriesStore.addPoint(model.state.simTime, {
-        t_tank_top: model.state.t_tank_top,
-        t_tank_bottom: model.state.t_tank_bottom,
-        t_collector: model.state.t_collector,
-        t_greenhouse: model.state.t_greenhouse,
-        t_outdoor: model.state.t_outdoor,
-      }, result.mode);
-    }
-  }
-
-  // Update day/night display
-  if (params.day_night_cycle) {
-    const tod = getTimeOfDay(model.state.simTime);
-    const el = document.getElementById('sim-time-of-day');
-    if (el) el.textContent = tod;
-  }
-
-  if (result) updateDisplay(model.getState(), result);
-  requestAnimationFrame(simLoop);
-}
-
-}
-
-
 
 
 

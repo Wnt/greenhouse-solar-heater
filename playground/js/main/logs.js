@@ -12,9 +12,8 @@ import {
   formatClockTime, formatFullTimeHelsinki, formatCauseLabel,
   formatReasonLabel, formatSensorsLine, escapeHtml,
 } from './time-format.js';
-import {
-  model, params, MODE_INFO, timeSeriesStore, formatTimeOfDay,
-} from '../main.js';
+import { model, params, MODE_INFO, timeSeriesStore } from '../main.js';
+import { formatTimeOfDay } from './simulation.js';
 
 export const transitionLog = [];
 
