@@ -588,7 +588,11 @@ if (require.main === module) {
 
 // ── Test-only exports ──
 // WS command handlers moved to ./lib/ws-command-handlers.js; tests
-// require that module directly now.
+// require that module directly now. startServer is exposed so the
+// e2e harness (tests/e2e/_setup/start.cjs) can boot the server in the
+// same process as its pg-mem + aedes fixtures without relying on
+// require.main tricks.
 module.exports = {
   handleWsCommand: handleWsCommand,
+  _startServer: startServer,
 };

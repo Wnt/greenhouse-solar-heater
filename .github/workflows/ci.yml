@@ -18,16 +18,16 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Run unit & e2e tests in parallel
+      - name: Run unit + Playwright (frontend + e2e) in parallel
         run: |
           npm run test:unit &
           UNIT_PID=$!
           npx playwright test
-          E2E_EXIT=$?
+          PLAYWRIGHT_EXIT=$?
           wait $UNIT_PID
           UNIT_EXIT=$?
-          if [ $UNIT_EXIT -ne 0 ] || [ $E2E_EXIT -ne 0 ]; then
-            echo "Unit exit: $UNIT_EXIT, E2E exit: $E2E_EXIT"
+          if [ $UNIT_EXIT -ne 0 ] || [ $PLAYWRIGHT_EXIT -ne 0 ]; then
+            echo "Unit exit: $UNIT_EXIT, Playwright exit: $PLAYWRIGHT_EXIT"
             exit 1
           fi
         env:

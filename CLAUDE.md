@@ -29,7 +29,7 @@ Solar thermal greenhouse heating system for Southwest Finland. Shelly-controlled
 - `deploy/k8s/` — K8s manifests (Deployment with openvpn + mosquitto sidecars, Ingress, RBAC)
 - `deploy/docker/`, `deploy/openvpn/` — Dockerfiles
 - `design/` — prose docs, hand-authored SVG diagrams, Mermaid control logic, construction notes
-- `tests/` — unit + simulation + auth + e2e (Playwright)
+- `tests/` — unit + simulation + auth; `tests/frontend/` Playwright against static serve (frontend with mocked APIs); `tests/e2e/` Playwright against real `server/server.js` + pg-mem + aedes MQTT
 - `scripts/` — generators: `generate-bootstrap-history.mjs`, `make-icons.mjs`, `generate-liquid-glass.mjs`
 - `.github/workflows/` — CI (test), CD (deploy to K8s + Shelly), GitHub Pages, Shelly lint
 
@@ -107,9 +107,10 @@ Missing tests = incomplete fix. Applies to behavior changes too (e.g. removing a
 ## Commands
 
 ```bash
-npm test                           # unit + simulation + e2e
+npm test                           # unit + frontend + e2e
 npm run test:unit                  # fast, no browser
-npm run test:e2e                   # Playwright (Chromium)
+npm run test:frontend              # Playwright against static serve — frontend with mocked APIs
+npm run test:e2e                   # Playwright against real server + pg-mem + aedes MQTT
 npm run screenshots                # regenerate screenshots (runs 24 h sim, ~1–2 min)
 npm run diagram                    # regenerate system-topology.drawio (dark theme)
 npm run topology-pdf               # printable light-theme PDF of the topology
@@ -138,7 +139,7 @@ A threshold change in `control-logic.js` without a regenerated snapshot fails CI
 
 - **Run `npm ci` first if `node_modules/` is missing.** With deps installed, the full unit suite (`npm run test:unit`, 788 tests) completes in **~20 s** locally; individual files are sub-second to a few seconds. If a run is taking materially longer, something is wrong — don't "wait it out." Common causes: missing deps (several tests hang indefinitely on missing transitive requires rather than erroring; `sensor-apply` and `sensor-discovery` are the usual offenders because they build local HTTP servers that wait on a peer module that never loads), or stale `node` processes from a previous killed run (check `ps -C node` and `pkill -9 node`).
 - **Use tight Bash timeouts for tests.** Full suite: `timeout 30` (20 s baseline + headroom). Single file: `timeout 10`. A test that times out is a signal to investigate, not to retry with a bigger budget. 5-minute timeouts burn minutes of wall clock and hide real issues.
-- **`import { test, expect } from './fixtures.js'`** for all e2e tests — NOT from `@playwright/test`. The fixture blocks Google Fonts so page loads don't hang in offline environments.
+- **`import { test, expect } from './fixtures.js'`** for all Playwright specs (both `tests/frontend/` and `tests/e2e/`) — NOT from `@playwright/test`. The fixture blocks Google Fonts so page loads don't hang in offline environments.
 - **Playwright version must match the cached Chromium revision.** Currently `@playwright/test@1.56.0` ↔ `chromium-1194`. On "browser not found" errors, check `~/.cache/ms-playwright/` and pin Playwright to match.
 - **Use plain `serve`, NOT `serve -s`.** SPA mode rewrites `/schematic-tester.html` → `/schematic-tester` → `index.html`, so standalone pages (schematic-tester, liquid-glass-test) become unreachable. Playwright config auto-starts plain `serve` on port 3210.
 
