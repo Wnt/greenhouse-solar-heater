@@ -22,6 +22,13 @@
 var createLogger = require('./logger');
 var log = createLogger('notifications');
 
+// Source freeze/overheat thresholds from the Shelly control-logic defaults
+// so the notification body never drifts from the device's actual drain
+// trigger. Previously these were copied as literals here and went stale
+// when the control-logic defaults moved (freezeDrainTemp 2->4 on 2026-04-22,
+// overheatDrainTemp was already 95 while this file still said 85).
+var CONTROL_DEFAULTS = require('../../shelly/control-logic.js').DEFAULT_CONFIG;
+
 var pushRef = null;
 var deviceConfigRef = null;
 
@@ -137,17 +144,13 @@ function predictValue(history, horizonMs) {
   return a + b * futureT;
 }
 
-// ── Default thresholds (from control-logic.js DEFAULT_CONFIG) ──
-var DEFAULT_OVERHEAT_TEMP = 85;
-var DEFAULT_FREEZE_TEMP = 2;
-
 function getThresholds() {
-  var cfg = deviceConfigRef ? deviceConfigRef.getConfig() : null;
-  // Device config uses compact keys but thresholds are in control-logic defaults.
-  // The device config doesn't carry these values — use the fixed defaults.
+  // Read live from control-logic's DEFAULT_CONFIG on every call so a
+  // future threshold change is picked up without redeploying the server
+  // (require cache holds the object reference; updates flow through).
   return {
-    overheat: DEFAULT_OVERHEAT_TEMP,
-    freeze: DEFAULT_FREEZE_TEMP,
+    overheat: CONTROL_DEFAULTS.overheatDrainTemp,
+    freeze: CONTROL_DEFAULTS.freezeDrainTemp,
   };
 }
 
