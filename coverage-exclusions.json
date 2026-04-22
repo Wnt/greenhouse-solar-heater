@@ -1,0 +1,4 @@
+{
+  "_comment": "Frontend JS files that bypass the 50% coverage gate enforced by scripts/coverage-check.mjs. Paths are relative to the repo root; each key maps to a written reason. Prefer adding a test over adding an entry here. CI also fails if an excluded file has climbed above the threshold — delete stale entries when that happens.",
+  "files": {}
+}

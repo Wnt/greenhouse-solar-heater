@@ -26,6 +26,19 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RAW_DIR = path.join(ROOT, 'coverage/raw');
 const REPORT_DIR = path.join(ROOT, 'coverage');
 const PLAYGROUND_DIR = path.join(ROOT, 'playground');
+const EXCLUSIONS_PATH = path.join(ROOT, 'coverage-exclusions.json');
+
+// Exclusions named in coverage-exclusions.json are dropped from the
+// map before rendering, matching "explicitly excluded from the
+// coverage analysis". The HTML/lcov/summary therefore only cover
+// files the 50% gate actually applies to. scripts/coverage-check.mjs
+// reads the same file and treats an exclusion both as "don't fail
+// for <50%" and "fail if now ≥50% (stale — drop the entry)".
+function loadExclusions() {
+  if (!existsSync(EXCLUSIONS_PATH)) return new Set();
+  const raw = JSON.parse(readFileSync(EXCLUSIONS_PATH, 'utf8'));
+  return new Set(Object.keys(raw.files || {}).map(rel => path.join(ROOT, rel)));
+}
 
 // Map the URL Playwright reports (http://localhost:3210/js/main.js)
 // to the local file v8-to-istanbul needs to resolve. Anything outside
@@ -135,6 +148,16 @@ async function main() {
   // map so "never loaded" shows up as "0% covered".
   await seedZeroCoverage(map);
 
+  // Build a filtered map for the visible report — excluded files are
+  // carved out of the report entirely, per coverage-exclusions.json.
+  // The original `map` stays intact so we can emit an unfiltered
+  // summary afterwards for stale-exclusion detection.
+  const excluded = loadExclusions();
+  const filteredMap = libCoverage.createCoverageMap({});
+  for (const file of map.files()) {
+    if (!excluded.has(file)) filteredMap.addFileCoverage(map.fileCoverageFor(file));
+  }
+
   // Clear previous report artifacts so removed files don't linger.
   const prior = ['lcov-report', 'lcov.info', 'coverage-summary.json'];
   for (const p of prior) {
@@ -145,12 +168,25 @@ async function main() {
   const context = libReport.createContext({
     dir: REPORT_DIR,
     defaultSummarizer: 'nested',
-    coverageMap: map,
+    coverageMap: filteredMap,
   });
 
   reports.create('text', { skipEmpty: false, skipFull: false }).execute(context);
   reports.create('lcov').execute(context);
   reports.create('json-summary').execute(context);
+
+  // Also emit an unfiltered summary so coverage-check.mjs can detect
+  // stale exclusions — files listed in coverage-exclusions.json whose
+  // coverage has since climbed past the threshold.
+  if (excluded.size > 0) {
+    const fullContext = libReport.createContext({
+      dir: REPORT_DIR,
+      defaultSummarizer: 'nested',
+      coverageMap: map,
+    });
+    reports.create('json-summary', { file: 'coverage-summary-with-excluded.json' })
+      .execute(fullContext);
+  }
 
   const htmlIndex = path.join(REPORT_DIR, 'lcov-report/index.html');
   if (existsSync(htmlIndex)) {

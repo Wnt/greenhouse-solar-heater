@@ -32,6 +32,14 @@ jobs:
           fi
         env:
           HOME: /root
+          # Collect V8 coverage during the frontend project run so the
+          # post-test coverage-check step can gate it. Adds ~5% to the
+          # Playwright wall time, no extra suite run.
+          COVERAGE: '1'
+      - name: Render frontend coverage report
+        run: node scripts/coverage-report.mjs
+      - name: Check frontend coverage gate (≥50% or explicit exclusion)
+        run: node scripts/coverage-check.mjs
       - name: Check file-size budget
         run: npm run check:file-size -- --strict
       - name: Check dead code — knip
