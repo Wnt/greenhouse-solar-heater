@@ -113,28 +113,74 @@ function initSchema(callback) {
   });
 }
 
-// Periodic maintenance: refresh materialized view + delete old raw data.
-// Called automatically via startMaintenance() after server boot.
+// Periodic maintenance: incrementally extend the 30-second aggregate
+// table + delete old raw data. Called via startMaintenance() after boot.
+//
+// Why incremental UPSERT (not REFRESH MATERIALIZED VIEW): the aggregate
+// has to outlive raw retention (48 h) so the 7d/30d/1y graph paths have
+// data to draw. A REFRESH would rebuild from sensor_readings and lose
+// every bucket older than 48 h. INSERT ... ON CONFLICT DO UPDATE adds new
+// buckets without touching old ones.
+//
+// The 5-minute overlap re-aggregates the boundary buckets (the most
+// recent bucket may still be filling between maintenance runs). UPSERT
+// makes this idempotent.
+var AGGREGATE_OVERLAP = '5 minutes';
+
 function runMaintenance(callback) {
   var p = getPool();
   if (!p) { if (callback) callback(); return; }
 
-  p.query('REFRESH MATERIALIZED VIEW CONCURRENTLY sensor_readings_30s', [], function (err) {
-    if (err) {
-      log.warn('materialized view refresh failed', { error: err.message });
-    } else {
-      log.info('materialized view refreshed');
-    }
-
-    p.query("DELETE FROM sensor_readings WHERE ts < NOW() - INTERVAL '" + RETENTION_INTERVAL + "'", [], function (err2) {
-      if (err2) {
-        log.warn('retention cleanup failed', { error: err2.message });
-      } else {
-        log.info('retention cleanup done');
+  p.query(
+    "SELECT COALESCE(MAX(bucket), '1970-01-01'::timestamptz) AS max_bucket FROM sensor_readings_30s",
+    [],
+    function (probeErr, probe) {
+      if (probeErr) {
+        log.warn('aggregate probe failed', { error: probeErr.message });
+        proceedToRetention();
+        return;
       }
-      if (callback) callback();
-    });
-  });
+      var since = probe.rows[0].max_bucket;
+      var upsertSql =
+        "INSERT INTO sensor_readings_30s (bucket, sensor_id, avg_value, min_value, max_value)\n" +
+        "SELECT time_bucket('30 seconds', ts) AS bucket,\n" +
+        "       sensor_id,\n" +
+        "       AVG(value)::double precision,\n" +
+        "       MIN(value)::double precision,\n" +
+        "       MAX(value)::double precision\n" +
+        "FROM sensor_readings\n" +
+        "WHERE ts >= $1::timestamptz - INTERVAL '" + AGGREGATE_OVERLAP + "'\n" +
+        "GROUP BY bucket, sensor_id\n" +
+        "ON CONFLICT (bucket, sensor_id) DO UPDATE SET\n" +
+        "  avg_value = EXCLUDED.avg_value,\n" +
+        "  min_value = EXCLUDED.min_value,\n" +
+        "  max_value = EXCLUDED.max_value";
+
+      p.query(upsertSql, [since], function (err) {
+        if (err) {
+          log.warn('aggregate upsert failed', { error: err.message });
+        } else {
+          log.info('aggregate upsert done', { since: since });
+        }
+        proceedToRetention();
+      });
+    },
+  );
+
+  function proceedToRetention() {
+    p.query(
+      "DELETE FROM sensor_readings WHERE ts < NOW() - INTERVAL '" + RETENTION_INTERVAL + "'",
+      [],
+      function (err2) {
+        if (err2) {
+          log.warn('retention cleanup failed', { error: err2.message });
+        } else {
+          log.info('retention cleanup done');
+        }
+        if (callback) callback();
+      },
+    );
+  }
 }
 
 function startMaintenance() {
@@ -228,6 +274,21 @@ var RANGE_INTERVALS = {
   '1y': '1 year',
 };
 
+// For long views, re-bucket the 30-second aggregates to a coarser
+// resolution. Without this, 7 days at 30 s = ~20 160 points per sensor —
+// noisy on screen and at the edge of the client's 20 000-point store cap.
+// The values are SQL fragments interpolated into time_bucket(...); they
+// must stay constants (never user input) because we string-concat them.
+//
+// `all` is intentionally absent: there's no UI button for it and the
+// e2e harness relies on `range=all` resolving against pg-mem (which has
+// no time_bucket).
+var COARSE_BUCKETS = {
+  '7d': '5 minutes',
+  '30d': '30 minutes',
+  '1y': '6 hours',
+};
+
 function getHistory(range, sensor, callback) {
   var p = getPool();
   var interval = RANGE_INTERVALS[range];
@@ -252,8 +313,18 @@ function getHistory(range, sensor, callback) {
       params.push(sensor);
       paramIdx++;
     }
-    sql = 'SELECT bucket AS ts, sensor_id, avg_value AS value FROM sensor_readings_30s' +
-      aggWhereTime + aggWhereSensor + ' ORDER BY bucket';
+    var coarse = COARSE_BUCKETS[range];
+    if (coarse) {
+      // Re-bucket the 30 s aggregates to a coarser resolution to smooth
+      // the long view and keep the response under the client's point cap.
+      sql = "SELECT time_bucket('" + coarse + "', bucket) AS ts, sensor_id," +
+        " AVG(avg_value) AS value FROM sensor_readings_30s" +
+        aggWhereTime + aggWhereSensor +
+        ' GROUP BY ts, sensor_id ORDER BY ts';
+    } else {
+      sql = 'SELECT bucket AS ts, sensor_id, avg_value AS value FROM sensor_readings_30s' +
+        aggWhereTime + aggWhereSensor + ' ORDER BY bucket';
+    }
   } else if (useBlended) {
     // Raw for last 6h, aggregate for older. Sensor param appears in both sub-queries.
     var rawSensorClause = '';
@@ -539,4 +610,5 @@ module.exports = {
   getEventsPaginated: getEventsPaginated,
   close: close,
   _reset: function () { pool = null; resolvedCa = null; stopMaintenance(); },
+  _runMaintenanceForTest: runMaintenance,
 };

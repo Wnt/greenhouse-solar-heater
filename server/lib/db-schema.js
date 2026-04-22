@@ -59,20 +59,39 @@ var SCHEMA_SQL = [
   "CREATE INDEX IF NOT EXISTS script_crashes_ts ON script_crashes (ts DESC)",
 ];
 
-// Regular materialized view (no TSL license required, unlike continuous aggregates).
-// Refreshed periodically by the app via startMaintenance().
+// Pre-aggregated 30-second buckets, used by getHistory for ranges ≥ 24 h.
+//
+// History: this used to be a regular MATERIALIZED VIEW refreshed by
+// `REFRESH MATERIALIZED VIEW CONCURRENTLY sensor_readings_30s`. That
+// rebuilt the view from scratch off `sensor_readings`, which is pruned at
+// 48 h by runMaintenance — so every refresh discarded all aggregates older
+// than 48 h, and the 7d/30d/1y graph paths never had more than two days of
+// data to draw. We now keep aggregates in a real (hyper)table and have
+// runMaintenance UPSERT new buckets incrementally; old buckets persist
+// indefinitely (independent of raw retention).
+//
+// The DROP MATERIALIZED VIEW migrates existing prod deployments. It runs
+// before CREATE TABLE because pg refuses to create a table that collides
+// with an existing relation of the same name. CASCADE handles the unique
+// index that used to back CONCURRENT refreshes.
 var AGGREGATE_SQL = [
-  "CREATE MATERIALIZED VIEW IF NOT EXISTS sensor_readings_30s AS\n" +
-  "SELECT time_bucket('30 seconds', ts) AS bucket,\n" +
-  "       sensor_id,\n" +
-  "       AVG(value) AS avg_value,\n" +
-  "       MIN(value) AS min_value,\n" +
-  "       MAX(value) AS max_value\n" +
-  "FROM sensor_readings\n" +
-  "GROUP BY bucket, sensor_id",
+  "DROP MATERIALIZED VIEW IF EXISTS sensor_readings_30s CASCADE",
 
-  // Unique index required for REFRESH MATERIALIZED VIEW CONCURRENTLY
-  "CREATE UNIQUE INDEX IF NOT EXISTS sensor_readings_30s_uniq ON sensor_readings_30s (bucket, sensor_id)",
+  "CREATE TABLE IF NOT EXISTS sensor_readings_30s (\n" +
+  "  bucket    TIMESTAMPTZ NOT NULL,\n" +
+  "  sensor_id TEXT        NOT NULL,\n" +
+  "  avg_value DOUBLE PRECISION NOT NULL,\n" +
+  "  min_value DOUBLE PRECISION NOT NULL,\n" +
+  "  max_value DOUBLE PRECISION NOT NULL,\n" +
+  "  PRIMARY KEY (bucket, sensor_id)\n" +
+  ")",
+
+  // Hypertable for efficient time-range scans. if_not_exists guards against
+  // re-runs; migrate_data is unnecessary because the table is empty on
+  // first creation (the legacy MATERIALIZED VIEW was just dropped).
+  "SELECT create_hypertable('sensor_readings_30s', 'bucket', if_not_exists => true)",
+
+  "CREATE INDEX IF NOT EXISTS sensor_readings_30s_bucket ON sensor_readings_30s (bucket DESC)",
 ];
 
 module.exports = { SCHEMA_SQL, AGGREGATE_SQL };
