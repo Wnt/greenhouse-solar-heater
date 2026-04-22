@@ -20,6 +20,7 @@ const session = require('./session');
 const invitations = require('./invitations');
 const createLogger = require('../lib/logger');
 const { buildDeviceDetails } = require('./device-info');
+const userHandlers = require('./user-handlers');
 
 const log = createLogger('webauthn');
 
@@ -149,17 +150,17 @@ function handleRequest(req, res, urlPath, body) {
   } else if (req.method === 'POST' && urlPath === '/auth/invite/validate') {
     handleInviteValidate(req, res, body);
   } else if (req.method === 'GET' && urlPath === '/auth/users') {
-    handleListUsers(req, res);
+    userHandlers.handleListUsers(req, res);
   } else if (req.method === 'POST' && urlPath === '/auth/users') {
-    handleCreateUser(req, res, body);
+    userHandlers.handleCreateUser(req, res, body);
   } else if (req.method === 'DELETE' && urlPath.indexOf('/auth/users/') === 0) {
-    handleDeleteUser(req, res, urlPath);
+    userHandlers.handleDeleteUser(req, res, urlPath);
   } else if ((req.method === 'PATCH' || req.method === 'PUT') && urlPath.indexOf('/auth/users/') === 0) {
-    handleUpdateUser(req, res, urlPath, body);
+    userHandlers.handleUpdateUser(req, res, urlPath, body);
   } else if ((req.method === 'PATCH' || req.method === 'PUT') && urlPath.indexOf('/auth/passkeys/') === 0) {
-    handleUpdatePasskey(req, res, urlPath, body);
+    userHandlers.handleUpdatePasskey(req, res, urlPath, body);
   } else if (req.method === 'DELETE' && urlPath.indexOf('/auth/passkeys/') === 0) {
-    handleDeletePasskey(req, res, urlPath);
+    userHandlers.handleDeletePasskey(req, res, urlPath);
   } else {
     jsonResponse(res, 404, { error: 'Not found' });
   }
@@ -225,199 +226,6 @@ function handleInviteValidate(req, res, body) {
   } else {
     jsonResponse(res, 400, { error: 'Invalid or expired invitation code' });
   }
-}
-
-// ── GET /auth/users ──
-
-function handleListUsers(req, res) {
-  var caller = requireUser(req, res);
-  if (!caller) return;
-  var sess = session.validateRequest(req);
-  var currentCredentialId = sess && sess.credentialId || null;
-
-  var users = credStore.getUsers().map(function (u) {
-    var creds = credStore.getCredentialsForUser(u.id);
-    return {
-      id: u.id,
-      name: u.name,
-      role: u.role,
-      createdAt: u.createdAt || null,
-      credentialCount: creds.length,
-      isCurrent: u.id === caller.id,
-      passkeys: creds.map(function (cred) {
-        return serializeCredential(cred, currentCredentialId);
-      }),
-    };
-  });
-  jsonResponse(res, 200, { users: users });
-}
-
-// ── POST /auth/users ──
-
-function handleCreateUser(req, res, body) {
-  var caller = requireAdmin(req, res);
-  if (!caller) return;
-
-  var parsed = {};
-  try {
-    parsed = body ? JSON.parse(body) : {};
-  } catch (e) {
-    jsonResponse(res, 400, { error: 'Invalid JSON body' });
-    return;
-  }
-
-  var name = typeof parsed.name === 'string' ? parsed.name : '';
-  var role = typeof parsed.role === 'string' ? parsed.role : 'readonly';
-  try {
-    var user = credStore.createUser(name, role);
-    jsonResponse(res, 200, {
-      ok: true,
-      user: {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-        createdAt: user.createdAt,
-        credentialCount: 0,
-        isCurrent: false,
-        passkeys: [],
-      },
-    });
-  } catch (err) {
-    jsonResponse(res, 400, { error: err.message });
-  }
-}
-
-// ── PATCH /auth/users/:id ──
-
-function handleUpdateUser(req, res, urlPath, body) {
-  var caller = requireAdmin(req, res);
-  if (!caller) return;
-
-  var userId = urlPath.substring('/auth/users/'.length);
-  if (!userId) {
-    jsonResponse(res, 400, { error: 'Missing user id' });
-    return;
-  }
-  var target = credStore.getUserById(userId);
-  if (!target) {
-    jsonResponse(res, 404, { error: 'User not found' });
-    return;
-  }
-
-  var parsed;
-  try {
-    parsed = body ? JSON.parse(body) : {};
-  } catch (e) {
-    jsonResponse(res, 400, { error: 'Invalid JSON body' });
-    return;
-  }
-
-  var updates = {};
-  if (typeof parsed.name === 'string') updates.name = parsed.name;
-  if (typeof parsed.role === 'string') updates.role = parsed.role;
-
-  // Refuse self-demotion so an admin can't lock themselves out via the API.
-  if (target.id === caller.id && updates.role && updates.role !== caller.role) {
-    jsonResponse(res, 400, { error: 'Cannot change your own role' });
-    return;
-  }
-
-  try {
-    var updated = credStore.updateUser(userId, updates);
-    jsonResponse(res, 200, {
-      ok: true,
-      user: { id: updated.id, name: updated.name, role: updated.role },
-    });
-  } catch (err) {
-    var status = err.message === 'User not found' ? 404 : 400;
-    jsonResponse(res, status, { error: err.message });
-  }
-}
-
-// ── DELETE /auth/users/:id ──
-
-function handleDeleteUser(req, res, urlPath) {
-  var caller = requireAdmin(req, res);
-  if (!caller) return;
-
-  var userId = urlPath.substring('/auth/users/'.length);
-  if (!userId) {
-    jsonResponse(res, 400, { error: 'Missing user id' });
-    return;
-  }
-  var target = credStore.getUserById(userId);
-  if (!target) {
-    jsonResponse(res, 404, { error: 'User not found' });
-    return;
-  }
-  if (target.id === caller.id) {
-    jsonResponse(res, 400, { error: 'Cannot delete yourself' });
-    return;
-  }
-  try {
-    credStore.deleteUser(userId);
-    jsonResponse(res, 200, { ok: true });
-  } catch (err) {
-    jsonResponse(res, 400, { error: err.message });
-  }
-}
-
-// ── PATCH /auth/passkeys/:id ──
-
-function handleUpdatePasskey(req, res, urlPath, body) {
-  var caller = requireAdmin(req, res);
-  if (!caller) return;
-
-  var credentialId = urlPath.substring('/auth/passkeys/'.length);
-  if (!credentialId) {
-    jsonResponse(res, 400, { error: 'Missing passkey id' });
-    return;
-  }
-  var cred = credStore.getCredentialById(credentialId);
-  if (!cred) {
-    jsonResponse(res, 404, { error: 'Passkey not found' });
-    return;
-  }
-
-  var parsed = {};
-  try {
-    parsed = body ? JSON.parse(body) : {};
-  } catch (e) {
-    jsonResponse(res, 400, { error: 'Invalid JSON body' });
-    return;
-  }
-
-  var updates = {};
-  if (typeof parsed.label === 'string') updates.label = parsed.label;
-  if (typeof parsed.userId === 'string') updates.userId = parsed.userId;
-
-  try {
-    var updated = credStore.updateCredential(credentialId, updates);
-    jsonResponse(res, 200, { ok: true, passkey: serializeCredential(updated, null) });
-  } catch (err) {
-    var status = /not found/i.test(err.message) ? 404 : 400;
-    jsonResponse(res, status, { error: err.message });
-  }
-}
-
-// ── DELETE /auth/passkeys/:id ──
-
-function handleDeletePasskey(req, res, urlPath) {
-  var caller = requireAdmin(req, res);
-  if (!caller) return;
-
-  var credentialId = urlPath.substring('/auth/passkeys/'.length);
-  if (!credentialId) {
-    jsonResponse(res, 400, { error: 'Missing passkey id' });
-    return;
-  }
-  var cred = credStore.getCredentialById(credentialId);
-  if (!cred) {
-    jsonResponse(res, 404, { error: 'Passkey not found' });
-    return;
-  }
-  credStore.deleteCredential(credentialId);
-  jsonResponse(res, 200, { ok: true });
 }
 
 // ── POST /auth/register/options ──

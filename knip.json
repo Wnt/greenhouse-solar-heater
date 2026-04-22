@@ -4,6 +4,7 @@
     "server/server.js",
     "server/lib/tracing.js",
     "server/lib/anomaly-manager.js",
+    "server/auth/user-handlers.js",
     "playground/index.html",
     "playground/flow-tester.html",
     "playground/schematic-tester.html",
