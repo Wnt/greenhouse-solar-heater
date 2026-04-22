@@ -308,7 +308,11 @@ function buildMockPayload(category) {
   if (category === 'overheat_warning') {
     return {
       title: '[Test] Overheat Warning',
-      body: 'Tank temperature is 82.4\u00b0C and rising. Overheat drain may activate at 85\u00b0C.',
+      body: (function () {
+        var oh = require('../../shelly/control-logic.js').DEFAULT_CONFIG.overheatDrainTemp;
+        return 'Tank temperature is ' + (oh - 2.6).toFixed(1) + '\u00b0C and rising. ' +
+               'Overheat drain may activate at ' + oh + '\u00b0C.';
+      })(),
       tag: 'test-overheat-warning',
       icon: iconFor(category),
       url: '/#status',
@@ -317,7 +321,11 @@ function buildMockPayload(category) {
   if (category === 'freeze_warning') {
     return {
       title: '[Test] Freeze Warning',
-      body: 'Outdoor temperature is 2.8\u00b0C and falling. Freeze drain may activate at 2\u00b0C.',
+      body: (function () {
+        var fz = require('../../shelly/control-logic.js').DEFAULT_CONFIG.freezeDrainTemp;
+        return 'Outdoor temperature is ' + (fz + 0.8).toFixed(1) + '\u00b0C and falling. ' +
+               'Freeze drain may activate at ' + fz + '\u00b0C.';
+      })(),
       tag: 'test-freeze-warning',
       icon: iconFor(category),
       url: '/#status',

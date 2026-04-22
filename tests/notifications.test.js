@@ -128,19 +128,29 @@ describe('notifications', () => {
       notifications.init({ push: mockPush, deviceConfig: null });
     });
 
-    it('sends overheat warning when tank temp trending toward 85', () => {
+    it('sends overheat warning when tank temp trending toward the control-logic default', () => {
+      var CONTROL = require('../shelly/control-logic.js');
+      var overheatT = CONTROL.DEFAULT_CONFIG.overheatDrainTemp;  // currently 95
       var now = Date.now();
       var tankHistory = [];
+      // Ramp from (overheatT - 7) up to (overheatT - 2) so linear extrapolation
+      // over 15 min predicts crossing the threshold.
       for (var k = 0; k <= 5; k++) {
-        notifications.addSample(tankHistory, now - (5 - k) * 60000, 78 + k);
+        notifications.addSample(tankHistory, now - (5 - k) * 60000, overheatT - 7 + k);
       }
       notifications._setTankHistory(tankHistory);
 
-      notifications.evaluate({ temps: { tank_top: 83, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+      notifications.evaluate({
+        temps: { tank_top: overheatT - 2, outdoor: 10 }, mode: 'SOLAR_CHARGING',
+      });
 
       var overheatNotifs = sentNotifications.filter(function (n) { return n.type === 'overheat_warning'; });
       assert.strictEqual(overheatNotifs.length, 1);
-      assert.ok(overheatNotifs[0].payload.body.indexOf('83.0') >= 0);
+      // Body must reflect the current control-logic threshold, not a stale copy.
+      assert.ok(
+        overheatNotifs[0].payload.body.indexOf(String(overheatT)) >= 0,
+        'expected overheat body to mention ' + overheatT + '°C, got: ' + overheatNotifs[0].payload.body
+      );
     });
 
     it('does not send overheat warning when temp is stable below threshold', () => {
@@ -158,42 +168,55 @@ describe('notifications', () => {
     });
 
     it('does not send overheat warning when already above threshold', () => {
+      var CONTROL = require('../shelly/control-logic.js');
+      var overheatT = CONTROL.DEFAULT_CONFIG.overheatDrainTemp;
       var now = Date.now();
       var history = [];
       for (var i = 0; i <= 5; i++) {
-        notifications.addSample(history, now - (5 - i) * 60000, 86 + i);
+        notifications.addSample(history, now - (5 - i) * 60000, overheatT + 1 + i);
       }
       notifications._setTankHistory(history);
 
-      notifications.evaluate({ temps: { tank_top: 91, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+      notifications.evaluate({ temps: { tank_top: overheatT + 6, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
 
       var overheatNotifs = sentNotifications.filter(function (n) { return n.type === 'overheat_warning'; });
       assert.strictEqual(overheatNotifs.length, 0);
     });
 
-    it('sends freeze warning when outdoor temp trending toward 2', () => {
+    it('sends freeze warning when outdoor temp trending toward the control-logic default', () => {
+      var CONTROL = require('../shelly/control-logic.js');
+      var freezeT = CONTROL.DEFAULT_CONFIG.freezeDrainTemp;  // currently 4
       var now = Date.now();
       var history = [];
+      // Ramp from (freezeT + 3) down toward (freezeT + 0.1) so linear
+      // extrapolation predicts crossing the threshold within 15 min.
       for (var i = 0; i <= 6; i++) {
-        notifications.addSample(history, now - (6 - i) * 60000, 5 - i * 0.5);
+        notifications.addSample(history, now - (6 - i) * 60000, freezeT + 3 - i * 0.5);
       }
       notifications._setOutdoorHistory(history);
 
-      notifications.evaluate({ temps: { tank_top: 50, outdoor: 2.1 }, mode: 'IDLE' });
+      notifications.evaluate({ temps: { tank_top: 50, outdoor: freezeT + 0.1 }, mode: 'IDLE' });
 
       var freezeNotifs = sentNotifications.filter(function (n) { return n.type === 'freeze_warning'; });
       assert.strictEqual(freezeNotifs.length, 1);
+      // Body must reference the current drain threshold, not a stale hardcoded value.
+      assert.ok(
+        freezeNotifs[0].payload.body.indexOf(String(freezeT)) >= 0,
+        'expected freeze body to mention ' + freezeT + '°C, got: ' + freezeNotifs[0].payload.body
+      );
     });
 
     it('does not send freeze warning when already below threshold', () => {
+      var CONTROL = require('../shelly/control-logic.js');
+      var freezeT = CONTROL.DEFAULT_CONFIG.freezeDrainTemp;
       var now = Date.now();
       var history = [];
       for (var i = 0; i <= 5; i++) {
-        notifications.addSample(history, now - (5 - i) * 60000, 1 - i * 0.1);
+        notifications.addSample(history, now - (5 - i) * 60000, freezeT - 1 - i * 0.1);
       }
       notifications._setOutdoorHistory(history);
 
-      notifications.evaluate({ temps: { tank_top: 50, outdoor: 0.5 }, mode: 'IDLE' });
+      notifications.evaluate({ temps: { tank_top: 50, outdoor: freezeT - 1.5 }, mode: 'IDLE' });
 
       var freezeNotifs = sentNotifications.filter(function (n) { return n.type === 'freeze_warning'; });
       assert.strictEqual(freezeNotifs.length, 0);
