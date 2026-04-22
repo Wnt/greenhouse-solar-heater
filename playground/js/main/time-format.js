@@ -2,6 +2,19 @@
 // System Logs UI and the clipboard-export path. Factored out of main.js
 // so the formatting layer stays small and independently testable.
 
+import { SIM_START_HOUR } from '../sim-bootstrap.js';
+
+// "HH:MM" from a simulation-time offset (seconds since SIM_START_HOUR).
+// Used by sim-mode log entries that don't have a wall-clock timestamp.
+// Named alongside the Helsinki helpers below because they all live in
+// the "time → display string" family.
+export function formatTimeOfDay(simSeconds) {
+  const totalHours = SIM_START_HOUR + simSeconds / 3600;
+  const h = Math.floor(totalHours % 24);
+  const m = Math.floor((totalHours * 60) % 60);
+  return h.toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0');
+}
+
 const HELSINKI_TZ = 'Europe/Helsinki';
 const fmtClockHelsinki = new Intl.DateTimeFormat('fi-FI', {
   hour: '2-digit', minute: '2-digit', hour12: false, timeZone: HELSINKI_TZ,

@@ -172,6 +172,75 @@ describe('playground ESM module graph', () => {
     assert.deepStrictEqual(errors, [], 'parse errors:\n' + errors.join('\n'));
   });
 
+  it('no playground/js/main/* module imports from ../main.js', () => {
+    // Architectural rule: sub-modules under playground/js/main/ MUST
+    // NOT import from ../main.js. Shared mutable state lives in
+    // ./main/state.js (a leaf module) and helpers live in their own
+    // sibling modules; importing back from main.js forms a cycle and
+    // invites the kind of circular-binding-not-yet-defined bugs we
+    // hit before (e.g. `controller` undefined at module-init time).
+    // main.js remains the entry-point / wiring module only.
+    const violations = [];
+    for (const f of files) {
+      if (!f.startsWith('playground/js/main/')) continue;
+      const imports = collectImports(path.join(REPO_ROOT, f));
+      for (const imp of imports) {
+        if (imp.source === '../main.js') {
+          violations.push(
+            `${f}: imports from '../main.js' — move shared state to ./state.js ` +
+            `or refactor so main.js isn't a dependency of ./main/* modules.`
+          );
+        }
+      }
+    }
+    assert.deepStrictEqual(violations, [], violations.join('\n'));
+  });
+
+  it('the module graph has no import cycles', () => {
+    // Build a directed graph: for each file, the set of other files it
+    // directly imports. Skip bare specifiers (external packages) and
+    // unresolved imports — only in-tree edges form the graph.
+    const graph = new Map();
+    for (const f of files) {
+      const fromPath = path.join(REPO_ROOT, f);
+      let imports;
+      try { imports = collectImports(fromPath); }
+      catch { imports = []; }
+      graph.set(path.resolve(fromPath), new Set(imports.map(i => path.resolve(i.target))));
+    }
+
+    // DFS — white/grey/black colouring. A back edge (to a grey node) is
+    // a cycle; report the full loop path.
+    const WHITE = 0, GREY = 1, BLACK = 2;
+    const colour = new Map();
+    const cycles = [];
+    const stack = [];
+
+    function visit(node) {
+      colour.set(node, GREY);
+      stack.push(node);
+      for (const next of (graph.get(node) || [])) {
+        if (colour.get(next) === GREY) {
+          const start = stack.indexOf(next);
+          cycles.push(stack.slice(start).concat(next).map(p => path.relative(REPO_ROOT, p)));
+        } else if ((colour.get(next) || WHITE) === WHITE) {
+          visit(next);
+        }
+      }
+      stack.pop();
+      colour.set(node, BLACK);
+    }
+
+    for (const node of graph.keys()) {
+      if ((colour.get(node) || WHITE) === WHITE) visit(node);
+    }
+
+    assert.deepStrictEqual(
+      cycles, [],
+      'import cycles detected:\n  ' + cycles.map(c => c.join(' → ')).join('\n  ')
+    );
+  });
+
   it('every named import resolves to a matching export in the target module', () => {
     const errors = [];
     for (const f of files) {

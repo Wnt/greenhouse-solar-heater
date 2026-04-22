@@ -7,7 +7,7 @@
 import { store } from '../app-state.js';
 import { pickTickStep, formatTick, pickBucketSize } from '../ui.js';
 import { SIM_START_HOUR } from '../sim-bootstrap.js';
-import { timeSeriesStore, graphRange, showAllSensors } from '../main.js';
+import { timeSeriesStore, graphRange, showAllSensors } from './state.js';
 
 function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
 

@@ -36,10 +36,7 @@ import {
   renderBalanceCard, getLiveYesterdayHigh, resetLiveYesterdayHigh,
 } from './main/balance-card.js';
 import { setupInspector } from './main/graph-inspector.js';
-import {
-  fetchLiveHistory, getLiveHistoryData, clearLiveHistoryData,
-  recordLiveHistoryPoint,
-} from './main/live-history.js';
+import { fetchLiveHistory, clearLiveHistoryData } from './main/live-history.js';
 import {
   updateDisplay, rerenderWithHistoryFallback,
   setSchematicHandle, getLastFrame,
@@ -53,76 +50,25 @@ window.__triggerVersionCheck = triggerVersionCheck;
 
 
 // ── State ──
+// Shared mutable state lives in ./main/state.js as a leaf module so
+// sibling modules don't have to import back from main.js (which
+// would form a cycle). main.js still writes to it via the setters.
+import {
+  model, controller, running, simSpeed, graphRange, showAllSensors,
+  params, timeSeriesStore, MODE_INFO,
+  setModel, setController, setRunning,
+  setSimSpeed, setGraphRange, setShowAllSensors,
+} from './main/state.js';
+
 let config = null;
-export let model = null;
-export let controller = null;
-export let running = false;
-export function setRunning(v) { running = v; }
-export let simSpeed = 3000;
-// lastFrame, simTimeAccum moved to ./main/simulation.js
-
-// schematicHandle, lastState, lastResult, liveFrameSeen,
-// yesterdayHigh/confirmedYesterdayHigh/lastDay moved to
-// ./main/display-update.js. liveYesterdayHigh moved to
-// ./main/balance-card.js.
 const DT = 1;
-export let graphRange = 86400; // default 24h
-// Graph "All sensors" toggle — when true, the Tank Top and Tank Bottom
-// individual lines are drawn alongside the tank average and their
-// legend / inspector rows become visible. Off by default.
-export let showAllSensors = false;
 
-
-// ── Time Series Store (extended with mode tracking) ──
-export const timeSeriesStore = {
-  maxPoints: 20000,
-  times: [],
-  values: [],  // { t_tank_top, t_tank_bottom, t_collector, t_greenhouse, t_outdoor }
-  modes: [],   // mode string at each sample
-  addPoint(time, vals, mode) {
-    this.times.push(time);
-    this.values.push({ ...vals });
-    this.modes.push(mode);
-    if (this.times.length > this.maxPoints) {
-      const trim = this.times.length - this.maxPoints;
-      this.times.splice(0, trim);
-      this.values.splice(0, trim);
-      this.modes.splice(0, trim);
-    }
-  },
-  reset() { this.times = []; this.values = []; this.modes = []; },
-};
-
-// ── Transition log / events state moved to ./main/logs.js ──
-
-// ── Scenario presets ──
+// Scenario presets — only read by setupControls/applyPreset in this
+// file, so they stay local.
 const PRESETS = {
   spring_fall:   { label: 'Spring / Fall',      t_outdoor: 10,   irradiance: 500, t_tank_top: 12, t_tank_bottom: 9,  t_greenhouse: 11, gh_thermal_mass: 250000, gh_heat_loss: 100 },
   summer_peak:   { label: 'Summer Peak Heat',   t_outdoor: 26,   irradiance: 500, t_tank_top: 88, t_tank_bottom: 85, t_greenhouse: 11, gh_thermal_mass: 250000, gh_heat_loss: 100 },
   early_late:    { label: 'Late / Early Season', t_outdoor: -5.5, irradiance: 240, t_tank_top: 13, t_tank_bottom: 13, t_greenhouse: 5,  gh_thermal_mass: 250000, gh_heat_loss: 100 },
-};
-
-// ── Input parameters ──
-export const params = {
-  t_outdoor: 10,
-  irradiance: 500,
-  t_tank_top: 12,
-  t_tank_bottom: 9,
-  t_greenhouse: 11,
-  sim_speed: 3000,
-  day_night_cycle: true,
-  gh_thermal_mass: 250000,
-  gh_heat_loss: 100,
-};
-
-// ── Mode metadata ──
-export const MODE_INFO = {
-  idle: { label: 'Idle', desc: 'System waiting for triggers.', icon: 'mode_night', iconFill: false },
-  solar_charging: { label: 'Collecting Solar Energy', desc: 'Optimal photon absorption in progress.', icon: 'wb_sunny', iconFill: true },
-  greenhouse_heating: { label: 'Heating Greenhouse', desc: 'Thermal redirection active.', icon: 'nest_eco_leaf', iconFill: false },
-  active_drain: { label: 'Active Drain', desc: 'Freeze protection draining collectors.', icon: 'water_drop', iconFill: false },
-  overheat_drain: { label: 'Overheat Drain', desc: 'Draining to prevent overheating.', icon: 'warning', iconFill: false },
-  emergency_heating: { label: 'Emergency Heating', desc: 'Space heater active — tank too cold.', icon: 'local_fire_department', iconFill: true },
 };
 
 // ── Init ──
@@ -134,11 +80,11 @@ async function init() {
   }
 
   await initControlLogic();
-  model = new ThermalModel({
+  setModel(new ThermalModel({
     greenhouse_thermal_mass: params.gh_thermal_mass,
     greenhouse_UA: params.gh_heat_loss,
-  });
-  controller = new ControlStateMachine(config.modes);
+  }));
+  setController(new ControlStateMachine(config.modes));
 
   // Set up view lifecycle callbacks for the store-driven navigation.
   // Sensor discovery UI lives inside the merged Device view, so it mounts
@@ -192,7 +138,7 @@ async function init() {
   updateDisplay(model.getState(), { mode: 'idle', valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false }, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
 
   // Initialize live/simulation mode toggle
-  initConnection({ setRunning: (v) => { running = v; } });
+  initConnection({ setRunning });
   initModeToggle();
   initDeviceConfig();
   initRelayBoard({ getLiveSource });
@@ -249,7 +195,7 @@ function setupTimeRangePills() {
   document.getElementById('time-range-pills').addEventListener('click', (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
-    graphRange = parseInt(btn.dataset.range);
+    setGraphRange(parseInt(btn.dataset.range));
     document.querySelectorAll('#time-range-pills button').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     if (store.get('phase') === 'live') {
@@ -274,7 +220,7 @@ function setupAllSensorsToggle() {
     sw.setAttribute('aria-checked', showAllSensors ? 'true' : 'false');
   };
   const toggle = () => {
-    showAllSensors = !showAllSensors;
+    setShowAllSensors(!showAllSensors);
     render();
     applyAllSensorsVisibility();
     drawHistoryGraph();
@@ -323,7 +269,7 @@ function setupControls() {
       ...s,
       onChange: (v) => {
         params[s.key] = v;
-        if (s.key === 'sim_speed') simSpeed = v;
+        if (s.key === 'sim_speed') setSimSpeed(v);
         if (model && running && liveStateKeys[s.key]) {
           model.state[liveStateKeys[s.key]] = v;
         }
@@ -393,7 +339,7 @@ function resetSim() {
   timeSeriesStore.reset();
   transitionLog.length = 0;
   resetYesterdayTracking();
-  running = false;
+  setRunning(false);
   resetSimulationTime();
   updateFABIcon();
   document.getElementById('sim-status-text').textContent = 'Ready — press play to start';

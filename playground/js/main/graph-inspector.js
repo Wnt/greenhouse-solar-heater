@@ -5,7 +5,7 @@
 
 import { store } from '../app-state.js';
 import { SIM_START_HOUR } from '../sim-bootstrap.js';
-import { timeSeriesStore, graphRange, showAllSensors } from '../main.js';
+import { timeSeriesStore, graphRange, showAllSensors } from './state.js';
 import { tankAvgOf } from './history-graph.js';
 
 let inspectorX = null; // null = hidden, otherwise CSS pixel x relative to canvas

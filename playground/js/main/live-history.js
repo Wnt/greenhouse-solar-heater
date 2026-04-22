@@ -9,7 +9,7 @@
 //   between /api/history fetches.
 
 import { store } from '../app-state.js';
-import { timeSeriesStore } from '../main.js';
+import { timeSeriesStore } from './state.js';
 import { drawHistoryGraph } from './history-graph.js';
 import { rerenderWithHistoryFallback } from './display-update.js';
 
@@ -20,7 +20,6 @@ const RANGE_MAP = {
 
 let liveHistoryData = null;
 
-export function getLiveHistoryData() { return liveHistoryData; }
 export function clearLiveHistoryData() { liveHistoryData = null; }
 
 export function fetchLiveHistory(rangeSeconds) {
@@ -77,22 +76,10 @@ function loadLiveHistoryIntoStore(data) {
   }
 }
 
-// Append an incoming live state frame to the history store so the
-// graph ticks forward in real time. Rate-limited to one sample every
-// ~5 seconds to match the simulation recording cadence.
-export function recordLiveHistoryPoint(state, result) {
-  if (store.get('phase') !== 'live') return;
-  const tSec = Math.floor(Date.now() / 1000);
-  const last = timeSeriesStore.times.length - 1;
-  if (last >= 0 && (tSec - timeSeriesStore.times[last]) < 5) return;
-  timeSeriesStore.addPoint(tSec, {
-    t_tank_top: state.t_tank_top,
-    t_tank_bottom: state.t_tank_bottom,
-    t_collector: state.t_collector,
-    t_greenhouse: state.t_greenhouse,
-    t_outdoor: state.t_outdoor,
-  }, result.mode || 'idle');
-}
+// recordLiveHistoryPoint moved into display-update.js — same
+// pipeline (updateDisplay appends a live frame to timeSeriesStore
+// via that helper), and keeping it here required a circular
+// import to reach rerenderWithHistoryFallback.
 
 // Test hook: report the number of history samples currently in the
 // store. Used by e2e tests to verify that live data populates the graph.

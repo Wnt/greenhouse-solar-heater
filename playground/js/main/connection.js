@@ -15,7 +15,7 @@
 import { LiveSource, SimulationSource } from '../data-source.js';
 import { store } from '../app-state.js';
 import { attachScriptStatusWebSocket } from '../actions/script-monitor.js';
-import { graphRange, timeSeriesStore, running } from '../main.js';
+import { graphRange, timeSeriesStore, running } from './state.js';
 import { attachWatchdogWebSocket } from './watchdog-ui.js';
 import { handleOverrideResponse, updateRelayBoard } from './relay-board.js';
 import { updateDisplay, setLiveFrameSeen } from './display-update.js';

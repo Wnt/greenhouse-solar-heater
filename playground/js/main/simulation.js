@@ -5,9 +5,8 @@
 import { SIM_START_HOUR, getDayNightEnv } from '../sim-bootstrap.js';
 import {
   running, setRunning, model, controller, params, simSpeed,
-  timeSeriesStore,
-} from '../main.js';
-import { transitionLog } from './logs.js';
+  timeSeriesStore, transitionLog,
+} from './state.js';
 import { updateDisplay } from './display-update.js';
 import { updateSidebarSubtitle } from './connection.js';
 
@@ -55,12 +54,8 @@ export function updateFABIcon() {
 // SIM_START_HOUR + getDayNightEnv live in sim-bootstrap.js so the
 // pre-baked snapshot generator and simLoop share one source of truth.
 
-export function formatTimeOfDay(simSeconds) {
-  const totalHours = SIM_START_HOUR + simSeconds / 3600;
-  const h = Math.floor(totalHours % 24);
-  const m = Math.floor((totalHours * 60) % 60);
-  return h.toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0');
-}
+// formatTimeOfDay moved to ./time-format.js so logs.js can reach
+// it without forming a simulation ↔ logs cycle.
 
 function getTimeOfDay(simTime) {
   const h = SIM_START_HOUR + simTime / 3600;

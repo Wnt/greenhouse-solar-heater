@@ -14,11 +14,10 @@
 
 import { store } from '../app-state.js';
 import { tankStoredEnergyKwh } from '../physics.js';
-import { timeSeriesStore, MODE_INFO, running } from '../main.js';
+import { timeSeriesStore, MODE_INFO, running } from './state.js';
 import { detectLiveTransition, renderLogsList } from './logs.js';
 import { drawHistoryGraph, toSchematicState } from './history-graph.js';
 import { appendBalanceLivePoint, getLiveYesterdayHigh } from './balance-card.js';
-import { recordLiveHistoryPoint } from './live-history.js';
 
 // Null-tolerant helpers for live data: the Shelly publishes `null`
 // for any sensor whose role is not assigned. Display "—" instead of
@@ -442,6 +441,26 @@ function updateComponent(id, on, onLabel, offLabel) {
   const el = document.getElementById(id);
   el.textContent = on ? onLabel : offLabel;
   el.className = 'component-value ' + (on ? 'component-value-active' : 'component-value-off');
+}
+
+// Append an incoming live state frame to the history store so the
+// graph ticks forward in real time. Rate-limited to one sample
+// every ~5 seconds to match the simulation recording cadence.
+// Lives here (rather than in live-history.js) so display-update
+// doesn't have to import from a module that itself needs our
+// rerenderWithHistoryFallback — breaks the old cycle.
+function recordLiveHistoryPoint(state, result) {
+  if (store.get('phase') !== 'live') return;
+  const tSec = Math.floor(Date.now() / 1000);
+  const last = timeSeriesStore.times.length - 1;
+  if (last >= 0 && (tSec - timeSeriesStore.times[last]) < 5) return;
+  timeSeriesStore.addPoint(tSec, {
+    t_tank_top: state.t_tank_top,
+    t_tank_bottom: state.t_tank_bottom,
+    t_collector: state.t_collector,
+    t_greenhouse: state.t_greenhouse,
+    t_outdoor: state.t_outdoor,
+  }, result.mode || 'idle');
 }
 
 // Re-render the Status/Components views after something refills the

@@ -1,21 +1,18 @@
 // System Logs UI — live-events pagination, transition detection,
 // render + clipboard export. Extracted from main.js.
 //
-// transitionLog is an array owned here but shared by reference; main.js
-// still mutates it directly (push/unshift/length = 0) during simLoop,
-// resetSim, restoreBootstrapSnapshot, and mode switching. Because
-// arrays are passed by reference, the import side and the module side
-// see the same storage.
+// transitionLog lives in state.js (shared array, many writers).
+// Re-exported from here for back-compat with existing importers in
+// main.js — they can keep importing `transitionLog` from logs.js.
 
 import { store } from '../app-state.js';
 import {
   formatClockTime, formatFullTimeHelsinki, formatCauseLabel,
-  formatReasonLabel, formatSensorsLine, escapeHtml,
+  formatReasonLabel, formatSensorsLine, escapeHtml, formatTimeOfDay,
 } from './time-format.js';
-import { model, params, MODE_INFO, timeSeriesStore } from '../main.js';
-import { formatTimeOfDay } from './simulation.js';
+import { model, params, MODE_INFO, timeSeriesStore, transitionLog } from './state.js';
 
-export const transitionLog = [];
+export { transitionLog };
 
 const EVENTS_PAGE_SIZE = 10;
 let eventsCursor = null;   // ms timestamp of oldest entry currently shown
