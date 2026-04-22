@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
-  testDir: './tests/e2e',
+  testDir: './tests/frontend',
   testMatch: 'take-screenshots.spec.js',
   timeout: 180000,
   retries: 0,

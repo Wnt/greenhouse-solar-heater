@@ -19,6 +19,9 @@
     "scripts/*.mjs",
     "tests/**/*.test.js",
     "tests/**/*.test.mjs",
+    "tests/e2e/**/*.spec.js",
+    "tests/e2e/_setup/start.cjs",
+    "tests/frontend/**/*.spec.js",
     "tests/simulation/*.js",
     "design/docs/pdf/*.js"
   ],

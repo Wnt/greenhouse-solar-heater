@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node --test 'tests/**/*.test.js' 'tests/**/*.test.mjs' && npx playwright test",
     "test:unit": "node --test 'tests/**/*.test.js' 'tests/**/*.test.mjs'",
-    "test:e2e": "npx playwright test",
+    "test:frontend": "npx playwright test --project=frontend",
+    "test:e2e": "npx playwright test --project=e2e",
     "screenshots": "npx playwright test --config=playwright.screenshots.config.js",
     "diagram": "node design/diagrams/generate-topology.js",
     "topology-pdf": "node design/docs/pdf/generate-topology-pdf.js",
@@ -23,8 +24,10 @@
   "devDependencies": {
     "@playwright/test": "1.56.0",
     "acorn": "^8.16.0",
+    "aedes": "^1.0.2",
     "js-yaml": "^4.1.1",
     "knip": "^6.6.1",
+    "pg-mem": "^3.0.14",
     "serve": "^14.2.6"
   },
   "overrides": {
