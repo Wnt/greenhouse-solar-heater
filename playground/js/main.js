@@ -55,7 +55,7 @@ window.__triggerVersionCheck = triggerVersionCheck;
 // ── State ──
 let config = null;
 export let model = null;
-let controller = null;
+export let controller = null;
 export let running = false;
 export function setRunning(v) { running = v; }
 export let simSpeed = 3000;
