@@ -21,7 +21,7 @@
     "lint:debt": "npm run check:file-size && npm run knip && npm run check:assets"
   },
   "devDependencies": {
-    "@playwright/test": "^1.56.0",
+    "@playwright/test": "1.56.0",
     "acorn": "^8.16.0",
     "js-yaml": "^4.1.1",
     "knip": "^6.6.1",

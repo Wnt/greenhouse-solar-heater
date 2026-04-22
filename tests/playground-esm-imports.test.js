@@ -25,7 +25,10 @@ const PLAYGROUND_DIR = path.join(REPO_ROOT, 'playground');
 // playground/*.js entry points (sw.js). Use git ls-files so the
 // check scopes to tracked files only.
 function listPlaygroundJsFiles() {
-  const out = execSync('git ls-files playground', { cwd: REPO_ROOT, encoding: 'utf8' });
+  // `-c safe.directory=*` — CI containers check out as a different
+  // user than the one running node, so plain `git ls-files` refuses
+  // with "fatal: detected dubious ownership".
+  const out = execSync("git -c safe.directory='*' ls-files playground", { cwd: REPO_ROOT, encoding: 'utf8' });
   return out.split('\n').filter(Boolean)
     .filter(p => p.endsWith('.js') || p.endsWith('.mjs'))
     // Skip third-party vendored files; their exports aren't our problem.

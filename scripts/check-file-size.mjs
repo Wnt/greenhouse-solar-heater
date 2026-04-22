@@ -20,7 +20,10 @@ const TEST_SOFT = 800;
 const TEST_HARD = 1200;
 
 function listTrackedFiles() {
-  const out = execSync('git ls-files playground/js server tests', { encoding: 'utf8' });
+  // `-c safe.directory=*` — CI containers check out as a different
+  // user than the one running node, so plain git refuses with
+  // "fatal: detected dubious ownership".
+  const out = execSync("git -c safe.directory='*' ls-files playground/js server tests", { encoding: 'utf8' });
   return out.split('\n').filter(Boolean).filter(p => p.endsWith('.js') || p.endsWith('.mjs'));
 }
 

@@ -35,8 +35,13 @@ const GENERATED = new Set([
   'playground/assets/liquid-glass.json',
 ]);
 
+// `-c safe.directory=*` — CI containers check out as a different
+// user than the one running node, so plain git refuses with
+// "fatal: detected dubious ownership".
+const GIT = "git -c safe.directory='*'";
+
 function listCandidates() {
-  const out = execSync('git ls-files playground/assets playground/public', { encoding: 'utf8' });
+  const out = execSync(`${GIT} ls-files playground/assets playground/public`, { encoding: 'utf8' });
   return out.split('\n').filter(Boolean)
     .filter(p => !VENDORED.has(p))
     .filter(p => !GENERATED.has(p));
@@ -45,7 +50,7 @@ function listCandidates() {
 function listSearchCorpus() {
   // Every committed file under which a reference could plausibly live.
   const out = execSync(
-    "git ls-files '*.html' '*.js' '*.mjs' '*.cjs' '*.css' '*.json' '*.webmanifest' '*.md' '*.yaml' '*.yml' '*.ts'",
+    `${GIT} ls-files '*.html' '*.js' '*.mjs' '*.cjs' '*.css' '*.json' '*.webmanifest' '*.md' '*.yaml' '*.yml' '*.ts'`,
     { encoding: 'utf8' }
   );
   return out.split('\n').filter(Boolean);
