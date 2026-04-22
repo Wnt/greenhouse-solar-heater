@@ -536,7 +536,7 @@ function setupInspector() {
     // Temperature values (null-tolerant for unbound live sensors)
     const fmtInspTemp = function (x) { return isNum(x) ? x.toFixed(1) + '\u00b0C' : TEMP_PLACEHOLDER; };
     document.getElementById('inspector-coll').textContent = fmtInspTemp(v.t_collector);
-    document.getElementById('inspector-tank').textContent = fmtInspTemp(v.t_tank_top);
+    document.getElementById('inspector-tank').textContent = fmtInspTemp(tankAvgOf(v));
     document.getElementById('inspector-gh').textContent = fmtInspTemp(v.t_greenhouse);
     document.getElementById('inspector-out').textContent = fmtInspTemp(v.t_outdoor);
 
@@ -954,8 +954,9 @@ function fetchBalanceHistory() {
 }
 
 // Peak tank average ((tank_top + tank_bottom) / 2) across points whose
-// timestamps fall within yesterday's local calendar day. Returns null
-// when no qualifying points exist.
+// timestamps fall within yesterday's local calendar day. Matches what
+// the graph's Tank line plots and the central tank gauge displays.
+// Returns null when no qualifying points exist.
 function computeLiveYesterdayHigh(points) {
   if (!Array.isArray(points) || points.length === 0) return null;
   const now = new Date();
@@ -2356,6 +2357,15 @@ function updateComponent(id, on, onLabel, offLabel) {
 }
 
 // ── History graph ──
+// Tank value extractor shared by the graph, inspector, and yesterday-
+// high calculation. Returns the top/bottom average when both sensors
+// are valid, else null.
+function tankAvgOf(row) {
+  if (!row) return null;
+  if (!isNum(row.t_tank_top) || !isNum(row.t_tank_bottom)) return null;
+  return (row.t_tank_top + row.t_tank_bottom) / 2;
+}
+
 function drawHistoryGraph() {
   const canvas = document.getElementById('chart');
   const ctx = canvas.getContext('2d');
@@ -2488,10 +2498,12 @@ function drawHistoryGraph() {
   document.getElementById('legend-emergency').style.display = hasEmergency ? 'flex' : 'none';
 
   // ── Temperature line (gold, matching Stitch design) ──
+  // Tank line plots the top/bottom average — matches the central gauge
+  // and keeps "Yesterday's High" consistent with the visible peak.
   // collectSeriesPts carries a pre-window sample forward as an
   // interpolated point at tMin so the line meets the chart's left edge
   // even when a real sensor-reading gap straddles the boundary.
-  const pts = collectSeriesPts(timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_tank_top');
+  const pts = collectSeriesPts(timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, tankAvgOf);
 
   if (pts.length >= 2) {
     // Area fill gradient under the line
@@ -2541,11 +2553,14 @@ function drawHistoryGraph() {
 // value at tMin so the line starts at the chart's left edge even when the
 // first in-window sample is several minutes late.
 function collectSeriesPts(timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, key) {
+  const extract = typeof key === 'function'
+    ? key
+    : function (row) { return row[key]; };
   let preT = null, preV = null;
   const pts = [];
   for (let i = 0; i < timeSeriesStore.times.length; i++) {
     const t = timeSeriesStore.times[i];
-    const v = timeSeriesStore.values[i][key];
+    const v = extract(timeSeriesStore.values[i]);
     if (!isNum(v)) continue;
     if (t < tMin) {
       // Keep only the latest pre-window sample — in insertion order the

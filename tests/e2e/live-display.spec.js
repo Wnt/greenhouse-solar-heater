@@ -168,7 +168,8 @@ test.describe('Status history graph includes collector temperature', () => {
 
     await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
 
-    // The graph legend must include a Collector entry alongside Tank/In/Out.
+    // The graph legend must include a Collector entry alongside
+    // Tank / Greenhouse / Outside.
     await expect(page.locator('.graph-legend')).toContainText('Collector');
   });
 
@@ -212,7 +213,7 @@ test.describe('Live mode is the default data source', () => {
 });
 
 test.describe("Yesterday's High label in live mode", () => {
-  test("shows peak tank-average from yesterday's history points", async ({ page }) => {
+  test("shows peak tank-average from yesterday's history points (matching the graph)", async ({ page }) => {
     const yAt = (h) => {
       const d = new Date();
       d.setDate(d.getDate() - 1);
