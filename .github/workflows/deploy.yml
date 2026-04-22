@@ -9,6 +9,9 @@ env:
 
 # github.repository can contain uppercase (e.g. Wnt/...) but Docker tags must be lowercase
 
+permissions:
+  contents: read
+
 jobs:
   test:
     uses: ./.github/workflows/ci.yml
