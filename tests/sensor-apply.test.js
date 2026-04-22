@@ -268,6 +268,29 @@ describe('sensor-apply (direct HTTP)', () => {
       assert.strictEqual(fake.wasRebooted(), false, 'no reboot expected on no-op');
       assert.strictEqual(result.results[0].rebooted, undefined);
     });
+
+    it('still syncs Temperature.SetConfig names even when peripherals match', async () => {
+      // currentMatchesTarget only compares addresses. If an earlier apply
+      // bound the peripherals before role labels were pushed, the label pass
+      // would have been skipped. Re-running apply must fix the labels even
+      // without a reboot — otherwise the Shelly app's temperature tiles stay
+      // on "Temperature sensor (N)" forever.
+      const before = fake.log().length;
+      await loaded.mod.applyAll(
+        [{ ip: '127.0.0.1' }],
+        {
+          collector: { addr: 'aa:01', hostIndex: 0, componentId: 100 },
+          tank_top: { addr: 'aa:02', hostIndex: 0, componentId: 101 },
+        },
+        { collector: 'Collector Outlet', tank_top: 'Tank Top' }
+      );
+      const newEntries = fake.log().slice(before);
+      const setConfigs = newEntries.filter((m) => m.method === 'Temperature.SetConfig');
+      assert.strictEqual(setConfigs.length, 2, 'one SetConfig per target peripheral');
+      const byId = Object.fromEntries(setConfigs.map((m) => [m.params.id, m.params.config.name]));
+      assert.deepStrictEqual(byId, { 100: 'Collector Outlet', 101: 'Tank Top' });
+      assert.strictEqual(fake.wasRebooted(), false, 'still no reboot on name-only sync');
+    });
   });
 
   describe('error surfacing', () => {
