@@ -187,7 +187,7 @@ function updateOverrideTtl(ttl) {
   liveSource.sendCommand({ type: 'override-update', ttl: ttl });
 }
 
-function handleOverrideResponse(msg) {
+export function handleOverrideResponse(msg) {
   clearTimeout(overrideAckTimer);
   if (msg.type === 'override-ack') {
     if (msg.active) {

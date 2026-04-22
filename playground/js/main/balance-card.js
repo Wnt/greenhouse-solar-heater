@@ -51,6 +51,17 @@ export function resetLiveYesterdayHigh() {
   liveYesterdayHigh = null;
 }
 
+// Drop the 48h snapshot + live-point buffer + mode tracker. Called
+// when leaving live mode so a subsequent switch back re-fetches.
+export function resetBalanceState() {
+  balanceHistory = null;
+  balanceLivePoints = [];
+  balanceLiveEvents = [];
+  balanceLiveLastMode = null;
+  balanceLastAppendTs = 0;
+  liveYesterdayHigh = null;
+}
+
 export function fetchBalanceHistory() {
   if (store.get('phase') !== 'live') return;
   fetch('/api/history?range=48h')
