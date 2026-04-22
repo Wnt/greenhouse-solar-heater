@@ -1871,25 +1871,6 @@ button.scanning { opacity: 0.7; cursor: wait; }
 .apply-result { padding: 6px 10px; border-radius: 6px; font-size: 13px; }
 .apply-result.success { background: rgba(118, 255, 3, 0.1); color: #76ff03; }
 .apply-result.error { background: rgba(239, 83, 80, 0.1); color: var(--error); }
-.apply-warning {
-  display: flex; align-items: flex-start; gap: 8px;
-  padding: 8px 10px; border-radius: 6px; font-size: 13px;
-  background: rgba(255, 193, 7, 0.12); color: #ffc107;
-}
-.apply-warning-text {
-  flex: 1;
-  white-space: pre-wrap;
-  font-family: inherit;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-.apply-warning-dismiss {
-  background: transparent; color: inherit;
-  border: 1px solid currentColor; border-radius: 4px;
-  padding: 0 8px; font-size: 16px; line-height: 1.4;
-  cursor: pointer; flex-shrink: 0; opacity: 0.7;
-}
-.apply-warning-dismiss:hover { opacity: 1; }
 .retry-btn {
   background: var(--surface-container); color: var(--on-surface);
   border: 1px solid var(--outline-variant); border-radius: 4px;
