@@ -16,24 +16,27 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const acorn = require('acorn');
-const { execSync } = require('node:child_process');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const PLAYGROUND_DIR = path.join(REPO_ROOT, 'playground');
 
-// Parse `playground/js/**/*.js` (including subdirs) plus the root
-// playground/*.js entry points (sw.js). Use git ls-files so the
-// check scopes to tracked files only.
+// Walk the playground tree directly. Skip the vendored third-party dir
+// and the public/ dir (unauthenticated-served assets, separate import
+// universe). This check is about our own ESM wiring.
 function listPlaygroundJsFiles() {
-  // `-c safe.directory=*` — CI containers check out as a different
-  // user than the one running node, so plain `git ls-files` refuses
-  // with "fatal: detected dubious ownership".
-  const out = execSync("git -c safe.directory='*' ls-files playground", { cwd: REPO_ROOT, encoding: 'utf8' });
-  return out.split('\n').filter(Boolean)
-    .filter(p => p.endsWith('.js') || p.endsWith('.mjs'))
-    // Skip third-party vendored files; their exports aren't our problem.
-    .filter(p => !p.startsWith('playground/vendor/'))
-    .filter(p => !p.startsWith('playground/public/'));
+  const entries = fs.readdirSync(PLAYGROUND_DIR, { recursive: true, withFileTypes: true });
+  const files = [];
+  for (const ent of entries) {
+    if (!ent.isFile()) continue;
+    if (!(ent.name.endsWith('.js') || ent.name.endsWith('.mjs'))) continue;
+    const abs = path.join(ent.parentPath || ent.path || PLAYGROUND_DIR, ent.name);
+    const rel = path.relative(REPO_ROOT, abs).replace(/\\/g, '/');
+    if (rel.startsWith('playground/vendor/')) continue;
+    if (rel.startsWith('playground/public/')) continue;
+    if (rel.startsWith('playground/shelly/')) continue; // runtime copy, gitignored
+    files.push(rel);
+  }
+  return files;
 }
 
 function parse(filePath) {

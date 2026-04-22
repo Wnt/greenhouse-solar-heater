@@ -7,9 +7,8 @@
 // Flags:
 //   --strict   exit 1 if any asset has zero references. Default: warn mode.
 
-import { readFileSync } from 'node:fs';
-import { basename } from 'node:path';
-import { execSync } from 'node:child_process';
+import { readFileSync, readdirSync } from 'node:fs';
+import { basename, join, posix, relative } from 'node:path';
 
 const STRICT = process.argv.includes('--strict');
 
@@ -35,25 +34,36 @@ const GENERATED = new Set([
   'playground/assets/liquid-glass.json',
 ]);
 
-// `-c safe.directory=*` — CI containers check out as a different
-// user than the one running node, so plain git refuses with
-// "fatal: detected dubious ownership".
-const GIT = "git -c safe.directory='*'";
+// Filesystem walk with explicit ignore prefixes — no git, no
+// dubious-ownership dance, no lockstep with the CI container user.
+const IGNORE_PREFIXES = [
+  'node_modules/', '.git/', 'tests/output/', 'test-results/',
+  'deploy/terraform/.terraform/', '.specify/', '.superpowers/',
+];
+
+function walk(root) {
+  const entries = readdirSync(root, { recursive: true, withFileTypes: true });
+  const out = [];
+  for (const ent of entries) {
+    if (!ent.isFile()) continue;
+    const abs = join(ent.parentPath || ent.path || root, ent.name);
+    const rel = relative(process.cwd(), abs).split(/[\\/]/).join('/');
+    if (IGNORE_PREFIXES.some(p => rel.startsWith(p))) continue;
+    out.push(rel);
+  }
+  return out;
+}
 
 function listCandidates() {
-  const out = execSync(`${GIT} ls-files playground/assets playground/public`, { encoding: 'utf8' });
-  return out.split('\n').filter(Boolean)
+  return [...walk('playground/assets'), ...walk('playground/public')]
     .filter(p => !VENDORED.has(p))
     .filter(p => !GENERATED.has(p));
 }
 
+const CORPUS_EXTS = ['.html', '.js', '.mjs', '.cjs', '.css', '.json', '.webmanifest', '.md', '.yaml', '.yml', '.ts'];
+
 function listSearchCorpus() {
-  // Every committed file under which a reference could plausibly live.
-  const out = execSync(
-    `${GIT} ls-files '*.html' '*.js' '*.mjs' '*.cjs' '*.css' '*.json' '*.webmanifest' '*.md' '*.yaml' '*.yml' '*.ts'`,
-    { encoding: 'utf8' }
-  );
-  return out.split('\n').filter(Boolean);
+  return walk('.').filter(p => CORPUS_EXTS.some(ext => p.endsWith(ext)));
 }
 
 function hasReference(assetPath, corpus) {

@@ -9,8 +9,8 @@
 //   --strict   exit 1 if any file exceeds its hard cap (CI gate once enabled).
 //              Default: warn mode, always exit 0.
 
-import { readFileSync, existsSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
 
 const STRICT = process.argv.includes('--strict');
 
@@ -19,12 +19,28 @@ const SOURCE_HARD = 600;
 const TEST_SOFT = 800;
 const TEST_HARD = 1200;
 
-function listTrackedFiles() {
-  // `-c safe.directory=*` — CI containers check out as a different
-  // user than the one running node, so plain git refuses with
-  // "fatal: detected dubious ownership".
-  const out = execSync("git -c safe.directory='*' ls-files playground/js server tests", { encoding: 'utf8' });
-  return out.split('\n').filter(Boolean).filter(p => p.endsWith('.js') || p.endsWith('.mjs'));
+// Roots to walk. Everything not under these trees is ignored by design;
+// the file-size budget applies to hand-written JS only.
+const ROOTS = ['playground/js', 'server', 'tests'];
+
+// Paths under ROOTS we don't enforce the budget on: test output, copied
+// runtime deps, and directories the CLAUDE.md exclusions cover.
+const IGNORE_PREFIXES = ['tests/output/', 'tests/output'];
+
+function listJsFiles() {
+  const files = [];
+  for (const root of ROOTS) {
+    const entries = readdirSync(root, { recursive: true, withFileTypes: true });
+    for (const ent of entries) {
+      if (!ent.isFile()) continue;
+      if (!(ent.name.endsWith('.js') || ent.name.endsWith('.mjs'))) continue;
+      const rel = path.posix.join(ent.parentPath || ent.path || root, ent.name)
+        .replace(/\\/g, '/');
+      if (IGNORE_PREFIXES.some(p => rel.startsWith(p))) continue;
+      files.push(rel);
+    }
+  }
+  return files;
 }
 
 function isTest(p) {
@@ -37,9 +53,7 @@ function countLines(p) {
 }
 
 const findings = [];
-for (const file of listTrackedFiles()) {
-  // A tracked file may be unstaged-deleted; skip silently.
-  if (!existsSync(file)) continue;
+for (const file of listJsFiles()) {
   const lines = countLines(file);
   const [soft, hard] = isTest(file) ? [TEST_SOFT, TEST_HARD] : [SOURCE_SOFT, SOURCE_HARD];
   if (lines > hard) findings.push({ file, lines, cap: hard, level: 'error' });
