@@ -39,6 +39,19 @@ variable "new_relic_license_key" {
   default     = ""
 }
 
+variable "shelly_cloud_refresh_token" {
+  description = "60-day refresh token for the Shelly Cloud REST API. Used by deploy + sensor-remap to keep the mobile/web app's device names in sync with the hardware role mapping. See scripts/rename-cloud-devices.mjs for how to obtain. Leave empty to skip cloud naming."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "shelly_cloud_api_url" {
+  description = "Regional Shelly Cloud API shard URL, embedded in the access-token JWT's user_api_url claim but absent from the refresh token, so it must be stored alongside."
+  type        = string
+  default     = "https://shelly-249-eu.shelly.cloud"
+}
+
 # ── Kubernetes variables ──
 
 variable "k8s_version" {

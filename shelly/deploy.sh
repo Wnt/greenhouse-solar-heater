@@ -285,5 +285,22 @@ if [ "${DEPLOY_SET_NAMES:-true}" = "true" ] && [ -z "$USER_TARGET" ]; then
   apply_device_names
 fi
 
+# ── Shelly Cloud app rename ──
+# Syncs cloud/mobile-app device names with the role mapping. Non-fatal:
+# the Cloud API is separate infra and a failure here shouldn't abort deploy.
+# Skipped when the user targets a single device (USER_TARGET set).
+if [ "${DEPLOY_SET_NAMES:-true}" = "true" ] && [ -z "$USER_TARGET" ]; then
+  echo ""
+  if [ -n "${SHELLY_CLOUD_TOKEN:-}${SHELLY_CLOUD_REFRESH_TOKEN:-}" ]; then
+    echo "Renaming Shelly Cloud entries..."
+    node "$SCRIPT_DIR/../scripts/rename-cloud-devices.mjs" || \
+      echo "WARN: cloud rename failed (non-fatal) — check SHELLY_CLOUD_REFRESH_TOKEN validity" >&2
+  else
+    echo "Skipping Shelly Cloud rename — no SHELLY_CLOUD_TOKEN / SHELLY_CLOUD_REFRESH_TOKEN set."
+    echo "To enable: obtain a 60-day refresh token (see scripts/rename-cloud-devices.mjs header)"
+    echo "and store via Terraform (shelly_cloud_refresh_token variable in deploy/terraform/)."
+  fi
+fi
+
 echo ""
 echo "Deployment complete"

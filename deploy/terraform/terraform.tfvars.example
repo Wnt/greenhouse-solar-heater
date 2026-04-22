@@ -10,6 +10,13 @@ github_repo = "Wnt/greenhouse-solar-heater"
 # Session secret for signed cookies (generate with: openssl rand -hex 32)
 session_secret = "REPLACE_ME"
 
+# Shelly Cloud refresh token (60-day) for device-name automation.
+# Obtain via the DevTools console one-liner in scripts/rename-cloud-devices.mjs.
+# Leave empty to disable cloud renaming; deploy + sensor remap will log a warning
+# with instructions.
+# shelly_cloud_refresh_token = ""
+# shelly_cloud_api_url       = "https://shelly-249-eu.shelly.cloud"
+
 # UpCloud zone (default: fi-hel1 = Helsinki)
 # upcloud_zone = "fi-hel1"
 
