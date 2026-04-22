@@ -12,8 +12,6 @@ import { store } from './app-state.js';
 let inviteCountdown = null;
 let currentRole = null;
 let currentName = null;
-let currentUserId = null;
-let currentCredentialId = null;
 let usersCache = [];
 let editingUserId = null;
 let editingPasskeyId = null;
@@ -21,26 +19,8 @@ let confirmingUserDeleteId = null;
 let confirmingPasskeyDeleteId = null;
 let creatingUser = false;
 
-// Subscribers notified whenever the role is resolved or changes.
-const roleListeners = new Set();
-
 function $(id) {
   return document.getElementById(id);
-}
-
-export function getCurrentRole() {
-  return currentRole;
-}
-
-export function isReadOnly() {
-  return currentRole === 'readonly';
-}
-
-export function onRoleChange(listener) {
-  roleListeners.add(listener);
-  // Fire immediately if we already know the role
-  if (currentRole !== null) listener(currentRole);
-  return () => roleListeners.delete(listener);
 }
 
 function setRole(role, name) {
@@ -52,9 +32,6 @@ function setRole(role, name) {
     // Push the role into the app store so derived.availableViews and any
     // navigation subscribers can react.
     store.set('userRole', role || 'admin');
-    roleListeners.forEach(fn => {
-      try { fn(role); } catch (e) { /* noop */ }
-    });
   }
 }
 
@@ -97,8 +74,6 @@ export async function initAuth() {
     }
     const data = await res.json();
     if (data.authenticated) {
-      currentUserId = data.userId || null;
-      currentCredentialId = data.credentialId || null;
       setRole(data.role || 'admin', data.name || null);
       if (authActions) authActions.hidden = false;
       applyRoleVisibility();
@@ -750,10 +725,3 @@ function formatWhen(isoString) {
   });
 }
 
-export function getCurrentUserId() {
-  return currentUserId;
-}
-
-export function getCurrentCredentialId() {
-  return currentCredentialId;
-}

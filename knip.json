@@ -3,6 +3,7 @@
   "entry": [
     "server/server.js",
     "server/lib/tracing.js",
+    "server/lib/anomaly-manager.js",
     "playground/index.html",
     "playground/flow-tester.html",
     "playground/schematic-tester.html",
@@ -34,5 +35,8 @@
     "playwright",
     "qrcode-generator",
     "serve"
+  ],
+  "ignoreUnresolved": [
+    "/playground/js/app-state.js"
   ]
 }

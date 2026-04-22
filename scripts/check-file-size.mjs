@@ -9,7 +9,7 @@
 //   --strict   exit 1 if any file exceeds its hard cap (CI gate once enabled).
 //              Default: warn mode, always exit 0.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 
 const STRICT = process.argv.includes('--strict');
@@ -35,6 +35,8 @@ function countLines(p) {
 
 const findings = [];
 for (const file of listTrackedFiles()) {
+  // A tracked file may be unstaged-deleted; skip silently.
+  if (!existsSync(file)) continue;
   const lines = countLines(file);
   const [soft, hard] = isTest(file) ? [TEST_SOFT, TEST_HARD] : [SOURCE_SOFT, SOURCE_HARD];
   if (lines > hard) findings.push({ file, lines, cap: hard, level: 'error' });

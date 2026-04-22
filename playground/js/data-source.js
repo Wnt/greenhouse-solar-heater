@@ -235,4 +235,3 @@ export class SimulationSource extends DataSource {
   }
 }
 
-export { DataSource };
