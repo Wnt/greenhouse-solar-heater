@@ -195,7 +195,4 @@ function clearOverrideTtlTimer() {
   }
 }
 
-module.exports = {
-  handleWsCommand,
-  clearOverrideTtlTimer,
-};
+module.exports = { handleWsCommand };
