@@ -60,6 +60,7 @@ export function createSlider(container, { id, label, min, max, step, value, unit
   }
 
   let currentValue = value;
+  let dragging = false;
 
   function setPosition(frac) {
     frac = Math.max(0, Math.min(1, frac));
@@ -69,6 +70,12 @@ export function createSlider(container, { id, label, min, max, step, value, unit
   }
 
   function update(newVal) {
+    // Haptic tick when the discrete value changes during a user drag.
+    // Suppressed for programmatic updates so cross-slider sync (e.g.
+    // tank-top <-> tank-bot clamping) stays silent.
+    if (dragging && newVal !== currentValue) {
+      try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) {}
+    }
     currentValue = newVal;
     setPosition(valToFrac(newVal));
     val.textContent = formatSliderValue(newVal, unit, steps);
@@ -80,9 +87,6 @@ export function createSlider(container, { id, label, min, max, step, value, unit
 
   // Expose update on the DOM element for programmatic access (e.g. tests)
   track._sliderUpdate = update;
-
-  // Pointer handling — works for both mouse and touch
-  let dragging = false;
 
   function getFrac(clientX) {
     const rect = track.getBoundingClientRect();
