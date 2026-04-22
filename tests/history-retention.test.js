@@ -139,6 +139,48 @@ describe('runMaintenance — incremental UPSERT, never REFRESH', () => {
     });
     done();
   });
+
+  // Load-bearing invariant: old aggregate buckets must persist forever so the
+  // 7d/30d/1y graph views keep filling in beyond raw retention (48 h). These
+  // guards catch the "someone adds a cleanup job to the aggregate" refactor
+  // that would silently re-break long-range history with the same symptom as
+  // the original bug.
+  it('never issues DELETE or TRUNCATE against sensor_readings_30s', (t, done) => {
+    db._runMaintenanceForTest(function () {
+      const destructive = capturedQueries.find(q =>
+        typeof q.sql === 'string' &&
+        /sensor_readings_30s/i.test(q.sql) &&
+        /\b(DELETE\s+FROM|TRUNCATE|DROP\s+TABLE)\b/i.test(q.sql),
+      );
+      assert.equal(
+        destructive,
+        undefined,
+        'aggregate rows must persist forever; any cleanup job here re-introduces the ' +
+        '"7d view shows only 48 h" bug. Found: ' + (destructive && destructive.sql),
+      );
+      done();
+    });
+  });
+
+  it('retention DELETE only targets sensor_readings, never the aggregate', (t, done) => {
+    db._runMaintenanceForTest(function () {
+      const deletes = capturedQueries.filter(q =>
+        typeof q.sql === 'string' && /\bDELETE\s+FROM\b/i.test(q.sql),
+      );
+      assert.ok(deletes.length > 0, 'expected a raw-retention DELETE for sanity');
+      for (const q of deletes) {
+        // The DELETE must reference sensor_readings (raw) and must NOT reference
+        // the aggregate. Matching the raw table alone is not enough — a naive
+        // `DELETE FROM sensor_readings_30s` also contains the substring
+        // "sensor_readings".
+        assert.match(q.sql, /DELETE\s+FROM\s+sensor_readings\b(?!_30s)/i,
+          'retention DELETE must target sensor_readings (raw), not the aggregate: ' + q.sql);
+        assert.doesNotMatch(q.sql, /sensor_readings_30s/i,
+          'retention DELETE must not touch sensor_readings_30s: ' + q.sql);
+      }
+      done();
+    });
+  });
 });
 
 describe('getHistory — long-range smoothing via coarser time_buckets', () => {
