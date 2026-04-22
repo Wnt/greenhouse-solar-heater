@@ -86,10 +86,7 @@ function getPool() {
 }
 
 var { SCHEMA_SQL, AGGREGATE_SQL } = require('./db-schema');
-
-var maintenanceTimer = null;
-var MAINTENANCE_INTERVAL = 30 * 60 * 1000; // 30 minutes
-var RETENTION_INTERVAL = '48 hours';
+var maintenance = require('./db-maintenance').create(getPool, log);
 
 function initSchema(callback) {
   var p = getPool();
@@ -111,92 +108,6 @@ function initSchema(callback) {
       });
     });
   });
-}
-
-// Periodic maintenance: incrementally extend the 30-second aggregate
-// table + delete old raw data. Called via startMaintenance() after boot.
-//
-// Why incremental UPSERT (not REFRESH MATERIALIZED VIEW): the aggregate
-// has to outlive raw retention (48 h) so the 7d/30d/1y graph paths have
-// data to draw. A REFRESH would rebuild from sensor_readings and lose
-// every bucket older than 48 h. INSERT ... ON CONFLICT DO UPDATE adds new
-// buckets without touching old ones.
-//
-// The 5-minute overlap re-aggregates the boundary buckets (the most
-// recent bucket may still be filling between maintenance runs). UPSERT
-// makes this idempotent.
-var AGGREGATE_OVERLAP = '5 minutes';
-
-function runMaintenance(callback) {
-  var p = getPool();
-  if (!p) { if (callback) callback(); return; }
-
-  p.query(
-    "SELECT COALESCE(MAX(bucket), '1970-01-01'::timestamptz) AS max_bucket FROM sensor_readings_30s",
-    [],
-    function (probeErr, probe) {
-      if (probeErr) {
-        log.warn('aggregate probe failed', { error: probeErr.message });
-        proceedToRetention();
-        return;
-      }
-      var since = probe.rows[0].max_bucket;
-      var upsertSql =
-        "INSERT INTO sensor_readings_30s (bucket, sensor_id, avg_value, min_value, max_value)\n" +
-        "SELECT time_bucket('30 seconds', ts) AS bucket,\n" +
-        "       sensor_id,\n" +
-        "       AVG(value)::double precision,\n" +
-        "       MIN(value)::double precision,\n" +
-        "       MAX(value)::double precision\n" +
-        "FROM sensor_readings\n" +
-        "WHERE ts >= $1::timestamptz - INTERVAL '" + AGGREGATE_OVERLAP + "'\n" +
-        "GROUP BY bucket, sensor_id\n" +
-        "ON CONFLICT (bucket, sensor_id) DO UPDATE SET\n" +
-        "  avg_value = EXCLUDED.avg_value,\n" +
-        "  min_value = EXCLUDED.min_value,\n" +
-        "  max_value = EXCLUDED.max_value";
-
-      p.query(upsertSql, [since], function (err) {
-        if (err) {
-          log.warn('aggregate upsert failed', { error: err.message });
-        } else {
-          log.info('aggregate upsert done', { since: since });
-        }
-        proceedToRetention();
-      });
-    },
-  );
-
-  function proceedToRetention() {
-    p.query(
-      "DELETE FROM sensor_readings WHERE ts < NOW() - INTERVAL '" + RETENTION_INTERVAL + "'",
-      [],
-      function (err2) {
-        if (err2) {
-          log.warn('retention cleanup failed', { error: err2.message });
-        } else {
-          log.info('retention cleanup done');
-        }
-        if (callback) callback();
-      },
-    );
-  }
-}
-
-function startMaintenance() {
-  if (maintenanceTimer) return;
-  // Run once shortly after boot (give time for initial data), then every 30 min
-  maintenanceTimer = setInterval(runMaintenance, MAINTENANCE_INTERVAL);
-  // Initial refresh after 60s
-  setTimeout(runMaintenance, 60 * 1000);
-  log.info('maintenance scheduler started', { intervalMin: MAINTENANCE_INTERVAL / 60000 });
-}
-
-function stopMaintenance() {
-  if (maintenanceTimer) {
-    clearInterval(maintenanceTimer);
-    maintenanceTimer = null;
-  }
 }
 
 function runStatements(client, stmts, idx, callback) {
@@ -597,8 +508,8 @@ module.exports = {
   resolveUrl: resolveUrl,
   getPool: getPool,
   initSchema: initSchema,
-  startMaintenance: startMaintenance,
-  stopMaintenance: stopMaintenance,
+  startMaintenance: maintenance.start,
+  stopMaintenance: maintenance.stop,
   insertSensorReadings: insertSensorReadings,
   insertStateEvent: insertStateEvent,
   insertScriptCrash: insertScriptCrash,
@@ -609,6 +520,6 @@ module.exports = {
   getEvents: getEvents,
   getEventsPaginated: getEventsPaginated,
   close: close,
-  _reset: function () { pool = null; resolvedCa = null; stopMaintenance(); },
-  _runMaintenanceForTest: runMaintenance,
+  _reset: function () { pool = null; resolvedCa = null; maintenance.stop(); },
+  _runMaintenanceForTest: maintenance.run,
 };
