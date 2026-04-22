@@ -1,0 +1,37 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dev-dependencies:
+        dependency-type: development
+      prod-dependencies:
+        dependency-type: production
+
+  - package-ecosystem: npm
+    directory: /shelly/lint
+    schedule:
+      interval: weekly
+    groups:
+      shelly-lint:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /deploy/docker
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /deploy/openvpn
+    schedule:
+      interval: weekly
