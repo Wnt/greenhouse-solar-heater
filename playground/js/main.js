@@ -35,6 +35,15 @@ import {
   renderBalanceCard, getLiveYesterdayHigh, resetLiveYesterdayHigh,
 } from './main/balance-card.js';
 import { setupInspector } from './main/graph-inspector.js';
+import {
+  fetchLiveHistory, getLiveHistoryData, clearLiveHistoryData,
+  recordLiveHistoryPoint,
+} from './main/live-history.js';
+import {
+  updateDisplay, rerenderWithHistoryFallback,
+  setSchematicHandle, getLastFrame,
+  setLiveFrameSeen, resetYesterdayTracking,
+} from './main/display-update.js';
 // Expose for e2e testing
 window.__triggerVersionCheck = triggerVersionCheck;
 
@@ -259,7 +268,7 @@ function ensureLiveSource() {
     liveSource.onUpdate(function (state, result) {
       lastDataTime = Date.now();
       if (store.get('phase') !== 'live') return;
-      liveFrameSeen = true;
+      setLiveFrameSeen(true);
       // Defense-in-depth: each step is independent. A bug in updateDisplay
       // must not break the manual override controls (or vice versa).
       var steps = [
@@ -316,7 +325,7 @@ function switchToLive() {
 
 function clearLiveDisplay() {
   // Reset display to placeholder values — never show simulation defaults in live mode
-  liveFrameSeen = false;
+  setLiveFrameSeen(false);
   document.getElementById('mode-card-title').textContent = '--';
   document.getElementById('mode-card-status').innerHTML = '';
   document.getElementById('tank-temp-val').textContent = '--';
@@ -352,7 +361,7 @@ function switchToSimulation() {
   persistModeInUrl('sim');
   if (liveSource) liveSource.stop();
   updateConnectionUI('disconnected');
-  liveHistoryData = null;
+  clearLiveHistoryData();
   balanceHistory = null;
   balanceLivePoints = [];
   balanceLiveEvents = [];
@@ -439,36 +448,21 @@ function updateSidebarSubtitle() {
 let config = null;
 export let model = null;
 let controller = null;
-let running = false;
+export let running = false;
 let lastFrame = 0;
 let simSpeed = 3000;
 let simTimeAccum = 0;
 
-// Schematic module handle + last tick cache (so we can apply the first
-// update as soon as the async SVG build resolves).
-let schematicHandle = null;
-let lastState = null;
-let lastResult = null;
-// True after the first real live WebSocket frame has rendered. Used by
-// rerenderWithHistoryFallback to decide whether to trust `lastState` (a
-// live WS frame) or fall back to the last history point (the initial
-// updateDisplay call at boot seeds lastState with the sim model defaults,
-// which we do NOT want to show in live mode).
-let liveFrameSeen = false;
+// schematicHandle, lastState, lastResult, liveFrameSeen,
+// yesterdayHigh/confirmedYesterdayHigh/lastDay moved to
+// ./main/display-update.js. liveYesterdayHigh moved to
+// ./main/balance-card.js.
 const DT = 1;
 export let graphRange = 86400; // default 24h
 // Graph "All sensors" toggle — when true, the Tank Top and Tank Bottom
 // individual lines are drawn alongside the tank average and their
 // legend / inspector rows become visible. Off by default.
 export let showAllSensors = false;
-let yesterdayHigh = 0;
-let confirmedYesterdayHigh = 0;
-let lastDay = 0;
-// Live-mode counterpart of confirmedYesterdayHigh. Recomputed from the
-// 48h /api/history response (see fetchBalanceHistory) as the peak tank
-// average across yesterday's local calendar day. null when no points
-// from yesterday are available.
-// liveYesterdayHigh moved to ./main/balance-card.js
 
 
 // ── Time Series Store (extended with mode tracking) ──
@@ -632,16 +626,18 @@ async function init() {
   setupAllSensorsToggle();
   setupFAB();
   resetSim();
-  // Schematic view — async build, handle held in module scope
+  // Schematic view — async build, handle held in display-update module.
   (async () => {
     try {
-      schematicHandle = await buildSchematicFromSvg({
+      const handle = await buildSchematicFromSvg({
         container: document.getElementById('schematic'),
         svgUrl: './assets/system-topology.svg',
       });
+      setSchematicHandle(handle);
       // If a result is already available, apply it immediately
-      if (lastState && lastResult) {
-        schematicHandle.update(toSchematicState(lastState, lastResult));
+      const last = getLastFrame();
+      if (last.state && last.result) {
+        handle.update(toSchematicState(last.state, last.result));
       }
     } catch (err) {
       console.error('[schematic] build failed:', err);
@@ -744,121 +740,6 @@ function updateFABIcon() {
 }
 
 // ── Time range pills ──
-// ── Live history fetch ──
-const RANGE_MAP = { 3600: '1h', 21600: '6h', 43200: '12h', 86400: '24h', 604800: '7d', 2592000: '30d', 31536000: '1y' };
-let liveHistoryData = null;
-
-function fetchLiveHistory(rangeSeconds) {
-  if (store.get('phase') !== 'live') return;
-  const rangeKey = RANGE_MAP[rangeSeconds] || '6h';
-  fetch('/api/history?range=' + rangeKey)
-    .then(r => r.json())
-    .then(data => {
-      // Only apply to the current phase — the user may have switched
-      // back to simulation while the request was in flight.
-      if (store.get('phase') !== 'live') return;
-      liveHistoryData = data;
-      loadLiveHistoryIntoStore(data);
-      drawHistoryGraph();
-      // The history fetch is async; the first WebSocket state frame may
-      // have already rendered the UI with empty trend arrows (because the
-      // store was empty at that moment). Re-render now so trends and the
-      // tank-avg gauge reflect the freshly-loaded 15-min window instead
-      // of waiting for the next ~1 Hz WS frame to trigger a refresh.
-      rerenderWithHistoryFallback();
-    })
-    .catch(() => { liveHistoryData = null; });
-}
-
-
-// Re-render the status/components views after something refills the
-// timeSeriesStore (currently just the live-history fetch). Uses the most
-// recent observed state when available; otherwise synthesizes a minimal
-// state from the last history point so the gauge and sensor table show
-// something immediately instead of "--".
-function rerenderWithHistoryFallback() {
-  // Only trust lastState if it came from a real live frame. The initial
-  // updateDisplay() call during init() seeds lastState with the sim model
-  // defaults — using those in live mode before the first WS frame would
-  // show (e.g.) a gauge of "11 °C" instead of the freshly-loaded history.
-  if (liveFrameSeen && lastState && lastResult) {
-    updateDisplay(lastState, lastResult);
-    return;
-  }
-  const n = timeSeriesStore.times.length;
-  if (n === 0) return;
-  const lastVals = timeSeriesStore.values[n - 1];
-  const lastMode = timeSeriesStore.modes[n - 1] || 'idle';
-  const synth = {
-    t_tank_top: lastVals.t_tank_top,
-    t_tank_bottom: lastVals.t_tank_bottom,
-    t_collector: lastVals.t_collector,
-    t_greenhouse: lastVals.t_greenhouse,
-    t_outdoor: lastVals.t_outdoor,
-    simTime: 0,
-  };
-  const idleResult = {
-    mode: lastMode,
-    actuators: { pump: false, fan: false, space_heater: false },
-    valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
-    transition: null,
-  };
-  updateDisplay(synth, idleResult);
-}
-
-// Convert /api/history response into timeSeriesStore format.
-// Live-mode times are stored as Unix epoch seconds so the graph/inspector
-// can render both simulation (simTime seconds) and live (epoch seconds)
-// data with a single sliding-window routine.
-function loadLiveHistoryIntoStore(data) {
-  timeSeriesStore.reset();
-  if (!data || !Array.isArray(data.points)) return;
-
-  const modeEvents = Array.isArray(data.events)
-    ? data.events.filter(e => e && e.type === 'mode').sort((a, b) => a.ts - b.ts)
-    : [];
-  let currentMode = 'idle';
-  let eventIdx = 0;
-
-  for (let i = 0; i < data.points.length; i++) {
-    const p = data.points[i];
-    if (!p || typeof p.ts !== 'number') continue;
-    while (eventIdx < modeEvents.length && modeEvents[eventIdx].ts <= p.ts) {
-      currentMode = modeEvents[eventIdx].to || currentMode;
-      eventIdx++;
-    }
-    const tSec = Math.floor(p.ts / 1000);
-    timeSeriesStore.addPoint(tSec, {
-      t_tank_top: p.tank_top,
-      t_tank_bottom: p.tank_bottom,
-      t_collector: p.collector,
-      t_greenhouse: p.greenhouse,
-      t_outdoor: p.outdoor,
-    }, currentMode);
-  }
-}
-
-// Append an incoming live state frame to the history store so the
-// graph ticks forward in real time. Rate-limited to one sample every
-// ~5 seconds to match the simulation recording cadence.
-function recordLiveHistoryPoint(state, result) {
-  if (store.get('phase') !== 'live') return;
-  const tSec = Math.floor(Date.now() / 1000);
-  const last = timeSeriesStore.times.length - 1;
-  if (last >= 0 && (tSec - timeSeriesStore.times[last]) < 5) return;
-  timeSeriesStore.addPoint(tSec, {
-    t_tank_top: state.t_tank_top,
-    t_tank_bottom: state.t_tank_bottom,
-    t_collector: state.t_collector,
-    t_greenhouse: state.t_greenhouse,
-    t_outdoor: state.t_outdoor,
-  }, result.mode || 'idle');
-}
-
-// Test hook: report the number of history samples currently in the
-// store. Used by e2e tests to verify that live data populates the graph.
-window.__getHistoryPointCount = function () { return timeSeriesStore.times.length; };
-
 
 function setupTimeRangePills() {
   document.getElementById('time-range-pills').addEventListener('click', (e) => {
@@ -1007,9 +888,7 @@ function resetSim() {
   controller.reset();
   timeSeriesStore.reset();
   transitionLog.length = 0;
-  yesterdayHigh = 0;
-  confirmedYesterdayHigh = 0;
-  lastDay = 0;
+  resetYesterdayTracking();
   running = false;
   lastFrame = 0;
   simTimeAccum = 0;
@@ -1202,421 +1081,6 @@ function simLoop(timestamp) {
   requestAnimationFrame(simLoop);
 }
 
-// ── Display update ──
-// Null-tolerant helpers for live data: the Shelly publishes `null` for any
-// sensor whose role is not assigned. Display "—" instead of crashing.
-const TEMP_PLACEHOLDER = '\u2014';
-function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
-function fmtTemp(v, digits) {
-  if (digits === undefined) digits = 0;
-  return isNum(v) ? v.toFixed(digits) : TEMP_PLACEHOLDER;
-}
-
-// ── Temperature trend helpers ──
-// 15-minute rolling window, 1 °C/hr threshold → anything moving faster than
-// 0.25 °C per 15 min counts as rising/falling, otherwise stable. 15 min is
-// long enough that trends are already computable from the first page load
-// (the live-history fetch and the simulation bootstrap snapshot both pre-
-// populate the store with samples well within the window) and short enough
-// that real changes in weather or charging state surface within a minute or
-// two. Reused by the gauge status label, the Components-view sensor table,
-// and the Status-view greenhouse chip so every reading expresses trend the
-// same way.
-const TREND_WINDOW_S = 900;
-const TREND_THRESHOLD = 0.25;  // °C per 15 min (== 1 °C/hr)
-
-// Read series value by key (e.g. 't_tank_bottom') or a resolver function
-// that takes a store-entry object and returns a number | null. The resolver
-// form is what lets the gauge track the tank top+bottom average.
-function trendFor(resolver) {
-  if (timeSeriesStore.times.length < 2) return null;
-  const now = timeSeriesStore.times[timeSeriesStore.times.length - 1];
-  const windowStart = now - TREND_WINDOW_S;
-  let startIdx = timeSeriesStore.times.length - 1;
-  for (let i = timeSeriesStore.times.length - 2; i >= 0; i--) {
-    if (timeSeriesStore.times[i] < windowStart) break;
-    startIdx = i;
-  }
-  if (startIdx >= timeSeriesStore.times.length - 1) return null;
-  const fn = typeof resolver === 'function'
-    ? resolver
-    : (entry) => entry[resolver];
-  const latest = fn(timeSeriesStore.values[timeSeriesStore.values.length - 1]);
-  const earlier = fn(timeSeriesStore.values[startIdx]);
-  if (!isNum(latest) || !isNum(earlier)) return null;
-  const delta = latest - earlier;
-  if (delta >= TREND_THRESHOLD) return 'rising';
-  if (delta <= -TREND_THRESHOLD) return 'falling';
-  return 'stable';
-}
-
-function avgTank(entry) {
-  if (!isNum(entry.t_tank_top) || !isNum(entry.t_tank_bottom)) return null;
-  return (entry.t_tank_top + entry.t_tank_bottom) / 2;
-}
-
-// Small inline arrow next to a reading. Empty string when trend can't be
-// computed yet (< 2 samples or not enough window) so the UI doesn't lie with
-// a fake "stable" on startup.
-function renderTrendIcon(trend) {
-  if (!trend) return '';
-  const icon = trend === 'rising' ? 'trending_up'
-             : trend === 'falling' ? 'trending_down'
-             : 'trending_flat';
-  const title = trend === 'rising' ? 'Rising' : trend === 'falling' ? 'Dropping' : 'Stable';
-  return '<span class="trend-icon trend-' + trend +
-         '" title="' + title +
-         '"><span class="material-symbols-outlined">' + icon + '</span></span>';
-}
-
-// ── Forced-mode / override status helpers ──
-var MODE_NAMES_SHORT = {
-  I: 'Idle', SC: 'Solar charging', GH: 'Greenhouse heating',
-  AD: 'Active drain', EH: 'Emergency heating'
-};
-function prettyModeName(code) {
-  if (!code) return 'Idle';
-  if (MODE_NAMES_SHORT[code]) return MODE_NAMES_SHORT[code];
-  return code.toLowerCase().replace(/_/g, ' ').replace(/^./, function (c) { return c.toUpperCase(); });
-}
-function remainingStr(expiresAt) {
-  var remaining = Math.max(0, expiresAt - Math.floor(Date.now() / 1000));
-  var m = Math.floor(remaining / 60);
-  var s = remaining % 60;
-  return m + ':' + (s < 10 ? '0' : '') + s;
-}
-
-function updateDisplay(state, result) {
-  const mode = result.mode;
-  const info = MODE_INFO[mode] || MODE_INFO.idle;
-
-  // ── Status view ──
-  // Active mode card — handle forced-mode / override indicators
-  var moBadgeEl = document.getElementById('mode-badge-label');
-  var moTitleEl = document.getElementById('mode-card-title');
-  var statusEl = document.getElementById('mode-card-status');
-  var exitLinkEl = document.getElementById('mode-card-exit-link');
-  var modeCardActive = document.getElementById('mode-card-active');
-
-  var mo = result.manual_override;
-  if (mo && mo.active && mo.forcedMode) {
-    // Forced mode active
-    moBadgeEl.textContent = 'Forced \u00b7 ' + remainingStr(mo.expiresAt) + ' left';
-    moTitleEl.textContent = prettyModeName(mo.forcedMode);
-    if (modeCardActive) modeCardActive.classList.add('mode-card--forced');
-  } else if (mo && mo.active) {
-    // Manual override active (no forced mode)
-    moBadgeEl.textContent = 'Manual override \u00b7 ' + remainingStr(mo.expiresAt) + ' left';
-    moTitleEl.textContent = info.label;
-    if (modeCardActive) modeCardActive.classList.remove('mode-card--forced');
-  } else {
-    // Normal operation
-    moBadgeEl.textContent = 'Current Mode';
-    moTitleEl.textContent = info.label;
-    if (modeCardActive) modeCardActive.classList.remove('mode-card--forced');
-  }
-
-  // Status line: use a text node + pulse span. The exit link is a
-  // sibling of statusEl (not a child — see index.html), so we just
-  // clear text nodes and append fresh; no insertBefore relative to
-  // the exit link.
-  Array.from(statusEl.childNodes).forEach(function (node) {
-    if (node.nodeType === Node.TEXT_NODE) statusEl.removeChild(node);
-  });
-  var pulseSpan = statusEl.querySelector('.pulse');
-  if (!pulseSpan) {
-    pulseSpan = document.createElement('span');
-    pulseSpan.className = 'pulse';
-    statusEl.insertBefore(pulseSpan, statusEl.firstChild);
-  }
-  var statusText = document.createTextNode(running ? ' System Active' : ' System Ready');
-  statusEl.appendChild(statusText);
-
-  // Exit override link — admin only, visible when override is active
-  if (exitLinkEl) {
-    var userRole = store.get('userRole') || 'admin';
-    var showExit = !!(mo && mo.active) && userRole === 'admin';
-    exitLinkEl.style.display = showExit ? '' : 'none';
-  }
-
-  const bgIcon = document.querySelector('.mode-card-bg-icon .material-symbols-outlined');
-  bgIcon.textContent = info.icon;
-  bgIcon.style.fontVariationSettings = info.iconFill
-    ? "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 48"
-    : "'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 48";
-
-  // Inactive modes
-  const inactiveEl = document.getElementById('inactive-modes');
-  const otherModes = ['solar_charging', 'greenhouse_heating', 'idle']
-    .filter(m => m !== mode)
-    .filter(m => !(m === 'idle' && !['solar_charging', 'greenhouse_heating', 'idle'].includes(mode)));
-  inactiveEl.innerHTML = otherModes.map(m => {
-    const mi = MODE_INFO[m];
-    return `<div class="card mode-card mode-card-inactive" style="margin-bottom:8px;">
-      <div><h4>${mi.label}</h4><p>${mi.desc}</p></div>
-      <div class="mode-icon"><span class="material-symbols-outlined">${mi.icon}</span></div>
-    </div>`;
-  }).join('');
-
-  // Tank temperature gauge — average of tank_top and tank_bottom. Using the
-  // average instead of just the bottom makes the gauge track what the user
-  // actually cares about (usable thermal storage), and it lines up with the
-  // "Energy Stored" calc below which already uses the top/bottom average.
-  const tankAvg = (isNum(state.t_tank_top) && isNum(state.t_tank_bottom))
-    ? (state.t_tank_top + state.t_tank_bottom) / 2
-    : null;
-  document.getElementById('tank-temp-val').textContent = fmtTemp(tankAvg, 0);
-
-  // Energy stored: Q = m · c · (T_avg − T_base), 300 L water, base 12 °C.
-  // Reflects the *current* tank state only — past cooling is already baked
-  // into the current temperatures, so there is no separate "loss" term to
-  // subtract. Earlier revisions accumulated idle-period temperature drops
-  // across the time-series store as a pseudo loss, which both
-  // double-counted energy and made the number depend on the 1 H/24 H/etc.
-  // graph range (the range trimmed the store).
-  const energyEl = document.getElementById('tank-stat-energy');
-  if (isNum(state.t_tank_top) && isNum(state.t_tank_bottom)) {
-    const avgTankTemp = (state.t_tank_top + state.t_tank_bottom) / 2;
-    energyEl.textContent = tankStoredEnergyKwh(avgTankTemp).toFixed(1);
-  } else {
-    energyEl.textContent = TEMP_PLACEHOLDER;
-  }
-
-  // Greenhouse current temperature + trend
-  document.getElementById('tank-stat-greenhouse').textContent = fmtTemp(state.t_greenhouse, 0);
-  // Render the arrow into the adjacent container (created statically in
-  // index.html). Falls back to empty when trend can't be computed yet.
-  const ghTrendEl = document.getElementById('tank-stat-greenhouse-trend');
-  if (ghTrendEl) ghTrendEl.innerHTML = renderTrendIcon(trendFor('t_greenhouse'));
-
-  // Track yesterday's high (peak from previous 24h simulated day) — uses the
-  // tank average so it stays consistent with the gauge reading.
-  if (isNum(tankAvg)) {
-    if (tankAvg > yesterdayHigh) yesterdayHigh = tankAvg;
-    const simDay = Math.floor(state.simTime / 86400);
-    if (simDay > lastDay) {
-      confirmedYesterdayHigh = yesterdayHigh;
-      yesterdayHigh = tankAvg;
-      lastDay = simDay;
-    }
-  }
-
-  // Gauge arc: 0°C = empty, 100°C = full circle (628 circumference)
-  const arc = document.getElementById('tank-gauge-arc');
-  if (arc) {
-    if (isNum(tankAvg)) {
-      const tempFrac = Math.max(0, Math.min(1, tankAvg / 100));
-      const dashOffset = 628 - (tempFrac * 628);
-      arc.setAttribute('stroke-dashoffset', dashOffset.toFixed(0));
-    } else {
-      arc.setAttribute('stroke-dashoffset', '628');
-    }
-  }
-
-  // Status label: Rising/Falling/Stable — derived from the same tank average
-  // so the label and the central number move together.
-  const statusLabel = document.getElementById('tank-temp-status');
-  const tankTrend = trendFor(avgTank);
-  const rateStatus = tankTrend === 'rising' ? 'RISING'
-                   : tankTrend === 'falling' ? 'FALLING'
-                   : 'STABLE';
-  const rateColor = tankTrend === 'rising' ? '#e9c349'
-                  : tankTrend === 'falling' ? '#ee7d77'
-                  : '#43aea4';
-  statusLabel.textContent = rateStatus;
-  statusLabel.style.color = rateColor;
-
-  // Message — thresholds applied to the tank average.
-  const msgEl = document.getElementById('tank-temp-message');
-  if (!isNum(tankAvg)) msgEl.textContent = 'Waiting for sensor data — assign sensors in the Sensors view.';
-  else if (tankAvg > 80) msgEl.textContent = 'Approaching maximum temperature.';
-  else if (tankAvg > 50) msgEl.textContent = 'Tank is well charged.';
-  else if (tankAvg > 25) msgEl.textContent = 'Moderate thermal storage.';
-  else msgEl.textContent = 'Tank is cold — waiting for solar gain.';
-
-  // Graph yesterday's high label. Simulation tracks a per-sim-day peak
-  // via confirmedYesterdayHigh; live mode derives it from the 48h
-  // history fetch (liveYesterdayHigh) since state.simTime does not tick.
-  const peakVal = store.get('phase') === 'live' ? getLiveYesterdayHigh() : confirmedYesterdayHigh;
-  document.getElementById('graph-peak-label').textContent =
-    isNum(peakVal) && peakVal > 0 ? `Yesterday's High: ${peakVal.toFixed(0)}°C` : 'Yesterday\'s High: --';
-
-  // Critical components
-  updateComponent('comp-pump', result.actuators.pump, 'ACTIVE', 'OFF');
-  updateComponent('comp-fan', result.actuators.fan, 'ON', 'OFF');
-  updateComponent('comp-heater', result.actuators.space_heater, 'ON', 'OFF');
-  // Live mode: 'running' is meaningless (sim-only). Reflect actual operation
-  // by checking whether any actuator is active OR mode is non-idle.
-  var isLivePhase = store.get('phase') === 'live';
-  var ctrlEl = document.getElementById('comp-controller');
-  if (isLivePhase) {
-    var anyActive = result.mode && result.mode !== 'idle';
-    ctrlEl.textContent = anyActive ? 'ACTIVE' : 'READY';
-  } else {
-    ctrlEl.textContent = running ? 'OPTIMAL' : 'READY';
-  }
-
-  // Logs
-  // Live mode: detect mode changes from the incoming state frame and prepend
-  // synthetic entries (the server persists these to state_events too).
-  // Simulation mode: transitionLog is populated by simLoop, so we just
-  // re-render whatever it contains.
-  if (isLivePhase) detectLiveTransition(result);
-  renderLogsList();
-
-  // ── Components view ──
-  // Temperatures — each row carries a rising/stable/dropping arrow based on
-  // the same 5-min window the gauge uses, so all readings express trend the
-  // same way.
-  const tempBody = document.getElementById('temp-table');
-  const temps = [
-    ['Collector', state.t_collector, 't_collector'],
-    ['Tank Top', state.t_tank_top, 't_tank_top'],
-    ['Tank Bottom', state.t_tank_bottom, 't_tank_bottom'],
-    ['Greenhouse', state.t_greenhouse, 't_greenhouse'],
-    ['Outdoor', state.t_outdoor, 't_outdoor'],
-  ];
-  tempBody.innerHTML = temps.map(([n, v, key]) => {
-    const valText = isNum(v) ? v.toFixed(1) + '°C' : TEMP_PLACEHOLDER;
-    const trend = isNum(v) ? renderTrendIcon(trendFor(key)) : '';
-    return `<tr><td>${n}</td><td class="val">${valText}${trend}</td></tr>`;
-  }).join('');
-
-  // Valve grid
-  const VALVE_LABELS = {
-    vi_btm: 'In: Tank Btm',
-    vi_top: 'In: Reservoir',
-    vi_coll: 'In: Collector',
-    vo_coll: 'Out: Collector',
-    vo_rad: 'Out: Radiator',
-    vo_tank: 'Out: Tank',
-    v_air: 'Air Intake',
-  };
-  const valveNames = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
-  document.getElementById('valve-grid').innerHTML = valveNames.map(v => {
-    const raw = result.valves[v];
-    const isOpen = raw === true || raw === 'OPEN';
-    const cls = isOpen ? 'valve-chip-open' : 'valve-chip-closed';
-    return `<div class="valve-chip"><span class="valve-chip-name">${VALVE_LABELS[v]}</span><span class="valve-chip-state ${cls}">${isOpen ? 'OPEN' : 'CLOSED'}</span></div>`;
-  }).join('');
-
-  // Actuator grid
-  const actuators = [
-    ['Pump', result.actuators.pump, 'cyclone'],
-    ['Fan', result.actuators.fan, 'mode_fan'],
-    ['Space Heater', result.actuators.space_heater, 'heat_pump'],
-  ];
-  document.getElementById('actuator-grid').innerHTML = actuators.map(([name, on, icon]) => {
-    const cls = on ? 'component-value-active' : 'component-value-off';
-    return `<div class="component-card">
-      <div><div class="component-label">${name}</div><div class="component-value ${cls}">${on ? 'ON' : 'OFF'}</div></div>
-      <span class="material-symbols-outlined component-icon">${icon}</span>
-    </div>`;
-  }).join('');
-
-  // ── Transition status (live mode) ──
-  const transEl = document.getElementById('transition-status');
-  const stepEl = document.getElementById('transition-step');
-  const opening = Array.isArray(result.opening) ? result.opening : [];
-  const queuedOpens = Array.isArray(result.queued_opens) ? result.queued_opens : [];
-  const pendingCloses = Array.isArray(result.pending_closes) ? result.pending_closes : [];
-  const hasStaged = opening.length > 0 || queuedOpens.length > 0 || pendingCloses.length > 0;
-  if (transEl && stepEl) {
-    if (result.transitioning && result.transition_step) {
-      transEl.style.display = '';
-      const stepLabels = {
-        pump_stop: 'Stopping pump...',
-        valves_closing: 'Closing all valves...',
-        valves_opening: 'Opening new valves...',
-        pump_start: 'Starting pump...',
-      };
-      stepEl.textContent = stepLabels[result.transition_step] || result.transition_step;
-    } else if (hasStaged) {
-      // Staged transition in progress even though transition_step may
-      // not be set (e.g. pure deferred-close window). See 023.
-      transEl.style.display = '';
-      stepEl.textContent = 'Staged valve transition in progress';
-    } else {
-      transEl.style.display = 'none';
-    }
-  }
-
-  // ── Staged valve indicator (US5, 023-limit-valve-operations) ──
-  const stagedInd = document.getElementById('staged-valve-indicator');
-  if (stagedInd) {
-    if (hasStaged) {
-      stagedInd.style.display = '';
-      stagedInd.textContent =
-        'Transitioning — ' + opening.length + ' opening, ' +
-        queuedOpens.length + ' queued, ' +
-        pendingCloses.length + ' pending close';
-    } else {
-      stagedInd.style.display = 'none';
-    }
-  }
-
-  // ── Staged valve detail pane (Device view) ──
-  const stagedDetailCard = document.getElementById('staged-valve-detail-card');
-  if (stagedDetailCard) {
-    if (hasStaged) {
-      stagedDetailCard.style.display = '';
-      const nowSec = Math.floor(Date.now() / 1000);
-      const openingEl = document.getElementById('staged-valve-detail-opening');
-      const queuedEl = document.getElementById('staged-valve-detail-queued');
-      const pendingEl = document.getElementById('staged-valve-detail-pending-close');
-      if (openingEl) {
-        openingEl.innerHTML = opening.length > 0
-          ? '<div class="staged-valve-list-label">Opening now</div>' +
-            opening.map(v => `<div class="staged-valve-row staged-valve-opening"><span class="staged-valve-name">${v}</span></div>`).join('')
-          : '';
-      }
-      if (queuedEl) {
-        queuedEl.innerHTML = queuedOpens.length > 0
-          ? '<div class="staged-valve-list-label">Queued to open</div>' +
-            queuedOpens.map(v => `<div class="staged-valve-row staged-valve-queued"><span class="staged-valve-name">${v}</span></div>`).join('')
-          : '';
-      }
-      if (pendingEl) {
-        pendingEl.innerHTML = pendingCloses.length > 0
-          ? '<div class="staged-valve-list-label">Pending close (hold)</div>' +
-            pendingCloses.map(pc => {
-              const readyAt = pc.readyAt || 0;
-              const remaining = Math.max(0, readyAt - nowSec);
-              return `<div class="staged-valve-row staged-valve-pending-close"><span class="staged-valve-name">${pc.valve}</span><span class="staged-valve-countdown">${remaining}s</span></div>`;
-            }).join('')
-          : '';
-      }
-    } else {
-      stagedDetailCard.style.display = 'none';
-    }
-  }
-
-  // ── Controls indicator ──
-  const ctrlInd = document.getElementById('controls-indicator');
-  if (ctrlInd && result.controls_enabled !== undefined) {
-    ctrlInd.classList.toggle('visible', !result.controls_enabled);
-  }
-
-  // ── Schematic ──
-  lastState = state;
-  lastResult = result;
-  if (schematicHandle) {
-    schematicHandle.update(toSchematicState(state, result));
-  }
-
-  // ── Graph ──
-  // Live mode: each incoming state frame gets recorded so the sliding
-  // window advances. Simulation mode records points directly from
-  // simLoop(), so we don't duplicate them here.
-  recordLiveHistoryPoint(state, result);
-  appendBalanceLivePoint(state, result);
-  drawHistoryGraph();
-}
-
-function updateComponent(id, on, onLabel, offLabel) {
-  const el = document.getElementById(id);
-  el.textContent = on ? onLabel : offLabel;
-  el.className = 'component-value ' + (on ? 'component-value-active' : 'component-value-off');
 }
 
 
