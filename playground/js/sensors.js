@@ -377,18 +377,29 @@ function showStatus(msg, isError) {
   }
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function showApplyResults(data) {
   const el = document.getElementById('apply-results');
   if (!el || !data || !data.results) return;
+
   let html = '<div class="apply-results-grid">';
   for (const target in data.results) {
     const r = data.results[target];
     const isOk = r.status === 'success';
     html += '<div class="apply-result ' + (isOk ? 'success' : 'error') + '">';
-    html += '<strong>' + target + '</strong>: ' + r.message;
+    html += '<strong>' + escapeHtml(target) + '</strong>: ' + escapeHtml(r.message);
     if (!isOk) {
-      html += ' <button class="retry-btn" data-target="' + target + '">Retry</button>';
+      html += ' <button class="retry-btn" data-target="' + escapeHtml(target) + '">Retry</button>';
     }
+    html += '</div>';
+  }
+  if (data.warning) {
+    html += '<div class="apply-warning">';
+    html += '<span class="apply-warning-text">' + escapeHtml(data.warning.message) + '</span>';
+    html += '<button class="apply-warning-dismiss" title="Dismiss this warning" aria-label="Dismiss">×</button>';
     html += '</div>';
   }
   html += '</div>';
@@ -401,12 +412,24 @@ function showApplyResults(data) {
       btn.textContent = 'Retrying...';
       try {
         const result = await applyTarget(btn.dataset.target);
-        showApplyResults({ results: Object.assign({}, data.results, result.results) });
+        showApplyResults({
+          results: Object.assign({}, data.results, result.results),
+          warning: data.warning,
+        });
       } catch (e) {
         showStatus('Retry failed: ' + e.message, true);
       }
     });
   });
+
+  // Dismiss just removes the card; next apply re-surfaces it if still present.
+  const dismissBtn = el.querySelector('.apply-warning-dismiss');
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', () => {
+      const card = dismissBtn.closest('.apply-warning');
+      if (card) card.remove();
+    });
+  }
 }
 
 // ── Event handlers ──
