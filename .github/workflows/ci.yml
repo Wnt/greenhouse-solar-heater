@@ -32,3 +32,9 @@ jobs:
           fi
         env:
           HOME: /root
+      - name: Check file-size budget
+        run: npm run check:file-size -- --strict
+      - name: Check dead code — knip
+        run: npm run knip
+      - name: Check unused assets
+        run: npm run check:assets -- --strict

@@ -1,0 +1,108 @@
+// Helsinki-timezone formatting and cause/reason labels used by the
+// System Logs UI and the clipboard-export path. Factored out of main.js
+// so the formatting layer stays small and independently testable.
+
+import { SIM_START_HOUR } from '../sim-bootstrap.js';
+
+// "HH:MM" from a simulation-time offset (seconds since SIM_START_HOUR).
+// Used by sim-mode log entries that don't have a wall-clock timestamp.
+// Named alongside the Helsinki helpers below because they all live in
+// the "time → display string" family.
+export function formatTimeOfDay(simSeconds) {
+  const totalHours = SIM_START_HOUR + simSeconds / 3600;
+  const h = Math.floor(totalHours % 24);
+  const m = Math.floor((totalHours * 60) % 60);
+  return h.toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0');
+}
+
+const HELSINKI_TZ = 'Europe/Helsinki';
+const fmtClockHelsinki = new Intl.DateTimeFormat('fi-FI', {
+  hour: '2-digit', minute: '2-digit', hour12: false, timeZone: HELSINKI_TZ,
+});
+const fmtFullHelsinki = new Intl.DateTimeFormat('fi-FI', {
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+  hour12: false, timeZone: HELSINKI_TZ,
+});
+
+export function formatClockTime(unixMs) {
+  return fmtClockHelsinki.format(new Date(unixMs));
+}
+
+// Short human-readable label for each cause tag. Keep in sync with
+// state.lastTransitionCause values set in shelly/control.js.
+const CAUSE_LABELS = {
+  boot: 'Boot',
+  automation: 'Automation',
+  forced: 'Forced mode',
+  safety_override: 'Safety override',
+  watchdog_auto: 'Watchdog (auto)',
+  user_shutdown: 'User shutdown',
+  drain_complete: 'Drain complete',
+  failed: 'Transition failed',
+};
+
+export function formatCauseLabel(c) {
+  return CAUSE_LABELS[c] || c;
+}
+
+// Finer-grained decision codes from the evaluator (shelly/control-logic.js).
+// Paired with CAUSE_LABELS in the System Logs UI to turn a bare
+// "automation" tag into "Automation — solar stall". Keep the keys in
+// sync with the `reason` string set at each return path inside
+// evaluate().
+const REASON_LABELS = {
+  solar_enter: 'collector hot enough to charge',
+  solar_refill: 'refilling drained collectors',
+  solar_active: 'tank still gaining heat',
+  solar_stall: 'tank stopped gaining heat',
+  solar_drop_from_peak: 'tank cooling below peak',
+  overheat_circulate: 'collector overheat — circulating to cool',
+  overheat_drain: 'collector overheat — draining',
+  freeze_drain: 'freeze risk — draining',
+  drain_running: 'drain in progress',
+  drain_timeout: 'drain timeout fallback',
+  greenhouse_enter: 'greenhouse cold — heating',
+  greenhouse_active: 'greenhouse still cold',
+  greenhouse_warm: 'greenhouse warm enough',
+  greenhouse_tank_depleted: 'tank too cool to heat greenhouse',
+  emergency_enter: 'greenhouse critical — emergency heat',
+  sensor_stale: 'sensor reading stale',
+  watchdog_ban: 'mode blocked by watchdog',
+  min_duration: 'holding minimum run time',
+  idle: 'no trigger active',
+};
+
+export function formatReasonLabel(r) {
+  return REASON_LABELS[r] || r;
+}
+
+// Render the temp snapshot as "coll 62.3° · tank 41/29° · gh 12° · out 8°"
+export function formatSensorsLine(sensors) {
+  if (!sensors) return '';
+  const f = (v) => (typeof v === 'number' ? v.toFixed(1) + '°' : '—');
+  const parts = [];
+  if ('collector' in sensors) parts.push('coll ' + f(sensors.collector));
+  if ('tank_top' in sensors || 'tank_bottom' in sensors) {
+    parts.push('tank ' + f(sensors.tank_top) + '/' + f(sensors.tank_bottom));
+  }
+  if ('greenhouse' in sensors) parts.push('gh ' + f(sensors.greenhouse));
+  if ('outdoor' in sensors) parts.push('out ' + f(sensors.outdoor));
+  return escapeHtml(parts.join(' · '));
+}
+
+// YYYY-MM-DD HH:MM:SS in Europe/Helsinki — used by clipboard export.
+export function formatFullTimeHelsinki(unixMs) {
+  const parts = fmtFullHelsinki.formatToParts(new Date(unixMs));
+  const get = (type) => { const p = parts.find(x => x.type === type); return p ? p.value : ''; };
+  return get('year') + '-' + get('month') + '-' + get('day') + ' ' +
+         get('hour') + ':' + get('minute') + ':' + get('second');
+}
+
+export function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

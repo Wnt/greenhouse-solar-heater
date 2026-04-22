@@ -5,17 +5,29 @@ tests/output/
 test-results/
 node_modules/
 
-# Auth credentials (created at runtime, contains secrets)
+# ── Runtime-generated secrets — NEVER commit ───────────────────────
+# Files in these patterns are created on first run with freshly
+# minted keys (VAPID, session secrets, credentials) or with device
+# state that shouldn't be shared. Anything a real deployment would
+# need comes from env vars / managed secrets, not from a file in
+# the repo. If you add a new runtime config file with secrets,
+# extend this list BEFORE the file exists, not after.
+server/push-config.json
+server/auth/credentials.json
 poc/auth/credentials.json
+# Broad catch-alls so the next runtime-secret file doesn't need a
+# rebase to scrub. If you add a genuinely public *-secrets.json or
+# *-config.json that's meant to live in the repo, commit with -f.
+server/*-secrets.json
+**/vapid*.json
+**/*-credentials.json
+openvpn.conf
 
 # Terraform
 deploy/terraform/.terraform/
 deploy/terraform/*.tfstate*
 deploy/terraform/terraform.tfvars
 deploy/terraform/.terraform.lock.hcl
-
-# VPN config (downloaded from S3, contains secrets)
-openvpn.conf
 
 # Copied runtime deps for playground (from repo root into playground/ for GH Pages compatibility)
 playground/system.yaml
@@ -27,3 +39,4 @@ monitor/device-config.json
 # Environment files
 .env
 .env.*
+.claude/scheduled_tasks.lock

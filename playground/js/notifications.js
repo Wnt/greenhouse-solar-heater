@@ -417,12 +417,4 @@ export function isSubscribed() {
   return !!currentSubscription;
 }
 
-export function isPushAvailable() {
-  return !!vapidPublicKey && 'PushManager' in window;
-}
-
-export function isInstallAvailable() {
-  return !!deferredInstallPrompt;
-}
-
-export { CATEGORIES, getSelectedCategories };
+export { getSelectedCategories };

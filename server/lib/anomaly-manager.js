@@ -28,6 +28,43 @@ function init(deps) {
   }
 }
 
+// Bootstrap helper called from server.js. Applies the watchdog_events
+// schema (if a Postgres pool is available), creates the history
+// backend (Postgres or ring-buffer fallback), and calls init().
+function bootstrap(opts) {
+  const path = require('path');
+  const fs = require('fs');
+  const { createHistory: createWatchdogHistory } = require('./watchdog-history');
+  const db = opts.db;
+  const log = opts.log;
+
+  if (db && typeof db.getPool === 'function') {
+    try {
+      const pool = db.getPool();
+      const sqlPath = path.join(__dirname, '..', 'db', 'watchdog-events-schema.sql');
+      const schemaSql = fs.readFileSync(sqlPath, 'utf8');
+      pool.query(schemaSql, [], function (schemaErr) {
+        if (schemaErr) log.warn('watchdog schema init failed', { error: schemaErr.message });
+        else log.info('watchdog_events schema ready');
+      });
+    } catch (e) {
+      log.warn('failed to apply watchdog schema', { error: e.message });
+    }
+  }
+
+  const wdHistoryDb = (db && typeof db.getPool === 'function') ? db.getPool() : null;
+  const watchdogHistory = createWatchdogHistory({ db: wdHistoryDb, log: log });
+  init({
+    history: watchdogHistory,
+    push: opts.push,
+    wsBroadcast: opts.wsBroadcast,
+    mqttBridge: opts.mqttBridge,
+    deviceConfig: opts.deviceConfig,
+    log: log,
+  });
+  log.info('anomaly-manager initialized', { backend: wdHistoryDb ? 'postgres' : 'ring-buffer' });
+}
+
 function pad2(n) {
   return n < 10 ? '0' + n : '' + n;
 }
@@ -331,6 +368,7 @@ async function getHistory(limit) {
 
 module.exports = {
   init,
+  bootstrap,
   formatReason,
   getPending,
   updateSnapshot,
