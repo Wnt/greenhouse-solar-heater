@@ -104,6 +104,10 @@ When adding a new mutating endpoint, add the same guard.
 
 Missing tests = incomplete fix. Applies to behavior changes too (e.g. removing auto-polling, changing error messages).
 
+## Frontend Coverage Gate
+
+Every file under `playground/js/**` must have ≥50% statement coverage from the `tests/frontend` Playwright suite, or be listed in `coverage-exclusions.json` with a written reason. CI enforces both directions: below-threshold unexcluded files fail, **and** excluded files that climb ≥50% fail too (drop the stale entry). Adding an exclusion is acceptable; stacking many exclusions is a smell. See `scripts/coverage-check.mjs`.
+
 ## Commands
 
 ```bash
@@ -111,7 +115,7 @@ npm test                           # unit + frontend + e2e
 npm run test:unit                  # fast, no browser
 npm run test:frontend              # Playwright against static serve — frontend with mocked APIs
 npm run test:e2e                   # Playwright against real server + pg-mem + aedes MQTT
-npm run coverage:frontend          # V8 JS coverage for playground/js/** driven by the frontend suite — HTML + lcov in coverage/
+npm run coverage:frontend          # V8 JS coverage for playground/js/** driven by the frontend suite — HTML + lcov in coverage/ (CI runs the same report + gate, see "Frontend Coverage Gate")
 npm run screenshots                # regenerate screenshots (runs 24 h sim, ~1–2 min)
 npm run diagram                    # regenerate system-topology.drawio (dark theme)
 npm run topology-pdf               # printable light-theme PDF of the topology
