@@ -144,6 +144,23 @@ async function applyHost(hostIp, target) {
 
   const targetCount = Object.keys(target).length;
   if (targetCount > 0 && currentMatchesTarget(existing, target)) {
+    // Peripherals match by address — skip the add/remove dance, but still
+    // sync names because currentMatchesTarget doesn't compare them (the
+    // cloud tile shows these labels, and an earlier apply may have bound
+    // the peripherals before labels were ever pushed).
+    for (const cid of Object.keys(target)) {
+      const t = target[cid];
+      try {
+        await httpRpc(hostIp, 'Temperature.SetConfig', {
+          id: parseInt(cid, 10),
+          config: { name: t.label },
+        });
+      } catch (e) {
+        log.warn('failed to label temperature component', {
+          host: hostIp, cid: cid, role: t.role, error: e.message,
+        });
+      }
+    }
     log.info('already matches target', { host: hostIp, peripherals: targetCount });
     return { host: hostIp, ok: true, peripherals: targetCount };
   }
