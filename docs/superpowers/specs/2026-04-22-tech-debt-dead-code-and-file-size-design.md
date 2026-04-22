@@ -1,7 +1,7 @@
 # Tech Debt: Dead Code & File-Size/SRP — Design
 
 **Date:** 2026-04-22
-**Status:** Draft — awaiting user review
+**Status:** Implemented — merged via PR #58 on 2026-04-22. All six §3 merge-gate criteria met; CI gates are hard-fail (`--strict`).
 **Scope:** `playground/` + `server/` only. `shelly/` deferred.
 
 ## 1. Context & motivation
