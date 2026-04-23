@@ -7,7 +7,7 @@
 
 const CAPS = {
   DEPLOYED_BYTES: 65535,          // Shelly Script.PutCode hard limit, error -103
-  RUNTIME_PROXY_PEAK: 43800,      // re-calibrated 2026-04-20 after adding __test_setTemps / __test_controlTick hooks for scheduler-stack-fuzz automated-freeze coverage (measured 43256 + 544 B margin). Hooks are stripped at runtime by the __TEST_HARNESS guard — this only affects the in-test measurement.
+  RUNTIME_PROXY_PEAK: 44700,      // re-calibrated 2026-04-23 after adding solarStallBypassDelta config + mean-tank stall metric (measured 44126 + ~574 B margin). Prior: 43800 (measured 43256 + 544 B margin, set 2026-04-20 after adding __test_setTemps / __test_controlTick hooks for scheduler-stack-fuzz automated-freeze coverage). Hooks are stripped at runtime by the __TEST_HARNESS guard — this only affects the in-test measurement.
   STATE_BYTES: 720,               // JSON.stringify(state).length peak — includes transient transition fields (opening[], pending_closes[], manual_override{}). Now deterministic: the 24 h sim uses a seeded PRNG so the measured peak is 699 B every run; 720 leaves ~21 B headroom for small state-shape additions before CI flags a regression.
   LIVE_TIMERS: 3,                 // simultaneous Timer.set handles (5 - 2 reserve)
   MQTT_SUBS: 3,                   // active MQTT.subscribe topics

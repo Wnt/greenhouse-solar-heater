@@ -88,8 +88,8 @@ var state = {
   // Solar-charging tank-rise tracking (mirrors evaluate() flags). Tank
   // top temperature is tracked so we can keep pumping until the tank
   // stops accepting heat (no rise for 5 min, or 2°C drop from peak).
-  solar_charge_peak_tank_top: null,
-  solar_charge_peak_tank_top_at: 0,
+  solar_charge_peak_tank_avg: null,
+  solar_charge_peak_tank_avg_at: 0,
   last_error: null,
   valve_states: {},
   pump_on: false,
@@ -329,8 +329,8 @@ function buildEvalState() {
     collectorsDrained: state.collectors_drained,
     lastRefillAttempt: state.last_refill_attempt / 1000,
     emergencyHeatingActive: state.emergency_heating_active,
-    solarChargePeakTankTop: state.solar_charge_peak_tank_top,
-    solarChargePeakTankTopAt: state.solar_charge_peak_tank_top_at,
+    solarChargePeakTankAvg: state.solar_charge_peak_tank_avg,
+    solarChargePeakTankAvgAt: state.solar_charge_peak_tank_avg_at,
     sensorAge: sensorAge,
   };
 }
@@ -347,9 +347,9 @@ function applyFlags(flags) {
   state.collectors_drained = flags.collectorsDrained;
   state.last_refill_attempt = flags.lastRefillAttempt * 1000;
   state.emergency_heating_active = flags.emergencyHeatingActive;
-  state.solar_charge_peak_tank_top =
-    flags.solarChargePeakTankTop !== undefined ? flags.solarChargePeakTankTop : null;
-  state.solar_charge_peak_tank_top_at = flags.solarChargePeakTankTopAt || 0;
+  state.solar_charge_peak_tank_avg =
+    flags.solarChargePeakTankAvg !== undefined ? flags.solarChargePeakTankAvg : null;
+  state.solar_charge_peak_tank_avg_at = flags.solarChargePeakTankAvgAt || 0;
 }
 
 // ── Watchdog helpers ──
@@ -390,8 +390,8 @@ function buildIdleTransitionResult() {
       collectorsDrained: state.collectors_drained,
       lastRefillAttempt: state.last_refill_attempt / 1000,
       emergencyHeatingActive: false,
-      solarChargePeakTankTop: null,
-      solarChargePeakTankTopAt: 0
+      solarChargePeakTankAvg: null,
+      solarChargePeakTankAvgAt: 0
     },
     suppressed: false,
     safetyOverride: false
@@ -853,8 +853,8 @@ function stopDrain(reason) {
       collectorsDrained: true,
       lastRefillAttempt: state.last_refill_attempt / 1000,
       emergencyHeatingActive: false,
-      solarChargePeakTankTop: null,
-      solarChargePeakTankTopAt: 0
+      solarChargePeakTankAvg: null,
+      solarChargePeakTankAvgAt: 0
     },
     suppressed: false,
     safetyOverride: false

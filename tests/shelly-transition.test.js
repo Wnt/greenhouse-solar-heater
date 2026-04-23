@@ -239,7 +239,7 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
         actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
         flags: { collectorsDrained: false, lastRefillAttempt: 0,
                  emergencyHeatingActive: false,
-                 solarChargePeakTankTop: null, solarChargePeakTankTopAt: 0 },
+                 solarChargePeakTankAvg: null, solarChargePeakTankAvgAt: 0 },
         suppressed: false, safetyOverride: false,
       });
       // Advance through the full transition (pump_stop + settle + scheduleStep
@@ -280,7 +280,7 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
         actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
         flags: { collectorsDrained: true, lastRefillAttempt: 0,
                  emergencyHeatingActive: false,
-                 solarChargePeakTankTop: null, solarChargePeakTankTopAt: 0 },
+                 solarChargePeakTankAvg: null, solarChargePeakTankAvgAt: 0 },
         suppressed: false, safetyOverride: false,
       });
       // Advance long enough for valves to close AND the 20 s drain-exit wait
@@ -321,7 +321,7 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
         actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
         flags: { collectorsDrained: true, lastRefillAttempt: 0,
                  emergencyHeatingActive: false,
-                 solarChargePeakTankTop: null, solarChargePeakTankTopAt: 0 },
+                 solarChargePeakTankAvg: null, solarChargePeakTankAvgAt: 0 },
         suppressed: false, safetyOverride: false,
       });
       rt.advance(30000, function() {
@@ -367,7 +367,7 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
         actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
         flags: { collectorsDrained: true, lastRefillAttempt: 0,
                  emergencyHeatingActive: false,
-                 solarChargePeakTankTop: null, solarChargePeakTankTopAt: 0 },
+                 solarChargePeakTankAvg: null, solarChargePeakTankAvgAt: 0 },
         suppressed: false, safetyOverride: false,
       });
       // Advance 5 s — well under 20 s. If the failure path waits 20 s, the

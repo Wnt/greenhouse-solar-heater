@@ -21,8 +21,8 @@ function simulate(scenario, config) {
   let modeEnteredAt = 0;
   let collectorsDrained = initTemps.collectorsDrained || false;
   let lastRefillAttempt = initTemps.lastRefillAttempt || 0;
-  let solarChargePeakTankTop = null;
-  let solarChargePeakTankTopAt = 0;
+  let solarChargePeakTankAvg = null;
+  let solarChargePeakTankAvgAt = 0;
   let drainDryTicks = 0;
 
   // Initial evaluate
@@ -111,8 +111,8 @@ function simulate(scenario, config) {
       now: t,
       collectorsDrained,
       lastRefillAttempt,
-      solarChargePeakTankTop,
-      solarChargePeakTankTopAt,
+      solarChargePeakTankAvg,
+      solarChargePeakTankAvgAt,
       sensorAge,
     };
 
@@ -125,8 +125,8 @@ function simulate(scenario, config) {
     }
     collectorsDrained = result.flags.collectorsDrained;
     lastRefillAttempt = result.flags.lastRefillAttempt;
-    solarChargePeakTankTop = result.flags.solarChargePeakTankTop;
-    solarChargePeakTankTopAt = result.flags.solarChargePeakTankTopAt;
+    solarChargePeakTankAvg = result.flags.solarChargePeakTankAvg;
+    solarChargePeakTankAvgAt = result.flags.solarChargePeakTankAvgAt;
 
     return result;
   }

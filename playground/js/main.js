@@ -376,10 +376,10 @@ function restoreBootstrapSnapshot(snapshot) {
   controller.collectorsDrained = fcs.collectorsDrained;
   controller.lastRefillAttempt = fcs.lastRefillAttempt;
   controller.emergencyHeatingActive = fcs.emergencyHeatingActive;
-  controller.solarChargePeakTankTop = (fcs.solarChargePeakTankTop !== undefined)
-    ? fcs.solarChargePeakTankTop
+  controller.solarChargePeakTankAvg = (fcs.solarChargePeakTankAvg !== undefined)
+    ? fcs.solarChargePeakTankAvg
     : null;
-  controller.solarChargePeakTankTopAt = fcs.solarChargePeakTankTopAt || 0;
+  controller.solarChargePeakTankAvgAt = fcs.solarChargePeakTankAvgAt || 0;
 
   // Push the historical points + log entries into the UI stores.
   // resetSim() already cleared both, so we can just append.

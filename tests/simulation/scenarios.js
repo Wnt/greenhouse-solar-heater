@@ -410,6 +410,53 @@ const scenarios = [
     ],
   },
 
+  // 11. Strong spring sun onto a cold, stratified tank — inspired by
+  // the 2026-04-23 morning scene (collector near 85 °C while tank_bottom
+  // was still in the low 20s). Tank_top starts well below the collector
+  // equilibrium so solar flow actually warms it, letting the stall logic
+  // be exercised on a rising curve. An exit that looks only at tank_top
+  // plateaus as soon as top reaches the collector return temperature,
+  // while tank_bottom is still stratified cold. The mean-of-top-and-
+  // bottom stall metric plus the much-hotter-collector bypass keep the
+  // pump running until the bottom catches up.
+  //
+  // Greenhouse starts warm (20 °C) so greenhouse_heating doesn't divert
+  // tank energy — the simulator's greenhouse model has no solar gain, so
+  // leaving it near the heating threshold would pull the focus off
+  // solar-charging behavior.
+  {
+    name: 'strong-sun-cold-tank',
+    duration: 86400,
+    initialState: {
+      collector: 2, tank_top: 18, tank_bottom: 12,
+      greenhouse: 20, collectorsDrained: true,
+      collectorWaterVolume: 0,
+    },
+    ambient: sinusoidalTemp(5, 17),
+    irradiance: bellCurveIrradiance(900),
+    assertions: [
+      {
+        description: 'solar charging runs during the day',
+        check: function(trace) {
+          const trans = findModeTransitions(trace, MODES.SOLAR_CHARGING);
+          if (trans.length === 0) throw new Error('never entered SOLAR_CHARGING');
+        }
+      },
+      {
+        description: 'solar occupies at least 4 h of the daylight window',
+        check: function(trace) {
+          // Sum of ticks where pump is on AND we are in SOLAR_CHARGING,
+          // expressed as seconds. Trace has one frame per SIM_STEP (10 s).
+          const solarSeconds = trace.filter(s =>
+            s.mode === MODES.SOLAR_CHARGING && s.pump).length * 10;
+          if (solarSeconds < 4 * 3600) {
+            throw new Error('only ' + (solarSeconds/3600).toFixed(1) + ' h of solar pump runtime');
+          }
+        }
+      },
+    ],
+  },
+
   // 10. Hysteresis boundary
   {
     name: 'hysteresis-boundary',
