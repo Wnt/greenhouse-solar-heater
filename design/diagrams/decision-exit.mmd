@@ -1,0 +1,29 @@
+---
+title: Leaving SOLAR_CHARGING — natural exits, safety drains, and min-duration hold
+---
+flowchart TD
+    A[evaluate called<br/>currentMode = SOLAR_CHARGING]
+    A --> B{any sensor stale?}
+    B -->|yes| Z1[IDLE · sensor_stale<br/>peak cleared]
+    B -->|no| C{coldest of outdoor,<br/>collector < 4 °C?}
+    C -->|yes| Z2[ACTIVE_DRAIN · freeze_drain<br/>safety override]
+    C -->|no| D{collector > 95 °C?}
+    D -->|yes| Z3[ACTIVE_DRAIN · overheat_drain<br/>safety override]
+    D -->|no| E{elapsed < min duration?<br/>300 s normal<br/>600 s post-refill}
+    E -->|yes| F[SOLAR_CHARGING · min_duration<br/>stall detectors disabled]
+    E -->|no| G[Update peak tracker<br/>if tankAvg rose]
+    G --> H{tankAvg dropped ≥ 2 K<br/>from peak?}
+    H -->|yes| Z4[IDLE · solar_drop_from_peak]
+    H -->|no| I{peak ≥ 300 s old?}
+    I -->|no| J[SOLAR_CHARGING · solar_active]
+    I -->|yes| K{collector − tank_top > 10?<br/>huge head still available}
+    K -->|yes| J
+    K -->|no| Z5[IDLE · solar_stall]
+
+    classDef stay fill:#2d4a2d,stroke:#5a9a5a,color:#fff
+    classDef exit fill:#3a3a2d,stroke:#9a9a5a,color:#fff
+    classDef drain fill:#4a2d2d,stroke:#9a5a5a,color:#fff
+    classDef stale fill:#3a3a2d,stroke:#9a9a5a,color:#fff
+    class J,F stay
+    class Z1,Z4,Z5 exit
+    class Z2,Z3 drain

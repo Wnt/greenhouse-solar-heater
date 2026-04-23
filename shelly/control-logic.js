@@ -93,20 +93,45 @@ var DEFAULT_CONFIG = {
   // with ~6 min earlier morning refill; below 3 K the refill pumping
   // is net-negative (pipe loss + flow-pinned collector exceed gain).
   solarEnterDelta: 3,
-  // Solar charging exits when the tank has stopped accepting heat:
-  //   - tank_top has not risen for solarExitStallSeconds, OR
-  //   - tank_top has dropped solarExitTankDrop °C from the session peak
-  // This replaces the old collector/tank_bottom delta exit so we keep
-  // pumping until the tank itself signals diminishing returns.
+  // Solar charging exits when the tank has stopped accepting heat.
+  // The "tank temperature" for this purpose is the mean of tank_top and
+  // tank_bottom — a stratified tank can peg tank_top near the collector
+  // return temperature while tank_bottom is still climbing, which is
+  // energy flowing in at the cold end, not a stall. Tracking the mean
+  // keeps those sessions running. Two exit conditions:
+  //   - mean tank temp has not risen for solarExitStallSeconds, OR
+  //   - mean tank temp has dropped solarExitTankDrop °C from the peak
   //
-  // solarExitStallSeconds lowered 300 → 180 on 2026-04-22: constant-
-  // irradiance simulation at 300 W/m² shows shorter stalls pulse the
-  // pump more aggressively, letting the collector rebuild thermal head
-  // between sessions. 180 s captures ~6% more energy than 300 s while
-  // keeping cycle count within ~10%; going shorter (60 s) gains another
-  // ~8% but costs ~25% more relay cycles.
+  // solarExitStallSeconds history:
+  //   300 s → 180 s (2026-04-22, early simulator)
+  //   180 s →  60 s (2026-04-23 first pass — v2 sim showed +1.8 % on
+  //                 cloudy days; later found to be a simulator artifact)
+  //    60 s → 300 s (2026-04-23 second pass — v2 sim with refit collector
+  //                 thermal mass (50 kJ/K vs the earlier 5 kJ/K). Under
+  //                 the corrected model energy is flat across 60–600 s
+  //                 because a realistic collector holds heat through
+  //                 cloud dips regardless of pump state, so the "fast
+  //                 exit" advantage vanished. With energy tied, the
+  //                 cycle-count tiebreaker favors longer stalls:
+  //                 broken-cloud entries at stall = 60/180/300/600 s
+  //                 were 12 / 10 / 8 / 6. Clear-day and weak-sun entries
+  //                 are 3 and 1 regardless. Going back to 300 s — the
+  //                 pre-2026-04-22 default — cuts broken-cloud cycles
+  //                 ~20 % vs. 180 with no energy penalty. 600 s would
+  //                 cut more but starts to conflict with the drop-from-
+  //                 peak safety (we want to exit quickly if tank is
+  //                 actually cooling, not just not-rising).
   solarExitTankDrop: 2,
-  solarExitStallSeconds: 180,
+  solarExitStallSeconds: 300,
+  // Bypass the stall-timer exit when the collector is still clearly
+  // much hotter than tank_top. Morning sessions with a cold tank can
+  // sit with collector 40–60 K above tank_top while tank_top plateaus
+  // (stratification reaches the collector return temperature). Exiting
+  // after 180 s of plateau throws away huge thermodynamic head — the
+  // collector will just run up to 90 °C+ while we sit idle. Drop-from-
+  // peak still fires, so if the tank is actually *cooling* we still
+  // exit. Set to 0 to disable the bypass (legacy behavior).
+  solarStallBypassDelta: 10,
   greenhouseEnterTemp: 10,
   greenhouseExitTemp: 12,
   greenhouseMinTankDelta: 5,
@@ -258,39 +283,42 @@ function evaluate(state, config, deviceConfig) {
     emergencyHeatingActive: state.emergencyHeatingActive || false,
     // Solar-charging tank-rise tracking. Carried forward only while we
     // remain in SOLAR_CHARGING — cleared whenever pumpMode ends up
-    // anything else (see end of function).
-    solarChargePeakTankTop: null,
-    solarChargePeakTankTopAt: 0
+    // anything else (see end of function). Metric is the mean of
+    // tank_top and tank_bottom so stratification (top plateaus, bottom
+    // rises) still registers as "gaining heat".
+    solarChargePeakTankAvg: null,
+    solarChargePeakTankAvgAt: 0
   };
 
-  // Carry forward and update peak tank_top while in SOLAR_CHARGING. We
+  // Carry forward and update peak tank-mean while in SOLAR_CHARGING. We
   // do this before the min-duration hold so peakAt advances during the
   // hold — otherwise the stall counter would fire the instant the hold
   // expires.
   if (state.currentMode === MODES.SOLAR_CHARGING) {
-    var carriedPeak = (state.solarChargePeakTankTop !== undefined &&
-                       state.solarChargePeakTankTop !== null)
-      ? state.solarChargePeakTankTop
+    var carriedPeak = (state.solarChargePeakTankAvg !== undefined &&
+                       state.solarChargePeakTankAvg !== null)
+      ? state.solarChargePeakTankAvg
       : null;
-    var carriedPeakAt = state.solarChargePeakTankTopAt || 0;
-    if (t.tank_top !== null) {
-      if (carriedPeak === null || t.tank_top > carriedPeak) {
-        carriedPeak = t.tank_top;
+    var carriedPeakAt = state.solarChargePeakTankAvgAt || 0;
+    if (t.tank_top !== null && t.tank_bottom !== null) {
+      var tankAvgNow = (t.tank_top + t.tank_bottom) / 2;
+      if (carriedPeak === null || tankAvgNow > carriedPeak) {
+        carriedPeak = tankAvgNow;
         carriedPeakAt = state.now;
       } else if (carriedPeakAt === 0) {
         // First eval after entry where peak wasn't seeded — anchor now
         carriedPeakAt = state.now;
       }
     }
-    flags.solarChargePeakTankTop = carriedPeak;
-    flags.solarChargePeakTankTopAt = carriedPeakAt;
+    flags.solarChargePeakTankAvg = carriedPeak;
+    flags.solarChargePeakTankAvgAt = carriedPeakAt;
   }
 
   // Sensor staleness — any sensor stale triggers IDLE, emergency off
   if (anySensorStale(state.sensorAge, cfg.sensorStaleThreshold)) {
     flags.emergencyHeatingActive = false;
-    flags.solarChargePeakTankTop = null;
-    flags.solarChargePeakTankTopAt = 0;
+    flags.solarChargePeakTankAvg = null;
+    flags.solarChargePeakTankAvgAt = 0;
     return makeResult(MODES.IDLE, flags, dc, false, "sensor_stale");
   }
 
@@ -318,8 +346,8 @@ function evaluate(state, config, deviceConfig) {
   if (t.collector !== null && (coldest === null || t.collector < coldest)) coldest = t.collector;
   if (coldest !== null && coldest < cfg.freezeDrainTemp &&
       !state.collectorsDrained) {
-    flags.solarChargePeakTankTop = null;
-    flags.solarChargePeakTankTopAt = 0;
+    flags.solarChargePeakTankAvg = null;
+    flags.solarChargePeakTankAvgAt = 0;
     return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "freeze_drain");
   }
 
@@ -329,8 +357,8 @@ function evaluate(state, config, deviceConfig) {
   // safetyOverride=true: MUST NOT be suppressed by device config
   if (t.collector !== null && t.collector > cfg.overheatDrainTemp &&
       state.currentMode === MODES.SOLAR_CHARGING && !state.collectorsDrained) {
-    flags.solarChargePeakTankTop = null;
-    flags.solarChargePeakTankTopAt = 0;
+    flags.solarChargePeakTankAvg = null;
+    flags.solarChargePeakTankAvgAt = 0;
     return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "overheat_drain");
   }
 
@@ -377,17 +405,30 @@ function evaluate(state, config, deviceConfig) {
       // collector continues absorbing irradiance while flow is on, and
       // the tank itself is the most direct signal of whether we are
       // still gaining energy. Two exit conditions:
-      //   1. tank_top has not exceeded the session peak for the past
-      //      cfg.solarExitStallSeconds seconds (stall), OR
-      //   2. tank_top has dropped >= cfg.solarExitTankDrop °C from the
+      //   1. tank mean has not exceeded the session peak for the past
+      //      cfg.solarExitStallSeconds seconds (stall), AND the collector
+      //      is not still running far hotter than tank_top (see
+      //      solarStallBypassDelta), OR
+      //   2. tank mean has dropped >= cfg.solarExitTankDrop °C from the
       //      session peak (we're actively cooling the tank).
       var stalled = false;
       var droppedFromPeak = false;
-      if (t.tank_top !== null && flags.solarChargePeakTankTop !== null) {
+      var tankAvg = (t.tank_top !== null && t.tank_bottom !== null)
+        ? (t.tank_top + t.tank_bottom) / 2 : null;
+      if (tankAvg !== null && flags.solarChargePeakTankAvg !== null) {
         droppedFromPeak =
-          (flags.solarChargePeakTankTop - t.tank_top) >= cfg.solarExitTankDrop;
+          (flags.solarChargePeakTankAvg - tankAvg) >= cfg.solarExitTankDrop;
         stalled =
-          (state.now - flags.solarChargePeakTankTopAt) >= cfg.solarExitStallSeconds;
+          (state.now - flags.solarChargePeakTankAvgAt) >= cfg.solarExitStallSeconds;
+      }
+      // Collector-much-hotter bypass: if the thermodynamic head is still
+      // clearly large, ignore stall — the tank *is* gaining, just slowly
+      // (flow-rate limited). Drop-from-peak still fires if we overshoot
+      // and the tank starts cooling.
+      if (stalled && cfg.solarStallBypassDelta > 0 &&
+          t.collector !== null && t.tank_top !== null &&
+          (t.collector - t.tank_top) > cfg.solarStallBypassDelta) {
+        stalled = false;
       }
       if (!stalled && !droppedFromPeak) {
         pumpMode = MODES.SOLAR_CHARGING;
@@ -405,9 +446,9 @@ function evaluate(state, config, deviceConfig) {
       if (t.collector > t.tank_bottom + cfg.solarEnterDelta) {
         pumpMode = MODES.SOLAR_CHARGING;
         reason = "solar_enter";
-        if (t.tank_top !== null) {
-          flags.solarChargePeakTankTop = t.tank_top;
-          flags.solarChargePeakTankTopAt = state.now;
+        if (t.tank_top !== null && t.tank_bottom !== null) {
+          flags.solarChargePeakTankAvg = (t.tank_top + t.tank_bottom) / 2;
+          flags.solarChargePeakTankAvgAt = state.now;
         }
       }
     } else {
@@ -425,9 +466,9 @@ function evaluate(state, config, deviceConfig) {
           flags.lastRefillAttempt = state.now;
           pumpMode = MODES.SOLAR_CHARGING;
           reason = "solar_refill";
-          if (t.tank_top !== null) {
-            flags.solarChargePeakTankTop = t.tank_top;
-            flags.solarChargePeakTankTopAt = state.now;
+          if (t.tank_top !== null && t.tank_bottom !== null) {
+            flags.solarChargePeakTankAvg = (t.tank_top + t.tank_bottom) / 2;
+            flags.solarChargePeakTankAvgAt = state.now;
           }
         }
       }
@@ -464,16 +505,17 @@ function evaluate(state, config, deviceConfig) {
       !state.collectorsDrained && pumpMode !== MODES.SOLAR_CHARGING) {
     pumpMode = MODES.SOLAR_CHARGING;
     reason = "overheat_circulate";
-    if (t.tank_top !== null && flags.solarChargePeakTankTop === null) {
-      flags.solarChargePeakTankTop = t.tank_top;
-      flags.solarChargePeakTankTopAt = state.now;
+    if (t.tank_top !== null && t.tank_bottom !== null &&
+        flags.solarChargePeakTankAvg === null) {
+      flags.solarChargePeakTankAvg = (t.tank_top + t.tank_bottom) / 2;
+      flags.solarChargePeakTankAvgAt = state.now;
     }
   }
 
   // Clear peak tracking if we are not staying in / entering SOLAR_CHARGING
   if (pumpMode !== MODES.SOLAR_CHARGING) {
-    flags.solarChargePeakTankTop = null;
-    flags.solarChargePeakTankTopAt = 0;
+    flags.solarChargePeakTankAvg = null;
+    flags.solarChargePeakTankAvgAt = 0;
   }
 
   // ── Combine pump mode + emergency overlay ──
@@ -497,8 +539,8 @@ function evaluate(state, config, deviceConfig) {
   if (dc && dc.wb && result.nextMode !== MODES.IDLE) {
     var natCode = shortCodeOf(result.nextMode);
     if (natCode && dc.wb[natCode] && dc.wb[natCode] > state.now) {
-      flags.solarChargePeakTankTop = null;
-      flags.solarChargePeakTankTopAt = 0;
+      flags.solarChargePeakTankAvg = null;
+      flags.solarChargePeakTankAvgAt = 0;
       return makeResult(MODES.IDLE, flags, dc, false, "watchdog_ban");
     }
   }

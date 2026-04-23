@@ -1,0 +1,24 @@
+---
+title: Solar entry from IDLE + filled collectors (normal entry)
+---
+flowchart TD
+    A[evaluate called<br/>currentMode = IDLE<br/>collectorsDrained = false]
+    A --> B{any sensor stale?<br/>> 150 s since update}
+    B -->|yes| Z1[IDLE · sensor_stale]
+    B -->|no| C{coldest of outdoor,<br/>collector < 4 °C?}
+    C -->|yes| Z2[ACTIVE_DRAIN · freeze_drain<br/>safety override]
+    C -->|no| D{collector > tank_bottom + 3?}
+    D -->|no| E{greenhouse < 10<br/>AND tank_top ><br/>greenhouse + 5?}
+    E -->|yes| F[GREENHOUSE_HEATING · greenhouse_enter]
+    E -->|no| G[IDLE · idle]
+    D -->|yes| H[Seed peak tracker = tankAvg @ now]
+    H --> I[SOLAR_CHARGING · solar_enter<br/>pump ON<br/>vi_btm + vo_coll OPEN<br/>5-min minimum runtime]
+
+    classDef enter fill:#2d4a2d,stroke:#5a9a5a,color:#fff
+    classDef idle fill:#333,stroke:#888,color:#ccc
+    classDef drain fill:#4a2d2d,stroke:#9a5a5a,color:#fff
+    classDef stale fill:#3a3a2d,stroke:#9a9a5a,color:#fff
+    class I,F enter
+    class G idle
+    class Z2 drain
+    class Z1 stale

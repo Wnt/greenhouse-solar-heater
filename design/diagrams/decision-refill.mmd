@@ -1,0 +1,27 @@
+---
+title: Solar entry from IDLE + drained collectors (speculative refill)
+---
+flowchart TD
+    A[evaluate called<br/>currentMode = IDLE<br/>collectorsDrained = true]
+    A --> B{any sensor stale?<br/>> 150 s since update}
+    B -->|yes| Z1[IDLE · sensor_stale]
+    B -->|no| C{coldest of outdoor,<br/>collector < 4 °C<br/>AND not drained?}
+    C -->|yes| X1[disarmed because<br/>drained = true]
+    C -->|no| D
+    X1 --> D{collector > tank_bottom + 3?}
+    D -->|no| E[IDLE · idle<br/>no useful head]
+    D -->|yes| F{outdoor ≥ 4<br/>AND collector ≥ 4?}
+    F -->|no| G[IDLE · idle<br/>wait for absorber to warm]
+    F -->|yes| H{now − lastRefillAttempt<br/>> 30 min?}
+    H -->|no| I[IDLE · idle<br/>refill cooldown active]
+    H -->|yes| J[Clear collectorsDrained<br/>Stamp lastRefillAttempt = now<br/>Seed peak tracker = tankAvg @ now]
+    J --> K[SOLAR_CHARGING · solar_refill<br/>pump ON<br/>vi_btm + vo_coll OPEN<br/>10-min minimum runtime]
+
+    classDef enter fill:#2d4a2d,stroke:#5a9a5a,color:#fff
+    classDef idle fill:#333,stroke:#888,color:#ccc
+    classDef stale fill:#3a3a2d,stroke:#9a9a5a,color:#fff
+    classDef note fill:#2a2a2a,stroke:#555,color:#bbb,font-style:italic
+    class K enter
+    class E,G,I idle
+    class Z1 stale
+    class X1 note

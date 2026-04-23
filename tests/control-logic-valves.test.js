@@ -773,31 +773,35 @@ describe('evaluate() emits a decision reason for each path', () => {
     assert.strictEqual(r.reason, 'solar_enter');
   });
 
-  it('solar_active while tank_top is still gaining heat', () => {
+  it('solar_active while mean tank is still gaining heat', () => {
+    // Mean = (42+40)/2 = 41 > carried peak of 40 — gaining.
     const r = evalWith({
-      temps: { collector: 50, tank_top: 42, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 50, tank_top: 42, tank_bottom: 40, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
-      solarChargePeakTankTop: 40, solarChargePeakTankTopAt: 1500, now: 2000
+      solarChargePeakTankAvg: 40, solarChargePeakTankAvgAt: 1500, now: 2000
     });
     assert.strictEqual(r.nextMode, MODES.SOLAR_CHARGING);
     assert.strictEqual(r.reason, 'solar_active');
   });
 
-  it('solar_stall when tank_top has not risen for solarExitStallSeconds', () => {
+  it('solar_stall when mean tank has not risen for solarExitStallSeconds', () => {
+    // Mean equals peak (40), peakAt 300 s ago. Collector 5 K above
+    // tank_top so the much-hotter-collector bypass does not suppress.
     const r = evalWith({
-      temps: { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 45, tank_top: 40, tank_bottom: 40, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
-      solarChargePeakTankTop: 40, solarChargePeakTankTopAt: 1700, now: 2000
+      solarChargePeakTankAvg: 40, solarChargePeakTankAvgAt: 1700, now: 2000
     });
     assert.strictEqual(r.nextMode, MODES.IDLE);
     assert.strictEqual(r.reason, 'solar_stall');
   });
 
-  it('solar_drop_from_peak when tank_top falls solarExitTankDrop below peak', () => {
+  it('solar_drop_from_peak when mean tank falls solarExitTankDrop below peak', () => {
+    // Mean = 38, peak 40 — dropped 2 °C.
     const r = evalWith({
-      temps: { collector: 50, tank_top: 38, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 50, tank_top: 38, tank_bottom: 38, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
-      solarChargePeakTankTop: 40, solarChargePeakTankTopAt: 1900, now: 2000
+      solarChargePeakTankAvg: 40, solarChargePeakTankAvgAt: 1900, now: 2000
     });
     assert.strictEqual(r.nextMode, MODES.IDLE);
     assert.strictEqual(r.reason, 'solar_drop_from_peak');
@@ -896,7 +900,7 @@ describe('evaluate() emits a decision reason for each path', () => {
       temps: { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 1970, now: 2000,
-      solarChargePeakTankTop: 40, solarChargePeakTankTopAt: 1970
+      solarChargePeakTankAvg: 40, solarChargePeakTankAvgAt: 1970
     });
     assert.strictEqual(r.nextMode, MODES.SOLAR_CHARGING);
     assert.strictEqual(r.reason, 'min_duration');
