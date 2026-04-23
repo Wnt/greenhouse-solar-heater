@@ -54,7 +54,16 @@ const PARAMS = {
   tankVolume: 300,                 // liters
   tankZoneSplit: 0.5,
   tankInsulationLoss: 4,           // W/K total (fit 2026-04-23, was 2)
-  tankMixingCoeff: 4,              // W/K stable top>bot (fit 2026-04-23, was 0.5)
+  tankMixingCoeff: 4,              // W/K stable top>bot, NO pump (fit 2026-04-23, was 0.5)
+  tankPumpMixingCoeff: 300,        // W/K stable top>bot, PUMP RUNNING (added 2026-04-23).
+                                   // Production data shows top and bottom track within 2-3 K
+                                   // throughout a solar session — the return plume entering
+                                   // at vo_coll entrains water from the whole column rather
+                                   // than stratifying cleanly. Without this term the bottom
+                                   // zone starves (only 4 W/K mixing reaches it), tank_top
+                                   // saturates at ~T_coll, and the simulator stops being
+                                   // able to absorb heat after a few hundred W. 300 W/K
+                                   // keeps (top - bot) ≈ 2-3 K at realistic tank_powers.
   tankConvectiveMixing: 500,       // W/K unstable bot>top — natural convection, not fit
 
   // Greenhouse
@@ -183,7 +192,20 @@ function tickStep(model, dt, decisions, p) {
   Qtop -= (p.tankInsulationLoss / 2) * (Ttop - Tout);
   Qbot -= (p.tankInsulationLoss / 2) * (Tbot - Tout);
 
-  const mixCoeff = Tbot > Ttop ? p.tankConvectiveMixing : p.tankMixingCoeff;
+  // Mixing between zones: three regimes.
+  //   1. Unstable (bot > top) — rapid natural convection flips buoyant water.
+  //   2. Pump running through the tank (solarFlow or radiatorFlow) — the
+  //      return plume entrains water from the whole column, producing
+  //      much stronger effective mixing than pure-diffusion idle decay.
+  //   3. Idle — slow conductive / weak-convective exchange.
+  let mixCoeff;
+  if (Tbot > Ttop) {
+    mixCoeff = p.tankConvectiveMixing;
+  } else if (solarFlow || radiatorFlow) {
+    mixCoeff = p.tankPumpMixingCoeff;
+  } else {
+    mixCoeff = p.tankMixingCoeff;
+  }
   const Qmix = mixCoeff * (Ttop - Tbot);
   Qtop -= Qmix;
   Qbot += Qmix;
