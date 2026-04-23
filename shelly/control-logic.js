@@ -102,21 +102,27 @@ var DEFAULT_CONFIG = {
   //   - mean tank temp has not risen for solarExitStallSeconds, OR
   //   - mean tank temp has dropped solarExitTankDrop °C from the peak
   //
-  // solarExitStallSeconds lowered 300 → 180 on 2026-04-22, then → 60 on
-  // 2026-04-23 against the v2 calibrated thermal simulator (drain bolus
-  // + flow ramp + sky radiation fit against 3 days of production
-  // telemetry). Fine sweep across 20-240 s on a broken-cloud day:
-  //     20 s → 2.888 kWh   180 s → 2.837 kWh (old default)
-  //     60 s → 2.887 kWh   240 s → 2.801 kWh
-  //   Clear days saturate flat at 5.69 kWh for every value 20-240 s.
-  // 60 s gains ~1.8% on cloudy days over 180 s with no regression on
-  // clear days; going below 60 s saturates. The physics: during a cloud
-  // dip, the pump is pulling from tank bottom through a now-cool
-  // collector and returning water barely warmer than what it took, so
-  // further pumping is net-negative. Exiting fast lets the collector
-  // rebuild thermal head while tank energy isn't bled off.
+  // solarExitStallSeconds history:
+  //   300 s → 180 s (2026-04-22, early simulator)
+  //   180 s →  60 s (2026-04-23 first pass — v2 sim showed +1.8 % on
+  //                 cloudy days; later found to be a simulator artifact)
+  //    60 s → 300 s (2026-04-23 second pass — v2 sim with refit collector
+  //                 thermal mass (50 kJ/K vs the earlier 5 kJ/K). Under
+  //                 the corrected model energy is flat across 60–600 s
+  //                 because a realistic collector holds heat through
+  //                 cloud dips regardless of pump state, so the "fast
+  //                 exit" advantage vanished. With energy tied, the
+  //                 cycle-count tiebreaker favors longer stalls:
+  //                 broken-cloud entries at stall = 60/180/300/600 s
+  //                 were 12 / 10 / 8 / 6. Clear-day and weak-sun entries
+  //                 are 3 and 1 regardless. Going back to 300 s — the
+  //                 pre-2026-04-22 default — cuts broken-cloud cycles
+  //                 ~20 % vs. 180 with no energy penalty. 600 s would
+  //                 cut more but starts to conflict with the drop-from-
+  //                 peak safety (we want to exit quickly if tank is
+  //                 actually cooling, not just not-rising).
   solarExitTankDrop: 2,
-  solarExitStallSeconds: 60,
+  solarExitStallSeconds: 300,
   // Bypass the stall-timer exit when the collector is still clearly
   // much hotter than tank_top. Morning sessions with a cold tank can
   // sit with collector 40–60 K above tank_top while tank_top plateaus
