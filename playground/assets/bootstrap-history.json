@@ -7136,31 +7136,31 @@
     {
       "time": 38880,
       "values": {
-        "t_tank_top": 28.3782,
-        "t_tank_bottom": 28.2602,
-        "t_collector": 28.6285,
+        "t_tank_top": 28.3759,
+        "t_tank_bottom": 28.2601,
+        "t_collector": 28.73,
         "t_greenhouse": 14.5932,
         "t_outdoor": 12.7235
       },
-      "mode": "solar_charging"
+      "mode": "idle"
     },
     {
       "time": 38940,
       "values": {
-        "t_tank_top": 28.3756,
-        "t_tank_bottom": 28.2621,
-        "t_collector": 28.6176,
+        "t_tank_top": 28.3697,
+        "t_tank_bottom": 28.2619,
+        "t_collector": 28.8858,
         "t_greenhouse": 14.5675,
         "t_outdoor": 12.7052
       },
-      "mode": "solar_charging"
+      "mode": "idle"
     },
     {
       "time": 39000,
       "values": {
-        "t_tank_top": 28.3709,
-        "t_tank_bottom": 28.2638,
-        "t_collector": 28.701,
+        "t_tank_top": 28.3637,
+        "t_tank_bottom": 28.2634,
+        "t_collector": 29.0325,
         "t_greenhouse": 14.5416,
         "t_outdoor": 12.6868
       },
@@ -7169,9 +7169,9 @@
     {
       "time": 39060,
       "values": {
-        "t_tank_top": 28.3649,
-        "t_tank_bottom": 28.2653,
-        "t_collector": 28.8447,
+        "t_tank_top": 28.3579,
+        "t_tank_bottom": 28.2647,
+        "t_collector": 29.1702,
         "t_greenhouse": 14.5157,
         "t_outdoor": 12.6684
       },
@@ -7180,9 +7180,9 @@
     {
       "time": 39120,
       "values": {
-        "t_tank_top": 28.3592,
-        "t_tank_bottom": 28.2665,
-        "t_collector": 28.9794,
+        "t_tank_top": 28.3525,
+        "t_tank_bottom": 28.2657,
+        "t_collector": 29.2992,
         "t_greenhouse": 14.4897,
         "t_outdoor": 12.6499
       },
@@ -7191,9 +7191,9 @@
     {
       "time": 39180,
       "values": {
-        "t_tank_top": 28.3537,
-        "t_tank_bottom": 28.2675,
-        "t_collector": 29.1053,
+        "t_tank_top": 28.3472,
+        "t_tank_bottom": 28.2664,
+        "t_collector": 29.4194,
         "t_greenhouse": 14.4636,
         "t_outdoor": 12.6314
       },
@@ -7202,9 +7202,9 @@
     {
       "time": 39240,
       "values": {
-        "t_tank_top": 28.3485,
-        "t_tank_bottom": 28.2683,
-        "t_collector": 29.2227,
+        "t_tank_top": 28.3421,
+        "t_tank_bottom": 28.267,
+        "t_collector": 29.5312,
         "t_greenhouse": 14.4374,
         "t_outdoor": 12.6128
       },
@@ -7213,9 +7213,9 @@
     {
       "time": 39300,
       "values": {
-        "t_tank_top": 28.3434,
-        "t_tank_bottom": 28.2688,
-        "t_collector": 29.3315,
+        "t_tank_top": 28.3373,
+        "t_tank_bottom": 28.2674,
+        "t_collector": 29.6346,
         "t_greenhouse": 14.4112,
         "t_outdoor": 12.5942
       },
@@ -7224,9 +7224,9 @@
     {
       "time": 39360,
       "values": {
-        "t_tank_top": 28.3386,
-        "t_tank_bottom": 28.2691,
-        "t_collector": 29.4321,
+        "t_tank_top": 28.3326,
+        "t_tank_bottom": 28.2675,
+        "t_collector": 29.7297,
         "t_greenhouse": 14.3849,
         "t_outdoor": 12.5755
       },
@@ -7235,9 +7235,9 @@
     {
       "time": 39420,
       "values": {
-        "t_tank_top": 28.3339,
-        "t_tank_bottom": 28.2693,
-        "t_collector": 29.5245,
+        "t_tank_top": 28.3281,
+        "t_tank_bottom": 28.2675,
+        "t_collector": 29.8168,
         "t_greenhouse": 14.3585,
         "t_outdoor": 12.5568
       },
@@ -7246,9 +7246,9 @@
     {
       "time": 39480,
       "values": {
-        "t_tank_top": 28.3294,
-        "t_tank_bottom": 28.2693,
-        "t_collector": 29.6088,
+        "t_tank_top": 28.3237,
+        "t_tank_bottom": 28.2674,
+        "t_collector": 29.8959,
         "t_greenhouse": 14.332,
         "t_outdoor": 12.538
       },
@@ -7257,9 +7257,9 @@
     {
       "time": 39540,
       "values": {
-        "t_tank_top": 28.3251,
-        "t_tank_bottom": 28.2691,
-        "t_collector": 29.6852,
+        "t_tank_top": 28.3195,
+        "t_tank_bottom": 28.2671,
+        "t_collector": 29.9672,
         "t_greenhouse": 14.3054,
         "t_outdoor": 12.5192
       },
@@ -7268,9 +7268,9 @@
     {
       "time": 39600,
       "values": {
-        "t_tank_top": 28.3209,
-        "t_tank_bottom": 28.2688,
-        "t_collector": 29.7539,
+        "t_tank_top": 28.3154,
+        "t_tank_bottom": 28.2666,
+        "t_collector": 30.0309,
         "t_greenhouse": 14.2788,
         "t_outdoor": 12.5003
       },
@@ -7279,9 +7279,9 @@
     {
       "time": 39660,
       "values": {
-        "t_tank_top": 28.3168,
-        "t_tank_bottom": 28.2683,
-        "t_collector": 29.8149,
+        "t_tank_top": 28.3115,
+        "t_tank_bottom": 28.2661,
+        "t_collector": 30.087,
         "t_greenhouse": 14.2521,
         "t_outdoor": 12.4814
       },
@@ -7290,9 +7290,9 @@
     {
       "time": 39720,
       "values": {
-        "t_tank_top": 28.3128,
-        "t_tank_bottom": 28.2678,
-        "t_collector": 29.8684,
+        "t_tank_top": 28.3076,
+        "t_tank_bottom": 28.2654,
+        "t_collector": 30.1356,
         "t_greenhouse": 14.2253,
         "t_outdoor": 12.4624
       },
@@ -7301,9 +7301,9 @@
     {
       "time": 39780,
       "values": {
-        "t_tank_top": 28.309,
-        "t_tank_bottom": 28.267,
-        "t_collector": 29.9145,
+        "t_tank_top": 28.3039,
+        "t_tank_bottom": 28.2646,
+        "t_collector": 30.177,
         "t_greenhouse": 14.1985,
         "t_outdoor": 12.4434
       },
@@ -7312,9 +7312,9 @@
     {
       "time": 39840,
       "values": {
-        "t_tank_top": 28.3053,
-        "t_tank_bottom": 28.2662,
-        "t_collector": 29.9534,
+        "t_tank_top": 28.3002,
+        "t_tank_bottom": 28.2637,
+        "t_collector": 30.2112,
         "t_greenhouse": 14.1715,
         "t_outdoor": 12.4244
       },
@@ -7323,9 +7323,9 @@
     {
       "time": 39900,
       "values": {
-        "t_tank_top": 28.3016,
-        "t_tank_bottom": 28.2653,
-        "t_collector": 29.9851,
+        "t_tank_top": 28.2967,
+        "t_tank_bottom": 28.2627,
+        "t_collector": 30.2383,
         "t_greenhouse": 14.1445,
         "t_outdoor": 12.4053
       },
@@ -7334,9 +7334,9 @@
     {
       "time": 39960,
       "values": {
-        "t_tank_top": 28.2981,
-        "t_tank_bottom": 28.2643,
-        "t_collector": 30.0098,
+        "t_tank_top": 28.2932,
+        "t_tank_bottom": 28.2616,
+        "t_collector": 30.2586,
         "t_greenhouse": 14.1174,
         "t_outdoor": 12.3861
       },
@@ -7345,9 +7345,9 @@
     {
       "time": 40020,
       "values": {
-        "t_tank_top": 28.2946,
-        "t_tank_bottom": 28.2632,
-        "t_collector": 30.0277,
+        "t_tank_top": 28.2899,
+        "t_tank_bottom": 28.2604,
+        "t_collector": 30.272,
         "t_greenhouse": 14.0903,
         "t_outdoor": 12.3669
       },
@@ -7356,9 +7356,9 @@
     {
       "time": 40080,
       "values": {
-        "t_tank_top": 28.2913,
-        "t_tank_bottom": 28.262,
-        "t_collector": 30.0387,
+        "t_tank_top": 28.2866,
+        "t_tank_bottom": 28.2591,
+        "t_collector": 30.2787,
         "t_greenhouse": 14.0631,
         "t_outdoor": 12.3477
       },
@@ -7367,9 +7367,9 @@
     {
       "time": 40140,
       "values": {
-        "t_tank_top": 28.288,
-        "t_tank_bottom": 28.2607,
-        "t_collector": 30.0431,
+        "t_tank_top": 28.2833,
+        "t_tank_bottom": 28.2578,
+        "t_collector": 30.2788,
         "t_greenhouse": 14.0358,
         "t_outdoor": 12.3284
       },
@@ -7378,9 +7378,9 @@
     {
       "time": 40200,
       "values": {
-        "t_tank_top": 28.2847,
-        "t_tank_bottom": 28.2594,
-        "t_collector": 30.041,
+        "t_tank_top": 28.2801,
+        "t_tank_bottom": 28.2564,
+        "t_collector": 30.2725,
         "t_greenhouse": 14.0084,
         "t_outdoor": 12.3091
       },
@@ -7389,9 +7389,9 @@
     {
       "time": 40260,
       "values": {
-        "t_tank_top": 28.2816,
-        "t_tank_bottom": 28.258,
-        "t_collector": 30.0324,
+        "t_tank_top": 28.277,
+        "t_tank_bottom": 28.2549,
+        "t_collector": 30.2598,
         "t_greenhouse": 13.981,
         "t_outdoor": 12.2897
       },
@@ -7400,9 +7400,9 @@
     {
       "time": 40320,
       "values": {
-        "t_tank_top": 28.2784,
-        "t_tank_bottom": 28.2565,
-        "t_collector": 30.0175,
+        "t_tank_top": 28.274,
+        "t_tank_bottom": 28.2534,
+        "t_collector": 30.2408,
         "t_greenhouse": 13.9534,
         "t_outdoor": 12.2703
       },
@@ -7411,9 +7411,9 @@
     {
       "time": 40380,
       "values": {
-        "t_tank_top": 28.2754,
-        "t_tank_bottom": 28.255,
-        "t_collector": 29.9963,
+        "t_tank_top": 28.271,
+        "t_tank_bottom": 28.2518,
+        "t_collector": 30.2157,
         "t_greenhouse": 13.9259,
         "t_outdoor": 12.2508
       },
@@ -7422,9 +7422,9 @@
     {
       "time": 40440,
       "values": {
-        "t_tank_top": 28.2724,
-        "t_tank_bottom": 28.2534,
-        "t_collector": 29.9691,
+        "t_tank_top": 28.268,
+        "t_tank_bottom": 28.2502,
+        "t_collector": 30.1846,
         "t_greenhouse": 13.8982,
         "t_outdoor": 12.2313
       },
@@ -7433,9 +7433,9 @@
     {
       "time": 40500,
       "values": {
-        "t_tank_top": 28.2694,
-        "t_tank_bottom": 28.2518,
-        "t_collector": 29.9359,
+        "t_tank_top": 28.2651,
+        "t_tank_bottom": 28.2485,
+        "t_collector": 30.1475,
         "t_greenhouse": 13.8705,
         "t_outdoor": 12.2118
       },
@@ -7444,9 +7444,9 @@
     {
       "time": 40560,
       "values": {
-        "t_tank_top": 28.2665,
-        "t_tank_bottom": 28.2501,
-        "t_collector": 29.8967,
+        "t_tank_top": 28.2622,
+        "t_tank_bottom": 28.2468,
+        "t_collector": 30.1046,
         "t_greenhouse": 13.8427,
         "t_outdoor": 12.1922
       },
@@ -7455,9 +7455,9 @@
     {
       "time": 40620,
       "values": {
-        "t_tank_top": 28.2636,
-        "t_tank_bottom": 28.2483,
-        "t_collector": 29.8517,
+        "t_tank_top": 28.2594,
+        "t_tank_bottom": 28.245,
+        "t_collector": 30.0559,
         "t_greenhouse": 13.8148,
         "t_outdoor": 12.1726
       },
@@ -7466,9 +7466,9 @@
     {
       "time": 40680,
       "values": {
-        "t_tank_top": 28.2608,
-        "t_tank_bottom": 28.2466,
-        "t_collector": 29.8011,
+        "t_tank_top": 28.2566,
+        "t_tank_bottom": 28.2432,
+        "t_collector": 30.0016,
         "t_greenhouse": 13.7869,
         "t_outdoor": 12.1529
       },
@@ -7477,9 +7477,9 @@
     {
       "time": 40740,
       "values": {
-        "t_tank_top": 28.258,
-        "t_tank_bottom": 28.2447,
-        "t_collector": 29.7448,
+        "t_tank_top": 28.2538,
+        "t_tank_bottom": 28.2414,
+        "t_collector": 29.9418,
         "t_greenhouse": 13.7589,
         "t_outdoor": 12.1332
       },
@@ -7488,9 +7488,9 @@
     {
       "time": 40800,
       "values": {
-        "t_tank_top": 28.2552,
-        "t_tank_bottom": 28.2429,
-        "t_collector": 29.683,
+        "t_tank_top": 28.2511,
+        "t_tank_bottom": 28.2395,
+        "t_collector": 29.8765,
         "t_greenhouse": 13.7309,
         "t_outdoor": 12.1134
       },
@@ -7499,9 +7499,9 @@
     {
       "time": 40860,
       "values": {
-        "t_tank_top": 28.2525,
-        "t_tank_bottom": 28.241,
-        "t_collector": 29.6158,
+        "t_tank_top": 28.2483,
+        "t_tank_bottom": 28.2376,
+        "t_collector": 29.8058,
         "t_greenhouse": 13.7027,
         "t_outdoor": 12.0936
       },
@@ -7510,9 +7510,9 @@
     {
       "time": 40920,
       "values": {
-        "t_tank_top": 28.2498,
-        "t_tank_bottom": 28.2391,
-        "t_collector": 29.5433,
+        "t_tank_top": 28.2456,
+        "t_tank_bottom": 28.2357,
+        "t_collector": 29.7299,
         "t_greenhouse": 13.6745,
         "t_outdoor": 12.0738
       },
@@ -7521,9 +7521,9 @@
     {
       "time": 40980,
       "values": {
-        "t_tank_top": 28.2471,
-        "t_tank_bottom": 28.2371,
-        "t_collector": 29.4655,
+        "t_tank_top": 28.243,
+        "t_tank_bottom": 28.2337,
+        "t_collector": 29.6488,
         "t_greenhouse": 13.6463,
         "t_outdoor": 12.0539
       },
@@ -7532,9 +7532,9 @@
     {
       "time": 41040,
       "values": {
-        "t_tank_top": 28.2444,
-        "t_tank_bottom": 28.2352,
-        "t_collector": 29.3826,
+        "t_tank_top": 28.2403,
+        "t_tank_bottom": 28.2317,
+        "t_collector": 29.5626,
         "t_greenhouse": 13.6179,
         "t_outdoor": 12.034
       },
@@ -7543,9 +7543,9 @@
     {
       "time": 41100,
       "values": {
-        "t_tank_top": 28.2418,
-        "t_tank_bottom": 28.2332,
-        "t_collector": 29.2946,
+        "t_tank_top": 28.2377,
+        "t_tank_bottom": 28.2297,
+        "t_collector": 29.4714,
         "t_greenhouse": 13.5896,
         "t_outdoor": 12.0141
       },
@@ -7554,9 +7554,9 @@
     {
       "time": 41160,
       "values": {
-        "t_tank_top": 28.2391,
-        "t_tank_bottom": 28.2311,
-        "t_collector": 29.2016,
+        "t_tank_top": 28.2351,
+        "t_tank_bottom": 28.2276,
+        "t_collector": 29.3753,
         "t_greenhouse": 13.5611,
         "t_outdoor": 11.9941
       },
@@ -7565,9 +7565,9 @@
     {
       "time": 41220,
       "values": {
-        "t_tank_top": 28.2365,
-        "t_tank_bottom": 28.2291,
-        "t_collector": 29.1038,
+        "t_tank_top": 28.2325,
+        "t_tank_bottom": 28.2255,
+        "t_collector": 29.2744,
         "t_greenhouse": 13.5326,
         "t_outdoor": 11.9741
       },
@@ -7576,9 +7576,9 @@
     {
       "time": 41280,
       "values": {
-        "t_tank_top": 28.2339,
-        "t_tank_bottom": 28.227,
-        "t_collector": 29.0011,
+        "t_tank_top": 28.2299,
+        "t_tank_bottom": 28.2235,
+        "t_collector": 29.1687,
         "t_greenhouse": 13.504,
         "t_outdoor": 11.954
       },
@@ -7587,9 +7587,9 @@
     {
       "time": 41340,
       "values": {
-        "t_tank_top": 28.2314,
-        "t_tank_bottom": 28.2249,
-        "t_collector": 28.8937,
+        "t_tank_top": 28.2274,
+        "t_tank_bottom": 28.2213,
+        "t_collector": 29.0583,
         "t_greenhouse": 13.4754,
         "t_outdoor": 11.9339
       },
@@ -7598,9 +7598,9 @@
     {
       "time": 41400,
       "values": {
-        "t_tank_top": 28.2288,
-        "t_tank_bottom": 28.2228,
-        "t_collector": 28.7817,
+        "t_tank_top": 28.2248,
+        "t_tank_bottom": 28.2192,
+        "t_collector": 28.9434,
         "t_greenhouse": 13.4467,
         "t_outdoor": 11.9138
       },
@@ -7609,9 +7609,9 @@
     {
       "time": 41460,
       "values": {
-        "t_tank_top": 28.2263,
-        "t_tank_bottom": 28.2207,
-        "t_collector": 28.6651,
+        "t_tank_top": 28.2223,
+        "t_tank_bottom": 28.2171,
+        "t_collector": 28.8239,
         "t_greenhouse": 13.4179,
         "t_outdoor": 11.8936
       },
@@ -7620,9 +7620,9 @@
     {
       "time": 41520,
       "values": {
-        "t_tank_top": 28.2237,
-        "t_tank_bottom": 28.2185,
-        "t_collector": 28.544,
+        "t_tank_top": 28.2198,
+        "t_tank_bottom": 28.2149,
+        "t_collector": 28.7,
         "t_greenhouse": 13.3891,
         "t_outdoor": 11.8734
       },
@@ -7631,9 +7631,9 @@
     {
       "time": 41580,
       "values": {
-        "t_tank_top": 28.2212,
-        "t_tank_bottom": 28.2164,
-        "t_collector": 28.4185,
+        "t_tank_top": 28.2173,
+        "t_tank_bottom": 28.2127,
+        "t_collector": 28.5717,
         "t_greenhouse": 13.3602,
         "t_outdoor": 11.8531
       },
@@ -7642,9 +7642,9 @@
     {
       "time": 41640,
       "values": {
-        "t_tank_top": 28.2187,
-        "t_tank_bottom": 28.2142,
-        "t_collector": 28.2887,
+        "t_tank_top": 28.2148,
+        "t_tank_bottom": 28.2106,
+        "t_collector": 28.4392,
         "t_greenhouse": 13.3312,
         "t_outdoor": 11.8328
       },
@@ -7653,9 +7653,9 @@
     {
       "time": 41700,
       "values": {
-        "t_tank_top": 28.2162,
-        "t_tank_bottom": 28.212,
-        "t_collector": 28.1547,
+        "t_tank_top": 28.2123,
+        "t_tank_bottom": 28.2084,
+        "t_collector": 28.3024,
         "t_greenhouse": 13.3022,
         "t_outdoor": 11.8125
       },
@@ -7664,9 +7664,9 @@
     {
       "time": 41760,
       "values": {
-        "t_tank_top": 28.2137,
-        "t_tank_bottom": 28.2098,
-        "t_collector": 28.0164,
+        "t_tank_top": 28.2098,
+        "t_tank_bottom": 28.2061,
+        "t_collector": 28.1615,
         "t_greenhouse": 13.2732,
         "t_outdoor": 11.7922
       },
@@ -7675,9 +7675,9 @@
     {
       "time": 41820,
       "values": {
-        "t_tank_top": 28.2112,
-        "t_tank_bottom": 28.2076,
-        "t_collector": 27.874,
+        "t_tank_top": 28.2073,
+        "t_tank_bottom": 28.2039,
+        "t_collector": 28.0166,
         "t_greenhouse": 13.244,
         "t_outdoor": 11.7718
       },
@@ -7686,9 +7686,9 @@
     {
       "time": 41880,
       "values": {
-        "t_tank_top": 28.2087,
-        "t_tank_bottom": 28.2053,
-        "t_collector": 27.7276,
+        "t_tank_top": 28.2048,
+        "t_tank_bottom": 28.2017,
+        "t_collector": 27.8676,
         "t_greenhouse": 13.2148,
         "t_outdoor": 11.7514
       },
@@ -7697,9 +7697,9 @@
     {
       "time": 41940,
       "values": {
-        "t_tank_top": 28.2062,
-        "t_tank_bottom": 28.2031,
-        "t_collector": 27.5772,
+        "t_tank_top": 28.2024,
+        "t_tank_bottom": 28.1994,
+        "t_collector": 27.7147,
         "t_greenhouse": 13.1856,
         "t_outdoor": 11.7309
       },
@@ -7708,9 +7708,9 @@
     {
       "time": 42000,
       "values": {
-        "t_tank_top": 28.2038,
-        "t_tank_bottom": 28.2008,
-        "t_collector": 27.4229,
+        "t_tank_top": 28.1999,
+        "t_tank_bottom": 28.1972,
+        "t_collector": 27.558,
         "t_greenhouse": 13.1563,
         "t_outdoor": 11.7104
       },
@@ -7719,9 +7719,9 @@
     {
       "time": 42060,
       "values": {
-        "t_tank_top": 28.2013,
-        "t_tank_bottom": 28.1986,
-        "t_collector": 27.2647,
+        "t_tank_top": 28.1974,
+        "t_tank_bottom": 28.1949,
+        "t_collector": 27.3974,
         "t_greenhouse": 13.1269,
         "t_outdoor": 11.6899
       },
@@ -7730,9 +7730,9 @@
     {
       "time": 42120,
       "values": {
-        "t_tank_top": 28.1988,
-        "t_tank_bottom": 28.1963,
-        "t_collector": 27.1028,
+        "t_tank_top": 28.195,
+        "t_tank_bottom": 28.1926,
+        "t_collector": 27.2331,
         "t_greenhouse": 13.0975,
         "t_outdoor": 11.6694
       },
@@ -7741,9 +7741,9 @@
     {
       "time": 42180,
       "values": {
-        "t_tank_top": 28.1964,
-        "t_tank_bottom": 28.194,
-        "t_collector": 26.9372,
+        "t_tank_top": 28.1925,
+        "t_tank_bottom": 28.1903,
+        "t_collector": 27.0652,
         "t_greenhouse": 13.0681,
         "t_outdoor": 11.6488
       },
@@ -7752,9 +7752,9 @@
     {
       "time": 42240,
       "values": {
-        "t_tank_top": 28.1939,
-        "t_tank_bottom": 28.1917,
-        "t_collector": 26.7679,
+        "t_tank_top": 28.1901,
+        "t_tank_bottom": 28.188,
+        "t_collector": 26.8936,
         "t_greenhouse": 13.0385,
         "t_outdoor": 11.6282
       },
@@ -7763,9 +7763,9 @@
     {
       "time": 42300,
       "values": {
-        "t_tank_top": 28.1915,
-        "t_tank_bottom": 28.1894,
-        "t_collector": 26.595,
+        "t_tank_top": 28.1876,
+        "t_tank_bottom": 28.1857,
+        "t_collector": 26.7186,
         "t_greenhouse": 13.009,
         "t_outdoor": 11.6075
       },
@@ -7774,9 +7774,9 @@
     {
       "time": 42360,
       "values": {
-        "t_tank_top": 28.189,
-        "t_tank_bottom": 28.1871,
-        "t_collector": 26.4187,
+        "t_tank_top": 28.1852,
+        "t_tank_bottom": 28.1834,
+        "t_collector": 26.54,
         "t_greenhouse": 12.9793,
         "t_outdoor": 11.5869
       },
@@ -7785,9 +7785,9 @@
     {
       "time": 42420,
       "values": {
-        "t_tank_top": 28.1866,
-        "t_tank_bottom": 28.1848,
-        "t_collector": 26.2388,
+        "t_tank_top": 28.1827,
+        "t_tank_bottom": 28.1811,
+        "t_collector": 26.358,
         "t_greenhouse": 12.9496,
         "t_outdoor": 11.5662
       },
@@ -7796,9 +7796,9 @@
     {
       "time": 42480,
       "values": {
-        "t_tank_top": 28.1841,
-        "t_tank_bottom": 28.1825,
-        "t_collector": 26.0556,
+        "t_tank_top": 28.1803,
+        "t_tank_bottom": 28.1788,
+        "t_collector": 26.1726,
         "t_greenhouse": 12.9199,
         "t_outdoor": 11.5454
       },
@@ -7807,9 +7807,9 @@
     {
       "time": 42540,
       "values": {
-        "t_tank_top": 28.1817,
-        "t_tank_bottom": 28.1802,
-        "t_collector": 25.869,
+        "t_tank_top": 28.1779,
+        "t_tank_bottom": 28.1764,
+        "t_collector": 25.984,
         "t_greenhouse": 12.8901,
         "t_outdoor": 11.5247
       },
@@ -7818,9 +7818,9 @@
     {
       "time": 42600,
       "values": {
-        "t_tank_top": 28.1792,
-        "t_tank_bottom": 28.1778,
-        "t_collector": 25.6792,
+        "t_tank_top": 28.1754,
+        "t_tank_bottom": 28.1741,
+        "t_collector": 25.7921,
         "t_greenhouse": 12.8603,
         "t_outdoor": 11.5039
       },
@@ -7829,9 +7829,9 @@
     {
       "time": 42660,
       "values": {
-        "t_tank_top": 28.1768,
-        "t_tank_bottom": 28.1755,
-        "t_collector": 25.4861,
+        "t_tank_top": 28.173,
+        "t_tank_bottom": 28.1718,
+        "t_collector": 25.597,
         "t_greenhouse": 12.8304,
         "t_outdoor": 11.4831
       },
@@ -7840,9 +7840,9 @@
     {
       "time": 42720,
       "values": {
-        "t_tank_top": 28.1744,
-        "t_tank_bottom": 28.1731,
-        "t_collector": 25.2898,
+        "t_tank_top": 28.1706,
+        "t_tank_bottom": 28.1694,
+        "t_collector": 25.3987,
         "t_greenhouse": 12.8004,
         "t_outdoor": 11.4622
       },
@@ -7851,9 +7851,9 @@
     {
       "time": 42780,
       "values": {
-        "t_tank_top": 28.1719,
-        "t_tank_bottom": 28.1708,
-        "t_collector": 25.0905,
+        "t_tank_top": 28.1681,
+        "t_tank_bottom": 28.167,
+        "t_collector": 25.1974,
         "t_greenhouse": 12.7704,
         "t_outdoor": 11.4413
       },
@@ -7862,9 +7862,9 @@
     {
       "time": 42840,
       "values": {
-        "t_tank_top": 28.1695,
-        "t_tank_bottom": 28.1684,
-        "t_collector": 24.888,
+        "t_tank_top": 28.1657,
+        "t_tank_bottom": 28.1647,
+        "t_collector": 24.9931,
         "t_greenhouse": 12.7404,
         "t_outdoor": 11.4204
       },
@@ -7873,9 +7873,9 @@
     {
       "time": 42900,
       "values": {
-        "t_tank_top": 28.167,
-        "t_tank_bottom": 28.166,
-        "t_collector": 24.6826,
+        "t_tank_top": 28.1632,
+        "t_tank_bottom": 28.1623,
+        "t_collector": 24.7858,
         "t_greenhouse": 12.7103,
         "t_outdoor": 11.3995
       },
@@ -7884,9 +7884,9 @@
     {
       "time": 42960,
       "values": {
-        "t_tank_top": 28.1646,
-        "t_tank_bottom": 28.1637,
-        "t_collector": 24.4742,
+        "t_tank_top": 28.1608,
+        "t_tank_bottom": 28.1599,
+        "t_collector": 24.5756,
         "t_greenhouse": 12.6801,
         "t_outdoor": 11.3785
       },
@@ -7895,9 +7895,9 @@
     {
       "time": 43020,
       "values": {
-        "t_tank_top": 28.1622,
-        "t_tank_bottom": 28.1613,
-        "t_collector": 24.2629,
+        "t_tank_top": 28.1584,
+        "t_tank_bottom": 28.1576,
+        "t_collector": 24.3625,
         "t_greenhouse": 12.65,
         "t_outdoor": 11.3576
       },
@@ -7906,9 +7906,9 @@
     {
       "time": 43080,
       "values": {
-        "t_tank_top": 28.1597,
-        "t_tank_bottom": 28.1589,
-        "t_collector": 24.0488,
+        "t_tank_top": 28.1559,
+        "t_tank_bottom": 28.1552,
+        "t_collector": 24.1466,
         "t_greenhouse": 12.6197,
         "t_outdoor": 11.3365
       },
@@ -7917,9 +7917,9 @@
     {
       "time": 43140,
       "values": {
-        "t_tank_top": 28.1573,
-        "t_tank_bottom": 28.1565,
-        "t_collector": 23.8318,
+        "t_tank_top": 28.1535,
+        "t_tank_bottom": 28.1528,
+        "t_collector": 23.9279,
         "t_greenhouse": 12.5894,
         "t_outdoor": 11.3155
       },
@@ -7928,9 +7928,9 @@
     {
       "time": 43200,
       "values": {
-        "t_tank_top": 28.1548,
-        "t_tank_bottom": 28.1541,
-        "t_collector": 23.6121,
+        "t_tank_top": 28.1511,
+        "t_tank_bottom": 28.1504,
+        "t_collector": 23.7065,
         "t_greenhouse": 12.5591,
         "t_outdoor": 11.2944
       },
@@ -7958,15 +7958,15 @@
     },
     {
       "kind": "sim",
-      "time": 38965,
+      "time": 38845,
       "text": "solar_charging → idle | tank stopped rising (peak T_top=28.3°C, now 28.4°C, drop -0.1°C) | T_coll=28.6 T_top=28.4 T_bot=28.3 T_gh=14.6 T_out=12.7",
       "mode": "idle"
     }
   ],
   "final_model_state": {
-    "t_tank_top": 28.1548,
-    "t_tank_bottom": 28.1541,
-    "t_collector": 23.6121,
+    "t_tank_top": 28.1511,
+    "t_tank_bottom": 28.1504,
+    "t_collector": 23.7065,
     "t_greenhouse": 12.5591,
     "t_outdoor": 11.2944,
     "irradiance": 0.0312,
@@ -7974,7 +7974,7 @@
   },
   "final_controller_state": {
     "currentMode": "idle",
-    "modeStartTime": 38965,
+    "modeStartTime": 38845,
     "collectorsDrained": false,
     "lastRefillAttempt": 0,
     "emergencyHeatingActive": false,

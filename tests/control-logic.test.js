@@ -111,8 +111,8 @@ describe('DEFAULT_CONFIG thresholds', () => {
   it('solarEnterDelta default is 3 K', () => {
     assert.strictEqual(DEFAULT_CONFIG.solarEnterDelta, 3);
   });
-  it('solarExitStallSeconds default is 180 s', () => {
-    assert.strictEqual(DEFAULT_CONFIG.solarExitStallSeconds, 180);
+  it('solarExitStallSeconds default is 60 s', () => {
+    assert.strictEqual(DEFAULT_CONFIG.solarExitStallSeconds, 60);
   });
   it('freezeDrainTemp default is 4 °C', () => {
     assert.strictEqual(DEFAULT_CONFIG.freezeDrainTemp, 4);
@@ -132,7 +132,7 @@ describe('DEFAULT_CONFIG thresholds', () => {
     assert.strictEqual(below.nextMode, MODES.IDLE);
   });
 
-  it('solar_stall fires at 180 s elapsed but not at 179 s', () => {
+  it('solar_stall fires at 60 s elapsed but not at 59 s', () => {
     // Tank mean = (44 + 36) / 2 = 40, matches carried peak. No drop.
     // Collector at 45 keeps collector-tank_top delta (45-44=1) below the
     // solarStallBypassDelta of 10, so stall is not bypassed.
@@ -141,7 +141,7 @@ describe('DEFAULT_CONFIG thresholds', () => {
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 2000,
       solarChargePeakTankAvg: 40,
-      solarChargePeakTankAvgAt: 1820  // 180s ago
+      solarChargePeakTankAvgAt: 1940  // 60s ago
     }), null);
     assert.strictEqual(at.nextMode, MODES.IDLE);
     assert.strictEqual(at.reason, 'solar_stall');
@@ -151,7 +151,7 @@ describe('DEFAULT_CONFIG thresholds', () => {
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 2000,
       solarChargePeakTankAvg: 40,
-      solarChargePeakTankAvgAt: 1821  // 179s ago
+      solarChargePeakTankAvgAt: 1941  // 59s ago
     }), null);
     assert.strictEqual(below.nextMode, MODES.SOLAR_CHARGING);
   });
@@ -189,10 +189,10 @@ describe('hysteresis', () => {
 
   it('stays in solar even when collector falls below tank_bottom + 2 if tank still rising', () => {
     // Exit criteria: stay in solar until mean tank temp stops rising for
-    // solarExitStallSeconds (3 min default) or drops 2°C from peak —
-    // NOT based on collector/tank_bottom delta. Here the collector is
-    // barely warmer than tank_bottom but the tank mean just rose
-    // (42+40)/2 = 41 vs. peak of 40, so we keep harvesting.
+    // solarExitStallSeconds (60 s default) or drops 2°C from peak — NOT
+    // based on collector/tank_bottom delta. Here the collector is barely
+    // warmer than tank_bottom but the tank mean just rose (42+40)/2 = 41
+    // vs. peak of 40, so peak updates to 41@now and we keep harvesting.
     const result = evaluate(makeState({
       temps: { collector: 31, tank_top: 42, tank_bottom: 40, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
@@ -204,7 +204,7 @@ describe('hysteresis', () => {
   });
 
   it('exits solar when mean tank has not risen for solarExitStallSeconds', () => {
-    // Peak was set 200 s ago (> 180 s stall threshold) and mean tank
+    // Peak was set 200 s ago (> 60 s stall threshold) and mean tank
     // temp has not exceeded it since. Collector only 5 K above tank_top
     // so the much-hotter-collector bypass (solarStallBypassDelta=10)
     // does not suppress the stall.
@@ -250,13 +250,15 @@ describe('hysteresis', () => {
   });
 
   it('exits solar when mean tank dropped 2°C from session peak', () => {
-    // Mean = (38+38)/2 = 38, peak was 40. Dropped 2 — exits.
+    // Mean = (38+38)/2 = 38, peak was 40. Dropped 2 — exits via drop-
+    // from-peak. Peak 30 s old (< 60 s stall) so stall is not the
+    // trigger; drop-from-peak is.
     const result = evaluate(makeState({
       temps: { collector: 50, tank_top: 38, tank_bottom: 38, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 2000,
       solarChargePeakTankAvg: 40,
-      solarChargePeakTankAvgAt: 1900  // recent — stall not yet triggered
+      solarChargePeakTankAvgAt: 1970  // 30s ago — stall not yet triggered
     }), null);
     assert.strictEqual(result.nextMode, MODES.IDLE);
     assert.strictEqual(result.reason, 'solar_drop_from_peak');
@@ -264,13 +266,13 @@ describe('hysteresis', () => {
 
   it('stays in solar when mean tank has not stalled and has not dropped 2°C', () => {
     // Mean = (39+39.5)/2 = 39.25, peak was 40. Dropped 0.75°C — under
-    // threshold; stall not yet 180 s. Keep harvesting.
+    // threshold; peak 30 s old (< 60 s stall). Keep harvesting.
     const result = evaluate(makeState({
       temps: { collector: 45, tank_top: 39, tank_bottom: 39.5, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 2000,
       solarChargePeakTankAvg: 40,
-      solarChargePeakTankAvgAt: 1850  // 150s ago
+      solarChargePeakTankAvgAt: 1970  // 30s ago
     }), null);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
   });
@@ -303,17 +305,17 @@ describe('hysteresis', () => {
 
   it('keeps peak unchanged if mean-tank did not rise', () => {
     // Mean = (39.5+40)/2 = 39.75, carried peak 40 — keeps peak. Dropped
-    // 0.25 °C, below solarExitTankDrop of 2. Stall not yet 180 s.
+    // 0.25 °C, below solarExitTankDrop of 2. Peak 30 s old (< 60 s stall).
     const result = evaluate(makeState({
       temps: { collector: 45, tank_top: 39.5, tank_bottom: 40, greenhouse: 15, outdoor: 10 },
       currentMode: MODES.SOLAR_CHARGING,
       modeEnteredAt: 0, now: 2000,
       solarChargePeakTankAvg: 40,
-      solarChargePeakTankAvgAt: 1900
+      solarChargePeakTankAvgAt: 1970
     }), null);
     assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
     assert.strictEqual(result.flags.solarChargePeakTankAvg, 40);
-    assert.strictEqual(result.flags.solarChargePeakTankAvgAt, 1900);
+    assert.strictEqual(result.flags.solarChargePeakTankAvgAt, 1970);
   });
 
   it('clears peak tracking when leaving solar charging', () => {

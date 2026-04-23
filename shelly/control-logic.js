@@ -102,14 +102,21 @@ var DEFAULT_CONFIG = {
   //   - mean tank temp has not risen for solarExitStallSeconds, OR
   //   - mean tank temp has dropped solarExitTankDrop °C from the peak
   //
-  // solarExitStallSeconds lowered 300 → 180 on 2026-04-22: constant-
-  // irradiance simulation at 300 W/m² shows shorter stalls pulse the
-  // pump more aggressively, letting the collector rebuild thermal head
-  // between sessions. 180 s captures ~6% more energy than 300 s while
-  // keeping cycle count within ~10%; going shorter (60 s) gains another
-  // ~8% but costs ~25% more relay cycles.
+  // solarExitStallSeconds lowered 300 → 180 on 2026-04-22, then → 60 on
+  // 2026-04-23 against the v2 calibrated thermal simulator (drain bolus
+  // + flow ramp + sky radiation fit against 3 days of production
+  // telemetry). Fine sweep across 20-240 s on a broken-cloud day:
+  //     20 s → 2.888 kWh   180 s → 2.837 kWh (old default)
+  //     60 s → 2.887 kWh   240 s → 2.801 kWh
+  //   Clear days saturate flat at 5.69 kWh for every value 20-240 s.
+  // 60 s gains ~1.8% on cloudy days over 180 s with no regression on
+  // clear days; going below 60 s saturates. The physics: during a cloud
+  // dip, the pump is pulling from tank bottom through a now-cool
+  // collector and returning water barely warmer than what it took, so
+  // further pumping is net-negative. Exiting fast lets the collector
+  // rebuild thermal head while tank energy isn't bled off.
   solarExitTankDrop: 2,
-  solarExitStallSeconds: 180,
+  solarExitStallSeconds: 60,
   // Bypass the stall-timer exit when the collector is still clearly
   // much hotter than tank_top. Morning sessions with a cold tank can
   // sit with collector 40–60 K above tank_top while tank_top plateaus
