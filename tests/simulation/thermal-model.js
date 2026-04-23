@@ -47,6 +47,10 @@
 //     absorber's thermal mass dominates, then drops fast as plate heat
 //     transfers to the cold stream.
 //
+//     Bolus τ was refit 2026-04-23 (second pass) against 10 h of
+//     post-21:44 recovery: sensor 16.7 → 28.8 °C, τ = 21 h (R² 0.71).
+//     Using 20 h. Earlier 4 h was an eyeball guess — 5× too fast.
+//
 //   - Flow ramp: pump flow goes 0 → steady over pumpFlowRampSec
 //     seconds after each pump-on. Captures priming + pipe-fill +
 //     startup transients. Without this, the first 30 s of every
@@ -67,8 +71,17 @@ const PARAMS = {
   collectorHeatLossCoeff: 5,       // W/(m²·K) — convective loss to ambient
   collectorSkyLossCoeff: 4,        // W/(m²·K) — radiative loss toward T_sky
   skyDeltaK: 8,                    // T_sky ≈ T_outdoor - skyDeltaK on clear nights
-  collectorThermalMassDry: 5000,   // J/K
-  collectorThermalMassWet: 20000,  // J/K
+  // Thermal mass fit 2026-04-23 (second pass). Evening 21:04 collector
+  // cooldown against T_eff = (h_conv*T_out + h_sky*(T_out-skyΔ))/(h_conv+
+  // h_sky) gave τ = 23.2 min, R² = 0.978. With combined h*A =
+  // (h_conv + h_sky)·A = 36 W/K, C_dry = h*A × τ × 60 ≈ 50 kJ/K.
+  // Earlier first-pass fit said C_dry ≈ 5 kJ/K, but that used the single
+  // h*A = 20 W/K (before the sky term was added), so it undershot by
+  // exactly the right factor. 50 kJ/K also lines up with literature for a
+  // 4 m² glazed flat-plate collector (8-15 kJ/(m²·K) × 4 m² = 32-60 kJ/K).
+  // Wet adds 10 L of water @ 4186 J/(L·K) = 41.86 kJ/K.
+  collectorThermalMassDry: 50000,  // J/K
+  collectorThermalMassWet: 92000,  // J/K (= C_dry + 10 L × 4186)
   collectorWaterCapacity: 10,      // liters
 
   // Tank
@@ -78,10 +91,13 @@ const PARAMS = {
   tankMixingCoeff: 4,              // W/K stable top>bot, pump off
   tankPumpMixingCoeff: 300,        // W/K stable top>bot, pump running (plume entrainment)
   tankConvectiveMixing: 500,       // W/K unstable bot>top
-  // Drain bolus: 10 L of cold water sits at the very bottom after a drain,
-  // what the tank_bottom sensor physically reads. Fit from 2026-04-21
-  // drain recovery: τ ≈ 4 h to fully mix with the bottom zone.
-  bolusMixTauSec: 4 * 3600,        // seconds
+  // Drain bolus: 10 L of cold water sits at the very bottom after a
+  // drain, what the tank_bottom sensor physically reads. Fit from
+  // 2026-04-21 drain recovery (10 h of data, sensor rose 16.7 → 28.8 °C).
+  // Second-pass exponential fit against log((T_zone - T_sensor)) with
+  // T_zone ≈ tank_top - 2 K gave τ = 21 h (R² = 0.71). Using 20 h for
+  // simulation — earlier guess of 4 h decayed the bolus 5× too fast.
+  bolusMixTauSec: 20 * 3600,       // seconds
   bolusSensorThreshold: 0.5,       // L — below this, sensor reads zone, not bolus
 
   // Pump startup transient: flow ramps from 0 → steady over this window.
