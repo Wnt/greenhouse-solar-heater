@@ -23,6 +23,7 @@
     "tests/e2e/_setup/start.cjs",
     "tests/frontend/**/*.spec.js",
     "tests/simulation/*.js",
+    "tests/simulation/*.mjs",
     "design/docs/pdf/*.js"
   ],
   "project": [

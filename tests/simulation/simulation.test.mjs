@@ -1,10 +1,12 @@
-const { describe, it } = require('node:test');
-const assert = require('node:assert');
-const fs = require('node:fs');
-const path = require('node:path');
-const { simulate } = require('./simulator.js');
-const { scenarios } = require('./scenarios.js');
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { simulate } from './simulator.mjs';
+import { scenarios } from './scenarios.mjs';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
 
 describe('simulation', () => {

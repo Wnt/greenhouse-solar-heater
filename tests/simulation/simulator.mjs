@@ -1,13 +1,16 @@
 // Virtual-time simulation harness
 // Runs thermal model + control logic together in virtual time
 
-const { tick, createModel } = require('./thermal-model.js');
+import { createRequire } from 'node:module';
+import { tick, createModel } from '../../playground/js/physics.js';
+
+const require = createRequire(import.meta.url);
 const { evaluate, MODES } = require('../../shelly/control-logic.js');
 
 const CONTROL_INTERVAL = 30;  // seconds between evaluate() calls
 const SIM_STEP = 10;  // seconds per simulation tick (must evenly divide CONTROL_INTERVAL)
 
-function simulate(scenario, config) {
+export function simulate(scenario, config) {
   const initTemps = scenario.initialState || {};
   let model = createModel(Object.assign({
     outdoor: scenario.ambient(0),
@@ -70,7 +73,7 @@ function simulate(scenario, config) {
     // Event detection
     const prevMode = trace.length > 0 ? trace[trace.length - 1].mode : null;
     const event = currentMode !== prevMode
-      ? 'MODE_TRANSITION: ' + (prevMode || 'INIT') + ' \u2192 ' + currentMode
+      ? 'MODE_TRANSITION: ' + (prevMode || 'INIT') + ' → ' + currentMode
       : null;
 
     trace.push({
@@ -135,5 +138,3 @@ function simulate(scenario, config) {
 function round2(n) {
   return Math.round(n * 100) / 100;
 }
-
-module.exports = { simulate };

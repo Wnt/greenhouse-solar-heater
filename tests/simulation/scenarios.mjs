@@ -1,6 +1,8 @@
 // Scenario definitions for simulation tests
 // Each scenario: { name, duration, initialState, ambient(t), irradiance(t), assertions[] }
 
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 const { MODES } = require('../../shelly/control-logic.js');
 
 // --- Environment profile helpers ---
@@ -54,24 +56,16 @@ function cloudyIrradiance(peak, cloudInterval, cloudDuration) {
 // --- Assertion helpers ---
 
 function findModeTransitions(trace, toMode) {
-  return trace.filter(s => s.event && s.event.includes('\u2192 ' + toMode));
+  return trace.filter(s => s.event && s.event.includes('→ ' + toMode));
 }
 
 function findMode(trace, mode) {
   return trace.filter(s => s.mode === mode);
 }
 
-function maxTemp(trace, sensor) {
-  return Math.max(...trace.map(s => s.temps[sensor]));
-}
-
-function minTemp(trace, sensor) {
-  return Math.min(...trace.map(s => s.temps[sensor]));
-}
-
 // --- Scenarios ---
 
-const scenarios = [
+export const scenarios = [
   // 1. Sunny day
   {
     name: 'sunny-day',
@@ -144,7 +138,7 @@ const scenarios = [
         check: function(trace) {
           let lastTransition = 0;
           for (const s of trace) {
-            if (s.event && s.event.includes('\u2192')) {
+            if (s.event && s.event.includes('→')) {
               const gap = s.t - lastTransition;
               // Allow very first transition and drain preemptions
               if (lastTransition > 0 && gap < 25 && !s.event.includes(MODES.ACTIVE_DRAIN)) {
@@ -178,7 +172,7 @@ const scenarios = [
     irradiance: ramp(400, 0, 21600),
     assertions: [
       {
-        description: 'drain triggers before outdoor reaches 0\u00b0C',
+        description: 'drain triggers before outdoor reaches 0°C',
         check: function(trace) {
           const drainStart = findModeTransitions(trace, MODES.ACTIVE_DRAIN);
           if (drainStart.length === 0) throw new Error('drain never triggered');
@@ -209,20 +203,20 @@ const scenarios = [
     irradiance: constant(900),
     assertions: [
       {
-        description: 'overheat drain triggers when tank_top exceeds 85\u00b0C',
+        description: 'overheat drain triggers when tank_top exceeds 85°C',
         check: function(trace) {
           const drain = findModeTransitions(trace, MODES.ACTIVE_DRAIN);
           if (drain.length === 0) throw new Error('overheat drain never triggered');
         }
       },
       {
-        description: 'tank top stays below 90\u00b0C after drain',
+        description: 'tank top stays below 90°C after drain',
         check: function(trace) {
           const drainStart = findModeTransitions(trace, MODES.ACTIVE_DRAIN);
           if (drainStart.length === 0) return;
           const afterDrain = trace.filter(s => s.t > drainStart[0].t);
           const max = Math.max(...afterDrain.map(s => s.temps.tank_top));
-          if (max > 95) throw new Error('tank_top reached ' + max.toFixed(1) + '\u00b0C after drain');
+          if (max > 95) throw new Error('tank_top reached ' + max.toFixed(1) + '°C after drain');
         }
       },
     ],
@@ -259,7 +253,7 @@ const scenarios = [
           // Check that heating doesn't run when greenhouse > 12.5
           const overheated = heatFrames.filter(s => s.temps.greenhouse > 12.5);
           if (overheated.length > 60) { // allow transient from min duration
-            throw new Error('heating ran too long above 12\u00b0C');
+            throw new Error('heating ran too long above 12°C');
           }
         }
       },
@@ -302,7 +296,7 @@ const scenarios = [
           const emFrames = findMode(trace, MODES.EMERGENCY_HEATING);
           const overheated = emFrames.filter(s => s.temps.greenhouse > 13);
           if (overheated.length > 600) {
-            throw new Error('emergency ran too long above 12\u00b0C');
+            throw new Error('emergency ran too long above 12°C');
           }
         }
       },
@@ -471,20 +465,20 @@ const scenarios = [
     irradiance: constant(300),  // just enough to hover near threshold
     assertions: [
       {
-        // Relaxed 50s \u2192 25s on 2026-04-23 after the thermal-model flow
+        // Relaxed 50s → 25s on 2026-04-23 after the thermal-model flow
         // rate was re-calibrated from 5 L/min to 2.5 L/min against
         // production data. Lower flow means solar sessions don't cool
         // the collector as much, so after a minModeDuration=60s session
         // the re-entry threshold (collector > tank_bottom + 3) is
         // crossed within 30s. That is the correct thermodynamic
-        // response to irradiance = 300 W/m\u00b2 (genuinely marginal). The
+        // response to irradiance = 300 W/m² (genuinely marginal). The
         // 25s threshold matches the sibling semi-cloudy scenario and
         // still catches truly pathological sub-25s bounces.
         description: 'no rapid oscillation (min 25s between transitions)',
         check: function(trace) {
           let lastT = 0;
           for (const s of trace) {
-            if (s.event && s.event.includes('\u2192')) {
+            if (s.event && s.event.includes('→')) {
               if (lastT > 0 && (s.t - lastT) < 25) {
                 throw new Error('oscillation: transitions at t=' + lastT + ' and t=' + s.t);
               }
@@ -496,5 +490,3 @@ const scenarios = [
     ],
   },
 ];
-
-module.exports = { scenarios };

@@ -1,6 +1,6 @@
-const { describe, it } = require('node:test');
-const assert = require('node:assert');
-const { createModel, tick, PARAMS } = require('./thermal-model.js');
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
+import { createModel, tick, PARAMS } from '../../playground/js/physics.js';
 
 const IDLE_DECISIONS = {
   valves: { vi_btm: false, vi_top: false, vi_coll: false,
