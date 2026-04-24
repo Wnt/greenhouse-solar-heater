@@ -12,12 +12,12 @@
 // recent bucket may still be filling between maintenance runs. UPSERT
 // makes the overlap idempotent.
 
-var MAINTENANCE_INTERVAL = 30 * 60 * 1000; // 30 minutes
-var INITIAL_DELAY = 60 * 1000;             // give the boot some breathing room
-var RETENTION_INTERVAL = '48 hours';
-var AGGREGATE_OVERLAP = '5 minutes';
+const MAINTENANCE_INTERVAL = 30 * 60 * 1000; // 30 minutes
+const INITIAL_DELAY = 60 * 1000;             // give the boot some breathing room
+const RETENTION_INTERVAL = '48 hours';
+const AGGREGATE_OVERLAP = '5 minutes';
 
-var UPSERT_SQL =
+const UPSERT_SQL =
   "INSERT INTO sensor_readings_30s (bucket, sensor_id, avg_value, min_value, max_value)\n" +
   "SELECT time_bucket('30 seconds', ts) AS bucket,\n" +
   "       sensor_id,\n" +
@@ -32,17 +32,17 @@ var UPSERT_SQL =
   "  min_value = EXCLUDED.min_value,\n" +
   "  max_value = EXCLUDED.max_value";
 
-var PROBE_SQL =
+const PROBE_SQL =
   "SELECT COALESCE(MAX(bucket), '1970-01-01'::timestamptz) AS max_bucket FROM sensor_readings_30s";
 
-var DELETE_SQL =
+const DELETE_SQL =
   "DELETE FROM sensor_readings WHERE ts < NOW() - INTERVAL '" + RETENTION_INTERVAL + "'";
 
 function create(getPool, log) {
-  var timer = null;
+  let timer = null;
 
   function run(callback) {
-    var p = getPool();
+    const p = getPool();
     if (!p) { if (callback) callback(); return; }
 
     p.query(PROBE_SQL, [], function (probeErr, probe) {
@@ -51,12 +51,12 @@ function create(getPool, log) {
         retention();
         return;
       }
-      var since = probe.rows[0].max_bucket;
+      const since = probe.rows[0].max_bucket;
       p.query(UPSERT_SQL, [since], function (err) {
         if (err) {
           log.warn('aggregate upsert failed', { error: err.message });
         } else {
-          log.info('aggregate upsert done', { since: since });
+          log.info('aggregate upsert done', { since });
         }
         retention();
       });
@@ -85,7 +85,7 @@ function create(getPool, log) {
     if (timer) { clearInterval(timer); timer = null; }
   }
 
-  return { run: run, start: start, stop: stop };
+  return { run, start, stop };
 }
 
-module.exports = { create: create };
+module.exports = { create };

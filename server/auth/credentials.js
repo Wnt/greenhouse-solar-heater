@@ -16,9 +16,9 @@ const log = createLogger('credentials');
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SETUP_WINDOW_MS = parseInt(process.env.SETUP_WINDOW_MINUTES || '30', 10) * 60 * 1000;
 
-var ROLES = { ADMIN: 'admin', READONLY: 'readonly' };
+const ROLES = { ADMIN: 'admin', READONLY: 'readonly' };
 
-var store = null;
+let store = null;
 
 function emptyStore() {
   return {
@@ -40,7 +40,7 @@ function normalizeCredential(cred) {
   if (!cred.device || typeof cred.device !== 'object') {
     cred.device = buildDeviceDetails(cred.lastUserAgent);
   } else {
-    var rebuilt = buildDeviceDetails(cred.lastUserAgent);
+    const rebuilt = buildDeviceDetails(cred.lastUserAgent);
     cred.device.browser = cred.device.browser || rebuilt.browser;
     cred.device.os = cred.device.os || rebuilt.os;
     cred.device.deviceType = cred.device.deviceType || rebuilt.deviceType;
@@ -72,8 +72,8 @@ function migrate(data) {
     // Ensure every credential and session has a userId (legacy stores
     // that were never migrated may have them undefined).
     if (data.users.length > 0) {
-      var firstAdmin = null;
-      for (var i = 0; i < data.users.length; i++) {
+      let firstAdmin = null;
+      for (let i = 0; i < data.users.length; i++) {
         if (data.users[i].role === ROLES.ADMIN) { firstAdmin = data.users[i]; break; }
       }
       if (!firstAdmin) firstAdmin = data.users[0];
@@ -87,10 +87,10 @@ function migrate(data) {
     return data;
   }
   // Legacy single-user format
-  var migrated = emptyStore();
+  const migrated = emptyStore();
   migrated.setup = data.setup || null;
   if (data.user) {
-    var legacy = {
+    const legacy = {
       id: data.user.id,
       name: data.user.name || 'admin',
       role: ROLES.ADMIN,
@@ -134,7 +134,7 @@ function load(callback) {
       if (callback) callback(null);
     });
   } else {
-    var data = storage.readSync();
+    const data = storage.readSync();
     if (data) {
       store = migrate(data);
       log.info('credentials loaded', {
@@ -176,8 +176,8 @@ function getUsers() {
 
 function getUserById(userId) {
   if (!userId) return null;
-  var users = getStore().users;
-  for (var i = 0; i < users.length; i++) {
+  const users = getStore().users;
+  for (let i = 0; i < users.length; i++) {
     if (users[i].id === userId) return users[i];
   }
   return null;
@@ -185,25 +185,25 @@ function getUserById(userId) {
 
 function findUserByName(name) {
   if (!name) return null;
-  var users = getStore().users;
-  for (var i = 0; i < users.length; i++) {
+  const users = getStore().users;
+  for (let i = 0; i < users.length; i++) {
     if (users[i].name === name) return users[i];
   }
   return null;
 }
 
 function createUser(name, role) {
-  var s = getStore();
+  const s = getStore();
   if (!name || typeof name !== 'string') {
     throw new Error('name is required');
   }
-  var trimmed = name.trim();
+  const trimmed = name.trim();
   if (!trimmed) throw new Error('name is required');
   if (findUserByName(trimmed)) {
     throw new Error('user already exists: ' + trimmed);
   }
-  var resolvedRole = role === ROLES.READONLY ? ROLES.READONLY : ROLES.ADMIN;
-  var user = {
+  const resolvedRole = role === ROLES.READONLY ? ROLES.READONLY : ROLES.ADMIN;
+  const user = {
     id: crypto.randomBytes(32).toString('base64url'),
     name: trimmed,
     role: resolvedRole,
@@ -216,17 +216,17 @@ function createUser(name, role) {
 }
 
 function deleteUser(userId) {
-  var s = getStore();
-  var idx = -1;
-  for (var i = 0; i < s.users.length; i++) {
+  const s = getStore();
+  let idx = -1;
+  for (let i = 0; i < s.users.length; i++) {
     if (s.users[i].id === userId) { idx = i; break; }
   }
   if (idx < 0) return false;
   // Refuse to delete the last admin so the system never locks itself out.
-  var deleted = s.users[idx];
+  const deleted = s.users[idx];
   if (deleted.role === ROLES.ADMIN) {
-    var otherAdmins = 0;
-    for (var j = 0; j < s.users.length; j++) {
+    let otherAdmins = 0;
+    for (let j = 0; j < s.users.length; j++) {
       if (j !== idx && s.users[j].role === ROLES.ADMIN) otherAdmins++;
     }
     if (otherAdmins === 0) {
@@ -244,20 +244,20 @@ function deleteUser(userId) {
 // Update a user's name and/or role. Throws on duplicate names, unknown
 // users, or attempts to demote the last admin.
 function updateUser(userId, updates) {
-  var s = getStore();
-  var user = null;
-  for (var i = 0; i < s.users.length; i++) {
+  const s = getStore();
+  let user = null;
+  for (let i = 0; i < s.users.length; i++) {
     if (s.users[i].id === userId) { user = s.users[i]; break; }
   }
   if (!user) throw new Error('User not found');
 
-  var nextName = user.name;
+  let nextName = user.name;
   if (updates && typeof updates.name === 'string') {
-    var trimmed = updates.name.trim();
+    const trimmed = updates.name.trim();
     if (!trimmed) throw new Error('name is required');
     if (trimmed.length > 64) throw new Error('Name is too long (max 64 chars)');
     if (trimmed !== user.name) {
-      var existing = findUserByName(trimmed);
+      const existing = findUserByName(trimmed);
       if (existing && existing.id !== userId) {
         throw new Error('A user with that name already exists');
       }
@@ -265,14 +265,14 @@ function updateUser(userId, updates) {
     }
   }
 
-  var nextRole = user.role;
+  let nextRole = user.role;
   if (updates && typeof updates.role === 'string') {
-    var requested = updates.role === ROLES.READONLY ? ROLES.READONLY : ROLES.ADMIN;
+    const requested = updates.role === ROLES.READONLY ? ROLES.READONLY : ROLES.ADMIN;
     if (requested !== user.role) {
       // Refuse to demote the last admin.
       if (user.role === ROLES.ADMIN && requested !== ROLES.ADMIN) {
-        var otherAdmins2 = 0;
-        for (var j = 0; j < s.users.length; j++) {
+        let otherAdmins2 = 0;
+        for (let j = 0; j < s.users.length; j++) {
           if (s.users[j].id !== userId && s.users[j].role === ROLES.ADMIN) otherAdmins2++;
         }
         if (otherAdmins2 === 0) {
@@ -295,9 +295,9 @@ function updateUser(userId, updates) {
 }
 
 function countAdmins() {
-  var users = getStore().users;
-  var n = 0;
-  for (var i = 0; i < users.length; i++) {
+  const users = getStore().users;
+  let n = 0;
+  for (let i = 0; i < users.length; i++) {
     if (users[i].role === ROLES.ADMIN) n++;
   }
   return n;
@@ -314,8 +314,8 @@ function getCredentialsForUser(userId) {
 }
 
 function getCredentialById(credentialId) {
-  var creds = getStore().credentials;
-  for (var i = 0; i < creds.length; i++) {
+  const creds = getStore().credentials;
+  for (let i = 0; i < creds.length; i++) {
     if (creds[i].id === credentialId) return creds[i];
   }
   return null;
@@ -323,7 +323,7 @@ function getCredentialById(credentialId) {
 
 function addCredential(cred) {
   if (!cred.userId) throw new Error('credential requires userId');
-  var s = getStore();
+  const s = getStore();
   s.credentials.push(normalizeCredential({
     id: cred.id,
     userId: cred.userId,
@@ -342,7 +342,7 @@ function addCredential(cred) {
 }
 
 function updateCredentialCounter(credentialId, newCounter) {
-  var cred = getCredentialById(credentialId);
+  const cred = getCredentialById(credentialId);
   if (cred) {
     cred.counter = newCounter;
     save();
@@ -350,12 +350,12 @@ function updateCredentialCounter(credentialId, newCounter) {
 }
 
 function updateCredential(credentialId, updates) {
-  var cred = getCredentialById(credentialId);
+  const cred = getCredentialById(credentialId);
   if (!cred) throw new Error('Passkey not found');
   if (!updates || typeof updates !== 'object') return cred;
 
   if (typeof updates.label === 'string') {
-    var trimmed = updates.label.trim();
+    const trimmed = updates.label.trim();
     if (trimmed.length > 80) throw new Error('Passkey label is too long (max 80 chars)');
     cred.label = trimmed;
   }
@@ -393,16 +393,16 @@ function touchCredential(credentialId, metadata) {
 }
 
 function deleteCredential(credentialId) {
-  var s = getStore();
-  var idx = -1;
-  for (var i = 0; i < s.credentials.length; i++) {
+  const s = getStore();
+  let idx = -1;
+  for (let i = 0; i < s.credentials.length; i++) {
     if (s.credentials[i].id === credentialId) {
       idx = i;
       break;
     }
   }
   if (idx < 0) return false;
-  var removed = s.credentials[idx];
+  const removed = s.credentials[idx];
   s.credentials.splice(idx, 1);
   s.sessions = s.sessions.filter(function (sess) { return sess.credentialId !== credentialId; });
   save();
@@ -414,27 +414,27 @@ function deleteCredential(credentialId) {
 
 function createSession(userId, credentialId) {
   if (!userId) throw new Error('createSession requires userId');
-  var s = getStore();
-  var token = crypto.randomBytes(32).toString('hex');
-  var now = new Date();
-  var session = normalizeSession({
-    token: token,
-    userId: userId,
+  const s = getStore();
+  const token = crypto.randomBytes(32).toString('hex');
+  const now = new Date();
+  const session = normalizeSession({
+    token,
+    userId,
     credentialId: credentialId || null,
     createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + SESSION_MAX_AGE_MS).toISOString(),
   });
   s.sessions.push(session);
   save();
-  log.info('session created', { userId: userId, credentialId: session.credentialId });
+  log.info('session created', { userId, credentialId: session.credentialId });
   return session;
 }
 
 function validateSession(token) {
   if (!token) return null;
-  var s = getStore();
-  var now = new Date();
-  for (var i = 0; i < s.sessions.length; i++) {
+  const s = getStore();
+  const now = new Date();
+  for (let i = 0; i < s.sessions.length; i++) {
     if (s.sessions[i].token === token && new Date(s.sessions[i].expiresAt) > now) {
       return s.sessions[i];
     }
@@ -443,14 +443,14 @@ function validateSession(token) {
 }
 
 function removeSession(token) {
-  var s = getStore();
+  const s = getStore();
   s.sessions = s.sessions.filter(function (sess) { return sess.token !== token; });
   save();
 }
 
 function removeSessionsForCredential(credentialId) {
-  var s = getStore();
-  var before = s.sessions.length;
+  const s = getStore();
+  const before = s.sessions.length;
   s.sessions = s.sessions.filter(function (sess) { return sess.credentialId !== credentialId; });
   if (s.sessions.length !== before) {
     save();
@@ -458,9 +458,9 @@ function removeSessionsForCredential(credentialId) {
 }
 
 function expireSessions() {
-  var s = getStore();
-  var now = new Date();
-  var before = s.sessions.length;
+  const s = getStore();
+  const now = new Date();
+  const before = s.sessions.length;
   s.sessions = s.sessions.filter(function (sess) {
     return new Date(sess.expiresAt) > now;
   });
@@ -473,13 +473,13 @@ function expireSessions() {
 // ── Setup state ──
 
 function getSetupState() {
-  var s = getStore();
+  const s = getStore();
   if (!s.setup) return null;
   return s.setup;
 }
 
 function initSetup() {
-  var s = getStore();
+  const s = getStore();
   if (s.setup) return s.setup;
   s.setup = {
     deployedAt: new Date().toISOString(),
@@ -491,14 +491,14 @@ function initSetup() {
 }
 
 function isRegistrationOpen() {
-  var s = getStore();
+  const s = getStore();
   // If credentials already exist, registration is only allowed when authenticated
   if (s.credentials.length > 0) return false;
   // If no setup state, init it
   if (!s.setup) initSetup();
   if (!s.setup.registrationOpen) return false;
   // Check time window
-  var elapsed = Date.now() - new Date(s.setup.deployedAt).getTime();
+  const elapsed = Date.now() - new Date(s.setup.deployedAt).getTime();
   if (elapsed > SETUP_WINDOW_MS) {
     s.setup.registrationOpen = false;
     save();
@@ -509,7 +509,7 @@ function isRegistrationOpen() {
 }
 
 function closeRegistration() {
-  var s = getStore();
+  const s = getStore();
   if (s.setup) {
     s.setup.registrationOpen = false;
     save();
@@ -524,32 +524,32 @@ function _reset() {
 }
 
 module.exports = {
-  ROLES: ROLES,
-  load: load,
-  getUsers: getUsers,
-  getUserById: getUserById,
-  findUserByName: findUserByName,
-  createUser: createUser,
-  deleteUser: deleteUser,
-  updateUser: updateUser,
-  countAdmins: countAdmins,
-  getCredentials: getCredentials,
-  getCredentialsForUser: getCredentialsForUser,
-  getCredentialById: getCredentialById,
-  addCredential: addCredential,
-  updateCredentialCounter: updateCredentialCounter,
-  updateCredential: updateCredential,
-  touchCredential: touchCredential,
-  deleteCredential: deleteCredential,
-  createSession: createSession,
-  validateSession: validateSession,
-  removeSession: removeSession,
-  removeSessionsForCredential: removeSessionsForCredential,
-  expireSessions: expireSessions,
-  getSetupState: getSetupState,
-  initSetup: initSetup,
-  isRegistrationOpen: isRegistrationOpen,
-  closeRegistration: closeRegistration,
-  SESSION_MAX_AGE_MS: SESSION_MAX_AGE_MS,
-  _reset: _reset,
+  ROLES,
+  load,
+  getUsers,
+  getUserById,
+  findUserByName,
+  createUser,
+  deleteUser,
+  updateUser,
+  countAdmins,
+  getCredentials,
+  getCredentialsForUser,
+  getCredentialById,
+  addCredential,
+  updateCredentialCounter,
+  updateCredential,
+  touchCredential,
+  deleteCredential,
+  createSession,
+  validateSession,
+  removeSession,
+  removeSessionsForCredential,
+  expireSessions,
+  getSetupState,
+  initSetup,
+  isRegistrationOpen,
+  closeRegistration,
+  SESSION_MAX_AGE_MS,
+  _reset,
 };

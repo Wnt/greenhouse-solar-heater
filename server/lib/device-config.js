@@ -4,14 +4,14 @@
  * Provides GET/PUT HTTP handlers for device config.
  */
 
-var fs = require('fs');
-var path = require('path');
-var createLogger = require('./logger');
-var log = createLogger('device-config');
+const fs = require('fs');
+const path = require('path');
+const createLogger = require('./logger');
+const log = createLogger('device-config');
 
-var s3Client = null;
-var s3Config = null;
-var currentConfig = null;
+let s3Client = null;
+let s3Config = null;
+let currentConfig = null;
 
 // Compact keys to fit Shelly KVS 256-byte limit:
 //   ce = controls_enabled (bool)
@@ -22,7 +22,7 @@ var currentConfig = null;
 //   mo = manual override session ({a, ex, ss, fm?} or null)
 //        fm is optional, only valid when a === true
 //   v  = version (int)
-var DEFAULT_CONFIG = {
+const DEFAULT_CONFIG = {
   ce: false,
   ea: 0,
   we: {},
@@ -35,15 +35,15 @@ var DEFAULT_CONFIG = {
 // `wb` entries with the permanent sentinel timestamp. Called on every
 // config load — idempotent by design. Once migrated, the `am` field is
 // deleted so it never round-trips back to the device.
-var ALL_MODES_FOR_MIGRATION = ['I', 'SC', 'GH', 'AD', 'EH'];
-var WB_PERMANENT_SENTINEL = 9999999999;
+const ALL_MODES_FOR_MIGRATION = ['I', 'SC', 'GH', 'AD', 'EH'];
+const WB_PERMANENT_SENTINEL = 9999999999;
 
 function migrateAmToWb(cfg) {
   if (cfg.am && Array.isArray(cfg.am) &&
       cfg.am.length > 0 && cfg.am.length < ALL_MODES_FOR_MIGRATION.length) {
     cfg.wb = cfg.wb || {};
-    for (var i = 0; i < ALL_MODES_FOR_MIGRATION.length; i++) {
-      var mode = ALL_MODES_FOR_MIGRATION[i];
+    for (let i = 0; i < ALL_MODES_FOR_MIGRATION.length; i++) {
+      const mode = ALL_MODES_FOR_MIGRATION[i];
       if (cfg.am.indexOf(mode) === -1) {
         cfg.wb[mode] = WB_PERMANENT_SENTINEL;
       }
@@ -60,16 +60,16 @@ function stripLegacyFm(cfg) {
 
 function getS3Config() {
   if (s3Config) return s3Config;
-  var endpoint = process.env.S3_ENDPOINT;
-  var bucket = process.env.S3_BUCKET;
-  var accessKeyId = process.env.S3_ACCESS_KEY_ID;
-  var secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+  const endpoint = process.env.S3_ENDPOINT;
+  const bucket = process.env.S3_BUCKET;
+  const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
   if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return null;
   s3Config = {
-    endpoint: endpoint,
-    bucket: bucket,
+    endpoint,
+    bucket,
     region: process.env.S3_REGION || 'europe-1',
-    credentials: { accessKeyId: accessKeyId, secretAccessKey: secretAccessKey },
+    credentials: { accessKeyId, secretAccessKey },
     key: 'device-config.json',
   };
   return s3Config;
@@ -81,8 +81,8 @@ function isS3Enabled() {
 
 function getS3Client() {
   if (s3Client) return s3Client;
-  var config = getS3Config();
-  var S3Client = require('@aws-sdk/client-s3').S3Client;
+  const config = getS3Config();
+  const S3Client = require('@aws-sdk/client-s3').S3Client;
   s3Client = new S3Client({
     endpoint: config.endpoint,
     region: config.region,
@@ -98,10 +98,10 @@ function getLocalPath() {
 
 function load(callback) {
   if (isS3Enabled()) {
-    var config = getS3Config();
-    var GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
-    var client = getS3Client();
-    var cmd = new GetObjectCommand({ Bucket: config.bucket, Key: config.key });
+    const config = getS3Config();
+    const GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
+    const client = getS3Client();
+    const cmd = new GetObjectCommand({ Bucket: config.bucket, Key: config.key });
     client.send(cmd).then(function (response) {
       return response.Body.transformToString();
     }).then(function (bodyStr) {
@@ -121,9 +121,9 @@ function load(callback) {
       }
     });
   } else {
-    var filePath = getLocalPath();
+    const filePath = getLocalPath();
     try {
-      var data = fs.readFileSync(filePath, 'utf8');
+      const data = fs.readFileSync(filePath, 'utf8');
       currentConfig = migrateAmToWb(JSON.parse(data));
       stripLegacyFm(currentConfig);
       callback(null, currentConfig);
@@ -141,10 +141,10 @@ function load(callback) {
 function save(config, callback) {
   currentConfig = config;
   if (isS3Enabled()) {
-    var s3Cfg = getS3Config();
-    var PutObjectCommand = require('@aws-sdk/client-s3').PutObjectCommand;
-    var client = getS3Client();
-    var cmd = new PutObjectCommand({
+    const s3Cfg = getS3Config();
+    const PutObjectCommand = require('@aws-sdk/client-s3').PutObjectCommand;
+    const client = getS3Client();
+    const cmd = new PutObjectCommand({
       Bucket: s3Cfg.bucket,
       Key: s3Cfg.key,
       Body: JSON.stringify(config, null, 2),
@@ -156,13 +156,13 @@ function save(config, callback) {
       callback(err);
     });
   } else {
-    var filePath = getLocalPath();
-    var dir = path.dirname(filePath);
+    const filePath = getLocalPath();
+    const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     try {
-      var tmpPath = filePath + '.tmp';
+      const tmpPath = filePath + '.tmp';
       fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2));
       fs.renameSync(tmpPath, filePath);
       callback(null);
@@ -177,15 +177,15 @@ function getConfig() {
 }
 
 function validationError(message) {
-  var err = new Error(message);
+  const err = new Error(message);
   err.code = 'VALIDATION';
   return err;
 }
 
 function updateConfig(newConfig, callback) {
-  var config = getConfig();
+  const config = getConfig();
   // Snapshot for no-op detection (compare BEFORE mutating)
-  var beforeSnapshot = JSON.stringify(stripVersion(config));
+  const beforeSnapshot = JSON.stringify(stripVersion(config));
 
   if (newConfig.ce !== undefined) {
     config.ce = !!newConfig.ce;
@@ -199,10 +199,10 @@ function updateConfig(newConfig, callback) {
     if (newConfig.we === null) {
       config.we = {};
     } else if (typeof newConfig.we === 'object') {
-      var we = {};
-      var weIds = ['sng', 'scs', 'ggr'];
-      for (var wi = 0; wi < weIds.length; wi++) {
-        var weId = weIds[wi];
+      const we = {};
+      const weIds = ['sng', 'scs', 'ggr'];
+      for (let wi = 0; wi < weIds.length; wi++) {
+        const weId = weIds[wi];
         if (newConfig.we[weId] !== undefined) {
           we[weId] = newConfig.we[weId] ? 1 : 0;
         } else if (config.we && config.we[weId] !== undefined) {
@@ -220,10 +220,10 @@ function updateConfig(newConfig, callback) {
       config.wz = {};
     } else if (typeof newConfig.wz === 'object') {
       config.wz = config.wz || {};
-      var wzIds = ['sng', 'scs', 'ggr'];
-      for (var zi = 0; zi < wzIds.length; zi++) {
-        var wzId = wzIds[zi];
-        var wzVal = newConfig.wz[wzId];
+      const wzIds = ['sng', 'scs', 'ggr'];
+      for (let zi = 0; zi < wzIds.length; zi++) {
+        const wzId = wzIds[zi];
+        const wzVal = newConfig.wz[wzId];
         if (wzVal === 0 || wzVal === null) {
           delete config.wz[wzId];
         } else if (typeof wzVal === 'number' && wzVal > 0) {
@@ -241,10 +241,10 @@ function updateConfig(newConfig, callback) {
       config.wb = {};
     } else if (typeof newConfig.wb === 'object') {
       config.wb = config.wb || {};
-      var wbKeys = ['I', 'SC', 'GH', 'AD', 'EH'];
-      for (var bi = 0; bi < wbKeys.length; bi++) {
-        var wbKey = wbKeys[bi];
-        var wbVal = newConfig.wb[wbKey];
+      const wbKeys = ['I', 'SC', 'GH', 'AD', 'EH'];
+      for (let bi = 0; bi < wbKeys.length; bi++) {
+        const wbKey = wbKeys[bi];
+        const wbVal = newConfig.wb[wbKey];
         if (wbVal === 0 || wbVal === null) {
           delete config.wb[wbKey];
         } else if (typeof wbVal === 'number' && wbVal > 0) {
@@ -258,7 +258,7 @@ function updateConfig(newConfig, callback) {
     if (newConfig.mo === null) {
       config.mo = null;
     } else if (typeof newConfig.mo === 'object') {
-      var mo = newConfig.mo;
+      const mo = newConfig.mo;
       if (typeof mo.a !== 'boolean' || typeof mo.ex !== 'number') {
         callback(validationError('Invalid mo: requires {a: bool, ex: int, fm: string}'));
         return;
@@ -270,7 +270,7 @@ function updateConfig(newConfig, callback) {
         return;
       }
       if (mo.a) {
-        var VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
+        const VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
         if (typeof mo.fm !== 'string' || VALID_MODES.indexOf(mo.fm) === -1) {
           callback(validationError('mo.fm required when mo.a=true: one of I,SC,GH,AD,EH'));
           return;
@@ -279,7 +279,7 @@ function updateConfig(newConfig, callback) {
         callback(validationError('mo.fm cannot be set when mo.a is false'));
         return;
       }
-      var newMo = { a: mo.a, ex: Math.floor(mo.ex) };
+      const newMo = { a: mo.a, ex: Math.floor(mo.ex) };
       if (mo.a) newMo.fm = mo.fm;
       config.mo = newMo;
     }
@@ -287,7 +287,7 @@ function updateConfig(newConfig, callback) {
 
   // No-op detection: if nothing changed, return current config without bumping
   // version. Saves S3 writes and MQTT republishes for repeated identical PUTs.
-  var afterSnapshot = JSON.stringify(stripVersion(config));
+  const afterSnapshot = JSON.stringify(stripVersion(config));
   if (afterSnapshot === beforeSnapshot) {
     callback(null, config);
     return;
@@ -301,8 +301,8 @@ function updateConfig(newConfig, callback) {
 }
 
 function stripVersion(cfg) {
-  var copy = {};
-  for (var k in cfg) {
+  const copy = {};
+  for (const k in cfg) {
     if (k !== 'v') copy[k] = cfg[k];
   }
   return copy;
@@ -311,13 +311,13 @@ function stripVersion(cfg) {
 // ── HTTP handlers ──
 
 function handleGet(req, res) {
-  var config = getConfig();
+  const config = getConfig();
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(config));
 }
 
 function handlePut(req, res, body, onUpdate) {
-  var parsed;
+  let parsed;
   try {
     parsed = JSON.parse(body);
   } catch (e) {
@@ -366,15 +366,15 @@ function loadForTest(cfg) {
 }
 
 module.exports = {
-  DEFAULT_CONFIG: DEFAULT_CONFIG,
-  WB_PERMANENT_SENTINEL: WB_PERMANENT_SENTINEL,
-  load: load,
-  save: save,
-  getConfig: getConfig,
-  updateConfig: updateConfig,
-  migrateAmToWb: migrateAmToWb,
-  handleGet: handleGet,
-  handlePut: handlePut,
-  _reset: _reset,
-  loadForTest: loadForTest,
+  DEFAULT_CONFIG,
+  WB_PERMANENT_SENTINEL,
+  load,
+  save,
+  getConfig,
+  updateConfig,
+  migrateAmToWb,
+  handleGet,
+  handlePut,
+  _reset,
+  loadForTest,
 };

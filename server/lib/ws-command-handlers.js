@@ -17,7 +17,7 @@ function wsSend(ws, msg) {
 }
 
 function handleWsCommand(ws, data) {
-  var msg;
+  let msg;
   try {
     msg = JSON.parse(data.toString());
   } catch (e) {
@@ -45,7 +45,7 @@ function handleWsCommand(ws, data) {
 }
 
 function handleOverrideEnter(ws, msg) {
-  var cfg = deviceConfig.getConfig();
+  const cfg = deviceConfig.getConfig();
   if (!cfg.ce) {
     wsSend(ws, { type: 'override-error', message: 'Controls not enabled' });
     return;
@@ -55,17 +55,17 @@ function handleOverrideEnter(ws, msg) {
   // semantics): automation is fully suspended for the duration, so the
   // user must pick a concrete mode. The old "Automatic" state (fm=null
   // while mo.a=true) is gone.
-  var VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
-  var fm = msg.forcedMode;
+  const VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
+  const fm = msg.forcedMode;
   if (typeof fm !== 'string' || VALID_MODES.indexOf(fm) === -1) {
     wsSend(ws, { type: 'override-error', message: 'forcedMode required: one of I,SC,GH,AD,EH' });
     return;
   }
 
-  var ttl = Math.max(60, Math.min(3600, parseInt(msg.ttl, 10) || 300));
-  var ex = Math.floor(Date.now() / 1000) + ttl;
+  const ttl = Math.max(60, Math.min(3600, parseInt(msg.ttl, 10) || 300));
+  const ex = Math.floor(Date.now() / 1000) + ttl;
 
-  deviceConfig.updateConfig({ mo: { a: true, ex: ex, fm: fm } }, function (err, updated) {
+  deviceConfig.updateConfig({ mo: { a: true, ex, fm } }, function (err, updated) {
     if (err) {
       wsSend(ws, { type: 'override-error', message: err.message });
       return;
@@ -77,7 +77,7 @@ function handleOverrideEnter(ws, msg) {
     clearOverrideTtlTimer();
     overrideTtlTimer = setTimeout(function () {
       overrideTtlTimer = null;
-      var current = deviceConfig.getConfig();
+      const current = deviceConfig.getConfig();
       if (current.mo && current.mo.a) {
         deviceConfig.updateConfig({ mo: null }, function (err2, cleared) {
           if (!err2) mqttBridge.publishConfig(cleared);
@@ -100,16 +100,16 @@ function handleOverrideExit(ws) {
 }
 
 function handleOverrideUpdate(ws, msg) {
-  var cfg = deviceConfig.getConfig();
+  const cfg = deviceConfig.getConfig();
   if (!cfg.mo || !cfg.mo.a) {
     wsSend(ws, { type: 'override-error', message: 'Override not active' });
     return;
   }
 
-  var ttl = Math.max(60, Math.min(3600, parseInt(msg.ttl, 10) || 300));
-  var ex = Math.floor(Date.now() / 1000) + ttl;
+  const ttl = Math.max(60, Math.min(3600, parseInt(msg.ttl, 10) || 300));
+  const ex = Math.floor(Date.now() / 1000) + ttl;
 
-  var newMo = { a: cfg.mo.a, ex: ex, fm: cfg.mo.fm };
+  const newMo = { a: cfg.mo.a, ex, fm: cfg.mo.fm };
   deviceConfig.updateConfig({ mo: newMo }, function (err, updated) {
     if (err) {
       wsSend(ws, { type: 'override-error', message: err.message });
@@ -122,7 +122,7 @@ function handleOverrideUpdate(ws, msg) {
     clearOverrideTtlTimer();
     overrideTtlTimer = setTimeout(function () {
       overrideTtlTimer = null;
-      var current = deviceConfig.getConfig();
+      const current = deviceConfig.getConfig();
       if (current.mo && current.mo.a) {
         deviceConfig.updateConfig({ mo: null }, function (err2, cleared) {
           if (!err2) mqttBridge.publishConfig(cleared);
@@ -133,14 +133,14 @@ function handleOverrideUpdate(ws, msg) {
 }
 
 function handleOverrideSetMode(ws, msg) {
-  var cfg = deviceConfig.getConfig();
+  const cfg = deviceConfig.getConfig();
   if (!cfg.mo || !cfg.mo.a) {
     wsSend(ws, { type: 'override-error', message: 'Override not active' });
     return;
   }
 
-  var mode = msg.mode;
-  var VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
+  const mode = msg.mode;
+  const VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
   // With hard override, `fm` is required while active. Null/omit is no
   // longer a legal state — server rejects it. If the user wants
   // automation back, they must exit override.
@@ -153,7 +153,7 @@ function handleOverrideSetMode(ws, msg) {
     return;
   }
 
-  var newMo = { a: cfg.mo.a, ex: cfg.mo.ex, fm: mode };
+  const newMo = { a: cfg.mo.a, ex: cfg.mo.ex, fm: mode };
 
   deviceConfig.updateConfig({ mo: newMo }, function (err, updated) {
     if (err) {
@@ -171,12 +171,12 @@ function handleOverrideSetMode(ws, msg) {
 }
 
 function handleRelayCommand(ws, msg) {
-  var cfg = deviceConfig.getConfig();
+  const cfg = deviceConfig.getConfig();
   if (!cfg.mo || !cfg.mo.a) {
     wsSend(ws, { type: 'override-error', message: 'Override not active' });
     return;
   }
-  var now = Math.floor(Date.now() / 1000);
+  const now = Math.floor(Date.now() / 1000);
   if (cfg.mo.ex <= now) {
     wsSend(ws, { type: 'override-error', message: 'Override expired' });
     return;

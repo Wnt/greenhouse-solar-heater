@@ -337,8 +337,8 @@ function collectAssignments() {
     const hostIndex = parseInt(parts[1], 10);
     picks.push({
       role: sel.dataset.role,
-      addr: addr,
-      hostIndex: hostIndex,
+      addr,
+      hostIndex,
       fixedCid: existingCid[hostIndex + '|' + addr],  // undefined if unbound
     });
   }
@@ -528,8 +528,8 @@ async function handleApply() {
     // generic like "Failed to fetch" even though the device may have applied
     // the changes successfully — surface that possibility so the user doesn't
     // assume nothing happened.
-    var isNetErr = /fetch|network|abort/i.test(e.message || '');
-    var hint = isNetErr
+    const isNetErr = /fetch|network|abort/i.test(e.message || '');
+    const hint = isNetErr
       ? 'Network error during apply — the hubs may have applied the changes anyway. Scan again to verify.'
       : 'Apply failed: ' + e.message;
     showStatus(hint, true);

@@ -99,7 +99,7 @@ export function detectLiveTransition(result) {
   transitionLog.unshift({
     kind: 'live',
     ts: Date.now(),
-    mode: mode,
+    mode,
     from: lastLiveMode,
     text: formatLiveTransitionText(lastLiveMode, mode),
     // Carry cause + reason + temps through from the state payload so the

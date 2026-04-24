@@ -83,7 +83,7 @@ function renderTrendIcon(trend) {
 }
 
 // ── Forced-mode / override status helpers ──
-var MODE_NAMES_SHORT = {
+const MODE_NAMES_SHORT = {
   I: 'Idle', SC: 'Solar charging', GH: 'Greenhouse heating',
   AD: 'Active drain', EH: 'Emergency heating'
 };
@@ -93,9 +93,9 @@ function prettyModeName(code) {
   return code.toLowerCase().replace(/_/g, ' ').replace(/^./, function (c) { return c.toUpperCase(); });
 }
 function remainingStr(expiresAt) {
-  var remaining = Math.max(0, expiresAt - Math.floor(Date.now() / 1000));
-  var m = Math.floor(remaining / 60);
-  var s = remaining % 60;
+  const remaining = Math.max(0, expiresAt - Math.floor(Date.now() / 1000));
+  const m = Math.floor(remaining / 60);
+  const s = remaining % 60;
   return m + ':' + (s < 10 ? '0' : '') + s;
 }
 
@@ -131,13 +131,13 @@ export function updateDisplay(state, result) {
 
   // ── Status view ──
   // Active mode card — handle forced-mode / override indicators
-  var moBadgeEl = document.getElementById('mode-badge-label');
-  var moTitleEl = document.getElementById('mode-card-title');
-  var statusEl = document.getElementById('mode-card-status');
-  var exitLinkEl = document.getElementById('mode-card-exit-link');
-  var modeCardActive = document.getElementById('mode-card-active');
+  const moBadgeEl = document.getElementById('mode-badge-label');
+  const moTitleEl = document.getElementById('mode-card-title');
+  const statusEl = document.getElementById('mode-card-status');
+  const exitLinkEl = document.getElementById('mode-card-exit-link');
+  const modeCardActive = document.getElementById('mode-card-active');
 
-  var mo = result.manual_override;
+  const mo = result.manual_override;
   if (mo && mo.active && mo.forcedMode) {
     // Forced mode active
     moBadgeEl.textContent = 'Forced · ' + remainingStr(mo.expiresAt) + ' left';
@@ -162,19 +162,19 @@ export function updateDisplay(state, result) {
   Array.from(statusEl.childNodes).forEach(function (node) {
     if (node.nodeType === Node.TEXT_NODE) statusEl.removeChild(node);
   });
-  var pulseSpan = statusEl.querySelector('.pulse');
+  let pulseSpan = statusEl.querySelector('.pulse');
   if (!pulseSpan) {
     pulseSpan = document.createElement('span');
     pulseSpan.className = 'pulse';
     statusEl.insertBefore(pulseSpan, statusEl.firstChild);
   }
-  var statusText = document.createTextNode(running ? ' System Active' : ' System Ready');
+  const statusText = document.createTextNode(running ? ' System Active' : ' System Ready');
   statusEl.appendChild(statusText);
 
   // Exit override link — admin only, visible when override is active
   if (exitLinkEl) {
-    var userRole = store.get('userRole') || 'admin';
-    var showExit = !!(mo && mo.active) && userRole === 'admin';
+    const userRole = store.get('userRole') || 'admin';
+    const showExit = !!(mo && mo.active) && userRole === 'admin';
     exitLinkEl.style.display = showExit ? '' : 'none';
   }
 
@@ -277,10 +277,10 @@ export function updateDisplay(state, result) {
   updateComponent('comp-heater', result.actuators.space_heater, 'ON', 'OFF');
   // Live mode: 'running' is meaningless (sim-only). Reflect actual
   // operation by checking whether mode is non-idle.
-  var isLivePhase = store.get('phase') === 'live';
-  var ctrlEl = document.getElementById('comp-controller');
+  const isLivePhase = store.get('phase') === 'live';
+  const ctrlEl = document.getElementById('comp-controller');
   if (isLivePhase) {
-    var anyActive = result.mode && result.mode !== 'idle';
+    const anyActive = result.mode && result.mode !== 'idle';
     ctrlEl.textContent = anyActive ? 'ACTIVE' : 'READY';
   } else {
     ctrlEl.textContent = running ? 'OPTIMAL' : 'READY';

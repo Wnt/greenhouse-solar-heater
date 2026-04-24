@@ -36,7 +36,7 @@ function hideMessages() {
 // Update only the label span inside a button, preserving the icon span.
 // textContent on the button itself would wipe out the icon.
 function setBtnLabel(btn, text) {
-  var label = btn.querySelector('.login-btn-label');
+  const label = btn.querySelector('.login-btn-label');
   if (label) {
     label.textContent = text;
   } else {
@@ -46,8 +46,8 @@ function setBtnLabel(btn, text) {
 
 async function checkStatus() {
   try {
-    var res = await fetch('/auth/status');
-    var status = await res.json();
+    const res = await fetch('/auth/status');
+    const status = await res.json();
 
     if (status.authenticated) {
       window.location.href = '/';
@@ -82,23 +82,23 @@ async function doLogin() {
   setBtnLabel(elLoginBtn, 'Authenticating\u2026');
 
   try {
-    var optionsRes = await fetch('/auth/login/options', { method: 'POST' });
+    const optionsRes = await fetch('/auth/login/options', { method: 'POST' });
     if (!optionsRes.ok) {
-      var errData = await optionsRes.json();
+      const errData = await optionsRes.json();
       showError(errData.error || 'Failed to get login options');
       return;
     }
-    var options = await optionsRes.json();
+    const options = await optionsRes.json();
 
-    var assertion = await startAuthentication({ optionsJSON: options });
+    const assertion = await startAuthentication({ optionsJSON: options });
 
-    var verifyRes = await fetch('/auth/login/verify', {
+    const verifyRes = await fetch('/auth/login/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(assertion),
     });
 
-    var result = await verifyRes.json();
+    const result = await verifyRes.json();
     if (result.verified) {
       window.location.href = '/';
     } else {
@@ -122,23 +122,23 @@ async function doRegister() {
   setBtnLabel(elRegisterBtn, 'Registering\u2026');
 
   try {
-    var optionsRes = await fetch('/auth/register/options', { method: 'POST' });
+    const optionsRes = await fetch('/auth/register/options', { method: 'POST' });
     if (!optionsRes.ok) {
-      var errData = await optionsRes.json();
+      const errData = await optionsRes.json();
       showError(errData.error || 'Failed to get registration options');
       return;
     }
-    var options = await optionsRes.json();
+    const options = await optionsRes.json();
 
-    var attestation = await startRegistration({ optionsJSON: options });
+    const attestation = await startRegistration({ optionsJSON: options });
 
-    var verifyRes = await fetch('/auth/register/verify', {
+    const verifyRes = await fetch('/auth/register/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(attestation),
     });
 
-    var result = await verifyRes.json();
+    const result = await verifyRes.json();
     if (result.verified) {
       showInfo('Passkey registered successfully! Redirecting...');
       setTimeout(function () { window.location.href = '/'; }, 1000);
@@ -160,7 +160,7 @@ async function doRegister() {
 // ── Invitation-based registration ──
 
 function toggleInviteSection() {
-  var visible = elInviteSection.classList.contains('visible');
+  const visible = elInviteSection.classList.contains('visible');
   if (visible) {
     elInviteSection.classList.remove('visible');
   } else {
@@ -172,7 +172,7 @@ function toggleInviteSection() {
 
 async function doInviteRegister() {
   hideMessages();
-  var code = elInviteCodeInput.value.trim();
+  const code = elInviteCodeInput.value.trim();
   if (!/^\d{6}$/.test(code)) {
     showError('Please enter a 6-digit invitation code.');
     return;
@@ -183,17 +183,17 @@ async function doInviteRegister() {
 
   try {
     // Step 1: Validate the code
-    var validateRes = await fetch('/auth/invite/validate', {
+    const validateRes = await fetch('/auth/invite/validate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: code }),
+      body: JSON.stringify({ code }),
     });
     if (validateRes.status === 429) {
       showError('Too many attempts. Try again later.');
       return;
     }
     if (!validateRes.ok) {
-      var valErr = await validateRes.json();
+      const valErr = await validateRes.json();
       showError(valErr.error || 'Invalid or expired invitation code');
       return;
     }
@@ -201,7 +201,7 @@ async function doInviteRegister() {
     setBtnLabel(elInviteRegisterBtn, 'Registering\u2026');
 
     // Step 2: Get registration options with invitation code
-    var optionsRes = await fetch('/auth/register/options', {
+    const optionsRes = await fetch('/auth/register/options', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ invitationCode: code }),
@@ -211,24 +211,24 @@ async function doInviteRegister() {
       return;
     }
     if (!optionsRes.ok) {
-      var optErr = await optionsRes.json();
+      const optErr = await optionsRes.json();
       showError(optErr.error || 'Failed to start registration');
       return;
     }
-    var options = await optionsRes.json();
+    const options = await optionsRes.json();
 
     // Step 3: Browser passkey creation
-    var attestation = await startRegistration({ optionsJSON: options });
+    const attestation = await startRegistration({ optionsJSON: options });
 
     // Step 4: Verify with invitation code
-    var verifyBody = Object.assign({}, attestation, { invitationCode: code });
-    var verifyRes = await fetch('/auth/register/verify', {
+    const verifyBody = Object.assign({}, attestation, { invitationCode: code });
+    const verifyRes = await fetch('/auth/register/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(verifyBody),
     });
 
-    var result = await verifyRes.json();
+    const result = await verifyRes.json();
     if (result.verified) {
       showInfo('Passkey registered successfully! Redirecting...');
       setTimeout(function () { window.location.href = '/'; }, 1000);
@@ -248,8 +248,8 @@ async function doInviteRegister() {
 }
 
 function handleInviteUrlParam() {
-  var params = new URLSearchParams(window.location.search);
-  var inviteCode = params.get('invite');
+  const params = new URLSearchParams(window.location.search);
+  const inviteCode = params.get('invite');
   if (inviteCode && /^\d{6}$/.test(inviteCode)) {
     elInviteCodeInput.value = inviteCode;
     elInviteSection.classList.add('visible');

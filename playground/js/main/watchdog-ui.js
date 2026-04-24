@@ -62,7 +62,7 @@ export function initWatchdogUI({ getLiveSource } = {}) {
         body: JSON.stringify({
           id: _watchdogPending.id,
           eventId: _watchdogPending.dbEventId,
-          reason: reason
+          reason
         })
       }).catch(err => console.error('watchdog ack failed', err));
     });

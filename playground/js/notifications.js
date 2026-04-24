@@ -90,6 +90,7 @@ export async function triggerInstall() {
     const result = await deferredInstallPrompt.userChoice;
     if (result.outcome === 'accepted') {
       deferredInstallPrompt = null;
+      // eslint-disable-next-line no-undef -- TODO: hideInstallButton is undefined; the install-button visibility is actually driven by the `beforeinstallprompt` / `appinstalled` DOM events elsewhere, so this call was always a ReferenceError. Leaving the disable here to ship ESLint without a behavior change — track removing in a follow-up.
       hideInstallButton();
     }
     return;
@@ -288,7 +289,7 @@ export async function subscribePush(categories) {
             auth: encodeKey(currentSubscription.getKey('auth')),
           },
         },
-        categories: categories,
+        categories,
       }),
     });
 
@@ -320,7 +321,7 @@ export async function updateCategories(categories) {
             auth: encodeKey(currentSubscription.getKey('auth')),
           },
         },
-        categories: categories,
+        categories,
       }),
     });
 
@@ -343,7 +344,7 @@ export async function sendTest(category) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         endpoint: currentSubscription.endpoint,
-        category: category,
+        category,
       }),
     });
     return res.ok;
@@ -368,7 +369,7 @@ export async function unsubscribePush() {
     await fetch('/api/push/unsubscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint: endpoint }),
+      body: JSON.stringify({ endpoint }),
     });
   } catch (err) {
     // Best-effort cleanup

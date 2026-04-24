@@ -151,15 +151,15 @@ test.describe('Copy System Logs — simulation mode', () => {
 
 async function installMockWs(page, stateOverrides) {
   await page.addInitScript((overrides) => {
-    var OrigWS = window.WebSocket;
+    const OrigWS = window.WebSocket;
     window.WebSocket = function () {
-      var fake = {
+      const fake = {
         readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
         close: function () { this.readyState = 3; },
         send: function () {},
       };
       window.__mockWs = fake;
-      var stateData = Object.assign({
+      const stateData = Object.assign({
         mode: 'idle',
         temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
         valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
@@ -184,7 +184,7 @@ async function installMockWs(page, stateOverrides) {
 }
 
 function makeEvent(tsMs, from, to) {
-  return { ts: tsMs, type: 'mode', id: 'mode', from: from, to: to };
+  return { ts: tsMs, type: 'mode', id: 'mode', from, to };
 }
 
 async function mockEventsApi(page, rows) {

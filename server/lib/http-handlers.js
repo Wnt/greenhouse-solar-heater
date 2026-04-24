@@ -26,17 +26,17 @@ const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
 
 function checkVpn(callback) {
   if (!VPN_CHECK_HOST) { callback('unknown'); return; }
-  var parts = VPN_CHECK_HOST.split(':');
-  var host = parts[0];
-  var port = parseInt(parts[1] || '80', 10);
-  var sock = net.createConnection({ host: host, port: port, timeout: 2000 });
+  const parts = VPN_CHECK_HOST.split(':');
+  const host = parts[0];
+  const port = parseInt(parts[1] || '80', 10);
+  const sock = net.createConnection({ host, port, timeout: 2000 });
   sock.on('connect', function () { sock.destroy(); callback('connected'); });
   sock.on('error', function () { sock.destroy(); callback('disconnected'); });
   sock.on('timeout', function () { sock.destroy(); callback('disconnected'); });
 }
 
 function readBody(req, callback) {
-  var body = '';
+  let body = '';
   req.on('data', function (chunk) { body += chunk; });
   req.on('end', function () { callback(body); });
 }
@@ -47,16 +47,16 @@ function jsonResponse(res, statusCode, data) {
 }
 
 function createHandlers(deps) {
-  var db = deps.db;
-  var authMiddleware = deps.authMiddleware;
-  var broadcastToWebSockets = deps.broadcastToWebSockets;
+  const db = deps.db;
+  const authMiddleware = deps.authMiddleware;
+  const broadcastToWebSockets = deps.broadcastToWebSockets;
 
   function handleHealth(req, res) {
     checkVpn(function (vpnStatus) {
-      var status = vpnStatus === 'disconnected' ? 'degraded' : 'ok';
+      const status = vpnStatus === 'disconnected' ? 'degraded' : 'ok';
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
-        status: status,
+        status,
         vpn: vpnStatus,
         mqtt: mqttBridge.getConnectionStatus(),
         timestamp: new Date().toISOString(),
@@ -75,9 +75,9 @@ function createHandlers(deps) {
       return;
     }
 
-    var parsed = new URL(req.url, 'http://localhost');
-    var range = parsed.searchParams.get('range') || '6h';
-    var sensor = parsed.searchParams.get('sensor') || null;
+    const parsed = new URL(req.url, 'http://localhost');
+    const range = parsed.searchParams.get('range') || '6h';
+    const sensor = parsed.searchParams.get('sensor') || null;
 
     db.getHistory(range, sensor, function (err, points) {
       if (err) {
@@ -90,7 +90,7 @@ function createHandlers(deps) {
           log.error('events query failed', { error: evErr.message });
           events = [];
         }
-        jsonResponse(res, 200, { range: range, points: points, events: events });
+        jsonResponse(res, 200, { range, points, events });
       });
     });
   }
@@ -106,11 +106,11 @@ function createHandlers(deps) {
       return;
     }
 
-    var parsed = new URL(req.url, 'http://localhost');
-    var type = parsed.searchParams.get('type') || 'mode';
-    var limit = parseInt(parsed.searchParams.get('limit'), 10) || 10;
-    var beforeRaw = parsed.searchParams.get('before');
-    var before = beforeRaw ? parseInt(beforeRaw, 10) : null;
+    const parsed = new URL(req.url, 'http://localhost');
+    const type = parsed.searchParams.get('type') || 'mode';
+    const limit = parseInt(parsed.searchParams.get('limit'), 10) || 10;
+    const beforeRaw = parsed.searchParams.get('before');
+    const before = beforeRaw ? parseInt(beforeRaw, 10) : null;
     if (beforeRaw && (Number.isNaN(before) || before <= 0)) {
       jsonResponse(res, 400, { error: 'Invalid `before` cursor' });
       return;
@@ -158,7 +158,7 @@ function createHandlers(deps) {
   }
 
   function handleSensorDiscovery(req, res, body) {
-    var parsed;
+    let parsed;
     try { parsed = JSON.parse(body); } catch (e) {
       jsonResponse(res, 400, { error: 'Invalid JSON body' });
       return;
@@ -170,7 +170,7 @@ function createHandlers(deps) {
     // Direct HTTP scan of each hub in parallel. Bypasses the Pro 4PM + MQTT
     // path because it was slow and produced opaque timeouts on a single hub
     // failure. See server/lib/sensor-discovery.js.
-    var options = {};
+    const options = {};
     if (parsed.skipTemp) options.skipTemp = true;
     sensorDiscovery.discoverSensors(parsed.hosts, options).then(function (result) {
       jsonResponse(res, 200, result);
@@ -180,7 +180,7 @@ function createHandlers(deps) {
   }
 
   function handlePushSubscribe(req, res, body) {
-    var parsed;
+    let parsed;
     try { parsed = JSON.parse(body); } catch (e) {
       jsonResponse(res, 400, { error: 'Invalid JSON' });
       return;
@@ -189,7 +189,7 @@ function createHandlers(deps) {
       jsonResponse(res, 400, { error: 'Missing subscription object (endpoint + keys)' });
       return;
     }
-    var categories = Array.isArray(parsed.categories) ? parsed.categories : [];
+    const categories = Array.isArray(parsed.categories) ? parsed.categories : [];
     push.addSubscription(parsed.subscription, categories, function (err) {
       if (err) {
         jsonResponse(res, 500, { error: 'Failed to save subscription' });
@@ -200,7 +200,7 @@ function createHandlers(deps) {
   }
 
   function handlePushUnsubscribe(req, res, body) {
-    var parsed;
+    let parsed;
     try { parsed = JSON.parse(body); } catch (e) {
       jsonResponse(res, 400, { error: 'Invalid JSON' });
       return;
@@ -219,7 +219,7 @@ function createHandlers(deps) {
   }
 
   function handlePushGetSubscription(req, res, body) {
-    var parsed;
+    let parsed;
     try { parsed = JSON.parse(body); } catch (e) {
       jsonResponse(res, 400, { error: 'Invalid JSON' });
       return;
@@ -228,7 +228,7 @@ function createHandlers(deps) {
       jsonResponse(res, 400, { error: 'Missing endpoint' });
       return;
     }
-    var sub = push.getSubscription(parsed.endpoint);
+    const sub = push.getSubscription(parsed.endpoint);
     if (!sub) {
       jsonResponse(res, 200, { subscribed: false, categories: [] });
       return;
@@ -240,7 +240,7 @@ function createHandlers(deps) {
   // subscription. Bypasses rate limiting and category filtering so the
   // user can preview how each notification type renders on their device.
   function handlePushTest(req, res, body) {
-    var parsed;
+    let parsed;
     try { parsed = JSON.parse(body); } catch (e) {
       jsonResponse(res, 400, { error: 'Invalid JSON' });
       return;
@@ -249,14 +249,14 @@ function createHandlers(deps) {
       jsonResponse(res, 400, { error: 'Missing endpoint or category' });
       return;
     }
-    var payload = push.buildMockPayload(parsed.category);
+    const payload = push.buildMockPayload(parsed.category);
     if (!payload) {
       jsonResponse(res, 400, { error: 'Unknown category: ' + parsed.category });
       return;
     }
     push.sendTestToEndpoint(parsed.endpoint, payload, function (err) {
       if (err) {
-        var status = err.message === 'Subscription not found' ? 404 : 500;
+        const status = err.message === 'Subscription not found' ? 404 : 500;
         jsonResponse(res, status, { error: err.message });
         return;
       }
@@ -265,21 +265,21 @@ function createHandlers(deps) {
   }
 
   return {
-    handleHealth: handleHealth,
-    handleVersion: handleVersion,
-    handleHistoryApi: handleHistoryApi,
-    handleEventsApi: handleEventsApi,
-    handleDeviceConfigApi: handleDeviceConfigApi,
-    handleSensorDiscovery: handleSensorDiscovery,
-    handlePushSubscribe: handlePushSubscribe,
-    handlePushUnsubscribe: handlePushUnsubscribe,
-    handlePushGetSubscription: handlePushGetSubscription,
-    handlePushTest: handlePushTest,
+    handleHealth,
+    handleVersion,
+    handleHistoryApi,
+    handleEventsApi,
+    handleDeviceConfigApi,
+    handleSensorDiscovery,
+    handlePushSubscribe,
+    handlePushUnsubscribe,
+    handlePushGetSubscription,
+    handlePushTest,
   };
 }
 
 module.exports = {
-  createHandlers: createHandlers,
-  readBody: readBody,
-  jsonResponse: jsonResponse,
+  createHandlers,
+  readBody,
+  jsonResponse,
 };

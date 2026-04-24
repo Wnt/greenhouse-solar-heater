@@ -14,40 +14,40 @@
  *   - freeze_warning:   outdoor temp approaching freeze drain threshold
  */
 
-var fs = require('fs');
-var path = require('path');
-var createLogger = require('./logger');
-var log = createLogger('push');
+const fs = require('fs');
+const path = require('path');
+const createLogger = require('./logger');
+const log = createLogger('push');
 
-var webpush = null;
-var s3Client = null;
-var s3Config = null;
-var pushData = null;
+let webpush = null;
+let s3Client = null;
+let s3Config = null;
+let pushData = null;
 
 // Rate-limit map: { type: timestamp_ms }
-var lastSentAt = {};
+let lastSentAt = {};
 
-var RATE_LIMIT_MS = 3600000; // 1 hour
+const RATE_LIMIT_MS = 3600000; // 1 hour
 
-var VALID_CATEGORIES = ['evening_report', 'noon_report', 'overheat_warning', 'freeze_warning', 'offline_warning', 'watchdog_fired'];
+const VALID_CATEGORIES = ['evening_report', 'noon_report', 'overheat_warning', 'freeze_warning', 'offline_warning', 'watchdog_fired'];
 
-var S3_KEY = 'push-config.json';
-var LOCAL_PATH = process.env.PUSH_CONFIG_PATH || path.join(__dirname, '..', 'push-config.json');
+const S3_KEY = 'push-config.json';
+const LOCAL_PATH = process.env.PUSH_CONFIG_PATH || path.join(__dirname, '..', 'push-config.json');
 
 // ── S3 helpers (same pattern as device-config.js) ──
 
 function getS3Config() {
   if (s3Config) return s3Config;
-  var endpoint = process.env.S3_ENDPOINT;
-  var bucket = process.env.S3_BUCKET;
-  var accessKeyId = process.env.S3_ACCESS_KEY_ID;
-  var secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+  const endpoint = process.env.S3_ENDPOINT;
+  const bucket = process.env.S3_BUCKET;
+  const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
   if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return null;
   s3Config = {
-    endpoint: endpoint,
-    bucket: bucket,
+    endpoint,
+    bucket,
     region: process.env.S3_REGION || 'europe-1',
-    credentials: { accessKeyId: accessKeyId, secretAccessKey: secretAccessKey },
+    credentials: { accessKeyId, secretAccessKey },
   };
   return s3Config;
 }
@@ -58,8 +58,8 @@ function isS3Enabled() {
 
 function getS3Client() {
   if (s3Client) return s3Client;
-  var config = getS3Config();
-  var S3Client = require('@aws-sdk/client-s3').S3Client;
+  const config = getS3Config();
+  const S3Client = require('@aws-sdk/client-s3').S3Client;
   s3Client = new S3Client({
     endpoint: config.endpoint,
     region: config.region,
@@ -73,10 +73,10 @@ function getS3Client() {
 
 function load(callback) {
   if (isS3Enabled()) {
-    var config = getS3Config();
-    var GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
-    var client = getS3Client();
-    var cmd = new GetObjectCommand({ Bucket: config.bucket, Key: S3_KEY });
+    const config = getS3Config();
+    const GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
+    const client = getS3Client();
+    const cmd = new GetObjectCommand({ Bucket: config.bucket, Key: S3_KEY });
     client.send(cmd).then(function (response) {
       return response.Body.transformToString();
     }).then(function (bodyStr) {
@@ -96,7 +96,7 @@ function load(callback) {
     });
   } else {
     try {
-      var data = fs.readFileSync(LOCAL_PATH, 'utf8');
+      const data = fs.readFileSync(LOCAL_PATH, 'utf8');
       pushData = JSON.parse(data);
       callback(null);
     } catch (err) {
@@ -112,13 +112,13 @@ function load(callback) {
 
 function save(callback) {
   if (!pushData) { callback(null); return; }
-  var json = JSON.stringify(pushData, null, 2);
+  const json = JSON.stringify(pushData, null, 2);
 
   if (isS3Enabled()) {
-    var config = getS3Config();
-    var PutObjectCommand = require('@aws-sdk/client-s3').PutObjectCommand;
-    var client = getS3Client();
-    var cmd = new PutObjectCommand({
+    const config = getS3Config();
+    const PutObjectCommand = require('@aws-sdk/client-s3').PutObjectCommand;
+    const client = getS3Client();
+    const cmd = new PutObjectCommand({
       Bucket: config.bucket,
       Key: S3_KEY,
       Body: json,
@@ -130,12 +130,12 @@ function save(callback) {
       callback(err);
     });
   } else {
-    var dir = path.dirname(LOCAL_PATH);
+    const dir = path.dirname(LOCAL_PATH);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     try {
-      var tmpPath = LOCAL_PATH + '.tmp';
+      const tmpPath = LOCAL_PATH + '.tmp';
       fs.writeFileSync(tmpPath, json);
       fs.renameSync(tmpPath, LOCAL_PATH);
       callback(null);
@@ -159,8 +159,8 @@ function ensureVapidKeys(callback) {
     callback(null);
     return;
   }
-  var wp = ensureWebPush();
-  var keys = wp.generateVAPIDKeys();
+  const wp = ensureWebPush();
+  const keys = wp.generateVAPIDKeys();
   if (!pushData) {
     pushData = { vapidKeys: keys, subscriptions: [] };
   } else {
@@ -178,8 +178,8 @@ function getPublicKey() {
 
 function configureWebPush() {
   if (!pushData || !pushData.vapidKeys) return;
-  var wp = ensureWebPush();
-  var subject = process.env.VAPID_SUBJECT || process.env.ORIGIN || 'mailto:admin@example.com';
+  const wp = ensureWebPush();
+  const subject = process.env.VAPID_SUBJECT || process.env.ORIGIN || 'mailto:admin@example.com';
   wp.setVapidDetails(subject, pushData.vapidKeys.publicKey, pushData.vapidKeys.privateKey);
 }
 
@@ -190,16 +190,16 @@ function addSubscription(subscription, categories, callback) {
   if (!pushData.subscriptions) pushData.subscriptions = [];
 
   // Validate categories
-  var validCats = [];
-  for (var i = 0; i < categories.length; i++) {
+  const validCats = [];
+  for (let i = 0; i < categories.length; i++) {
     if (VALID_CATEGORIES.indexOf(categories[i]) >= 0) {
       validCats.push(categories[i]);
     }
   }
 
   // Check if endpoint already exists — update categories
-  var found = false;
-  for (var j = 0; j < pushData.subscriptions.length; j++) {
+  let found = false;
+  for (let j = 0; j < pushData.subscriptions.length; j++) {
     if (pushData.subscriptions[j].endpoint === subscription.endpoint) {
       pushData.subscriptions[j].keys = subscription.keys;
       pushData.subscriptions[j].categories = validCats;
@@ -232,7 +232,7 @@ function removeSubscription(endpoint, callback) {
     return;
   }
 
-  var before = pushData.subscriptions.length;
+  const before = pushData.subscriptions.length;
   pushData.subscriptions = pushData.subscriptions.filter(function (s) {
     return s.endpoint !== endpoint;
   });
@@ -250,7 +250,7 @@ function removeSubscription(endpoint, callback) {
 
 function getSubscription(endpoint) {
   if (!pushData || !pushData.subscriptions) return null;
-  for (var i = 0; i < pushData.subscriptions.length; i++) {
+  for (let i = 0; i < pushData.subscriptions.length; i++) {
     if (pushData.subscriptions[i].endpoint === endpoint) {
       return pushData.subscriptions[i];
     }
@@ -268,7 +268,7 @@ function getSubscriptionCount() {
 // the `icon` property on showNotification() so the notification tray
 // icon matches the alert type.
 
-var CATEGORY_ICONS = {
+const CATEGORY_ICONS = {
   evening_report:   'assets/notif-evening.png',
   noon_report:      'assets/notif-noon.png',
   overheat_warning: 'assets/notif-overheat.png',
@@ -309,7 +309,7 @@ function buildMockPayload(category) {
     return {
       title: '[Test] Overheat Warning',
       body: (function () {
-        var oh = require('../../shelly/control-logic.js').DEFAULT_CONFIG.overheatDrainTemp;
+        const oh = require('../../shelly/control-logic.js').DEFAULT_CONFIG.overheatDrainTemp;
         return 'Tank temperature is ' + (oh - 2.6).toFixed(1) + '\u00b0C and rising. ' +
                'Overheat drain may activate at ' + oh + '\u00b0C.';
       })(),
@@ -322,7 +322,7 @@ function buildMockPayload(category) {
     return {
       title: '[Test] Freeze Warning',
       body: (function () {
-        var fz = require('../../shelly/control-logic.js').DEFAULT_CONFIG.freezeDrainTemp;
+        const fz = require('../../shelly/control-logic.js').DEFAULT_CONFIG.freezeDrainTemp;
         return 'Outdoor temperature is ' + (fz + 0.8).toFixed(1) + '\u00b0C and falling. ' +
                'Freeze drain may activate at ' + fz + '\u00b0C.';
       })(),
@@ -392,8 +392,8 @@ function sendTestToEndpoint(endpoint, payload, callback) {
     callback(new Error('No subscriptions'));
     return;
   }
-  var sub = null;
-  for (var i = 0; i < pushData.subscriptions.length; i++) {
+  let sub = null;
+  for (let i = 0; i < pushData.subscriptions.length; i++) {
     if (pushData.subscriptions[i].endpoint === endpoint) {
       sub = pushData.subscriptions[i];
       break;
@@ -403,8 +403,8 @@ function sendTestToEndpoint(endpoint, payload, callback) {
     callback(new Error('Subscription not found'));
     return;
   }
-  var wp = ensureWebPush();
-  var pushSub = { endpoint: sub.endpoint, keys: sub.keys };
+  const wp = ensureWebPush();
+  const pushSub = { endpoint: sub.endpoint, keys: sub.keys };
   wp.sendNotification(pushSub, JSON.stringify(payload)).then(function () {
     log.info('test notification sent', { endpoint: endpoint.slice(-20), tag: payload.tag });
     callback(null);
@@ -417,7 +417,7 @@ function sendTestToEndpoint(endpoint, payload, callback) {
 // ── Sending notifications ──
 
 function isRateLimited(type) {
-  var now = Date.now();
+  const now = Date.now();
   if (lastSentAt[type] && (now - lastSentAt[type]) < RATE_LIMIT_MS) {
     return true;
   }
@@ -429,20 +429,20 @@ function sendNotification(type, payload) {
   if (!webpush) return;
 
   if (isRateLimited(type)) {
-    log.info('notification rate-limited', { type: type });
+    log.info('notification rate-limited', { type });
     return;
   }
 
   lastSentAt[type] = Date.now();
 
-  var expiredEndpoints = [];
-  var sent = 0;
+  const expiredEndpoints = [];
+  let sent = 0;
 
-  for (var i = 0; i < pushData.subscriptions.length; i++) {
-    var sub = pushData.subscriptions[i];
+  for (let i = 0; i < pushData.subscriptions.length; i++) {
+    const sub = pushData.subscriptions[i];
     if (sub.categories.indexOf(type) < 0) continue;
 
-    var pushSub = {
+    const pushSub = {
       endpoint: sub.endpoint,
       keys: sub.keys,
     };
@@ -461,15 +461,15 @@ function sendNotification(type, payload) {
   }
 
   if (sent > 0) {
-    log.info('push sent', { type: type, count: sent });
+    log.info('push sent', { type, count: sent });
   }
 
   // Clean up expired subscriptions after a short delay
   if (expiredEndpoints.length > 0) {
     setTimeout(function () {
-      var changed = false;
-      for (var k = 0; k < expiredEndpoints.length; k++) {
-        var before = pushData.subscriptions.length;
+      let changed = false;
+      for (let k = 0; k < expiredEndpoints.length; k++) {
+        const before = pushData.subscriptions.length;
         pushData.subscriptions = pushData.subscriptions.filter(function (s) {
           return s.endpoint !== expiredEndpoints[k];
         });
@@ -532,25 +532,25 @@ function _setPushData(data) {
 }
 
 module.exports = {
-  VALID_CATEGORIES: VALID_CATEGORIES,
-  RATE_LIMIT_MS: RATE_LIMIT_MS,
-  init: init,
-  load: load,
-  save: save,
-  getPublicKey: getPublicKey,
-  addSubscription: addSubscription,
-  removeSubscription: removeSubscription,
-  getSubscription: getSubscription,
-  getSubscriptionCount: getSubscriptionCount,
-  isRateLimited: isRateLimited,
-  sendNotification: sendNotification,
-  buildMockPayload: buildMockPayload,
-  sendTestToEndpoint: sendTestToEndpoint,
-  iconFor: iconFor,
-  CATEGORY_ICONS: CATEGORY_ICONS,
-  _reset: _reset,
-  _getLastSentAt: _getLastSentAt,
-  _setLastSentAt: _setLastSentAt,
-  _getPushData: _getPushData,
-  _setPushData: _setPushData,
+  VALID_CATEGORIES,
+  RATE_LIMIT_MS,
+  init,
+  load,
+  save,
+  getPublicKey,
+  addSubscription,
+  removeSubscription,
+  getSubscription,
+  getSubscriptionCount,
+  isRateLimited,
+  sendNotification,
+  buildMockPayload,
+  sendTestToEndpoint,
+  iconFor,
+  CATEGORY_ICONS,
+  _reset,
+  _getLastSentAt,
+  _setLastSentAt,
+  _getPushData,
+  _setPushData,
 };

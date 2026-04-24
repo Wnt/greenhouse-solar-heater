@@ -23,11 +23,11 @@ const WATCHDOGS_META = [
  */
 async function mockLiveConnectionWithWatchdog(page) {
   await page.addInitScript(() => {
-    var OrigWS = window.WebSocket;
+    const OrigWS = window.WebSocket;
     window.__wdSent = [];
     // @ts-ignore
     window.WebSocket = function () {
-      var fake = {
+      const fake = {
         readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
         close: function () { this.readyState = 3; },
         send: function (data) { try { window.__wdSent.push(JSON.parse(data)); } catch (e) { /* ignore */ } }
@@ -152,7 +152,7 @@ test.describe('watchdog flow', () => {
           mode: 'GREENHOUSE_HEATING', dbEventId: 42,
           triggerReason: 'Greenhouse only +0.2°C after 15:00 (expected ≥+0.5°C)'
         },
-        watchdogs: watchdogs,
+        watchdogs,
         snapshot: { we: { ggr: 1 }, wz: {}, wb: {} }
       });
     }, { watchdogs: WATCHDOGS_META });
@@ -179,7 +179,7 @@ test.describe('watchdog flow', () => {
       window.__wdInject({
         type: 'watchdog-state',
         pending: null,
-        watchdogs: watchdogs,
+        watchdogs,
         snapshot: { we: { ggr: 1 }, wz: { ggr: 9999999999 }, wb: {} }
       });
     }, { watchdogs: WATCHDOGS_META });
@@ -201,7 +201,7 @@ test.describe('watchdog flow', () => {
           mode: 'SOLAR_CHARGING', dbEventId: 7,
           triggerReason: 'Collector only -0.5°C after 5:00 (expected ≥-3°C)'
         },
-        watchdogs: watchdogs,
+        watchdogs,
         snapshot: { we: { scs: 1 }, wz: {}, wb: {} }
       });
     }, { watchdogs: WATCHDOGS_META });
@@ -271,7 +271,7 @@ test.describe('watchdog flow', () => {
           mode: 'GREENHOUSE_HEATING', dbEventId: 99,
           triggerReason: 'race regression test'
         },
-        watchdogs: watchdogs,
+        watchdogs,
         snapshot: { we: { ggr: 1 }, wz: {}, wb: {} }
       });
     }, { watchdogs: WATCHDOGS_META });

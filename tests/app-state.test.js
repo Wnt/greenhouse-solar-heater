@@ -19,23 +19,23 @@ function makeDerived(store) {
   return {
     get scanning() {
       if (store.get('sensorScanPending')) return true;
-      var cfg = store.get('sensorConfig');
-      var det = store.get('detectedSensors');
+      const cfg = store.get('sensorConfig');
+      const det = store.get('detectedSensors');
       if (!cfg || !cfg.hosts) return false;
       return cfg.hosts.some(function(h) { return det[h.id] === null; });
     },
     get availableViews() {
-      var phase = store.get('phase');
+      const phase = store.get('phase');
       if (phase === 'live') return ['status', 'components', 'schematic', 'sensors', 'device'];
       if (phase === 'simulation') return ['status', 'components', 'schematic', 'controls'];
       return ['status', 'components', 'schematic'];
     },
     get connectionDisplay() {
-      var ws = store.get('wsStatus');
-      var mqtt = store.get('mqttStatus');
-      var hasData = store.get('hasReceivedData');
-      var connAt = store.get('wsConnectedAt');
-      var lastData = store.get('lastDataTime');
+      const ws = store.get('wsStatus');
+      const mqtt = store.get('mqttStatus');
+      const hasData = store.get('hasReceivedData');
+      const connAt = store.get('wsConnectedAt');
+      const lastData = store.get('lastDataTime');
       if (ws === 'reconnecting') return 'reconnecting';
       if (ws !== 'connected') return 'disconnected';
       if (!hasData && mqtt === 'disconnected') return 'device_offline';
@@ -45,13 +45,13 @@ function makeDerived(store) {
       return 'active';
     },
     get missingRoles() {
-      var cfg = store.get('sensorConfig');
+      const cfg = store.get('sensorConfig');
       if (!cfg || !cfg.assignments) return REQUIRED_ROLES.slice();
       return REQUIRED_ROLES.filter(function(r) { return !cfg.assignments[r] || !cfg.assignments[r].addr; });
     },
     get updateAvailable() {
-      var base = store.get('baselineHash');
-      var server = store.get('serverHash');
+      const base = store.get('baselineHash');
+      const server = store.get('serverHash');
       return base !== null && server !== null && base !== server && !store.get('versionDismissed');
     },
   };

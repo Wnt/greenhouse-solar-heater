@@ -5,14 +5,14 @@
 const crypto = require('crypto');
 
 // In-memory invitation store (keyed by code)
-var activeInvitations = {};
+let activeInvitations = {};
 
 // In-memory rate limit tracking (keyed by IP)
-var rateLimits = {};
+let rateLimits = {};
 
-var INVITE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
-var RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-var RATE_LIMIT_MAX = 5; // max attempts per window
+const INVITE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX = 5; // max attempts per window
 
 // ── Invitation management ──
 
@@ -25,34 +25,34 @@ function createInvitation(sessionToken, options) {
     }
   });
 
-  var code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  let code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
   // Ensure uniqueness (extremely unlikely collision)
   while (activeInvitations[code]) {
     code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
   }
 
-  var now = Date.now();
-  var role = options.role === 'readonly' ? 'readonly' : 'admin';
+  const now = Date.now();
+  const role = options.role === 'readonly' ? 'readonly' : 'admin';
   activeInvitations[code] = {
-    code: code,
+    code,
     createdAt: now,
     expiresAt: now + INVITE_EXPIRY_MS,
-    sessionToken: sessionToken,
-    role: role,
+    sessionToken,
+    role,
     name: options.name || null,
   };
 
   return {
-    code: code,
+    code,
     expiresAt: new Date(now + INVITE_EXPIRY_MS).toISOString(),
     expiresInSeconds: INVITE_EXPIRY_MS / 1000,
-    role: role,
+    role,
     name: options.name || null,
   };
 }
 
 function validateInvitation(code) {
-  var invite = activeInvitations[code];
+  const invite = activeInvitations[code];
   if (!invite) return false;
   if (Date.now() > invite.expiresAt) {
     delete activeInvitations[code];
@@ -75,9 +75,9 @@ function consumeInvitation(code) {
 // ── Rate limiting ──
 
 function checkRateLimit(ip) {
-  var entry = rateLimits[ip];
+  const entry = rateLimits[ip];
   if (!entry) return true;
-  var now = Date.now();
+  const now = Date.now();
   entry.attempts = entry.attempts.filter(function (t) {
     return now - t < RATE_LIMIT_WINDOW_MS;
   });
@@ -98,7 +98,7 @@ function recordAttempt(ip) {
 // ── Cleanup ──
 
 function cleanExpired() {
-  var now = Date.now();
+  const now = Date.now();
   Object.keys(activeInvitations).forEach(function (code) {
     if (now > activeInvitations[code].expiresAt) {
       delete activeInvitations[code];
@@ -120,14 +120,14 @@ function reset() {
 }
 
 module.exports = {
-  createInvitation: createInvitation,
-  validateInvitation: validateInvitation,
-  getInvitation: getInvitation,
-  consumeInvitation: consumeInvitation,
-  checkRateLimit: checkRateLimit,
-  recordAttempt: recordAttempt,
-  cleanExpired: cleanExpired,
-  reset: reset,
+  createInvitation,
+  validateInvitation,
+  getInvitation,
+  consumeInvitation,
+  checkRateLimit,
+  recordAttempt,
+  cleanExpired,
+  reset,
   // For testing access to internal state
   _getActiveInvitations: function () { return activeInvitations; },
   _getRateLimits: function () { return rateLimits; },

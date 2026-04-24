@@ -32,7 +32,7 @@ const RP_NAME = 'Helios Canopy';
 // 'login' is shared across the resident-key login flow (no user known yet),
 // 'register:<code>' for invitation-driven registration, and
 // 'register:setup' for the very first setup-window registration.
-var pendingChallenges = {};
+const pendingChallenges = {};
 
 function init(callback) {
   credStore.load(function (err) {
@@ -58,7 +58,7 @@ function jsonResponse(res, statusCode, data) {
 // ── Helpers ──
 
 function getClientIp(req) {
-  var forwarded = req.headers['x-forwarded-for'];
+  const forwarded = req.headers['x-forwarded-for'];
   if (forwarded) return forwarded.split(',')[0].trim();
   return req.socket && req.socket.remoteAddress || 'unknown';
 }
@@ -68,13 +68,13 @@ function getClientUserAgent(req) {
 }
 
 function buildCredentialMetadata(req) {
-  var userAgent = getClientUserAgent(req);
-  var device = buildDeviceDetails(userAgent);
+  const userAgent = getClientUserAgent(req);
+  const device = buildDeviceDetails(userAgent);
   return {
     lastUsedAt: new Date().toISOString(),
     lastIp: getClientIp(req),
     lastUserAgent: userAgent,
-    device: device,
+    device,
     label: device.deviceName || device.summary || '',
   };
 }
@@ -98,7 +98,7 @@ function serializeCredential(cred, currentCredentialId) {
 
 // Resolve the current authenticated user for a request, or null.
 function getCurrentUser(req) {
-  var sess = session.validateRequest(req);
+  const sess = session.validateRequest(req);
   if (!sess) return null;
   if (!sess.userId) return null;
   return credStore.getUserById(sess.userId);
@@ -107,7 +107,7 @@ function getCurrentUser(req) {
 // Reject if the caller is not authenticated. Returns the user on success
 // or null after writing the 401 response.
 function requireUser(req, res) {
-  var user = getCurrentUser(req);
+  const user = getCurrentUser(req);
   if (!user) {
     jsonResponse(res, 401, { error: 'Not authenticated' });
     return null;
@@ -118,7 +118,7 @@ function requireUser(req, res) {
 // Reject if the caller is not an admin. Returns the user on success or
 // null after writing the appropriate response.
 function requireAdmin(req, res) {
-  var user = requireUser(req, res);
+  const user = requireUser(req, res);
   if (!user) return null;
   if (user.role !== credStore.ROLES.ADMIN) {
     jsonResponse(res, 403, { error: 'Admin role required' });
@@ -169,15 +169,15 @@ function handleRequest(req, res, urlPath, body) {
 // ── POST /auth/invite/create ──
 
 function handleInviteCreate(req, res, body) {
-  var user = requireAdmin(req, res);
+  const user = requireAdmin(req, res);
   if (!user) return;
 
-  var parsed = {};
+  let parsed = {};
   if (body) {
     try { parsed = JSON.parse(body) || {}; } catch (e) { parsed = {}; }
   }
-  var role = parsed.role === 'readonly' ? 'readonly' : 'admin';
-  var name = (parsed.name && typeof parsed.name === 'string') ? parsed.name.trim() : '';
+  const role = parsed.role === 'readonly' ? 'readonly' : 'admin';
+  const name = (parsed.name && typeof parsed.name === 'string') ? parsed.name.trim() : '';
   if (!name) {
     jsonResponse(res, 400, { error: 'Name is required' });
     return;
@@ -191,23 +191,23 @@ function handleInviteCreate(req, res, body) {
     return;
   }
 
-  var sessionToken = session.getSessionToken(req);
-  var invite = invitations.createInvitation(sessionToken, { role: role, name: name });
-  log.info('invitation created', { code: invite.code, role: role });
+  const sessionToken = session.getSessionToken(req);
+  const invite = invitations.createInvitation(sessionToken, { role, name });
+  log.info('invitation created', { code: invite.code, role });
   jsonResponse(res, 200, invite);
 }
 
 // ── POST /auth/invite/validate ──
 
 function handleInviteValidate(req, res, body) {
-  var ip = getClientIp(req);
+  const ip = getClientIp(req);
   if (!invitations.checkRateLimit(ip)) {
     jsonResponse(res, 429, { error: 'Too many attempts. Try again later.' });
     return;
   }
   invitations.recordAttempt(ip);
 
-  var data;
+  let data;
   try {
     data = JSON.parse(body);
   } catch (e) {
@@ -220,7 +220,7 @@ function handleInviteValidate(req, res, body) {
     return;
   }
 
-  var invite = invitations.getInvitation(data.code);
+  const invite = invitations.getInvitation(data.code);
   if (invite) {
     jsonResponse(res, 200, { valid: true, role: invite.role, name: invite.name });
   } else {
@@ -231,9 +231,9 @@ function handleInviteValidate(req, res, body) {
 // ── POST /auth/register/options ──
 
 async function handleRegisterOptions(req, res, body) {
-  var allowed = false;
-  var registerAs = null; // { name, role, isSetup }
-  var invitationCode = null;
+  let allowed = false;
+  let registerAs = null; // { name, role, isSetup }
+  let invitationCode = null;
 
   // Check 1: Registration window open (initial setup) — first user is admin
   if (credStore.isRegistrationOpen()) {
@@ -243,16 +243,16 @@ async function handleRegisterOptions(req, res, body) {
 
   // Check 2: Valid invitation code
   if (!allowed && body) {
-    var parsed;
+    let parsed;
     try { parsed = JSON.parse(body); } catch (e) { /* ignore */ }
     if (parsed && parsed.invitationCode) {
-      var ip = getClientIp(req);
+      const ip = getClientIp(req);
       if (!invitations.checkRateLimit(ip)) {
         jsonResponse(res, 429, { error: 'Too many attempts. Try again later.' });
         return;
       }
       invitations.recordAttempt(ip);
-      var invite = invitations.getInvitation(parsed.invitationCode);
+      const invite = invitations.getInvitation(parsed.invitationCode);
       if (invite) {
         allowed = true;
         invitationCode = parsed.invitationCode;
@@ -267,10 +267,10 @@ async function handleRegisterOptions(req, res, body) {
   }
 
   // Resolve a unique name. For setup, fall back to admin1, admin2, etc.
-  var name = registerAs.name || 'user';
+  let name = registerAs.name || 'user';
   if (credStore.findUserByName(name)) {
     if (registerAs.isSetup) {
-      var n = 1;
+      let n = 1;
       while (credStore.findUserByName(name + n)) n++;
       name = name + n;
     } else {
@@ -282,10 +282,10 @@ async function handleRegisterOptions(req, res, body) {
   // Generate the WebAuthn user handle without persisting the user record yet.
   // We only commit the user (and attached credential) after a successful
   // verification, so cancelled or failed registrations leave no orphan.
-  var pendingUserId = crypto.randomBytes(32).toString('base64url');
+  const pendingUserId = crypto.randomBytes(32).toString('base64url');
 
   try {
-    var options = await generateRegistrationOptions({
+    const options = await generateRegistrationOptions({
       rpName: RP_NAME,
       rpID: RPID,
       userName: name,
@@ -300,13 +300,13 @@ async function handleRegisterOptions(req, res, body) {
     });
 
     // Store challenge keyed by flow so concurrent registrations don't trample each other
-    var challengeKey = invitationCode ? 'register:' + invitationCode : 'register:setup';
+    const challengeKey = invitationCode ? 'register:' + invitationCode : 'register:setup';
     pendingChallenges[challengeKey] = {
       challenge: options.challenge,
-      pendingUserId: pendingUserId,
-      name: name,
+      pendingUserId,
+      name,
       role: registerAs.role,
-      invitationCode: invitationCode,
+      invitationCode,
     };
     jsonResponse(res, 200, options);
   } catch (err) {
@@ -318,7 +318,7 @@ async function handleRegisterOptions(req, res, body) {
 // ── POST /auth/register/verify ──
 
 async function handleRegisterVerify(req, res, body) {
-  var attestation;
+  let attestation;
   try {
     attestation = JSON.parse(body);
   } catch (e) {
@@ -326,9 +326,9 @@ async function handleRegisterVerify(req, res, body) {
     return;
   }
 
-  var invitationCode = attestation.invitationCode || null;
-  var challengeKey = invitationCode ? 'register:' + invitationCode : 'register:setup';
-  var pending = pendingChallenges[challengeKey];
+  const invitationCode = attestation.invitationCode || null;
+  const challengeKey = invitationCode ? 'register:' + invitationCode : 'register:setup';
+  const pending = pendingChallenges[challengeKey];
   if (!pending) {
     jsonResponse(res, 400, { error: 'No pending registration' });
     return;
@@ -348,7 +348,7 @@ async function handleRegisterVerify(req, res, body) {
   }
 
   try {
-    var verification = await verifyRegistrationResponse({
+    const verification = await verifyRegistrationResponse({
       response: attestation,
       expectedChallenge: pending.challenge,
       expectedOrigin: ORIGIN,
@@ -365,7 +365,7 @@ async function handleRegisterVerify(req, res, body) {
       jsonResponse(res, 400, { error: 'A user with that name already exists' });
       return;
     }
-    var newUser;
+    let newUser;
     try {
       newUser = credStore.createUser(pending.name, pending.role);
     } catch (err) {
@@ -373,8 +373,8 @@ async function handleRegisterVerify(req, res, body) {
       return;
     }
 
-    var info = verification.registrationInfo;
-    var metadata = buildCredentialMetadata(req);
+    const info = verification.registrationInfo;
+    const metadata = buildCredentialMetadata(req);
     credStore.addCredential({
       id: info.credential.id,
       userId: newUser.id,
@@ -398,7 +398,7 @@ async function handleRegisterVerify(req, res, body) {
     credStore.closeRegistration();
 
     // Create session for the freshly registered user
-    var newSession = credStore.createSession(newUser.id, info.credential.id);
+    const newSession = credStore.createSession(newUser.id, info.credential.id);
     session.setSessionCookie(res, newSession.token);
 
     log.info('passkey registered', { user: newUser.name, role: newUser.role });
@@ -412,14 +412,14 @@ async function handleRegisterVerify(req, res, body) {
 // ── POST /auth/login/options ──
 
 async function handleLoginOptions(req, res) {
-  var creds = credStore.getCredentials();
+  const creds = credStore.getCredentials();
   if (creds.length === 0) {
     jsonResponse(res, 404, { error: 'No credentials registered' });
     return;
   }
 
   try {
-    var options = await generateAuthenticationOptions({
+    const options = await generateAuthenticationOptions({
       rpID: RPID,
       userVerification: 'preferred',
       allowCredentials: creds.map(function (c) {
@@ -427,7 +427,7 @@ async function handleLoginOptions(req, res) {
       }),
     });
 
-    pendingChallenges['login'] = options.challenge;
+    pendingChallenges.login = options.challenge;
     jsonResponse(res, 200, options);
   } catch (err) {
     log.error('login options failed', { error: err.message });
@@ -438,22 +438,22 @@ async function handleLoginOptions(req, res) {
 // ── POST /auth/login/verify ──
 
 async function handleLoginVerify(req, res, body) {
-  var challenge = pendingChallenges['login'];
+  const challenge = pendingChallenges.login;
   if (!challenge) {
     jsonResponse(res, 400, { error: 'No pending authentication' });
     return;
   }
-  delete pendingChallenges['login'];
+  delete pendingChallenges.login;
 
   try {
-    var assertion = JSON.parse(body);
-    var cred = credStore.getCredentialById(assertion.id);
+    const assertion = JSON.parse(body);
+    const cred = credStore.getCredentialById(assertion.id);
     if (!cred) {
       jsonResponse(res, 401, { error: 'Authentication failed' });
       return;
     }
 
-    var verification = await verifyAuthenticationResponse({
+    const verification = await verifyAuthenticationResponse({
       response: assertion,
       expectedChallenge: challenge,
       expectedOrigin: ORIGIN,
@@ -474,10 +474,10 @@ async function handleLoginVerify(req, res, body) {
     credStore.updateCredentialCounter(cred.id, verification.authenticationInfo.newCounter);
     credStore.touchCredential(cred.id, buildCredentialMetadata(req));
 
-    var newSession = credStore.createSession(cred.userId, cred.id);
+    const newSession = credStore.createSession(cred.userId, cred.id);
     session.setSessionCookie(res, newSession.token);
 
-    var user = credStore.getUserById(cred.userId);
+    const user = credStore.getUserById(cred.userId);
     log.info('passkey login successful', { user: user && user.name, role: user && user.role });
     jsonResponse(res, 200, { verified: true, role: user && user.role });
   } catch (err) {
@@ -489,10 +489,10 @@ async function handleLoginVerify(req, res, body) {
 // ── GET /auth/status ──
 
 function handleStatus(req, res) {
-  var sess = session.validateRequest(req);
-  var creds = credStore.getCredentials();
-  var regOpen = credStore.isRegistrationOpen();
-  var user = sess && sess.userId ? credStore.getUserById(sess.userId) : null;
+  const sess = session.validateRequest(req);
+  const creds = credStore.getCredentials();
+  const regOpen = credStore.isRegistrationOpen();
+  const user = sess && sess.userId ? credStore.getUserById(sess.userId) : null;
 
   jsonResponse(res, 200, {
     authenticated: !!sess,
@@ -508,7 +508,7 @@ function handleStatus(req, res) {
 // ── POST /auth/logout ──
 
 function handleLogout(req, res) {
-  var token = session.getSessionToken(req);
+  const token = session.getSessionToken(req);
   if (token) {
     credStore.removeSession(token);
   }
@@ -517,10 +517,10 @@ function handleLogout(req, res) {
 }
 
 module.exports = {
-  init: init,
-  handleRequest: handleRequest,
+  init,
+  handleRequest,
   validateRequest: session.validateRequest,
-  getCurrentUser: getCurrentUser,
-  requireAdmin: requireAdmin,
-  requireUser: requireUser,
+  getCurrentUser,
+  requireAdmin,
+  requireUser,
 };

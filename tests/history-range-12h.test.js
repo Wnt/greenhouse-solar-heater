@@ -19,7 +19,7 @@ describe('getHistory / RANGE_INTERVALS — 12h support', () => {
   it('server/lib/db.js RANGE_INTERVALS covers every range that has a button', () => {
     // Read the source so we don't need a live DB to assert the mapping.
     const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'lib', 'db.js'), 'utf8');
-    const match = src.match(/var\s+RANGE_INTERVALS\s*=\s*\{([^}]+)\}/);
+    const match = src.match(/(?:var|let|const)\s+RANGE_INTERVALS\s*=\s*\{([^}]+)\}/);
     assert.ok(match, 'RANGE_INTERVALS object not found in db.js');
     const body = match[1];
     const ranges = ['1h', '6h', '12h', '24h', '7d', '30d', '1y'];

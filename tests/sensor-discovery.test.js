@@ -16,7 +16,7 @@ function createMockHub(handler) {
       handler(req, res, body);
     });
   });
-  return { server: server, calls: calls };
+  return { server, calls };
 }
 
 function listen(server) {
@@ -45,7 +45,7 @@ function loadDiscoveryWithRedirect(portMap) {
   const mod = require('../server/lib/sensor-discovery');
 
   return {
-    mod: mod,
+    mod,
     restore: function () { http.request = realRequest; http.get = realGet; },
   };
 }

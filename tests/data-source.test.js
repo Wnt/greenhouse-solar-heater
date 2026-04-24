@@ -130,14 +130,14 @@ describe('data-source contract', () => {
   // to test the state machine contract independently.
 
   function getConnectionDisplayState(opts) {
-    var activeSource = opts.activeSource || 'live';
-    var connectionStatus = opts.connectionStatus || 'disconnected';
-    var hasReceivedData = opts.hasReceivedData || false;
-    var mqttStatus = opts.mqttStatus || 'unknown';
-    var lastDataTime = opts.lastDataTime || 0;
-    var connectedAt = opts.connectedAt || 0;
-    var wsEverFailed = opts.wsEverFailed || false;
-    var now = opts.now || Date.now();
+    const activeSource = opts.activeSource || 'live';
+    const connectionStatus = opts.connectionStatus || 'disconnected';
+    const hasReceivedData = opts.hasReceivedData || false;
+    const mqttStatus = opts.mqttStatus || 'unknown';
+    const lastDataTime = opts.lastDataTime || 0;
+    const connectedAt = opts.connectedAt || 0;
+    const wsEverFailed = opts.wsEverFailed || false;
+    const now = opts.now || Date.now();
 
     if (activeSource !== 'live') return 'active';
 
@@ -191,23 +191,23 @@ describe('data-source contract', () => {
   });
 
   it('display state: device_offline after grace period with no data', () => {
-    var connectedAt = Date.now() - 5000; // 5s ago (> 2s grace)
+    const connectedAt = Date.now() - 5000; // 5s ago (> 2s grace)
     assert.strictEqual(getConnectionDisplayState({
       connectionStatus: 'connected',
       mqttStatus: 'connected',
       hasReceivedData: false,
-      connectedAt: connectedAt,
+      connectedAt,
       now: Date.now(),
     }), 'device_offline');
   });
 
   it('display state: connecting during grace period (WS just connected, no data yet)', () => {
-    var connectedAt = Date.now() - 500; // 500ms ago (< 2s grace)
+    const connectedAt = Date.now() - 500; // 500ms ago (< 2s grace)
     assert.strictEqual(getConnectionDisplayState({
       connectionStatus: 'connected',
       mqttStatus: 'unknown',
       hasReceivedData: false,
-      connectedAt: connectedAt,
+      connectedAt,
       now: Date.now(),
     }), 'connecting');
   });
@@ -277,7 +277,7 @@ describe('data-source contract', () => {
     assert.strictEqual(getConnectionDisplayState({
       connectionStatus: 'disconnected',
       hasReceivedData: false,
-      wsEverFailed: wsEverFailed,
+      wsEverFailed,
     }), 'never_connected');
 
     // Simulate stop() — resets flag

@@ -33,7 +33,7 @@ function buildUIConfig({ controlsEnabled, valves, pump, fan, spaceHeater, immers
   // Translate legacy allowedModes subset → wb entries with permanent
   // sentinel for the disallowed modes. Matches the production
   // migrateAmToWb() semantics in server/lib/device-config.js.
-  let wb = {};
+  const wb = {};
   if (Array.isArray(allowedModes) && allowedModes.length > 0 && allowedModes.length < 5) {
     const ALL = ['I', 'SC', 'GH', 'AD', 'EH'];
     for (const m of ALL) {
@@ -42,8 +42,8 @@ function buildUIConfig({ controlsEnabled, valves, pump, fan, spaceHeater, immers
   }
   return {
     ce: !!controlsEnabled,
-    ea: ea,
-    wb: wb,
+    ea,
+    wb,
     v: 1,
   };
 }

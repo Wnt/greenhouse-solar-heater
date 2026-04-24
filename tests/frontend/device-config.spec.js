@@ -15,10 +15,10 @@ const WB_PERMANENT_SENTINEL = 9999999999;
 /** Mock WebSocket so the app sees a stable live connection with state data. */
 async function mockLiveConnection(page) {
   await page.addInitScript(() => {
-    var OrigWS = window.WebSocket;
+    const OrigWS = window.WebSocket;
     // @ts-ignore
     window.WebSocket = function() {
-      var fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+      const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
         close: function() { this.readyState = 3; },
         send: function() {},
       };
@@ -44,7 +44,7 @@ async function mockLiveConnection(page) {
 /** Set up API mock and navigate to device view. */
 async function setupDeviceView(page, initialConfig) {
   const config = { ...DEFAULT_CONFIG, ...initialConfig };
-  let savedConfig = { ...config };
+  const savedConfig = { ...config };
   const putRequests = [];
 
   // Mock WebSocket so connection is stable and save button stays enabled
@@ -129,11 +129,11 @@ async function setupDeviceView(page, initialConfig) {
  */
 async function mockLiveConnectionWithRelay(page, stateOverrides) {
   await page.addInitScript((overrides) => {
-    var OrigWS = window.WebSocket;
+    const OrigWS = window.WebSocket;
     window.__wsSent = [];
     // @ts-ignore
     window.WebSocket = function() {
-      var fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+      const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
         close: function() { this.readyState = 3; },
         send: function(data) { try { window.__wsSent.push(JSON.parse(data)); } catch(e) {} },
       };
@@ -141,7 +141,7 @@ async function mockLiveConnectionWithRelay(page, stateOverrides) {
       window.__wsInject = function(msg) {
         if (fake.onmessage) fake.onmessage({ data: JSON.stringify(msg) });
       };
-      var stateData = Object.assign({
+      const stateData = Object.assign({
         mode: 'idle',
         temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
         valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },

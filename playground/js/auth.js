@@ -530,7 +530,7 @@ async function createEmptyUser() {
     const res = await fetch('/auth/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name, role: roleSelect.value }),
+      body: JSON.stringify({ name, role: roleSelect.value }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

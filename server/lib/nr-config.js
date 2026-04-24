@@ -12,27 +12,27 @@
  *   NR_CONFIG_KEY - S3 object key (default: newrelic-config.json)
  */
 
-var s3Client = null;
+let s3Client = null;
 
-var S3_KEY = process.env.NR_CONFIG_KEY || 'newrelic-config.json';
+const S3_KEY = process.env.NR_CONFIG_KEY || 'newrelic-config.json';
 
 function getS3Config() {
-  var endpoint = process.env.S3_ENDPOINT;
-  var bucket = process.env.S3_BUCKET;
-  var accessKeyId = process.env.S3_ACCESS_KEY_ID;
-  var secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+  const endpoint = process.env.S3_ENDPOINT;
+  const bucket = process.env.S3_BUCKET;
+  const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
   if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return null;
   return {
-    endpoint: endpoint,
-    bucket: bucket,
+    endpoint,
+    bucket,
     region: process.env.S3_REGION || 'europe-1',
-    credentials: { accessKeyId: accessKeyId, secretAccessKey: secretAccessKey },
+    credentials: { accessKeyId, secretAccessKey },
   };
 }
 
 function getS3Client(config) {
   if (s3Client) return s3Client;
-  var S3Client = require('@aws-sdk/client-s3').S3Client;
+  const S3Client = require('@aws-sdk/client-s3').S3Client;
   s3Client = new S3Client({
     endpoint: config.endpoint,
     region: config.region,
@@ -43,19 +43,19 @@ function getS3Client(config) {
 }
 
 function load(callback) {
-  var config = getS3Config();
+  const config = getS3Config();
   if (!config) {
     callback(new Error('S3 not configured'));
     return;
   }
-  var GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
-  var client = getS3Client(config);
-  var cmd = new GetObjectCommand({ Bucket: config.bucket, Key: S3_KEY });
+  const GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
+  const client = getS3Client(config);
+  const cmd = new GetObjectCommand({ Bucket: config.bucket, Key: S3_KEY });
   client.send(cmd).then(function (response) {
     return response.Body.transformToString();
   }).then(function (body) {
     try {
-      var data = JSON.parse(body);
+      const data = JSON.parse(body);
       callback(null, data.licenseKey || null);
     } catch (e) {
       callback(new Error('Failed to parse New Relic config JSON'));
@@ -70,15 +70,15 @@ function load(callback) {
 }
 
 function store(licenseKey, callback) {
-  var config = getS3Config();
+  const config = getS3Config();
   if (!config) {
     callback(new Error('S3 not configured'));
     return;
   }
-  var PutObjectCommand = require('@aws-sdk/client-s3').PutObjectCommand;
-  var client = getS3Client(config);
-  var body = JSON.stringify({ licenseKey: licenseKey }, null, 2);
-  var cmd = new PutObjectCommand({
+  const PutObjectCommand = require('@aws-sdk/client-s3').PutObjectCommand;
+  const client = getS3Client(config);
+  const body = JSON.stringify({ licenseKey }, null, 2);
+  const cmd = new PutObjectCommand({
     Bucket: config.bucket,
     Key: S3_KEY,
     Body: body,
@@ -94,8 +94,8 @@ function store(licenseKey, callback) {
 // ── CLI entrypoint ──
 
 function main() {
-  var args = process.argv.slice(2);
-  var command = args[0];
+  const args = process.argv.slice(2);
+  const command = args[0];
 
   if (command === 'load') {
     load(function (err, licenseKey) {
@@ -111,7 +111,7 @@ function main() {
       process.stdout.write(licenseKey);
     });
   } else if (command === 'store') {
-    var licenseKey = args[1];
+    const licenseKey = args[1];
     if (!licenseKey) {
       console.error('Usage: node nr-config.js store <license-key>');
       process.exit(1);
@@ -133,8 +133,8 @@ if (require.main === module) {
   main();
 } else {
   module.exports = {
-    load: load,
-    store: store,
+    load,
+    store,
     _resetClient: function () { s3Client = null; },
   };
 }

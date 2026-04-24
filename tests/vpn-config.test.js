@@ -2,14 +2,14 @@
  * Unit tests for VPN config S3 persistence helper.
  * Tests download/upload logic with mocked S3 calls.
  */
-var { describe, it, beforeEach, afterEach } = require('node:test');
-var assert = require('node:assert');
-var fs = require('node:fs');
-var path = require('node:path');
+const { describe, it, beforeEach, afterEach } = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
 
-var testDir = path.join(__dirname, 'vpn-config-test-' + process.pid);
-var testFile = path.join(testDir, 'openvpn.conf');
-var sampleConfig = 'dev tun\nproto udp\nport 1194\nifconfig 10.10.10.1 10.10.10.2\n<secret>\ntestkey\n</secret>\n';
+const testDir = path.join(__dirname, 'vpn-config-test-' + process.pid);
+const testFile = path.join(testDir, 'openvpn.conf');
+const sampleConfig = 'dev tun\nproto udp\nport 1194\nifconfig 10.10.10.1 10.10.10.2\n<secret>\ntestkey\n</secret>\n';
 
 function loadModule() {
   delete require.cache[require.resolve('../server/lib/vpn-config')];
@@ -18,7 +18,7 @@ function loadModule() {
 
 describe('vpn-config CLI argument parsing', function () {
   it('exports download and upload functions when required', function () {
-    var mod = loadModule();
+    const mod = loadModule();
     assert.strictEqual(typeof mod.download, 'function');
     assert.strictEqual(typeof mod.upload, 'function');
     assert.strictEqual(typeof mod._resetClient, 'function');
@@ -50,7 +50,7 @@ describe('vpn-config download', function () {
   it('returns error when S3 not configured', function (t, done) {
     delete process.env.S3_ENDPOINT;
     delete process.env.S3_BUCKET;
-    var mod = loadModule();
+    const mod = loadModule();
     mod.download(testFile, function (err) {
       assert.ok(err);
       assert.match(err.message, /S3 not configured/);
@@ -83,7 +83,7 @@ describe('vpn-config upload', function () {
     delete process.env.S3_ENDPOINT;
     delete process.env.S3_BUCKET;
     fs.writeFileSync(testFile, sampleConfig);
-    var mod = loadModule();
+    const mod = loadModule();
     mod.upload(testFile, function (err) {
       assert.ok(err);
       assert.match(err.message, /S3 not configured/);
@@ -92,7 +92,7 @@ describe('vpn-config upload', function () {
   });
 
   it('returns error when local file does not exist', function (t, done) {
-    var mod = loadModule();
+    const mod = loadModule();
     mod.upload('/nonexistent/wg0.conf', function (err) {
       assert.ok(err);
       assert.match(err.message, /Local file not found/);
@@ -110,7 +110,7 @@ describe('vpn-config VPN_CONFIG_KEY default', function () {
     process.env.S3_SECRET_ACCESS_KEY = 'testsecret';
     // We can't easily test the internal config without exposing it,
     // but we verify the module loads without error
-    var mod = loadModule();
+    const mod = loadModule();
     assert.ok(mod.download);
     delete process.env.S3_ENDPOINT;
     delete process.env.S3_BUCKET;

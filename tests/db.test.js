@@ -239,7 +239,7 @@ describe('db module', () => {
       id: require.resolve('pg'),
       exports: { Pool: function () { return {
         on: function () {},
-        query: function (sql, params, cb) { cb(null, { rows: rows }); },
+        query: function (sql, params, cb) { cb(null, { rows }); },
       }; } },
     };
     delete require.cache[require.resolve('../server/lib/db.js')];
@@ -272,7 +272,7 @@ describe('db module', () => {
       id: require.resolve('pg'),
       exports: { Pool: function () { return {
         on: function () {},
-        query: function (sql, params, cb) { cb(null, { rows: rows }); },
+        query: function (sql, params, cb) { cb(null, { rows }); },
       }; } },
     };
     delete require.cache[require.resolve('../server/lib/db.js')];

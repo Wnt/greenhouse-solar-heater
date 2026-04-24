@@ -17,17 +17,17 @@ import { test, expect } from './fixtures.js';
  */
 async function installMockWs(page, stateOverrides) {
   await page.addInitScript((overrides) => {
-    var OrigWS = window.WebSocket;
+    const OrigWS = window.WebSocket;
     // @ts-ignore
     window.WebSocket = function () {
-      var fake = {
+      const fake = {
         readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
         close: function () { this.readyState = 3; },
         send: function () {},
       };
       // @ts-ignore
       window.__mockWs = fake;
-      var stateData = Object.assign({
+      const stateData = Object.assign({
         mode: 'solar_charging',
         temps: { collector: 62.5, tank_top: 48.2, tank_bottom: 33.9, greenhouse: 21.7, outdoor: 11.4 },
         valves: { vi_btm: true, vi_top: false, vi_coll: false, vo_coll: true, vo_rad: false, vo_tank: false, v_air: false },

@@ -12,8 +12,6 @@
  * network.
  */
 
-/* eslint-env serviceworker */
-
 self.addEventListener('install', function () {
   // Activate immediately — no caching to wait for
   self.skipWaiting();
@@ -36,14 +34,14 @@ self.addEventListener('fetch', function (event) {
 // ── Push notifications ──
 
 self.addEventListener('push', function (event) {
-  var data = {};
+  let data = {};
   if (event.data) {
     try { data = event.data.json(); } catch (e) {
       data = { title: 'Helios Canopy', body: event.data.text() };
     }
   }
 
-  var title = data.title || 'Helios Canopy';
+  const title = data.title || 'Helios Canopy';
   // `icon` is the large image shown in the notification tray. The server
   // picks a category-specific glyph (wb_sunny / bedtime / local_fire /
   // ac_unit / cloud_off) and passes the path in `data.icon`; fall back
@@ -51,7 +49,7 @@ self.addEventListener('push', function (event) {
   // `badge` is the monochrome silhouette shown in the Android status bar
   // next to the clock — Android masks it to white, so it MUST be a
   // transparent PNG (otherwise the whole rectangle renders white).
-  var options = {
+  const options = {
     body: data.body || '',
     icon: data.icon || 'assets/icon-192.png',
     badge: 'assets/badge-72.png',
@@ -67,7 +65,7 @@ self.addEventListener('push', function (event) {
 });
 
 self.addEventListener('notificationclick', function (event) {
-  var data = event.notification.data || {};
+  const data = event.notification.data || {};
   event.notification.close();
 
   // Watchdog fired notifications have two inline actions beyond the
@@ -85,12 +83,12 @@ self.addEventListener('notificationclick', function (event) {
     // verify the full UX (fire → snooze with reason → ack confirmation)
     // without involving the device.
     if (data.test) {
-      var testTitle = data.testLabel || 'Greenhouse not warming';
+      const testTitle = data.testLabel || 'Greenhouse not warming';
       if (event.action === 'snooze') {
-        var testReply = (event.reply && event.reply.trim()) || '(no reason provided)';
-        var ttlSec = data.snoozeTtlSeconds || 43200;
-        var until = new Date(Date.now() + ttlSec * 1000);
-        var untilStr = new Intl.DateTimeFormat('en-GB', {
+        const testReply = (event.reply && event.reply.trim()) || '(no reason provided)';
+        const ttlSec = data.snoozeTtlSeconds || 43200;
+        const until = new Date(Date.now() + ttlSec * 1000);
+        const untilStr = new Intl.DateTimeFormat('en-GB', {
           hour: '2-digit', minute: '2-digit', hour12: false,
           timeZone: 'Europe/Helsinki',
         }).format(until);
@@ -122,8 +120,8 @@ self.addEventListener('notificationclick', function (event) {
       return;
     }
 
-    var action = event.action;
-    var reply  = event.reply;
+    const action = event.action;
+    const reply  = event.reply;
 
     if (action === 'shutdownnow') {
       event.waitUntil(fetch('/api/watchdog/shutdownnow', {
@@ -150,13 +148,13 @@ self.addEventListener('notificationclick', function (event) {
     // Main click (no action) falls through to the open-window logic.
   }
 
-  var url = data.url ? data.url : '/';
+  const url = data.url ? data.url : '/';
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       .then(function (clientList) {
         // Focus existing window if one is open
-        for (var i = 0; i < clientList.length; i++) {
+        for (let i = 0; i < clientList.length; i++) {
           if (clientList[i].url.indexOf(url) !== -1 && 'focus' in clientList[i]) {
             return clientList[i].focus();
           }

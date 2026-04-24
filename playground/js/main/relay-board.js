@@ -21,16 +21,16 @@ let relayPendingTimers = {}; // relay → timeout ID
 // user doesn't wait up to 30s for the next Shelly state broadcast.
 let lastControlsEnabled = false;
 // Currently active forced-mode short code (null = Automatic)
-var currentForcedMode = null;
+let currentForcedMode = null;
 
 // Short code → full MODE_VALVES/MODE_ACTUATORS key
-var MODE_CODE_MAP = {
+const MODE_CODE_MAP = {
   I: 'IDLE', SC: 'SOLAR_CHARGING', GH: 'GREENHOUSE_HEATING',
   AD: 'ACTIVE_DRAIN', EH: 'EMERGENCY_HEATING'
 };
 
 // Original button labels keyed by data-mode value (for restoring after ban suffix)
-var FM_BTN_LABELS = {
+const FM_BTN_LABELS = {
   I: 'Idle', SC: 'Solar charging',
   GH: 'Greenhouse heating', AD: 'Active drain', EH: 'Emergency heating'
 };
@@ -40,15 +40,15 @@ let _getLiveSource = () => null;
 // Apply forced-mode relay preview optimistically (no server round-trip)
 function applyForcedModePreview(modeCode) {
   if (!modeCode) return; // Automatic — let real state reconcile
-  var fullName = MODE_CODE_MAP[modeCode];
+  const fullName = MODE_CODE_MAP[modeCode];
   if (!fullName) return;
   // loadControlLogic() is already cached after init()
   loadControlLogic().then(function (cl) {
-    var valves = cl.MODE_VALVES[fullName] || {};
-    var actuators = cl.MODE_ACTUATORS[fullName] || {};
+    const valves = cl.MODE_VALVES[fullName] || {};
+    const actuators = cl.MODE_ACTUATORS[fullName] || {};
     document.querySelectorAll('.relay-btn').forEach(function (btn) {
-      var relay = btn.dataset.relay;
-      var on = (relay === 'pump' || relay === 'fan')
+      const relay = btn.dataset.relay;
+      const on = (relay === 'pump' || relay === 'fan')
         ? !!actuators[relay]
         : !!valves[relay];
       btn.classList.toggle('on', on);
@@ -83,11 +83,11 @@ export function initRelayBoard({ getLiveSource } = {}) {
   });
 
   // Forced-mode buttons
-  var forcedModeSendTimer = null;
+  let forcedModeSendTimer = null;
   document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(btn => {
     btn.addEventListener('click', function () {
       if (this.disabled || !overrideActive) return;
-      var mode = this.dataset.mode;
+      const mode = this.dataset.mode;
       if (!mode || mode === currentForcedMode) return;
 
       document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(b => b.classList.remove('active'));
@@ -97,57 +97,57 @@ export function initRelayBoard({ getLiveSource } = {}) {
 
       if (forcedModeSendTimer) clearTimeout(forcedModeSendTimer);
       forcedModeSendTimer = setTimeout(function () {
-        var liveSource = _getLiveSource();
-        if (liveSource) liveSource.sendCommand({ type: 'override-set-mode', mode: mode });
+        const liveSource = _getLiveSource();
+        if (liveSource) liveSource.sendCommand({ type: 'override-set-mode', mode });
       }, 300);
       currentForcedMode = mode;
     });
   });
 
   // Status-view "Exit override" link
-  var exitLink = document.getElementById('mode-card-exit-link');
+  const exitLink = document.getElementById('mode-card-exit-link');
   if (exitLink) {
     exitLink.addEventListener('click', function (ev) {
       ev.preventDefault();
-      var liveSource = _getLiveSource();
+      const liveSource = _getLiveSource();
       if (liveSource) liveSource.sendCommand({ type: 'override-exit' });
     });
   }
 
   // Command response handler
-  var liveSource = _getLiveSource();
+  const liveSource = _getLiveSource();
   if (liveSource) {
     liveSource.onCommandResponse(handleOverrideResponse);
   }
 }
 
-var overrideAckTimer = null;
+let overrideAckTimer = null;
 
 function enterOverride() {
-  var liveSource = _getLiveSource();
+  const liveSource = _getLiveSource();
   if (!liveSource) return;
   // Hard-override confirmation. Automation including freeze-drain is
   // off while in override; the user needs to acknowledge that each
   // time so it's not triggered by a stray click. No confirmation on
   // subsequent fm changes within the same override session — we
   // trust the first "yes, I meant it" for the whole TTL window.
-  var ok = window.confirm(
+  const ok = window.confirm(
     'Manual override disables ALL automation until you exit (or the TTL expires) — ' +
     'including freeze-drain safety. On a cold night an active override can let the ' +
     'collectors freeze.\n\nContinue?'
   );
   if (!ok) return;
 
-  var fmSelect = document.getElementById('override-entry-fm');
-  var fm = fmSelect ? fmSelect.value : 'I';
+  const fmSelect = document.getElementById('override-entry-fm');
+  const fm = fmSelect ? fmSelect.value : 'I';
 
-  var btn = document.getElementById('override-enter-btn');
+  const btn = document.getElementById('override-enter-btn');
   btn.disabled = true;
   btn.textContent = 'Connecting...';
 
-  var activeTtlBtn = document.querySelector('.ttl-btn.active');
-  var ttl = activeTtlBtn ? parseInt(activeTtlBtn.dataset.ttl, 10) : 300;
-  var sent = liveSource.sendCommand({ type: 'override-enter', ttl: ttl, forcedMode: fm });
+  const activeTtlBtn = document.querySelector('.ttl-btn.active');
+  const ttl = activeTtlBtn ? parseInt(activeTtlBtn.dataset.ttl, 10) : 300;
+  const sent = liveSource.sendCommand({ type: 'override-enter', ttl, forcedMode: fm });
 
   if (!sent) {
     btn.disabled = false;
@@ -168,7 +168,7 @@ function enterOverride() {
 }
 
 function showOverrideMsg(text, color) {
-  var el = document.getElementById('override-expired-msg');
+  const el = document.getElementById('override-expired-msg');
   el.textContent = text;
   el.style.color = color || 'var(--on-surface-variant)';
   el.style.display = '';
@@ -176,15 +176,15 @@ function showOverrideMsg(text, color) {
 }
 
 function exitOverride() {
-  var liveSource = _getLiveSource();
+  const liveSource = _getLiveSource();
   if (!liveSource) return;
   liveSource.sendCommand({ type: 'override-exit' });
 }
 
 function updateOverrideTtl(ttl) {
-  var liveSource = _getLiveSource();
+  const liveSource = _getLiveSource();
   if (!liveSource || !overrideActive) return;
-  liveSource.sendCommand({ type: 'override-update', ttl: ttl });
+  liveSource.sendCommand({ type: 'override-update', ttl });
 }
 
 export function handleOverrideResponse(msg) {
@@ -197,7 +197,7 @@ export function handleOverrideResponse(msg) {
     }
   } else if (msg.type === 'override-error') {
     // Restore enter button
-    var btn = document.getElementById('override-enter-btn');
+    const btn = document.getElementById('override-enter-btn');
     btn.disabled = false;
     btn.textContent = 'Enter Manual Override';
     showOverrideMsg(msg.message, 'var(--error)');
@@ -217,10 +217,10 @@ function activateOverrideUI(expiresAt, forcedMode) {
   // Show forced-mode group; gate buttons for readonly users. Reflect
   // the active fm from the server so the button highlight matches the
   // mode we actually entered with.
-  var fmGroup = document.getElementById('forced-mode-group');
+  const fmGroup = document.getElementById('forced-mode-group');
   if (fmGroup) fmGroup.style.display = '';
-  var userRole = store.get('userRole') || 'admin';
-  var isAdmin = userRole === 'admin';
+  const userRole = store.get('userRole') || 'admin';
+  const isAdmin = userRole === 'admin';
   document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(function (b) {
     b.disabled = !isAdmin;
     b.classList.toggle('active', b.dataset.mode === forcedMode);
@@ -241,17 +241,17 @@ function deactivateOverrideUI(msg) {
     btn.classList.remove('on', 'relay-btn--pending', 'relay-btn--error');
   });
   relayPendingState = {};
-  for (var k in relayPendingTimers) clearTimeout(relayPendingTimers[k]);
+  for (const k in relayPendingTimers) clearTimeout(relayPendingTimers[k]);
   relayPendingTimers = {};
 
   // Hide forced-mode group and reset its state
   currentForcedMode = null;
-  var fmGroup = document.getElementById('forced-mode-group');
+  const fmGroup = document.getElementById('forced-mode-group');
   if (fmGroup) fmGroup.style.display = 'none';
   document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(function (b) {
     b.classList.remove('active');
     // Restore original button text (strip any " · banned" suffix)
-    var orig = FM_BTN_LABELS[b.dataset.mode !== undefined ? b.dataset.mode : ''];
+    const orig = FM_BTN_LABELS[b.dataset.mode !== undefined ? b.dataset.mode : ''];
     if (orig) b.textContent = orig;
     b.disabled = false;
   });
@@ -259,13 +259,13 @@ function deactivateOverrideUI(msg) {
   // whenever override is active. On deactivation the whole group hides.
   // Reset the Enter button so the user doesn't see a stale "Connecting..."
   // and doesn't have to wait ~30s for the next state broadcast to recover.
-  var enterBtn = document.getElementById('override-enter-btn');
+  const enterBtn = document.getElementById('override-enter-btn');
   enterBtn.textContent = 'Enter Manual Override';
   enterBtn.disabled = !lastControlsEnabled;
-  var gateMsg = document.getElementById('override-gate-msg');
+  const gateMsg = document.getElementById('override-gate-msg');
   if (gateMsg) gateMsg.style.display = lastControlsEnabled ? 'none' : 'block';
   if (msg) {
-    var expEl = document.getElementById('override-expired-msg');
+    const expEl = document.getElementById('override-expired-msg');
     expEl.textContent = msg;
     expEl.style.display = '';
     expEl.style.color = 'var(--on-surface-variant)';
@@ -284,9 +284,9 @@ function clearCountdown() {
 }
 
 function updateCountdownDisplay() {
-  var remaining = Math.max(0, overrideExpiresAt - Math.floor(Date.now() / 1000));
-  var min = Math.floor(remaining / 60);
-  var sec = remaining % 60;
+  const remaining = Math.max(0, overrideExpiresAt - Math.floor(Date.now() / 1000));
+  const min = Math.floor(remaining / 60);
+  const sec = remaining % 60;
   document.getElementById('override-countdown').textContent = min + ':' + (sec < 10 ? '0' : '') + sec;
   if (remaining <= 0 && overrideActive) {
     deactivateOverrideUI('Override expired — automation resumed.');
@@ -294,9 +294,9 @@ function updateCountdownDisplay() {
 }
 
 function toggleRelay(btn) {
-  var relay = btn.dataset.relay;
-  var currentlyOn = btn.classList.contains('on');
-  var newState = !currentlyOn;
+  const relay = btn.dataset.relay;
+  const currentlyOn = btn.classList.contains('on');
+  const newState = !currentlyOn;
 
   // Optimistic UI + haptic feedback
   btn.classList.toggle('on', newState);
@@ -304,8 +304,8 @@ function toggleRelay(btn) {
   try { if (navigator.vibrate) navigator.vibrate(50); } catch (e) {}
 
   // Send command
-  var liveSource = _getLiveSource();
-  if (liveSource) liveSource.sendCommand({ type: 'relay-command', relay: relay, on: newState });
+  const liveSource = _getLiveSource();
+  if (liveSource) liveSource.sendCommand({ type: 'relay-command', relay, on: newState });
 
   // Track pending state for reconciliation
   relayPendingState[relay] = newState;
@@ -321,7 +321,7 @@ function toggleRelay(btn) {
 
 export function updateRelayBoard(result) {
   if (!result) return;
-  var mo = result.manual_override;
+  const mo = result.manual_override;
   // Update last-known controls_enabled FIRST so deactivateOverrideUI()
   // can use the fresh value for its optimistic re-enable.
   lastControlsEnabled = !!result.controls_enabled;
@@ -340,9 +340,9 @@ export function updateRelayBoard(result) {
   }
 
   // Update controls-enabled gate
-  var ceEnabled = lastControlsEnabled;
-  var enterBtn = document.getElementById('override-enter-btn');
-  var gateMsg = document.getElementById('override-gate-msg');
+  const ceEnabled = lastControlsEnabled;
+  const enterBtn = document.getElementById('override-enter-btn');
+  const gateMsg = document.getElementById('override-gate-msg');
   if (!overrideActive) {
     enterBtn.disabled = !ceEnabled;
     gateMsg.style.display = ceEnabled ? 'none' : 'block';
@@ -357,11 +357,11 @@ export function updateRelayBoard(result) {
   if (!overrideActive) return;
 
   // Update relay button states from actual hardware state
-  var valves = result.valves || {};
-  var actuators = result.actuators || {};
+  const valves = result.valves || {};
+  const actuators = result.actuators || {};
   document.querySelectorAll('.relay-btn').forEach(btn => {
-    var relay = btn.dataset.relay;
-    var actual = (relay === 'pump' || relay === 'fan')
+    const relay = btn.dataset.relay;
+    const actual = (relay === 'pump' || relay === 'fan')
       ? !!actuators[relay]
       : !!valves[relay];
 
@@ -387,27 +387,27 @@ export function updateRelayBoard(result) {
   });
 
   // Sync forced-mode button active state from server
-  var fm = (mo && mo.forcedMode) || null;
+  const fm = (mo && mo.forcedMode) || null;
   currentForcedMode = fm;
-  var fmCode = fm || '';
+  const fmCode = fm || '';
   document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(function (b) {
     b.classList.toggle('active', b.dataset.mode === fmCode);
   });
 
   // Apply wb bans to forced-mode buttons
-  var wb = getWatchdogSnapshot().wb || {};
-  var now = Math.floor(Date.now() / 1000);
+  const wb = getWatchdogSnapshot().wb || {};
+  const now = Math.floor(Date.now() / 1000);
   document.querySelectorAll('#forced-mode-btns .fm-btn').forEach(function (b) {
-    var code = b.dataset.mode;
+    const code = b.dataset.mode;
     if (!code) return; // Automatic button is never banned
-    var banUntil = wb[code];
-    var isBanned = banUntil && banUntil > now;
-    var orig = FM_BTN_LABELS[code] || code;
+    const banUntil = wb[code];
+    const isBanned = banUntil && banUntil > now;
+    const orig = FM_BTN_LABELS[code] || code;
     if (isBanned) {
       b.disabled = true;
       b.textContent = orig + ' · banned';
     } else {
-      var userRole = store.get('userRole') || 'admin';
+      const userRole = store.get('userRole') || 'admin';
       b.disabled = userRole !== 'admin';
       b.textContent = orig;
     }

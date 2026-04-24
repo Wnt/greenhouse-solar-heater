@@ -2,7 +2,7 @@
 // aggregates used by db.js's initSchema. Extracted so the main
 // db.js stays focused on the query API.
 
-var SCHEMA_SQL = [
+const SCHEMA_SQL = [
   'CREATE EXTENSION IF NOT EXISTS timescaledb',
 
   "CREATE TABLE IF NOT EXISTS sensor_readings (\n" +
@@ -74,7 +74,7 @@ var SCHEMA_SQL = [
 // before CREATE TABLE because pg refuses to create a table that collides
 // with an existing relation of the same name. CASCADE handles the unique
 // index that used to back CONCURRENT refreshes.
-var AGGREGATE_SQL = [
+const AGGREGATE_SQL = [
   "DROP MATERIALIZED VIEW IF EXISTS sensor_readings_30s CASCADE",
 
   "CREATE TABLE IF NOT EXISTS sensor_readings_30s (\n" +

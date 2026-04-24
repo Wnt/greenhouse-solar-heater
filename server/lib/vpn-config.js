@@ -12,29 +12,29 @@
  *   VPN_CONFIG_KEY - S3 object key (default: openvpn.conf)
  */
 
-var fs = require('fs');
-var path = require('path');
+const fs = require('fs');
+const path = require('path');
 
-var s3Client = null;
+let s3Client = null;
 
 function getS3Config() {
-  var endpoint = process.env.S3_ENDPOINT;
-  var bucket = process.env.S3_BUCKET;
-  var accessKeyId = process.env.S3_ACCESS_KEY_ID;
-  var secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+  const endpoint = process.env.S3_ENDPOINT;
+  const bucket = process.env.S3_BUCKET;
+  const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
   if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return null;
   return {
-    endpoint: endpoint,
-    bucket: bucket,
+    endpoint,
+    bucket,
     region: process.env.S3_REGION || 'europe-1',
-    credentials: { accessKeyId: accessKeyId, secretAccessKey: secretAccessKey },
+    credentials: { accessKeyId, secretAccessKey },
     key: process.env.VPN_CONFIG_KEY || 'openvpn.conf',
   };
 }
 
 function getS3Client(config) {
   if (s3Client) return s3Client;
-  var S3Client = require('@aws-sdk/client-s3').S3Client;
+  const S3Client = require('@aws-sdk/client-s3').S3Client;
   s3Client = new S3Client({
     endpoint: config.endpoint,
     region: config.region,
@@ -45,24 +45,24 @@ function getS3Client(config) {
 }
 
 function download(localPath, callback) {
-  var config = getS3Config();
+  const config = getS3Config();
   if (!config) {
     callback(new Error('S3 not configured'));
     return;
   }
-  var GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
-  var client = getS3Client(config);
-  var cmd = new GetObjectCommand({ Bucket: config.bucket, Key: config.key });
+  const GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
+  const client = getS3Client(config);
+  const cmd = new GetObjectCommand({ Bucket: config.bucket, Key: config.key });
   client.send(cmd).then(function (response) {
     return response.Body.transformToString();
   }).then(function (body) {
-    var dir = path.dirname(localPath);
+    const dir = path.dirname(localPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     // Write to temp file first, then rename — prevents truncating
     // the existing config if the write fails (e.g. disk full)
-    var tmpPath = localPath + '.tmp';
+    const tmpPath = localPath + '.tmp';
     fs.writeFileSync(tmpPath, body);
     fs.renameSync(tmpPath, localPath);
     callback(null, 'downloaded');
@@ -76,7 +76,7 @@ function download(localPath, callback) {
 }
 
 function upload(localPath, callback) {
-  var config = getS3Config();
+  const config = getS3Config();
   if (!config) {
     callback(new Error('S3 not configured'));
     return;
@@ -87,17 +87,17 @@ function upload(localPath, callback) {
   }
 
   // Check if S3 already has this config (skip unnecessary writes)
-  var s3 = require('@aws-sdk/client-s3');
-  var client = getS3Client(config);
-  var headCmd = new s3.HeadObjectCommand({ Bucket: config.bucket, Key: config.key });
+  const s3 = require('@aws-sdk/client-s3');
+  const client = getS3Client(config);
+  const headCmd = new s3.HeadObjectCommand({ Bucket: config.bucket, Key: config.key });
   client.send(headCmd).then(function () {
     // Object exists in S3 — skip upload
     callback(null, 'already-exists');
   }).catch(function (err) {
     if (err.name === 'NotFound' || (err.$metadata && err.$metadata.httpStatusCode === 404)) {
       // Object doesn't exist — upload it
-      var body = fs.readFileSync(localPath, 'utf8');
-      var putCmd = new s3.PutObjectCommand({
+      const body = fs.readFileSync(localPath, 'utf8');
+      const putCmd = new s3.PutObjectCommand({
         Bucket: config.bucket,
         Key: config.key,
         Body: body,
@@ -117,9 +117,9 @@ function upload(localPath, callback) {
 // ── CLI entrypoint ──
 
 function main() {
-  var args = process.argv.slice(2);
-  var command = args[0];
-  var localPath = args[1];
+  const args = process.argv.slice(2);
+  const command = args[0];
+  const localPath = args[1];
 
   if (!command || !localPath) {
     console.error('Usage: node vpn-config.js <download|upload> <path>');
@@ -161,8 +161,8 @@ if (require.main === module) {
   main();
 } else {
   module.exports = {
-    download: download,
-    upload: upload,
+    download,
+    upload,
     _resetClient: function () { s3Client = null; },
   };
 }

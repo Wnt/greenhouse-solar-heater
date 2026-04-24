@@ -14,11 +14,11 @@ import { test, expect } from './fixtures.js';
 async function mockLiveConnectionWithScriptStatus(page, initialStatus) {
   await page.addInitScript((initial) => {
     const initialPayload = initial || null;
-    var OrigWS = window.WebSocket;
+    const OrigWS = window.WebSocket;
     window.__scriptSent = [];
     // @ts-ignore
     window.WebSocket = function () {
-      var fake = {
+      const fake = {
         readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
         close: function () { this.readyState = 3; },
         send: function (data) { try { window.__scriptSent.push(JSON.parse(data)); } catch (e) { /* ignore */ } }

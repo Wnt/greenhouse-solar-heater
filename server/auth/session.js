@@ -14,17 +14,17 @@ const MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 function sign(token) {
-  var hmac = crypto.createHmac('sha256', SECRET);
+  const hmac = crypto.createHmac('sha256', SECRET);
   hmac.update(token);
   return token + '.' + hmac.digest('hex');
 }
 
 function verify(signed) {
   if (!signed || typeof signed !== 'string') return null;
-  var parts = signed.split('.');
+  const parts = signed.split('.');
   if (parts.length !== 2) return null;
-  var token = parts[0];
-  var expected = sign(token);
+  const token = parts[0];
+  const expected = sign(token);
   if (signed.length !== expected.length) return null;
   // Constant-time comparison
   if (!crypto.timingSafeEqual(Buffer.from(signed), Buffer.from(expected))) return null;
@@ -32,34 +32,34 @@ function verify(signed) {
 }
 
 function parseCookies(req) {
-  var header = req.headers.cookie || '';
-  var cookies = {};
+  const header = req.headers.cookie || '';
+  const cookies = {};
   header.split(';').forEach(function (pair) {
-    var idx = pair.indexOf('=');
+    const idx = pair.indexOf('=');
     if (idx < 0) return;
-    var key = pair.substring(0, idx).trim();
-    var val = pair.substring(idx + 1).trim();
+    const key = pair.substring(0, idx).trim();
+    const val = pair.substring(idx + 1).trim();
     cookies[key] = decodeURIComponent(val);
   });
   return cookies;
 }
 
 function getSessionToken(req) {
-  var cookies = parseCookies(req);
-  var signed = cookies[COOKIE_NAME];
+  const cookies = parseCookies(req);
+  const signed = cookies[COOKIE_NAME];
   if (!signed) return null;
   return verify(signed);
 }
 
 function validateRequest(req) {
-  var token = getSessionToken(req);
+  const token = getSessionToken(req);
   if (!token) return null;
   return credStore.validateSession(token);
 }
 
 function setSessionCookie(res, token) {
-  var signed = sign(token);
-  var flags = [
+  const signed = sign(token);
+  const flags = [
     COOKIE_NAME + '=' + signed,
     'Path=/',
     'HttpOnly',
@@ -73,7 +73,7 @@ function setSessionCookie(res, token) {
 }
 
 function clearSessionCookie(res) {
-  var flags = [
+  const flags = [
     COOKIE_NAME + '=',
     'Path=/',
     'HttpOnly',
@@ -87,7 +87,7 @@ function clearSessionCookie(res) {
 }
 
 function validateSecret() {
-  var val = process.env.SESSION_SECRET;
+  const val = process.env.SESSION_SECRET;
   if (!val) {
     return { valid: false, reason: 'SESSION_SECRET environment variable is not set' };
   }
@@ -98,13 +98,13 @@ function validateSecret() {
 }
 
 module.exports = {
-  sign: sign,
-  verify: verify,
-  parseCookies: parseCookies,
-  getSessionToken: getSessionToken,
-  validateRequest: validateRequest,
-  setSessionCookie: setSessionCookie,
-  clearSessionCookie: clearSessionCookie,
-  validateSecret: validateSecret,
-  DEV_SECRET: DEV_SECRET,
+  sign,
+  verify,
+  parseCookies,
+  getSessionToken,
+  validateRequest,
+  setSessionCookie,
+  clearSessionCookie,
+  validateSecret,
+  DEV_SECRET,
 };

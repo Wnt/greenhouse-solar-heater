@@ -35,9 +35,9 @@ function sleep(ms) {
 
 function httpRpc(host, method, params, timeoutMs) {
   return new Promise(function (resolve, reject) {
-    const body = JSON.stringify({ id: 1, method: method, params: params || {} });
+    const body = JSON.stringify({ id: 1, method, params: params || {} });
     const req = http.request({
-      host: host,
+      host,
       port: 80,
       path: '/rpc',
       method: 'POST',
@@ -89,7 +89,7 @@ async function waitForHubReady(host, timeoutMs) {
       await sleep(REBOOT_POLL_INTERVAL_MS);
     }
   }
-  log.warn('waitForHubReady timed out', { host: host, error: lastErr && lastErr.message });
+  log.warn('waitForHubReady timed out', { host, error: lastErr && lastErr.message });
   return false;
 }
 
@@ -108,7 +108,7 @@ function buildTargetMap(hosts, assignments, roleLabels) {
     if (!byHost[h.ip]) byHost[h.ip] = {};
     byHost[h.ip][String(a.componentId)] = {
       addr: a.addr,
-      role: role,
+      role,
       label: labels[role] || role,
     };
   }
@@ -157,7 +157,7 @@ async function applyHost(hostIp, target) {
         });
       } catch (e) {
         log.warn('failed to label temperature component', {
-          host: hostIp, cid: cid, role: t.role, error: e.message,
+          host: hostIp, cid, role: t.role, error: e.message,
         });
       }
     }
@@ -183,7 +183,7 @@ async function applyHost(hostIp, target) {
     const ready = await waitForHubReady(hostIp, REBOOT_WAIT_MS);
     if (!ready) {
       errors.push('hub did not come back within ' + REBOOT_WAIT_MS + 'ms after phase-1 reboot');
-      return { host: hostIp, ok: false, error: errors.join('; '), peripherals: 0, rebooted: rebooted };
+      return { host: hostIp, ok: false, error: errors.join('; '), peripherals: 0, rebooted };
     }
   }
 
@@ -212,7 +212,7 @@ async function applyHost(hostIp, target) {
       });
     } catch (e) {
       log.warn('failed to label temperature component', {
-        host: hostIp, cid: cid, role: t.role, error: e.message,
+        host: hostIp, cid, role: t.role, error: e.message,
       });
     }
   }
@@ -223,7 +223,7 @@ async function applyHost(hostIp, target) {
   if (added > 0) {
     try { await httpRpc(hostIp, 'Shelly.Reboot'); } catch (_) { /* expected */ }
     rebooted = true;
-    log.info('added + rebooted', { host: hostIp, added: added });
+    log.info('added + rebooted', { host: hostIp, added });
   }
 
   const out = { host: hostIp, ok: errors.length === 0, peripherals: added };
@@ -243,7 +243,7 @@ async function applyAll(hosts, assignments, roleLabels) {
   return {
     id: 'apply-' + Date.now(),
     success: results.every(function (r) { return r.ok; }),
-    results: results,
+    results,
   };
 }
 
@@ -254,7 +254,7 @@ async function applyOne(hosts, assignments, hostIp, roleLabels) {
 }
 
 module.exports = {
-  applyAll: applyAll,
-  applyOne: applyOne,
-  _internals: { httpRpc: httpRpc, buildTargetMap: buildTargetMap, currentMatchesTarget: currentMatchesTarget },
+  applyAll,
+  applyOne,
+  _internals: { httpRpc, buildTargetMap, currentMatchesTarget },
 };

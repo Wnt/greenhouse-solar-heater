@@ -94,7 +94,7 @@ test.describe('Mobile: Device view does not overflow horizontally', () => {
     await page.locator('.bottom-nav [data-view="device"]').click();
     // Force-show the config form (normally hidden until API loads config)
     await page.evaluate(() => {
-      var form = document.getElementById('device-config-form');
+      const form = document.getElementById('device-config-form');
       if (form) form.style.display = '';
     });
     await page.waitForTimeout(200);
@@ -110,11 +110,11 @@ test.describe('Mobile: Device view does not overflow horizontally', () => {
 /** Mock WS with send capture and message injection, same as device-config.spec.js */
 async function mockLiveConnectionWithRelay(page, stateOverrides) {
   await page.addInitScript((overrides) => {
-    var OrigWS = window.WebSocket;
+    const OrigWS = window.WebSocket;
     window.__wsSent = [];
     // @ts-ignore
     window.WebSocket = function() {
-      var fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+      const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
         close: function() { this.readyState = 3; },
         send: function(data) { try { window.__wsSent.push(JSON.parse(data)); } catch(e) {} },
       };
@@ -122,7 +122,7 @@ async function mockLiveConnectionWithRelay(page, stateOverrides) {
       window.__wsInject = function(msg) {
         if (fake.onmessage) fake.onmessage({ data: JSON.stringify(msg) });
       };
-      var stateData = Object.assign({
+      const stateData = Object.assign({
         mode: 'idle',
         temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
         valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },

@@ -16,7 +16,7 @@ describe('db-config', () => {
           // Check if this is a get or put
           if (s3Calls.length === 1 && !s3Calls._stored) {
             // First load — no data stored yet
-            var err = new Error('NoSuchKey');
+            const err = new Error('NoSuchKey');
             err.name = 'NoSuchKey';
             err.$metadata = { httpStatusCode: 404 };
             return Promise.reject(err);
