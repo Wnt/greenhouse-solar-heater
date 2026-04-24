@@ -153,7 +153,26 @@ A threshold change in `control-logic.js` without a regenerated snapshot fails CI
 - **Run `npm ci` first if `node_modules/` is missing.** With deps installed, the full unit suite (`npm run test:unit`, 788 tests) completes in **~20 s** locally; individual files are sub-second to a few seconds. If a run is taking materially longer, something is wrong — don't "wait it out." Common causes: missing deps (several tests hang indefinitely on missing transitive requires rather than erroring; `sensor-apply` and `sensor-discovery` are the usual offenders because they build local HTTP servers that wait on a peer module that never loads), or stale `node` processes from a previous killed run (check `ps -C node` and `pkill -9 node`).
 - **Use tight Bash timeouts for tests.** Full suite: `timeout 30` (20 s baseline + headroom). Single file: `timeout 10`. A test that times out is a signal to investigate, not to retry with a bigger budget. 5-minute timeouts burn minutes of wall clock and hide real issues.
 - **`import { test, expect } from './fixtures.js'`** for all Playwright specs (both `tests/frontend/` and `tests/e2e/`) — NOT from `@playwright/test`. The fixture blocks Google Fonts so page loads don't hang in offline environments.
-- **Playwright version ↔ cached Chromium revision is a Claude sandbox concern only.** The Claude cloud sandbox ships a pre-cached Chromium in `~/.cache/ms-playwright/`, so agents running there must pin `@playwright/test` to the version matching that cache. On "browser not found" errors in that environment, downgrade the package to match. **In-repo, always track the latest production-ready `@playwright/test` release** — CI runs inside `mcr.microsoft.com/playwright:vX.Y.Z-noble`, so bump the `ci.yml` container image tag in lockstep with the package bump.
+- **Playwright version ↔ cached Chromium revision is a Claude sandbox concern only.** The Claude cloud sandbox ships a pre-cached Chromium under `$PLAYWRIGHT_BROWSERS_PATH` (typically `/opt/pw-browsers/`, e.g. `chromium-1194`), so agents running there must run against a `@playwright/test` version whose bundled Chromium matches that cache. On "browser not found" / "Executable doesn't exist at …" errors in that environment, downgrade the installed package — **do NOT edit `package.json`**; the repo must stay on the latest production-ready release. Concrete recipe:
+
+  ```bash
+  # 1. find the cached chromium revision
+  ls "$PLAYWRIGHT_BROWSERS_PATH" | grep chromium-        # e.g. chromium-1194
+  # 2. probe npm for the matching @playwright/test version
+  for v in 1.55.0 1.56.0 1.56.1 1.57.0 1.58.0 1.59.0 1.59.1; do
+    npm pack --silent "playwright-core@$v" >/dev/null 2>&1
+    rev=$(tar -xOf "playwright-core-$v.tgz" package/browsers.json \
+      | node -e "const b=JSON.parse(require('fs').readFileSync(0,'utf8'));
+                 console.log(b.browsers.find(x=>x.name==='chromium').revision)")
+    echo "$v -> chromium $rev"; rm -f "playwright-core-$v.tgz"
+  done
+  # 3. install the match *without* touching package.json / package-lock.json
+  npm install --no-save @playwright/test@<version> playwright@<version>
+  # 4. run tests
+  npm test
+  ```
+
+  Revert by re-running `npm ci` before committing. **In-repo, always track the latest production-ready `@playwright/test` release** — CI runs inside `mcr.microsoft.com/playwright:vX.Y.Z-noble`, so bump the `ci.yml` container image tag in lockstep with the package bump.
 - **Use plain `serve`, NOT `serve -s`.** SPA mode rewrites `/schematic-tester.html` → `/schematic-tester` → `index.html`, so standalone pages (schematic-tester, liquid-glass-test) become unreachable. Playwright config auto-starts plain `serve` on port 3210.
 
 ## Cloud Deployment
