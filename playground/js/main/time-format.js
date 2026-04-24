@@ -15,7 +15,7 @@ export function formatTimeOfDay(simSeconds) {
   return h.toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0');
 }
 
-const HELSINKI_TZ = 'Europe/Helsinki';
+export const HELSINKI_TZ = 'Europe/Helsinki';
 const fmtClockHelsinki = new Intl.DateTimeFormat('fi-FI', {
   hour: '2-digit', minute: '2-digit', hour12: false, timeZone: HELSINKI_TZ,
 });
@@ -24,9 +24,27 @@ const fmtFullHelsinki = new Intl.DateTimeFormat('fi-FI', {
   hour: '2-digit', minute: '2-digit', second: '2-digit',
   hour12: false, timeZone: HELSINKI_TZ,
 });
+const fmtDayPartsHelsinki = new Intl.DateTimeFormat('en-GB', {
+  year: 'numeric', month: 'numeric', day: 'numeric',
+  hour: 'numeric', minute: 'numeric',
+  hour12: false, timeZone: HELSINKI_TZ,
+});
 
 export function formatClockTime(unixMs) {
   return fmtClockHelsinki.format(new Date(unixMs));
+}
+
+// Returns { year, month, day, hour, minute } as numbers for the wall
+// clock in Europe/Helsinki. Handy for same-day comparisons or for
+// building custom chart tick formats without pulling in a date lib.
+export function helsinkiParts(unixMs) {
+  const parts = fmtDayPartsHelsinki.formatToParts(new Date(unixMs));
+  const out = {};
+  for (const p of parts) {
+    if (p.type === 'literal') continue;
+    out[p.type] = parseInt(p.value, 10);
+  }
+  return out;
 }
 
 // Short human-readable label for each cause tag. Keep in sync with

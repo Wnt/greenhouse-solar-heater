@@ -202,6 +202,21 @@ export function pickTickStep(rangeSec, plotWidthPx, minPxPerLabel = 72) {
 }
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const HELSINKI_TZ = 'Europe/Helsinki';
+const fmtTickClock = new Intl.DateTimeFormat('en-GB', {
+  hour: '2-digit', minute: '2-digit', hour12: false, timeZone: HELSINKI_TZ,
+});
+const fmtTickParts = new Intl.DateTimeFormat('en-GB', {
+  year: 'numeric', month: 'numeric', day: 'numeric', timeZone: HELSINKI_TZ,
+});
+function tickDateParts(d) {
+  const out = {};
+  for (const p of fmtTickParts.formatToParts(d)) {
+    if (p.type === 'literal') continue;
+    out[p.type] = parseInt(p.value, 10);
+  }
+  return out;
+}
 
 /**
  * Pick the bucket size (seconds) for the duty-cycle mode bars on the history
@@ -229,13 +244,12 @@ export function pickBucketSize(rangeSec) {
 export function formatTick(tEpochSec, stepSec) {
   const d = new Date(tEpochSec * 1000);
   if (stepSec < DAY_SECONDS) {
-    const hh = d.getHours().toString().padStart(2, '0');
-    const mm = d.getMinutes().toString().padStart(2, '0');
-    return `${hh}:${mm}`;
+    return fmtTickClock.format(d);
   }
+  const p = tickDateParts(d);
   if (stepSec < 30 * DAY_SECONDS) {
-    return `${d.getDate()}.${d.getMonth() + 1}.`;
+    return `${p.day}.${p.month}.`;
   }
-  return `${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() % 100}`;
+  return `${MONTHS_SHORT[p.month - 1]} ${p.year % 100}`;
 }
 

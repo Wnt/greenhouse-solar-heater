@@ -18,6 +18,21 @@ import {
   editorialDaySentence,
   editorialNightSentence,
 } from '../energy-balance.js';
+import { helsinkiParts } from './time-format.js';
+
+const HELSINKI_TZ = 'Europe/Helsinki';
+const fmtWindowClock = new Intl.DateTimeFormat('en-GB', {
+  hour: '2-digit', minute: '2-digit', hour12: false, timeZone: HELSINKI_TZ,
+});
+const fmtWindowDate = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric', month: 'short', timeZone: HELSINKI_TZ,
+});
+// Helsinki date key "YYYY-MM-DD" used for same-day / yesterday checks
+// against the user's wall clock rather than the browser's.
+function helsinkiDateKey(tsMs) {
+  const p = helsinkiParts(tsMs);
+  return p.year + '-' + p.month + '-' + p.day;
+}
 
 // 48 h slice decoupled from the graph's 1H/6H/… pill so the numbers
 // don't shrink when the user flips the range. balanceHistory holds
@@ -137,18 +152,17 @@ function fmtBalanceKwh(v, { sign = false } = {}) {
 }
 
 function fmtBalanceWindow(startTs, endTs, complete) {
-  const now = new Date();
-  const fmt = (ts, refDate) => {
-    const d = new Date(ts);
-    const sameDay = d.toDateString() === refDate.toDateString();
-    const hm = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    if (sameDay) return hm;
-    const yesterday = new Date(refDate);
-    yesterday.setDate(refDate.getDate() - 1);
-    if (d.toDateString() === yesterday.toDateString()) return hm + ' yesterday';
-    return hm + ' ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const nowMs = Date.now();
+  const todayKey = helsinkiDateKey(nowMs);
+  const yesterdayKey = helsinkiDateKey(nowMs - 24 * 3600 * 1000);
+  const fmt = (ts) => {
+    const key = helsinkiDateKey(ts);
+    const hm = fmtWindowClock.format(new Date(ts));
+    if (key === todayKey) return hm;
+    if (key === yesterdayKey) return hm + ' yesterday';
+    return hm + ' ' + fmtWindowDate.format(new Date(ts));
   };
-  return fmt(startTs, now) + ' → ' + (complete ? fmt(endTs, now) : 'now');
+  return fmt(startTs) + ' → ' + (complete ? fmt(endTs) : 'now');
 }
 
 function statHtml(label, kwh, { sign = false, extra = '' } = {}) {

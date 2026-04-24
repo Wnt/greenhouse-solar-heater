@@ -90,8 +90,10 @@ self.addEventListener('notificationclick', function (event) {
         var testReply = (event.reply && event.reply.trim()) || '(no reason provided)';
         var ttlSec = data.snoozeTtlSeconds || 43200;
         var until = new Date(Date.now() + ttlSec * 1000);
-        var pad2 = function (n) { return n < 10 ? '0' + n : '' + n; };
-        var untilStr = pad2(until.getHours()) + ':' + pad2(until.getMinutes());
+        var untilStr = new Intl.DateTimeFormat('en-GB', {
+          hour: '2-digit', minute: '2-digit', hour12: false,
+          timeZone: 'Europe/Helsinki',
+        }).format(until);
         event.waitUntil(self.registration.showNotification(
           '[Test] Snooze applied \u2014 ' + testTitle,
           {

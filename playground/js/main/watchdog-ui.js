@@ -357,7 +357,9 @@ function renderWatchdogHistory(recent) {
   recent.forEach(ev => {
     const row = document.createElement('div');
     row.className = 'watchdog-history-row';
-    const when = ev.fired_at ? new Date(ev.fired_at).toLocaleString() : '';
+    const when = ev.fired_at
+      ? new Date(ev.fired_at).toLocaleString([], { timeZone: 'Europe/Helsinki' })
+      : '';
     const resolution = ev.resolution || 'pending';
     const safeReason = (ev.trigger_reason || '').replace(/</g, '&lt;');
     const safeSnooze = (ev.snooze_reason || '').replace(/</g, '&lt;');
