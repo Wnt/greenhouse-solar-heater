@@ -170,7 +170,7 @@ function tickStep(model, dt, decisions, p) {
   const Tgh = model.greenhouse;
   const Tout = model.outdoor;
   const irr = model.irradiance;
-  let waterVol = model.collectorWaterVolume;
+  const waterVol = model.collectorWaterVolume;
   let Vbolus = model.tank_bolus_volume;
   let Tbolus = model.tank_bolus_temp;
 
