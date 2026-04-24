@@ -15,7 +15,7 @@ import { rerenderWithHistoryFallback } from './display-update.js';
 
 const RANGE_MAP = {
   3600: '1h', 21600: '6h', 43200: '12h', 86400: '24h',
-  604800: '7d', 2592000: '30d', 31536000: '1y',
+  259200: '3d', 604800: '7d', 10368000: '4mo',
 };
 
 let liveHistoryData = null;

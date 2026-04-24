@@ -102,7 +102,7 @@ test.describe('Generate Screenshots (24h simulation)', () => {
     // ── Status view — desktop ──
     // Switch to status while sim is still running so chart renders
     await goToView(page, 'status');
-    await page.locator('#time-range-pills button[data-range="86400"]').click();
+    await page.locator('#time-range-slider .time-range-slider-step[data-range="86400"]').click();
     // Let the chart render a few frames with 24h data visible
     await page.waitForTimeout(1000);
     // Now pause
@@ -145,7 +145,7 @@ test.describe('Generate Screenshots (24h simulation)', () => {
     // ── README hero screenshot (desktop, status view, 24h chart visible) ──
     await page.setViewportSize({ width: 1280, height: 1100 });
     await goToView(page, 'status');
-    await page.locator('#time-range-pills button[data-range="86400"]').click();
+    await page.locator('#time-range-slider .time-range-slider-step[data-range="86400"]').click();
     await page.waitForTimeout(300);
     await page.screenshot({
       path: path.join(screenshotDir, 'readme-hero.png'),
