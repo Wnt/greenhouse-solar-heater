@@ -41,25 +41,25 @@ function detectDeviceName(ua) {
 }
 
 function buildDeviceDetails(userAgent) {
-  var ua = normalizeUserAgent(userAgent);
-  var browser = detectBrowser(ua);
-  var os = detectOs(ua);
-  var deviceType = detectDeviceType(ua);
-  var deviceName = detectDeviceName(ua);
-  var parts = [];
+  const ua = normalizeUserAgent(userAgent);
+  const browser = detectBrowser(ua);
+  const os = detectOs(ua);
+  const deviceType = detectDeviceType(ua);
+  const deviceName = detectDeviceName(ua);
+  const parts = [];
   if (deviceName) parts.push(deviceName);
   if (browser) parts.push(browser);
   if (os && os !== deviceName) parts.push(os);
   return {
     userAgent: ua || null,
-    browser: browser,
-    os: os,
-    deviceType: deviceType,
-    deviceName: deviceName,
+    browser,
+    os,
+    deviceType,
+    deviceName,
     summary: parts.length ? parts.join(' · ') : 'Unknown device',
   };
 }
 
 module.exports = {
-  buildDeviceDetails: buildDeviceDetails,
+  buildDeviceDetails,
 };

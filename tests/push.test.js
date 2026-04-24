@@ -43,11 +43,11 @@ describe('push', () => {
     it('persists VAPID keys to disk', (t, done) => {
       push.init(function (err) {
         assert.ifError(err);
-        var key1 = push.getPublicKey();
+        const key1 = push.getPublicKey();
 
         // Reload
         delete require.cache[require.resolve('../server/lib/push.js')];
-        var push2 = require('../server/lib/push.js');
+        const push2 = require('../server/lib/push.js');
         push2._reset();
         push2.init(function (err2) {
           assert.ifError(err2);
@@ -64,24 +64,24 @@ describe('push', () => {
     });
 
     it('adds a subscription', (t, done) => {
-      var sub = { endpoint: 'https://push.example.com/1', keys: { p256dh: 'abc', auth: 'def' } };
+      const sub = { endpoint: 'https://push.example.com/1', keys: { p256dh: 'abc', auth: 'def' } };
       push.addSubscription(sub, ['evening_report', 'freeze_warning'], function (err) {
         assert.ifError(err);
         assert.strictEqual(push.getSubscriptionCount(), 1);
-        var stored = push.getSubscription('https://push.example.com/1');
+        const stored = push.getSubscription('https://push.example.com/1');
         assert.deepStrictEqual(stored.categories, ['evening_report', 'freeze_warning']);
         done();
       });
     });
 
     it('updates categories for existing endpoint', (t, done) => {
-      var sub = { endpoint: 'https://push.example.com/1', keys: { p256dh: 'abc', auth: 'def' } };
+      const sub = { endpoint: 'https://push.example.com/1', keys: { p256dh: 'abc', auth: 'def' } };
       push.addSubscription(sub, ['evening_report'], function (err) {
         assert.ifError(err);
         push.addSubscription(sub, ['freeze_warning', 'overheat_warning'], function (err2) {
           assert.ifError(err2);
           assert.strictEqual(push.getSubscriptionCount(), 1);
-          var stored = push.getSubscription('https://push.example.com/1');
+          const stored = push.getSubscription('https://push.example.com/1');
           assert.deepStrictEqual(stored.categories, ['freeze_warning', 'overheat_warning']);
           done();
         });
@@ -89,7 +89,7 @@ describe('push', () => {
     });
 
     it('removes a subscription', (t, done) => {
-      var sub = { endpoint: 'https://push.example.com/1', keys: { p256dh: 'abc', auth: 'def' } };
+      const sub = { endpoint: 'https://push.example.com/1', keys: { p256dh: 'abc', auth: 'def' } };
       push.addSubscription(sub, ['evening_report'], function (err) {
         assert.ifError(err);
         push.removeSubscription('https://push.example.com/1', function (err2) {
@@ -102,10 +102,10 @@ describe('push', () => {
     });
 
     it('filters invalid categories', (t, done) => {
-      var sub = { endpoint: 'https://push.example.com/1', keys: { p256dh: 'abc', auth: 'def' } };
+      const sub = { endpoint: 'https://push.example.com/1', keys: { p256dh: 'abc', auth: 'def' } };
       push.addSubscription(sub, ['evening_report', 'invalid_cat', 'freeze_warning'], function (err) {
         assert.ifError(err);
-        var stored = push.getSubscription('https://push.example.com/1');
+        const stored = push.getSubscription('https://push.example.com/1');
         assert.deepStrictEqual(stored.categories, ['evening_report', 'freeze_warning']);
         done();
       });

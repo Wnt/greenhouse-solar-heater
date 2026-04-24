@@ -19,41 +19,41 @@
  * Rate limiting is enforced by the push module (1 per type per hour).
  */
 
-var createLogger = require('./logger');
-var log = createLogger('notifications');
+const createLogger = require('./logger');
+const log = createLogger('notifications');
 
 // Source freeze/overheat thresholds from the Shelly control-logic defaults
 // so the notification body never drifts from the device's actual drain
 // trigger. Previously these were copied as literals here and went stale
 // when the control-logic defaults moved (freezeDrainTemp 2->4 on 2026-04-22,
 // overheatDrainTemp was already 95 while this file still said 85).
-var CONTROL_DEFAULTS = require('../../shelly/control-logic.js').DEFAULT_CONFIG;
+const CONTROL_DEFAULTS = require('../../shelly/control-logic.js').DEFAULT_CONFIG;
 
-var pushRef = null;
-var deviceConfigRef = null;
+let pushRef = null;
+let deviceConfigRef = null;
 
 // Temperature history buffers for trend prediction
-var tankTempHistory = [];    // { ts: ms, value: number }
-var outdoorTempHistory = [];
-var collectorTempHistory = [];
-var HISTORY_WINDOW_MS = 10 * 60 * 1000; // 10 minutes of samples
-var PREDICTION_HORIZON_MS = 15 * 60 * 1000; // 15 minutes ahead
+let tankTempHistory = [];    // { ts: ms, value: number }
+let outdoorTempHistory = [];
+let collectorTempHistory = [];
+const HISTORY_WINDOW_MS = 10 * 60 * 1000; // 10 minutes of samples
+const PREDICTION_HORIZON_MS = 15 * 60 * 1000; // 15 minutes ahead
 
 // Data freshness: suppress notifications when data is stale
-var DATA_STALE_MS = 2 * 60 * 1000; // 2 minutes without data = stale
-var lastEvaluateTs = 0;
+const DATA_STALE_MS = 2 * 60 * 1000; // 2 minutes without data = stale
+let lastEvaluateTs = 0;
 
 // Offline/online detection
-var OFFLINE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
-var offlineSince = 0;      // timestamp when we first detected staleness (0 = not offline)
-var offlineNotified = false; // whether we sent the offline notification
-var onlineSince = 0;        // timestamp when data resumed after offline (0 = not recovering)
-var onlineNotified = false;  // whether we sent the recovery notification
-var tickTimer = null;
+const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
+let offlineSince = 0;      // timestamp when we first detected staleness (0 = not offline)
+let offlineNotified = false; // whether we sent the offline notification
+let onlineSince = 0;        // timestamp when data resumed after offline (0 = not recovering)
+let onlineNotified = false;  // whether we sent the recovery notification
+let tickTimer = null;
 
 // Report scheduling state
-var lastEveningReport = 0;  // day-of-year when last sent
-var lastNoonReport = 0;
+let lastEveningReport = 0;  // day-of-year when last sent
+let lastNoonReport = 0;
 // Daily tank-energy accounting. Accumulators reset after each evening report.
 // Classification is by the mode that was active during each delta (credited
 // to lastMode, since the drop happened between the last eval and now):
@@ -65,24 +65,24 @@ var lastNoonReport = 0;
 //                      the tank to the surrounding air.
 // All three use the same Status-view formula (300 L · 4.186 kJ/kg·K ·
 // max(0, avgTank − 12 °C) / 3600).
-var dailyEnergyWh = 0;
-var dailyHeatingLossWh = 0;
-var dailyLeakageLossWh = 0;
+let dailyEnergyWh = 0;
+let dailyHeatingLossWh = 0;
+let dailyLeakageLossWh = 0;
 // Noon report covers the night just past — separate overnight accumulators
 // reset after each noon report.
-var nightHeatingLossWh = 0;
-var nightLeakageLossWh = 0;
-var lastTankEnergyKwh = null; // last observed stored-energy reading
-var nightHeatingMinutes = 0;
-var lastModeCheckTs = 0;
-var lastMode = null;
+let nightHeatingLossWh = 0;
+let nightLeakageLossWh = 0;
+let lastTankEnergyKwh = null; // last observed stored-energy reading
+let nightHeatingMinutes = 0;
+let lastModeCheckTs = 0;
+let lastMode = null;
 
 // Tank energy helper — kept local so the CommonJS notifications module
 // doesn't depend on the ES-module physics.js. Must stay in sync with
 // tankStoredEnergyKwh() in playground/js/physics.js.
 function tankStoredEnergyKwh(avgTankC) {
   if (typeof avgTankC !== 'number' || !isFinite(avgTankC)) return 0;
-  var dT = avgTankC - 12;
+  let dT = avgTankC - 12;
   if (dT < 0) dT = 0;
   return 300 * 4.186 * dT / 3600;
 }
@@ -90,27 +90,27 @@ function tankStoredEnergyKwh(avgTankC) {
 // Timezone offset for Finland (EET = UTC+2, EEST = UTC+3)
 // We use a simple approximation: UTC+2 in winter, UTC+3 in summer
 function getLocalHour() {
-  var now = new Date();
+  const now = new Date();
   // Finland DST: last Sunday in March to last Sunday in October
-  var month = now.getUTCMonth(); // 0-11
-  var isDST = month >= 2 && month <= 9; // approximate Mar-Oct
-  var offset = isDST ? 3 : 2;
+  const month = now.getUTCMonth(); // 0-11
+  const isDST = month >= 2 && month <= 9; // approximate Mar-Oct
+  const offset = isDST ? 3 : 2;
   return (now.getUTCHours() + offset) % 24;
 }
 
 function getDayOfYear() {
-  var now = new Date();
-  var start = new Date(now.getFullYear(), 0, 0);
-  var diff = now - start;
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 0);
+  const diff = now - start;
   return Math.floor(diff / 86400000);
 }
 
 // ── Temperature trend prediction ──
 
 function addSample(history, ts, value) {
-  history.push({ ts: ts, value: value });
+  history.push({ ts, value });
   // Trim old samples
-  var cutoff = ts - HISTORY_WINDOW_MS;
+  const cutoff = ts - HISTORY_WINDOW_MS;
   while (history.length > 0 && history[0].ts < cutoff) {
     history.shift();
   }
@@ -120,27 +120,27 @@ function addSample(history, ts, value) {
 // Returns null if insufficient data (need at least 2 samples spanning 60s+).
 function predictValue(history, horizonMs) {
   if (history.length < 2) return null;
-  var span = history[history.length - 1].ts - history[0].ts;
+  const span = history[history.length - 1].ts - history[0].ts;
   if (span < 60000) return null; // need at least 60s of data
 
   // Simple linear regression: y = a + b*t
-  var n = history.length;
-  var sumT = 0, sumV = 0, sumTV = 0, sumTT = 0;
-  var t0 = history[0].ts;
-  for (var i = 0; i < n; i++) {
-    var t = (history[i].ts - t0) / 1000; // seconds
-    var v = history[i].value;
+  const n = history.length;
+  let sumT = 0, sumV = 0, sumTV = 0, sumTT = 0;
+  const t0 = history[0].ts;
+  for (let i = 0; i < n; i++) {
+    const t = (history[i].ts - t0) / 1000; // seconds
+    const v = history[i].value;
     sumT += t;
     sumV += v;
     sumTV += t * v;
     sumTT += t * t;
   }
-  var denom = n * sumTT - sumT * sumT;
+  const denom = n * sumTT - sumT * sumT;
   if (Math.abs(denom) < 0.001) return null; // flat or singular
 
-  var b = (n * sumTV - sumT * sumV) / denom;
-  var a = (sumV - b * sumT) / n;
-  var futureT = (history[history.length - 1].ts - t0) / 1000 + horizonMs / 1000;
+  const b = (n * sumTV - sumT * sumV) / denom;
+  const a = (sumV - b * sumT) / n;
+  const futureT = (history[history.length - 1].ts - t0) / 1000 + horizonMs / 1000;
   return a + b * futureT;
 }
 
@@ -167,7 +167,7 @@ function isDataFresh() {
 function evaluate(payload) {
   if (!pushRef) return;
 
-  var now = Date.now();
+  const now = Date.now();
   lastEvaluateTs = now;
 
   // ── Online recovery tracking ──
@@ -183,7 +183,7 @@ function evaluate(payload) {
     offlineSince = 0;
   }
 
-  var temps = payload.temps || {};
+  const temps = payload.temps || {};
 
   // Update temperature histories
   if (typeof temps.tank_top === 'number') {
@@ -197,9 +197,9 @@ function evaluate(payload) {
   }
 
   // Track mode for reports
-  var mode = payload.mode || null;
+  const mode = payload.mode || null;
   if (lastModeCheckTs > 0 && mode && lastMode) {
-    var elapsed = (now - lastModeCheckTs) / 60000; // minutes
+    const elapsed = (now - lastModeCheckTs) / 60000; // minutes
     if (lastMode === 'GREENHOUSE_HEATING' || lastMode === 'EMERGENCY_HEATING') {
       nightHeatingMinutes += elapsed;
     }
@@ -213,14 +213,14 @@ function evaluate(payload) {
   // arrive every few seconds so a single delta straddling a mode change
   // biases at most ~1 frame's worth of energy the wrong way.
   if (typeof temps.tank_top === 'number' && typeof temps.tank_bottom === 'number') {
-    var avgTankC = (temps.tank_top + temps.tank_bottom) / 2;
-    var currentKwh = tankStoredEnergyKwh(avgTankC);
+    const avgTankC = (temps.tank_top + temps.tank_bottom) / 2;
+    const currentKwh = tankStoredEnergyKwh(avgTankC);
     if (lastTankEnergyKwh !== null) {
-      var delta = currentKwh - lastTankEnergyKwh;
+      const delta = currentKwh - lastTankEnergyKwh;
       if (delta > 0) {
         dailyEnergyWh += delta * 1000;
       } else if (delta < 0) {
-        var lossWh = -delta * 1000;
+        const lossWh = -delta * 1000;
         if (lastMode === 'GREENHOUSE_HEATING' || lastMode === 'EMERGENCY_HEATING') {
           dailyHeatingLossWh += lossWh;
           nightHeatingLossWh += lossWh;
@@ -249,7 +249,7 @@ function evaluate(payload) {
 function tick() {
   if (!pushRef) return;
 
-  var now = Date.now();
+  const now = Date.now();
 
   // ── Offline detection ──
   if (lastEvaluateTs > 0 && (now - lastEvaluateTs) >= DATA_STALE_MS) {
@@ -263,7 +263,7 @@ function tick() {
     // Send offline notification after 15 minutes of no data
     if (!offlineNotified && (now - offlineSince) >= OFFLINE_THRESHOLD_MS) {
       offlineNotified = true;
-      var offlineMin = Math.round((now - offlineSince) / 60000);
+      const offlineMin = Math.round((now - offlineSince) / 60000);
       pushRef.sendNotification('offline_warning', {
         title: 'Controller Offline',
         body: 'No data received from the greenhouse controller for ' + offlineMin + ' minutes.',
@@ -281,7 +281,7 @@ function tick() {
   if (onlineSince > 0 && !onlineNotified && isDataFresh()) {
     if ((now - onlineSince) >= OFFLINE_THRESHOLD_MS) {
       onlineNotified = true;
-      var offlineDuration = Math.round((onlineSince - offlineSince) / 60000);
+      const offlineDuration = Math.round((onlineSince - offlineSince) / 60000);
       pushRef.sendNotification('offline_warning', {
         title: 'Controller Back Online',
         body: 'The greenhouse controller is back online after ' + offlineDuration + ' minutes.',
@@ -300,13 +300,13 @@ function tick() {
 
 function checkOverheatWarning(temps) {
   if (typeof temps.tank_top !== 'number') return;
-  var thresholds = getThresholds();
-  var current = temps.tank_top;
+  const thresholds = getThresholds();
+  const current = temps.tank_top;
 
   // Already past threshold — control logic handles it, no need for warning
   if (current >= thresholds.overheat) return;
 
-  var predicted = predictValue(tankTempHistory, PREDICTION_HORIZON_MS);
+  const predicted = predictValue(tankTempHistory, PREDICTION_HORIZON_MS);
   if (predicted === null) return;
 
   if (predicted >= thresholds.overheat && current >= thresholds.overheat - 10) {
@@ -326,14 +326,14 @@ function checkFreezeWarning(temps) {
   // colder drives the drain. On clear nights the sky-facing collector
   // reads several K below sheltered ambient, so warning on outdoor
   // alone is too late.
-  var thresholds = getThresholds();
-  var outdoor = typeof temps.outdoor === 'number' ? temps.outdoor : null;
-  var collector = typeof temps.collector === 'number' ? temps.collector : null;
+  const thresholds = getThresholds();
+  const outdoor = typeof temps.outdoor === 'number' ? temps.outdoor : null;
+  const collector = typeof temps.collector === 'number' ? temps.collector : null;
   if (outdoor === null && collector === null) return;
 
-  var current = outdoor;
-  var history = outdoorTempHistory;
-  var label = 'Outdoor';
+  let current = outdoor;
+  let history = outdoorTempHistory;
+  let label = 'Outdoor';
   if (collector !== null && (current === null || collector < current)) {
     current = collector;
     history = collectorTempHistory;
@@ -343,7 +343,7 @@ function checkFreezeWarning(temps) {
   // Already past threshold
   if (current <= thresholds.freeze) return;
 
-  var predicted = predictValue(history, PREDICTION_HORIZON_MS);
+  const predicted = predictValue(history, PREDICTION_HORIZON_MS);
   if (predicted === null) return;
 
   if (predicted <= thresholds.freeze && current <= thresholds.freeze + 5) {
@@ -365,11 +365,11 @@ function checkFreezeWarning(temps) {
 // from the notification's point of view.
 function isHeatingDisabled() {
   if (!deviceConfigRef || typeof deviceConfigRef.getConfig !== 'function') return false;
-  var cfg = deviceConfigRef.getConfig();
+  const cfg = deviceConfigRef.getConfig();
   if (!cfg || !cfg.wb) return false;
-  var until = cfg.wb.GH;
+  const until = cfg.wb.GH;
   if (!until) return false;
-  var nowSec = Math.floor(Date.now() / 1000);
+  const nowSec = Math.floor(Date.now() / 1000);
   return until > nowSec + 86400;
 }
 
@@ -377,15 +377,15 @@ function fmtKwh(wh) { return (Math.round(wh) / 1000).toFixed(1); }
 
 // Threshold below which we treat an accumulator as "held steady" and don't
 // mention it. 50 Wh = 0.05 kWh, which rounds to 0.1 at display resolution.
-var KWH_NOISE_FLOOR_WH = 50;
+const KWH_NOISE_FLOOR_WH = 50;
 
 function buildEveningBody(gatheredWh, heatingLossWh, leakageLossWh) {
-  var gained = gatheredWh >= KWH_NOISE_FLOOR_WH;
-  var heating = heatingLossWh >= KWH_NOISE_FLOOR_WH;
-  var leakage = leakageLossWh >= KWH_NOISE_FLOOR_WH;
-  var netWh = gatheredWh - heatingLossWh - leakageLossWh;
-  var netSign = netWh >= 0 ? '+' : '−';
-  var netAbs = fmtKwh(Math.abs(netWh));
+  const gained = gatheredWh >= KWH_NOISE_FLOOR_WH;
+  const heating = heatingLossWh >= KWH_NOISE_FLOOR_WH;
+  const leakage = leakageLossWh >= KWH_NOISE_FLOOR_WH;
+  const netWh = gatheredWh - heatingLossWh - leakageLossWh;
+  const netSign = netWh >= 0 ? '+' : '−';
+  const netAbs = fmtKwh(Math.abs(netWh));
 
   if (!gained) {
     if (!heating && !leakage) return 'Tank energy held steady today.';
@@ -420,8 +420,8 @@ function buildEveningBody(gatheredWh, heatingLossWh, leakageLossWh) {
 }
 
 function buildNoonBody(minutes, heatingLossWh, leakageLossWh, heatingDisabled) {
-  var heating = heatingLossWh >= KWH_NOISE_FLOOR_WH;
-  var leakage = leakageLossWh >= KWH_NOISE_FLOOR_WH;
+  const heating = heatingLossWh >= KWH_NOISE_FLOOR_WH;
+  const leakage = leakageLossWh >= KWH_NOISE_FLOOR_WH;
 
   if (heatingDisabled) {
     if (!leakage) return 'Greenhouse heating is resting. The tank held steady overnight.';
@@ -430,10 +430,10 @@ function buildNoonBody(minutes, heatingLossWh, leakageLossWh, heatingDisabled) {
   }
 
   if (minutes > 0) {
-    var hrs = Math.floor(minutes / 60);
-    var mins = minutes % 60;
-    var duration = hrs > 0 ? hrs + 'h ' + mins + 'min' : mins + ' minutes';
-    var tail = heating
+    const hrs = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    const duration = hrs > 0 ? hrs + 'h ' + mins + 'min' : mins + ' minutes';
+    const tail = heating
       ? ' — ' + fmtKwh(heatingLossWh) + ' kWh delivered' +
         (leakage ? ', ' + fmtKwh(leakageLossWh) + ' kWh slipped to air' : '') + '.'
       : '.';
@@ -448,8 +448,8 @@ function buildNoonBody(minutes, heatingLossWh, leakageLossWh, heatingDisabled) {
 function checkEveningReport() {
   if (!isDataFresh()) return;
 
-  var hour = getLocalHour();
-  var day = getDayOfYear();
+  const hour = getLocalHour();
+  const day = getDayOfYear();
 
   // Send between 20:00 and 20:59 local time, once per day
   if (hour !== 20 || day === lastEveningReport) return;
@@ -474,14 +474,14 @@ function checkEveningReport() {
 function checkNoonReport() {
   if (!isDataFresh()) return;
 
-  var hour = getLocalHour();
-  var day = getDayOfYear();
+  const hour = getLocalHour();
+  const day = getDayOfYear();
 
   // Send between 12:00 and 12:59 local time, once per day
   if (hour !== 12 || day === lastNoonReport) return;
 
   lastNoonReport = day;
-  var minutes = Math.round(nightHeatingMinutes);
+  const minutes = Math.round(nightHeatingMinutes);
 
   pushRef.sendNotification('noon_report', {
     title: 'Overnight Heating Report',
@@ -543,17 +543,17 @@ function _reset() {
 }
 
 module.exports = {
-  init: init,
-  stop: stop,
-  evaluate: evaluate,
-  tick: tick,
-  isDataFresh: isDataFresh,
-  predictValue: predictValue,
-  addSample: addSample,
-  _reset: _reset,
-  PREDICTION_HORIZON_MS: PREDICTION_HORIZON_MS,
-  OFFLINE_THRESHOLD_MS: OFFLINE_THRESHOLD_MS,
-  DATA_STALE_MS: DATA_STALE_MS,
+  init,
+  stop,
+  evaluate,
+  tick,
+  isDataFresh,
+  predictValue,
+  addSample,
+  _reset,
+  PREDICTION_HORIZON_MS,
+  OFFLINE_THRESHOLD_MS,
+  DATA_STALE_MS,
   // Exposed for testing
   _getTankHistory: function () { return tankTempHistory; },
   _getOutdoorHistory: function () { return outdoorTempHistory; },
@@ -571,8 +571,8 @@ module.exports = {
   _getNightLeakageLossWh: function () { return nightLeakageLossWh; },
   _setNightHeatingMinutes: function (v) { nightHeatingMinutes = v; },
   _getNightHeatingMinutes: function () { return nightHeatingMinutes; },
-  buildEveningBody: buildEveningBody,
-  buildNoonBody: buildNoonBody,
+  buildEveningBody,
+  buildNoonBody,
   _setLastEveningReport: function (v) { lastEveningReport = v; },
   _setLastNoonReport: function (v) { lastNoonReport = v; },
   _setLastEvaluateTs: function (v) { lastEvaluateTs = v; },

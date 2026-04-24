@@ -32,30 +32,30 @@ const LIMITS = {
 
 function createShellyRuntime(opts) {
   opts = opts || {};
-  var concurrentCalls = 0;
-  var peakConcurrent = 0;
-  var totalCalls = 0;
-  var callViolations = [];
-  var timers = [];
-  var eventHandlers = [];
-  var statusHandlers = [];
-  var mqttSubscriptions = [];
-  var mqttConnectHandler = null;
-  var kvs = {};
+  let concurrentCalls = 0;
+  let peakConcurrent = 0;
+  let totalCalls = 0;
+  let callViolations = [];
+  let timers = [];
+  const eventHandlers = [];
+  const statusHandlers = [];
+  let mqttSubscriptions = [];
+  let mqttConnectHandler = null;
+  const kvs = {};
 
   function shellyCall(method, params, cb) {
     totalCalls++;
     concurrentCalls++;
     if (concurrentCalls > peakConcurrent) peakConcurrent = concurrentCalls;
     if (concurrentCalls > LIMITS.MAX_CONCURRENT_CALLS) {
-      callViolations.push({ method: method, concurrent: concurrentCalls });
+      callViolations.push({ method, concurrent: concurrentCalls });
     }
 
-    var response = null;
+    let response = null;
     if (method === 'Switch.Set' || method === 'Switch.SetConfig') {
       response = {};
     } else if (method === 'KVS.Get') {
-      var val = kvs[(params || {}).key] || null;
+      const val = kvs[(params || {}).key] || null;
       response = val ? { value: val } : null;
     } else if (method === 'KVS.Set') {
       kvs[(params || {}).key] = (params || {}).value;
@@ -74,10 +74,10 @@ function createShellyRuntime(opts) {
     });
   }
 
-  var timerIdCounter = 0;
+  let timerIdCounter = 0;
   function timerSet(ms, repeat, cb) {
-    var id = ++timerIdCounter;
-    timers.push({ id: id, ms: ms, repeat: repeat, cb: cb });
+    const id = ++timerIdCounter;
+    timers.push({ id, ms, repeat, cb });
     return id;
   }
 
@@ -92,27 +92,27 @@ function createShellyRuntime(opts) {
 
   function emitEvent(name, data) {
     // Deliver to registered handlers
-    for (var i = 0; i < eventHandlers.length; i++) {
-      try { eventHandlers[i]({ info: { event: name, data: data } }); } catch(e) {}
+    for (let i = 0; i < eventHandlers.length; i++) {
+      try { eventHandlers[i]({ info: { event: name, data } }); } catch(e) {}
     }
   }
 
   function addEventHandler(fn) { eventHandlers.push(fn); }
   function addStatusHandler(fn) { statusHandlers.push(fn); }
 
-  var mqttConnected = opts.mqttConnected || false;
+  let mqttConnected = opts.mqttConnected || false;
 
-  var mqtt = {
+  const mqtt = {
     subscribe: function(topic, cb) {
       // Match real Shelly behavior: subscribing to an already-subscribed
       // topic throws "Invalid topic". The merged control script's boot
       // dance calls unsubscribe first to avoid this.
-      for (var i = 0; i < mqttSubscriptions.length; i++) {
+      for (let i = 0; i < mqttSubscriptions.length; i++) {
         if (mqttSubscriptions[i].topic === topic) {
           throw new Error('Invalid topic');
         }
       }
-      mqttSubscriptions.push({ topic: topic, cb: cb });
+      mqttSubscriptions.push({ topic, cb });
     },
     unsubscribe: function(topic) {
       mqttSubscriptions = mqttSubscriptions.filter(function(s) { return s.topic !== topic; });
@@ -122,30 +122,30 @@ function createShellyRuntime(opts) {
     setConnectHandler: function(cb) { mqttConnectHandler = cb; },
   };
 
-  var globals = {
+  const globals = {
     Shelly: {
       call: shellyCall,
-      getComponentStatus: getComponentStatus,
-      emitEvent: emitEvent,
-      addEventHandler: addEventHandler,
-      addStatusHandler: addStatusHandler,
+      getComponentStatus,
+      emitEvent,
+      addEventHandler,
+      addStatusHandler,
     },
     Timer: { set: timerSet, clear: timerClear },
     MQTT: mqtt,
-    JSON: JSON,
-    Date: Date,
-    Math: Math,
-    parseInt: parseInt,
+    JSON,
+    Date,
+    Math,
+    parseInt,
     print: function() {},
   };
 
   return {
-    globals: globals,
+    globals,
     stats: function() {
       return {
-        peakConcurrent: peakConcurrent,
-        totalCalls: totalCalls,
-        callViolations: callViolations,
+        peakConcurrent,
+        totalCalls,
+        callViolations,
         timerCount: timers.length,
         eventHandlerCount: eventHandlers.length + statusHandlers.length,
         mqttSubscriptionCount: mqttSubscriptions.length,
@@ -160,7 +160,7 @@ function createShellyRuntime(opts) {
       if (mqttConnectHandler) mqttConnectHandler();
     },
     deliverMqtt: function(topic, message) {
-      for (var i = 0; i < mqttSubscriptions.length; i++) {
+      for (let i = 0; i < mqttSubscriptions.length; i++) {
         if (mqttSubscriptions[i].topic === topic) {
           mqttSubscriptions[i].cb(topic, message);
         }
@@ -169,10 +169,10 @@ function createShellyRuntime(opts) {
     // Fire all pending one-shot timers repeatedly until none left. Helps
     // tests push the boot chain (Timer.set(5000) gates) to completion.
     flushTimers: function() {
-      for (var round = 0; round < 10; round++) {
-        var oneshot = timers.filter(function(t) { return !t.repeat; });
+      for (let round = 0; round < 10; round++) {
+        const oneshot = timers.filter(function(t) { return !t.repeat; });
         if (oneshot.length === 0) return;
-        for (var i = 0; i < oneshot.length; i++) {
+        for (let i = 0; i < oneshot.length; i++) {
           timers = timers.filter(function(t) { return t.id !== oneshot[i].id; });
           try { oneshot[i].cb(); } catch (_e) {}
         }
@@ -188,12 +188,12 @@ function createShellyRuntime(opts) {
 }
 
 function loadScript(runtime, files) {
-  var src = files.map(function(f) {
+  const src = files.map(function(f) {
     return fs.readFileSync(path.join(SHELLY_DIR, f), 'utf8');
   }).join('\n');
 
-  var g = runtime.globals;
-  var fn = new Function(
+  const g = runtime.globals;
+  const fn = new Function(
     'Shelly', 'Timer', 'MQTT', 'JSON', 'Date', 'Math', 'parseInt', 'print',
     src
   );
@@ -203,7 +203,7 @@ function loadScript(runtime, files) {
 // ── Control script tests ──
 
 describe('Shelly control script stability', function() {
-  var runtime;
+  let runtime;
 
   before(function() {
     runtime = createShellyRuntime();
@@ -211,30 +211,30 @@ describe('Shelly control script stability', function() {
   });
 
   it('boots without exceeding concurrent call limit', function() {
-    var stats = runtime.stats();
+    const stats = runtime.stats();
     assert.deepStrictEqual(stats.callViolations, [],
       'Peak: ' + stats.peakConcurrent);
   });
 
   it('stays within timer limit', function() {
-    var stats = runtime.stats();
+    const stats = runtime.stats();
     assert.ok(stats.timerCount <= LIMITS.MAX_TIMERS,
       'Timers: ' + stats.timerCount + ' (max ' + LIMITS.MAX_TIMERS + ')');
   });
 
   it('stays within event handler limit', function() {
-    var stats = runtime.stats();
+    const stats = runtime.stats();
     assert.ok(stats.eventHandlerCount <= LIMITS.MAX_EVENT_HANDLERS,
       'Event handlers: ' + stats.eventHandlerCount + ' (max ' + LIMITS.MAX_EVENT_HANDLERS + ')');
   });
 
   it('control loop stays within concurrent call limit', function(t, done) {
     runtime.reset();
-    var repeating = runtime.triggerTimers();
-    var controlLoop = repeating.find(function(t) { return t.ms >= 10000; });
+    const repeating = runtime.triggerTimers();
+    const controlLoop = repeating.find(function(t) { return t.ms >= 10000; });
     if (controlLoop) controlLoop.cb();
     setTimeout(function() {
-      var stats = runtime.stats();
+      const stats = runtime.stats();
       assert.deepStrictEqual(stats.callViolations, [],
         'Peak: ' + stats.peakConcurrent);
       done();
@@ -243,12 +243,12 @@ describe('Shelly control script stability', function() {
 
   it('multiple consecutive loops stay within limit', function(t, done) {
     runtime.reset();
-    var repeating = runtime.triggerTimers();
-    var controlLoop = repeating.find(function(t) { return t.ms >= 10000; });
-    var loopsRun = 0;
+    const repeating = runtime.triggerTimers();
+    const controlLoop = repeating.find(function(t) { return t.ms >= 10000; });
+    let loopsRun = 0;
     function runLoop() {
       if (loopsRun >= 3) {
-        var stats = runtime.stats();
+        const stats = runtime.stats();
         assert.deepStrictEqual(stats.callViolations, [],
           '3 loops, peak: ' + stats.peakConcurrent);
         done();
@@ -267,12 +267,12 @@ describe('Shelly control script stability', function() {
     // Shelly Pro 4PM rebooted (reset_reason 3 = software watchdog). The fix
     // serializes relay commands so at most one Switch.Set is in flight at
     // any moment from the manual-override path.
-    var rt = createShellyRuntime({ mqttConnected: true });
+    const rt = createShellyRuntime({ mqttConnected: true });
     loadScript(rt, ['control-logic.js', 'control.js']);
 
     // Activate manual override via the CONFIG_TOPIC MQTT path — that's how
     // config updates reach the merged script now.
-    var future = Math.floor(Date.now() / 1000) + 600;
+    const future = Math.floor(Date.now() / 1000) + 600;
     rt.deliverMqtt('greenhouse/config', JSON.stringify({
       ce: true, ea: 31, fm: null, am: null, v: 99,
       mo: { a: true, ex: future, fm: 'I' }
@@ -286,7 +286,7 @@ describe('Shelly control script stability', function() {
     rt.deliverMqtt('greenhouse/relay-command', JSON.stringify({ relay: 'pump', on: false }));
 
     setTimeout(function() {
-      var stats = rt.stats();
+      const stats = rt.stats();
       assert.deepStrictEqual(stats.callViolations, [],
         'No violations expected — peak: ' + stats.peakConcurrent);
       assert.ok(stats.peakConcurrent <= 1,
@@ -306,7 +306,7 @@ describe('Shelly merged-control MQTT stability', function() {
   // setImmediate / flushTimers for several rounds.
   function bootAndSettle(rt, done) {
     loadScript(rt, ['control-logic.js', 'control.js']);
-    var rounds = 0;
+    let rounds = 0;
     function loop() {
       rt.flushTimers();
       if (++rounds >= 20) { done(); return; }
@@ -316,9 +316,9 @@ describe('Shelly merged-control MQTT stability', function() {
   }
 
   it('subscribes to exactly 3 MQTT topics (config, sensor-config, relay-command)', function(t, done) {
-    var rt = createShellyRuntime({ mqttConnected: true });
+    const rt = createShellyRuntime({ mqttConnected: true });
     bootAndSettle(rt, function() {
-      var topics = rt.stats().mqttTopics.slice().sort();
+      const topics = rt.stats().mqttTopics.slice().sort();
       assert.deepStrictEqual(topics,
         ['greenhouse/config', 'greenhouse/relay-command', 'greenhouse/sensor-config'],
         'Unexpected topics: ' + topics.join(', '));
@@ -327,9 +327,9 @@ describe('Shelly merged-control MQTT stability', function() {
   });
 
   it('stays within MQTT subscription limit', function(t, done) {
-    var rt = createShellyRuntime({ mqttConnected: true });
+    const rt = createShellyRuntime({ mqttConnected: true });
     bootAndSettle(rt, function() {
-      var stats = rt.stats();
+      const stats = rt.stats();
       assert.ok(stats.mqttSubscriptionCount <= LIMITS.MAX_MQTT_SUBSCRIPTIONS,
         'MQTT subscriptions: ' + stats.mqttSubscriptionCount);
       done();
@@ -337,14 +337,14 @@ describe('Shelly merged-control MQTT stability', function() {
   });
 
   it('survives connectHandler firing after boot already subscribed (orphan-fix via unsubscribe)', function(t, done) {
-    var rt = createShellyRuntime({ mqttConnected: true });
+    const rt = createShellyRuntime({ mqttConnected: true });
     bootAndSettle(rt, function() {
       assert.doesNotThrow(function() {
         rt.triggerMqttConnect();
         rt.triggerMqttConnect();
       }, 'merged control script must not crash on repeated connectHandler');
-      var stats = rt.stats();
-      var uniq = {};
+      const stats = rt.stats();
+      const uniq = {};
       stats.mqttTopics.forEach(function(t) { uniq[t] = true; });
       assert.strictEqual(Object.keys(uniq).length, 3,
         'expected 3 unique subscriptions after repeated connectHandler, got: ' + stats.mqttTopics.join(', '));
@@ -369,7 +369,7 @@ describe('Shelly merged-control MQTT stability', function() {
     // neutering unsubscribe() so it refuses to clear them. The script
     // MUST NOT crash; it should gracefully leave the subscriptions in
     // their pre-existing state and keep the control loop running.
-    var rt = createShellyRuntime({ mqttConnected: true });
+    const rt = createShellyRuntime({ mqttConnected: true });
     // Pre-populate 3 subscriptions as though from a prior script.
     rt.globals.MQTT.subscribe('greenhouse/config', function() {});
     rt.globals.MQTT.subscribe('greenhouse/sensor-config', function() {});
@@ -383,11 +383,11 @@ describe('Shelly merged-control MQTT stability', function() {
 
     // After the boot settle, the mqtt subscription table still has 3
     // entries — the pre-seeded ones. No duplicates were added.
-    var rounds = 0;
+    let rounds = 0;
     function loop() {
       rt.flushTimers();
       if (++rounds >= 20) {
-        var stats = rt.stats();
+        const stats = rt.stats();
         assert.strictEqual(stats.mqttSubscriptionCount, 3,
           'stale pre-seeded subscriptions should remain; no duplicates. got: ' + stats.mqttSubscriptionCount);
         done();
@@ -399,15 +399,15 @@ describe('Shelly merged-control MQTT stability', function() {
   });
 
   it('publishes greenhouse/state directly via MQTT.publish (no emitEvent IPC bridge)', function(t, done) {
-    var rt = createShellyRuntime({ mqttConnected: true });
-    var publishes = [];
-    var realPublish = rt.globals.MQTT.publish;
+    const rt = createShellyRuntime({ mqttConnected: true });
+    const publishes = [];
+    const realPublish = rt.globals.MQTT.publish;
     rt.globals.MQTT.publish = function(topic, payload, qos, retain) {
-      publishes.push({ topic: topic });
+      publishes.push({ topic });
       return realPublish.apply(null, arguments);
     };
     bootAndSettle(rt, function() {
-      var stateTopics = publishes.filter(function(p) { return p.topic === 'greenhouse/state'; });
+      const stateTopics = publishes.filter(function(p) { return p.topic === 'greenhouse/state'; });
       assert.ok(stateTopics.length >= 1,
         'merged control must publish greenhouse/state directly — topics seen: ' +
         publishes.map(function(p) { return p.topic; }).join(', '));

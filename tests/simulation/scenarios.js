@@ -182,7 +182,7 @@ const scenarios = [
         check: function(trace) {
           const drainStart = findModeTransitions(trace, MODES.ACTIVE_DRAIN);
           if (drainStart.length === 0) throw new Error('drain never triggered');
-          var outdoor = drainStart[0].temps.outdoor;
+          const outdoor = drainStart[0].temps.outdoor;
           if (outdoor < 0) throw new Error('drain started too late, outdoor=' + outdoor);
         }
       },
@@ -244,7 +244,7 @@ const scenarios = [
       {
         description: 'greenhouse heating activates when greenhouse < 10',
         check: function(trace) {
-          var heat = findModeTransitions(trace, MODES.GREENHOUSE_HEATING);
+          const heat = findModeTransitions(trace, MODES.GREENHOUSE_HEATING);
           if (heat.length === 0) throw new Error('heating never activated');
           if (heat[0].temps.greenhouse > 10.5) {
             throw new Error('heating started at greenhouse=' + heat[0].temps.greenhouse);

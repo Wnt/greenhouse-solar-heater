@@ -71,7 +71,7 @@ export const DT = 1;
 function loadShellyControlLogic() {
   const src = readFileSync(join(repoRoot, 'shelly', 'control-logic.js'), 'utf8');
   const mod = { exports: {} };
-  // eslint-disable-next-line no-new-func
+   
   new Function('module', src)(mod);
   return mod.exports;
 }
@@ -95,7 +95,7 @@ function loadControlStateMachineClass(shelly) {
       'var _evaluate = __evaluate, _MODES = __MODES, _MODE_VALVES = __MODE_VALVES, _MODE_ACTUATORS = __MODE_ACTUATORS;'
     );
 
-  // eslint-disable-next-line no-new-func
+   
   const factory = new Function(
     '__evaluate', '__MODES', '__MODE_VALVES', '__MODE_ACTUATORS',
     modified + '\nreturn ControlStateMachine;'

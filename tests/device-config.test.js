@@ -114,7 +114,7 @@ describe('device-config', () => {
     deviceConfig.load(function (err) {
       assert.ifError(err);
       const mo = { a: true, ex: 1712505600, fm: 'I' };
-      deviceConfig.updateConfig({ mo: mo }, function (err2, config) {
+      deviceConfig.updateConfig({ mo }, function (err2, config) {
         assert.ifError(err2);
         assert.deepStrictEqual(config.mo, mo);
         // Verify persisted to disk
@@ -176,7 +176,7 @@ describe('device-config', () => {
     deviceConfig.load(function (err) {
       assert.ifError(err);
       const mo = { a: true, ex: 1712505600, fm: 'I' };
-      deviceConfig.updateConfig({ mo: mo }, function (err2) {
+      deviceConfig.updateConfig({ mo }, function (err2) {
         assert.ifError(err2);
         // Update ce without touching mo
         deviceConfig.updateConfig({ ce: true }, function (err3, config) {
@@ -362,7 +362,7 @@ describe('device-config mo.fm', () => {
   it('strips legacy top-level fm from loaded config', (t, done) => {
     // Simulate a config that still has legacy fm (would come from S3/local storage written before this change).
     deviceConfig.loadForTest({ ce: true, ea: 31, fm: 'SC', we: {}, wz: {}, wb: {}, v: 42 });
-    var cfg = deviceConfig.getConfig();
+    const cfg = deviceConfig.getConfig();
     assert.strictEqual(cfg.fm, undefined);
     done();
   });

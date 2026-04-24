@@ -35,7 +35,7 @@ describe('anomaly-manager formatReason', () => {
 function makeMocks() {
   const calls = { history: [], push: [], ws: [], deviceConfigPut: [], publishedConfigs: [] };
   let nextId = 0;
-  let storedConfig = { ce: true, ea: 0, fm: null, we: {}, wz: {}, wb: {}, v: 1 };
+  const storedConfig = { ce: true, ea: 0, fm: null, we: {}, wz: {}, wb: {}, v: 1 };
   const history = {
     insert: (row) => {
       nextId++;

@@ -5,17 +5,17 @@
  * Provides GET/PUT/POST HTTP handlers for sensor config.
  */
 
-var fs = require('fs');
-var path = require('path');
-var createLogger = require('./logger');
-var log = createLogger('sensor-config');
+const fs = require('fs');
+const path = require('path');
+const createLogger = require('./logger');
+const log = createLogger('sensor-config');
 
-var s3Client = null;
-var s3Config = null;
-var currentConfig = null;
+let s3Client = null;
+let s3Config = null;
+let currentConfig = null;
 
 // Sensor roles derived from system.yaml
-var SENSOR_ROLES = [
+const SENSOR_ROLES = [
   { name: 'collector', label: 'Collector Outlet', location: 'collector outlet, ~280cm', optional: false },
   { name: 'tank_top', label: 'Tank Top', location: 'tank upper region, ~180cm', optional: false },
   { name: 'tank_bottom', label: 'Tank Bottom', location: 'tank lower region, ~10cm', optional: false },
@@ -26,12 +26,12 @@ var SENSOR_ROLES = [
 ];
 
 function buildDefaultConfig() {
-  var ips = (process.env.SENSOR_HOST_IPS || '').split(',').filter(Boolean);
-  var hosts = ips.map(function (ip, idx) {
+  const ips = (process.env.SENSOR_HOST_IPS || '').split(',').filter(Boolean);
+  const hosts = ips.map(function (ip, idx) {
     return { id: 'sensor_' + (idx + 1), ip: ip.trim(), name: 'Sensor Hub ' + (idx + 1) };
   });
   return {
-    hosts: hosts,
+    hosts,
     assignments: {},
     version: 0,
   };
@@ -39,16 +39,16 @@ function buildDefaultConfig() {
 
 function getS3Config() {
   if (s3Config) return s3Config;
-  var endpoint = process.env.S3_ENDPOINT;
-  var bucket = process.env.S3_BUCKET;
-  var accessKeyId = process.env.S3_ACCESS_KEY_ID;
-  var secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+  const endpoint = process.env.S3_ENDPOINT;
+  const bucket = process.env.S3_BUCKET;
+  const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
   if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return null;
   s3Config = {
-    endpoint: endpoint,
-    bucket: bucket,
+    endpoint,
+    bucket,
     region: process.env.S3_REGION || 'europe-1',
-    credentials: { accessKeyId: accessKeyId, secretAccessKey: secretAccessKey },
+    credentials: { accessKeyId, secretAccessKey },
     key: 'sensor-config.json',
   };
   return s3Config;
@@ -60,8 +60,8 @@ function isS3Enabled() {
 
 function getS3Client() {
   if (s3Client) return s3Client;
-  var config = getS3Config();
-  var S3Client = require('@aws-sdk/client-s3').S3Client;
+  const config = getS3Config();
+  const S3Client = require('@aws-sdk/client-s3').S3Client;
   s3Client = new S3Client({
     endpoint: config.endpoint,
     region: config.region,
@@ -78,17 +78,17 @@ function getLocalPath() {
 // Ensure persisted config has up-to-date hosts from SENSOR_HOST_IPS env var.
 // Assignments and version are preserved; hosts are always derived from env.
 function reconcileHosts(config) {
-  var defaults = buildDefaultConfig();
+  const defaults = buildDefaultConfig();
   config.hosts = defaults.hosts;
   return config;
 }
 
 function load(callback) {
   if (isS3Enabled()) {
-    var config = getS3Config();
-    var GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
-    var client = getS3Client();
-    var cmd = new GetObjectCommand({ Bucket: config.bucket, Key: config.key });
+    const config = getS3Config();
+    const GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
+    const client = getS3Client();
+    const cmd = new GetObjectCommand({ Bucket: config.bucket, Key: config.key });
     client.send(cmd).then(function (response) {
       return response.Body.transformToString();
     }).then(function (bodyStr) {
@@ -107,9 +107,9 @@ function load(callback) {
       }
     });
   } else {
-    var filePath = getLocalPath();
+    const filePath = getLocalPath();
     try {
-      var data = fs.readFileSync(filePath, 'utf8');
+      const data = fs.readFileSync(filePath, 'utf8');
       currentConfig = reconcileHosts(JSON.parse(data));
       callback(null, currentConfig);
     } catch (err) {
@@ -126,10 +126,10 @@ function load(callback) {
 function save(config, callback) {
   currentConfig = config;
   if (isS3Enabled()) {
-    var s3Cfg = getS3Config();
-    var PutObjectCommand = require('@aws-sdk/client-s3').PutObjectCommand;
-    var client = getS3Client();
-    var cmd = new PutObjectCommand({
+    const s3Cfg = getS3Config();
+    const PutObjectCommand = require('@aws-sdk/client-s3').PutObjectCommand;
+    const client = getS3Client();
+    const cmd = new PutObjectCommand({
       Bucket: s3Cfg.bucket,
       Key: s3Cfg.key,
       Body: JSON.stringify(config, null, 2),
@@ -141,13 +141,13 @@ function save(config, callback) {
       callback(err);
     });
   } else {
-    var filePath = getLocalPath();
-    var dir = path.dirname(filePath);
+    const filePath = getLocalPath();
+    const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     try {
-      var tmpPath = filePath + '.tmp';
+      const tmpPath = filePath + '.tmp';
       fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2));
       fs.renameSync(tmpPath, filePath);
       callback(null);
@@ -168,21 +168,21 @@ function getConfig() {
 // DS18B20 family code). Validate as 8 decimal bytes, each 0-255.
 function isValidOneWireAddr(addr) {
   if (typeof addr !== 'string') return false;
-  var parts = addr.split(':');
+  const parts = addr.split(':');
   if (parts.length !== 8) return false;
-  for (var i = 0; i < 8; i++) {
+  for (let i = 0; i < 8; i++) {
     if (!/^\d{1,3}$/.test(parts[i])) return false;
-    var n = parseInt(parts[i], 10);
+    const n = parseInt(parts[i], 10);
     if (n < 0 || n > 255) return false;
   }
   return true;
 }
 
 function validateAssignments(assignments, hosts) {
-  var addrs = {};
-  var components = {};
-  for (var role in assignments) {
-    var a = assignments[role];
+  const addrs = {};
+  const components = {};
+  for (const role in assignments) {
+    const a = assignments[role];
     if (!a || !a.addr) continue;
 
     if (!isValidOneWireAddr(a.addr)) {
@@ -206,7 +206,7 @@ function validateAssignments(assignments, hosts) {
     addrs[a.addr] = role;
 
     // Check duplicate component IDs within same host
-    var compKey = a.hostIndex + ':' + a.componentId;
+    const compKey = a.hostIndex + ':' + a.componentId;
     if (components[compKey]) {
       return 'Duplicate component ID ' + a.componentId + ' on host ' + a.hostIndex + ' for both ' + components[compKey] + ' and ' + role;
     }
@@ -216,9 +216,9 @@ function validateAssignments(assignments, hosts) {
 }
 
 function getUnassignedRequiredRoles(assignments) {
-  var missing = [];
-  for (var i = 0; i < SENSOR_ROLES.length; i++) {
-    var r = SENSOR_ROLES[i];
+  const missing = [];
+  for (let i = 0; i < SENSOR_ROLES.length; i++) {
+    const r = SENSOR_ROLES[i];
     if (!r.optional && (!assignments[r.name] || !assignments[r.name].addr)) {
       missing.push(r.name);
     }
@@ -227,8 +227,8 @@ function getUnassignedRequiredRoles(assignments) {
 }
 
 function updateAssignments(newAssignments, callback) {
-  var config = getConfig();
-  var error = validateAssignments(newAssignments, config.hosts);
+  const config = getConfig();
+  const error = validateAssignments(newAssignments, config.hosts);
   if (error) {
     callback(new Error(error));
     return;
@@ -244,12 +244,12 @@ function updateAssignments(newAssignments, callback) {
 // ── Compact format for Shelly KVS ──
 
 function toCompactFormat(config) {
-  var compact = { s: {}, h: [], v: config.version };
-  for (var i = 0; i < config.hosts.length; i++) {
+  const compact = { s: {}, h: [], v: config.version };
+  for (let i = 0; i < config.hosts.length; i++) {
     compact.h.push(config.hosts[i].ip);
   }
-  for (var role in config.assignments) {
-    var a = config.assignments[role];
+  for (const role in config.assignments) {
+    const a = config.assignments[role];
     if (a && a.addr) {
       // Only h (hostIndex) and i (componentId) are included — control.js
       // polls by cid on the hub, which already has the probe address bound
@@ -274,22 +274,22 @@ function toCompactFormat(config) {
 // *routing* (which cid each role polls) still goes through MQTT so the
 // controller can drive its polling loop.
 
-var sensorApply = require('./sensor-apply');
+const sensorApply = require('./sensor-apply');
 
 // Role → human-readable label map, used by sensor-apply to name each
 // Temperature component in the Shelly app when roles are applied.
 function buildRoleLabels() {
-  var labels = {};
-  for (var i = 0; i < SENSOR_ROLES.length; i++) {
+  const labels = {};
+  for (let i = 0; i < SENSOR_ROLES.length; i++) {
     labels[SENSOR_ROLES[i].name] = SENSOR_ROLES[i].label;
   }
   return labels;
 }
 
 function formatHostResult(config, r) {
-  var hostInfo = config.hosts.find(function (h) { return h.ip === r.host; });
-  var hostId = hostInfo ? hostInfo.id : r.host;
-  var okMsg = r.peripherals + ' sensors configured';
+  const hostInfo = config.hosts.find(function (h) { return h.ip === r.host; });
+  const hostId = hostInfo ? hostInfo.id : r.host;
+  let okMsg = r.peripherals + ' sensors configured';
   if (r.rebooted) okMsg += ' — hub rebooted to apply';
   return {
     id: hostId,
@@ -300,13 +300,13 @@ function formatHostResult(config, r) {
 }
 
 function applyConfig(mqttBridge, callback) {
-  var config = getConfig();
-  var compact = toCompactFormat(config);
+  const config = getConfig();
+  const compact = toCompactFormat(config);
 
   sensorApply.applyAll(config.hosts, config.assignments, buildRoleLabels()).then(function (result) {
-    var results = {};
-    for (var i = 0; i < result.results.length; i++) {
-      var f = formatHostResult(config, result.results[i]);
+    const results = {};
+    for (let i = 0; i < result.results.length; i++) {
+      const f = formatHostResult(config, result.results[i]);
       results[f.id] = f.result;
     }
     // Publish the sensor routing to MQTT so the controller knows which
@@ -314,7 +314,7 @@ function applyConfig(mqttBridge, callback) {
     // hub bindings we just applied are still the durable source of truth.
     if (mqttBridge) {
       try {
-        var ok = mqttBridge.publishSensorConfig(compact);
+        const ok = mqttBridge.publishSensorConfig(compact);
         results.control = ok
           ? { status: 'success', message: 'Sensor routing published' }
           : { status: 'error', message: 'MQTT not connected' };
@@ -331,11 +331,11 @@ function applyConfig(mqttBridge, callback) {
 }
 
 function applySingleTarget(targetId, mqttBridge, callback) {
-  var config = getConfig();
+  const config = getConfig();
 
   if (targetId === 'control') {
     if (mqttBridge) {
-      var ok = mqttBridge.publishSensorConfig(toCompactFormat(config));
+      const ok = mqttBridge.publishSensorConfig(toCompactFormat(config));
       callback(null, { control: ok
         ? { status: 'success', message: 'Sensor routing published' }
         : { status: 'error', message: 'MQTT not connected' } });
@@ -346,8 +346,8 @@ function applySingleTarget(targetId, mqttBridge, callback) {
   }
 
   // Find host by id
-  var host = null;
-  for (var i = 0; i < config.hosts.length; i++) {
+  let host = null;
+  for (let i = 0; i < config.hosts.length; i++) {
     if (config.hosts[i].id === targetId) {
       host = config.hosts[i];
       break;
@@ -359,9 +359,9 @@ function applySingleTarget(targetId, mqttBridge, callback) {
   }
 
   sensorApply.applyOne(config.hosts, config.assignments, host.ip, buildRoleLabels()).then(function (result) {
-    var results = {};
+    const results = {};
     if (result.results && result.results[0]) {
-      var f = formatHostResult(config, result.results[0]);
+      const f = formatHostResult(config, result.results[0]);
       results[host.id] = f.result;
     }
     callback(null, results);
@@ -373,13 +373,13 @@ function applySingleTarget(targetId, mqttBridge, callback) {
 // ── HTTP handlers ──
 
 function handleGet(req, res) {
-  var config = getConfig();
+  const config = getConfig();
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(config));
 }
 
 function handlePut(req, res, body, onUpdate) {
-  var parsed;
+  let parsed;
   try {
     parsed = JSON.parse(body);
   } catch (e) {
@@ -412,28 +412,28 @@ function handlePut(req, res, body, onUpdate) {
 function handleApply(req, res, mqttBridge) {
   applyConfig(mqttBridge, function (err, results) {
     if (err) {
-      var statusCode = err.message === 'Request timed out' ? 504 : 500;
+      const statusCode = err.message === 'Request timed out' ? 504 : 500;
       res.writeHead(statusCode, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message === 'Request timed out' ? 'Config apply timed out' : err.message }));
       return;
     }
-    log.info('sensor config applied', { results: results });
+    log.info('sensor config applied', { results });
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ results: results }));
+    res.end(JSON.stringify({ results }));
   });
 }
 
 function handleApplyTarget(req, res, targetId, mqttBridge) {
   applySingleTarget(targetId, mqttBridge, function (err, results) {
     if (err) {
-      var statusCode = err.message === 'Request timed out' ? 504 : 400;
+      const statusCode = err.message === 'Request timed out' ? 504 : 400;
       res.writeHead(statusCode, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message === 'Request timed out' ? 'Config apply timed out' : err.message }));
       return;
     }
-    log.info('sensor config applied to target', { target: targetId, results: results });
+    log.info('sensor config applied to target', { target: targetId, results });
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ results: results }));
+    res.end(JSON.stringify({ results }));
   });
 }
 
@@ -444,20 +444,20 @@ function _reset() {
 }
 
 module.exports = {
-  SENSOR_ROLES: SENSOR_ROLES,
-  buildDefaultConfig: buildDefaultConfig,
-  load: load,
-  save: save,
-  getConfig: getConfig,
-  updateAssignments: updateAssignments,
-  validateAssignments: validateAssignments,
-  getUnassignedRequiredRoles: getUnassignedRequiredRoles,
-  toCompactFormat: toCompactFormat,
-  handleGet: handleGet,
-  handlePut: handlePut,
-  handleApply: handleApply,
-  handleApplyTarget: handleApplyTarget,
-  applyConfig: applyConfig,
-  applySingleTarget: applySingleTarget,
-  _reset: _reset,
+  SENSOR_ROLES,
+  buildDefaultConfig,
+  load,
+  save,
+  getConfig,
+  updateAssignments,
+  validateAssignments,
+  getUnassignedRequiredRoles,
+  toCompactFormat,
+  handleGet,
+  handlePut,
+  handleApply,
+  handleApplyTarget,
+  applyConfig,
+  applySingleTarget,
+  _reset,
 };

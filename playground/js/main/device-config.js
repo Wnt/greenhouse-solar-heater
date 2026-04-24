@@ -17,7 +17,7 @@ export function initDeviceConfig() {
   document.getElementById('dc-save').addEventListener('click', saveDeviceConfig);
 
   // "Try anyway" link
-  var tryLink = document.getElementById('dc-try-anyway');
+  const tryLink = document.getElementById('dc-try-anyway');
   if (tryLink) {
     tryLink.addEventListener('click', function (e) {
       e.preventDefault();

@@ -9,10 +9,10 @@
  *   {"ts":"2026-03-20T12:00:00.000Z","level":"info","component":"auth","msg":"user logged in","userId":"..."}
  */
 
-var otelApi = require('@opentelemetry/api');
-var otelLogs = require('@opentelemetry/api-logs');
+const otelApi = require('@opentelemetry/api');
+const otelLogs = require('@opentelemetry/api-logs');
 
-var SEVERITY_MAP = {
+const SEVERITY_MAP = {
   info: otelLogs.SeverityNumber.INFO,
   warn: otelLogs.SeverityNumber.WARN,
   error: otelLogs.SeverityNumber.ERROR,
@@ -20,36 +20,36 @@ var SEVERITY_MAP = {
 
 function createLogger(component) {
   function write(level, msg, data) {
-    var entry = {
+    const entry = {
       ts: new Date().toISOString(),
-      level: level,
-      component: component,
-      msg: msg,
+      level,
+      component,
+      msg,
     };
     // Inject OTel trace context for log correlation (no-op when SDK not initialized)
-    var spanContext = otelApi.trace.getSpan(otelApi.context.active());
+    const spanContext = otelApi.trace.getSpan(otelApi.context.active());
     if (spanContext) {
-      var ctx = spanContext.spanContext();
+      const ctx = spanContext.spanContext();
       if (ctx && ctx.traceId) {
         entry['trace.id'] = ctx.traceId;
         entry['span.id'] = ctx.spanId;
       }
     }
     if (data) {
-      var keys = Object.keys(data);
-      for (var i = 0; i < keys.length; i++) {
+      const keys = Object.keys(data);
+      for (let i = 0; i < keys.length; i++) {
         entry[keys[i]] = data[keys[i]];
       }
     }
-    var out = level === 'error' ? process.stderr : process.stdout;
+    const out = level === 'error' ? process.stderr : process.stdout;
     out.write(JSON.stringify(entry) + '\n');
 
     // Emit OTel log record (no-op when SDK not initialized)
-    var otelLogger = otelLogs.logs.getLogger(component);
-    var attributes = { component: component, level: level };
+    const otelLogger = otelLogs.logs.getLogger(component);
+    const attributes = { component, level };
     if (data) {
-      var dataKeys = Object.keys(data);
-      for (var j = 0; j < dataKeys.length; j++) {
+      const dataKeys = Object.keys(data);
+      for (let j = 0; j < dataKeys.length; j++) {
         attributes[dataKeys[j]] = data[dataKeys[j]];
       }
     }
@@ -57,7 +57,7 @@ function createLogger(component) {
       severityNumber: SEVERITY_MAP[level] || otelLogs.SeverityNumber.INFO,
       severityText: level.toUpperCase(),
       body: msg,
-      attributes: attributes,
+      attributes,
     });
   }
 

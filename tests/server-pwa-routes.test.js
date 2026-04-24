@@ -39,7 +39,7 @@ function request(pathname, options) {
       res.on('end', () => resolve({
         status: res.statusCode,
         headers: res.headers,
-        body: body,
+        body,
       }));
     });
     req.on('error', reject);

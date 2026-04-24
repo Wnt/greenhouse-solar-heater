@@ -22,8 +22,8 @@ describe('mqtt-bridge', () => {
       const events = [];
       const mockDb = {
         insertStateEvent: function (ts, type, id, oldVal, newVal, optsOrCb, maybeCb) {
-          var opts = typeof optsOrCb === 'function' ? null : optsOrCb;
-          var cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb;
+          const opts = typeof optsOrCb === 'function' ? null : optsOrCb;
+          const cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb;
           events.push({ type, id, oldVal, newVal, opts });
           if (cb) cb(null);
         },
@@ -43,8 +43,8 @@ describe('mqtt-bridge', () => {
       const events = [];
       const mockDb = {
         insertStateEvent: function (ts, type, id, oldVal, newVal, optsOrCb, maybeCb) {
-          var opts = typeof optsOrCb === 'function' ? null : optsOrCb;
-          var cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb;
+          const opts = typeof optsOrCb === 'function' ? null : optsOrCb;
+          const cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb;
           events.push({ type, opts });
           if (cb) cb(null);
         },
@@ -72,8 +72,8 @@ describe('mqtt-bridge', () => {
       const events = [];
       const mockDb = {
         insertStateEvent: function (ts, type, id, oldVal, newVal, optsOrCb, maybeCb) {
-          var opts = typeof optsOrCb === 'function' ? null : optsOrCb;
-          var cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb;
+          const opts = typeof optsOrCb === 'function' ? null : optsOrCb;
+          const cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb;
           events.push({ type, opts });
           if (cb) cb(null);
         },
@@ -317,7 +317,7 @@ describe('mqtt-bridge', () => {
         if (cb) cb(null);
       };
       fakeClient.publish = function (topic, message, opts, cb) {
-        fakeClient.publishCalls.push({ topic: topic, message: message, opts: opts });
+        fakeClient.publishCalls.push({ topic, message, opts });
         if (cb) cb(null);
       };
       fakeClient.end = function (force, opts, cb) { if (cb) cb(); };

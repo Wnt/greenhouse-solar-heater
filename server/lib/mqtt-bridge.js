@@ -4,26 +4,26 @@
  * and broadcasts live state to WebSocket clients.
  */
 
-var createLogger = require('./logger');
-var log = createLogger('mqtt-bridge');
-var { trace } = require('@opentelemetry/api');
-var tracer = trace.getTracer('mqtt-bridge');
+const createLogger = require('./logger');
+const log = createLogger('mqtt-bridge');
+const { trace } = require('@opentelemetry/api');
+const tracer = trace.getTracer('mqtt-bridge');
 
-var notifications = require('./notifications');
+const notifications = require('./notifications');
 
-var mqttClient = null;
-var wsServer = null;
-var db = null;
-var deviceConfigRef = null;
-var sensorConfigRef = null;
-var pushRef = null;
-var anomalyManagerRef = null;
-var stateSnapshotListener = null;
-var previousState = null;
-var connectionStatus = 'disconnected';
+let mqttClient = null;
+let wsServer = null;
+let db = null;
+let deviceConfigRef = null;
+let sensorConfigRef = null;
+let pushRef = null;
+let anomalyManagerRef = null;
+let stateSnapshotListener = null;
+let previousState = null;
+let connectionStatus = 'disconnected';
 
 function start(options) {
-  var mqtt = require('mqtt');
+  const mqtt = require('mqtt');
   db = options.db || null;
   wsServer = options.wsServer || null;
   deviceConfigRef = options.deviceConfig || null;
@@ -34,11 +34,11 @@ function start(options) {
 
   notifications.init({ push: pushRef, deviceConfig: deviceConfigRef });
 
-  var host = options.mqttHost || process.env.MQTT_HOST || '127.0.0.1';
-  var port = options.mqttPort || process.env.MQTT_PORT || 1883;
-  var url = 'mqtt://' + host + ':' + port;
+  const host = options.mqttHost || process.env.MQTT_HOST || '127.0.0.1';
+  const port = options.mqttPort || process.env.MQTT_PORT || 1883;
+  const url = 'mqtt://' + host + ':' + port;
 
-  log.info('connecting to MQTT', { url: url });
+  log.info('connecting to MQTT', { url });
 
   mqttClient = mqtt.connect(url, {
     reconnectPeriod: 5000,
@@ -87,7 +87,7 @@ function start(options) {
       return;
     }
     if (topic === 'greenhouse/watchdog/event') {
-      var wdMsg;
+      let wdMsg;
       try {
         wdMsg = JSON.parse(message.toString());
       } catch (e) {
@@ -103,8 +103,8 @@ function start(options) {
     }
     if (topic !== 'greenhouse/state') return;
 
-    var span = tracer.startSpan('mqtt.message', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': topic } });
-    var payload;
+    const span = tracer.startSpan('mqtt.message', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': topic } });
+    let payload;
     try {
       payload = JSON.parse(message.toString());
     } catch (e) {
@@ -121,7 +121,7 @@ function start(options) {
 }
 
 function handleStateMessage(payload) {
-  var ts = payload.ts ? new Date(payload.ts) : new Date();
+  const ts = payload.ts ? new Date(payload.ts) : new Date();
 
   // Persist sensor readings
   if (db && payload.temps) {
@@ -157,7 +157,7 @@ function handleStateMessage(payload) {
 }
 
 function detectStateChanges(ts, prev, curr, _db) {
-  var d = _db || db;
+  const d = _db || db;
   if (!d) return;
   // Mode changes — record cause (why the transition happened) and a
   // snapshot of the sensor temps at transition time so operators
@@ -166,7 +166,7 @@ function detectStateChanges(ts, prev, curr, _db) {
   // nullable: pre-2026-04-20 payloads don't carry cause; firmware
   // without sensor polling yields null temps.
   if (prev.mode !== curr.mode) {
-    var modeOpts = {
+    const modeOpts = {
       cause: (typeof curr.cause === 'string' && curr.cause) || null,
       // reason is the evaluator's decision code (e.g. "solar_stall").
       // Only meaningful when cause is "automation" or "safety_override";
@@ -181,12 +181,12 @@ function detectStateChanges(ts, prev, curr, _db) {
 
   // Valve changes
   if (prev.valves && curr.valves) {
-    var valveNames = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
-    for (var i = 0; i < valveNames.length; i++) {
-      var v = valveNames[i];
+    const valveNames = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
+    for (let i = 0; i < valveNames.length; i++) {
+      const v = valveNames[i];
       if (prev.valves[v] !== curr.valves[v]) {
-        var oldVal = prev.valves[v] ? 'open' : 'closed';
-        var newVal = curr.valves[v] ? 'open' : 'closed';
+        const oldVal = prev.valves[v] ? 'open' : 'closed';
+        const newVal = curr.valves[v] ? 'open' : 'closed';
         d.insertStateEvent(ts, 'valve', v, oldVal, newVal, function (err) {
           if (err) log.error('db insert valve event failed', { error: err.message });
         });
@@ -196,12 +196,12 @@ function detectStateChanges(ts, prev, curr, _db) {
 
   // Actuator changes
   if (prev.actuators && curr.actuators) {
-    var actuatorNames = ['pump', 'fan', 'space_heater', 'immersion_heater'];
-    for (var j = 0; j < actuatorNames.length; j++) {
-      var a = actuatorNames[j];
+    const actuatorNames = ['pump', 'fan', 'space_heater', 'immersion_heater'];
+    for (let j = 0; j < actuatorNames.length; j++) {
+      const a = actuatorNames[j];
       if (prev.actuators[a] !== curr.actuators[a]) {
-        var oldA = prev.actuators[a] ? 'on' : 'off';
-        var newA = curr.actuators[a] ? 'on' : 'off';
+        const oldA = prev.actuators[a] ? 'on' : 'off';
+        const newA = curr.actuators[a] ? 'on' : 'off';
         d.insertStateEvent(ts, 'actuator', a, oldA, newA, function (err) {
           if (err) log.error('db insert actuator event failed', { error: err.message });
         });
@@ -214,7 +214,7 @@ function detectStateChanges(ts, prev, curr, _db) {
 // from device config. Pure — safe to call from broadcasts and replays.
 function enrichState(payload) {
   if (!deviceConfigRef) return payload;
-  var cfg = deviceConfigRef.getConfig();
+  const cfg = deviceConfigRef.getConfig();
   if (cfg && cfg.mo && cfg.mo.a) {
     return Object.assign({}, payload, {
       manual_override: {
@@ -237,8 +237,8 @@ function getLastState() {
 
 function broadcastState(payload) {
   if (!wsServer) return;
-  var enriched = enrichState(payload);
-  var msg = JSON.stringify({ type: 'state', data: enriched });
+  const enriched = enrichState(payload);
+  const msg = JSON.stringify({ type: 'state', data: enriched });
   wsServer.clients.forEach(function (client) {
     if (client.readyState === 1) { // WebSocket.OPEN
       client.send(msg);
@@ -248,7 +248,7 @@ function broadcastState(payload) {
 
 function broadcastConnection(status) {
   if (!wsServer) return;
-  var msg = JSON.stringify({ type: 'connection', status: status });
+  const msg = JSON.stringify({ type: 'connection', status });
   wsServer.clients.forEach(function (client) {
     if (client.readyState === 1) {
       client.send(msg);
@@ -265,7 +265,7 @@ function publishConfig(config) {
     log.warn('cannot publish config: MQTT not connected');
     return false;
   }
-  var span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': 'greenhouse/config' } });
+  const span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': 'greenhouse/config' } });
   mqttClient.publish('greenhouse/config', JSON.stringify(config), { qos: 1, retain: true });
   span.end();
   return true;
@@ -278,7 +278,7 @@ function publishConfig(config) {
 // "Save & Push to Device" in the UI.
 function republishDeviceConfig() {
   if (!deviceConfigRef) return;
-  var cfg = deviceConfigRef.getConfig();
+  const cfg = deviceConfigRef.getConfig();
   if (!cfg) return;
   publishConfig(cfg);
 }
@@ -291,9 +291,9 @@ function republishDeviceConfig() {
 // — publishing them would tell the controller to stop polling every sensor.
 function republishSensorConfig() {
   if (!sensorConfigRef || typeof sensorConfigRef.getConfig !== 'function') return;
-  var cfg = sensorConfigRef.getConfig();
+  const cfg = sensorConfigRef.getConfig();
   if (!cfg || !cfg.assignments || Object.keys(cfg.assignments).length === 0) return;
-  var compact = typeof sensorConfigRef.toCompactFormat === 'function'
+  const compact = typeof sensorConfigRef.toCompactFormat === 'function'
     ? sensorConfigRef.toCompactFormat(cfg)
     : null;
   if (!compact) return;
@@ -305,7 +305,7 @@ function publishSensorConfig(config) {
     log.warn('cannot publish sensor config: MQTT not connected');
     return false;
   }
-  var span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': 'greenhouse/sensor-config' } });
+  const span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': 'greenhouse/sensor-config' } });
   mqttClient.publish('greenhouse/sensor-config', JSON.stringify(config), { qos: 1, retain: true });
   span.end();
   return true;
@@ -316,8 +316,8 @@ function publishRelayCommand(relay, on) {
     log.warn('cannot publish relay command: MQTT not connected');
     return false;
   }
-  var span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': 'greenhouse/relay-command' } });
-  mqttClient.publish('greenhouse/relay-command', JSON.stringify({ relay: relay, on: on }), { qos: 1, retain: false });
+  const span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': 'greenhouse/relay-command' } });
+  mqttClient.publish('greenhouse/relay-command', JSON.stringify({ relay, on }), { qos: 1, retain: false });
   span.end();
   return true;
 }
@@ -332,18 +332,18 @@ function publishRelayCommand(relay, on) {
 
 // ── MQTT request/response helpers ──
 
-var pendingRequests = {};
+let pendingRequests = {};
 
 function handleResponseMessage(topic, message) {
-  var payload;
+  let payload;
   try {
     payload = JSON.parse(message.toString());
   } catch (e) {
-    log.warn('invalid JSON on response topic', { topic: topic, error: e.message });
+    log.warn('invalid JSON on response topic', { topic, error: e.message });
     return;
   }
   if (!payload || !payload.id) return;
-  var pending = pendingRequests[payload.id];
+  const pending = pendingRequests[payload.id];
   if (pending) {
     clearTimeout(pending.timer);
     delete pendingRequests[payload.id];
@@ -361,17 +361,17 @@ function mqttRequest(requestTopic, responseTopic, payload, timeoutMs) {
   if (!mqttClient || !mqttClient.connected) {
     return Promise.reject(new Error('MQTT not connected'));
   }
-  var id = payload.id;
-  var span = tracer.startSpan('mqtt.request', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': requestTopic } });
+  const id = payload.id;
+  const span = tracer.startSpan('mqtt.request', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': requestTopic } });
 
   return new Promise(function (resolve, reject) {
-    var timer = setTimeout(function () {
+    const timer = setTimeout(function () {
       delete pendingRequests[id];
       span.end();
       reject(new Error('Request timed out'));
     }, timeoutMs || 30000);
 
-    pendingRequests[id] = { resolve: function (result) { span.end(); resolve(result); }, timer: timer };
+    pendingRequests[id] = { resolve: function (result) { span.end(); resolve(result); }, timer };
     mqttClient.publish(requestTopic, JSON.stringify(payload), { qos: 1, retain: false });
   });
 }
@@ -387,12 +387,12 @@ function publishSensorConfigApply(request) {
 }
 
 function publishDiscoveryRequest(hosts, options) {
-  var id = 'disc-' + Date.now();
-  var skipTemp = options && options.skipTemp;
+  const id = 'disc-' + Date.now();
+  const skipTemp = options && options.skipTemp;
   // Without temp polling: ~5s per host (OneWireScan only). With: ~15s per host.
-  var perHost = skipTemp ? 8000 : 15000;
-  var timeoutMs = Math.max(30000, (hosts ? hosts.length : 1) * perHost);
-  var payload = { id: id, hosts: hosts };
+  const perHost = skipTemp ? 8000 : 15000;
+  const timeoutMs = Math.max(30000, (hosts ? hosts.length : 1) * perHost);
+  const payload = { id, hosts };
   if (skipTemp) payload.skipTemp = true;
   return mqttRequest('greenhouse/discover-sensors', 'greenhouse/discover-sensors-result', payload, timeoutMs);
 }
@@ -409,17 +409,17 @@ function stop(callback) {
 }
 
 module.exports = {
-  start: start,
-  stop: stop,
-  getConnectionStatus: getConnectionStatus,
-  getLastState: getLastState,
-  publishConfig: publishConfig,
-  publishSensorConfig: publishSensorConfig,
-  publishRelayCommand: publishRelayCommand,
-  publishSensorConfigApply: publishSensorConfigApply,
-  publishDiscoveryRequest: publishDiscoveryRequest,
-  handleStateMessage: handleStateMessage,
-  detectStateChanges: detectStateChanges,
+  start,
+  stop,
+  getConnectionStatus,
+  getLastState,
+  publishConfig,
+  publishSensorConfig,
+  publishRelayCommand,
+  publishSensorConfigApply,
+  publishDiscoveryRequest,
+  handleStateMessage,
+  detectStateChanges,
   _setDeviceConfigRefForTest: function (ref) { deviceConfigRef = ref; },
   _reset: function () {
     mqttClient = null;
@@ -433,7 +433,7 @@ module.exports = {
     connectionStatus = 'disconnected';
     notifications._reset();
     // Clear any pending requests
-    for (var id in pendingRequests) {
+    for (const id in pendingRequests) {
       clearTimeout(pendingRequests[id].timer);
     }
     pendingRequests = {};

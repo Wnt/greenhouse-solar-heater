@@ -53,7 +53,7 @@ export async function doCreateInvite() {
     const res = await fetch('/auth/invite/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name, role: roleSelect.value }),
+      body: JSON.stringify({ name, role: roleSelect.value }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

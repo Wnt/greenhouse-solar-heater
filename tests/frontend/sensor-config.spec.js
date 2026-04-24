@@ -75,7 +75,7 @@ test.describe('Sensor Configuration View', () => {
     await page.evaluate(() => {
       document.querySelectorAll('.live-only').forEach(el => el.style.display = '');
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-      var deviceView = document.getElementById('view-device');
+      const deviceView = document.getElementById('view-device');
       if (deviceView) deviceView.classList.add('active');
       document.querySelectorAll('[data-view]').forEach(l => l.classList.remove('active'));
       document.querySelectorAll('[data-view="device"]').forEach(l => l.classList.add('active'));

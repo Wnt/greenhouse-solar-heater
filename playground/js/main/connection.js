@@ -79,7 +79,7 @@ function refreshConnectionIndicator() {
     return;
   }
 
-  var displayState = getConnectionDisplayState();
+  const displayState = getConnectionDisplayState();
   switch (displayState) {
     case 'active':
       dot.className = 'connection-dot connected';
@@ -116,7 +116,7 @@ function checkStaleness() {
   updateSidebarSubtitle();
 }
 
-var OVERLAY_MESSAGES = {
+const OVERLAY_MESSAGES = {
   connecting: {
     title: 'Reaching out to your sanctuary.',
     subtitle: 'Connecting to the server...'
@@ -141,8 +141,8 @@ var OVERLAY_MESSAGES = {
 
 function getConnectionDisplayState() {
   if (store.get('phase') !== 'live') return 'active';
-  var hasData = liveSource && liveSource.hasReceivedData;
-  var mqttStatus = liveSource ? liveSource.mqttStatus : 'unknown';
+  const hasData = liveSource && liveSource.hasReceivedData;
+  const mqttStatus = liveSource ? liveSource.mqttStatus : 'unknown';
 
   if (connectionStatus === 'connected') {
     // WS is open — check MQTT and device data status
@@ -155,7 +155,7 @@ function getConnectionDisplayState() {
     }
     // WS connected, waiting for MQTT status or data — show connecting overlay
     // Brief grace period (2s) before declaring device offline
-    var connectedAt = liveSource ? liveSource._connectedAt : 0;
+    const connectedAt = liveSource ? liveSource._connectedAt : 0;
     if (connectedAt > 0 && (Date.now() - connectedAt) > 2000) {
       return 'device_offline';
     }
@@ -163,22 +163,22 @@ function getConnectionDisplayState() {
   }
 
   // WS is not connected or reconnecting
-  var wsEverFailed = liveSource && liveSource._wsEverFailed;
+  const wsEverFailed = liveSource && liveSource._wsEverFailed;
   if (!hasData) return wsEverFailed ? 'never_connected' : 'connecting';
   return 'disconnected';
 }
 
 function updateConnectionOverlays() {
-  var state = getConnectionDisplayState();
-  var overlayIds = ['overlay-modes', 'overlay-gauge', 'overlay-components'];
-  var msg = OVERLAY_MESSAGES[state];
-  for (var i = 0; i < overlayIds.length; i++) {
-    var overlay = document.getElementById(overlayIds[i]);
+  const state = getConnectionDisplayState();
+  const overlayIds = ['overlay-modes', 'overlay-gauge', 'overlay-components'];
+  const msg = OVERLAY_MESSAGES[state];
+  for (let i = 0; i < overlayIds.length; i++) {
+    const overlay = document.getElementById(overlayIds[i]);
     if (!overlay) continue;
     if (msg) {
       overlay.classList.add('visible');
-      var titleEl = document.getElementById(overlayIds[i] + '-title');
-      var subtitleEl = document.getElementById(overlayIds[i] + '-subtitle');
+      const titleEl = document.getElementById(overlayIds[i] + '-title');
+      const subtitleEl = document.getElementById(overlayIds[i] + '-subtitle');
       if (titleEl) titleEl.textContent = msg.title;
       if (subtitleEl) subtitleEl.textContent = msg.subtitle;
     } else {
@@ -188,11 +188,11 @@ function updateConnectionOverlays() {
 }
 
 function updateDevicePushState() {
-  var btn = document.getElementById('dc-save');
-  var warning = document.getElementById('dc-connection-warning');
+  const btn = document.getElementById('dc-save');
+  const warning = document.getElementById('dc-connection-warning');
   if (!btn || !warning) return;
-  var displayState = getConnectionDisplayState();
-  var canPush = store.get('phase') !== 'live' || displayState === 'active' || displayState === 'stale';
+  const displayState = getConnectionDisplayState();
+  const canPush = store.get('phase') !== 'live' || displayState === 'active' || displayState === 'stale';
   if (canPush) {
     btn.classList.remove('disabled');
     btn.disabled = false;
@@ -230,14 +230,14 @@ export function initModeToggle() {
 }
 
 function persistModeInUrl(mode) {
-  var params = new URLSearchParams(location.search);
+  const params = new URLSearchParams(location.search);
   if (mode === 'live') {
     params.delete('mode');
   } else {
     params.set('mode', mode);
   }
-  var qs = params.toString();
-  var url = location.pathname + (qs ? '?' + qs : '') + location.hash;
+  const qs = params.toString();
+  const url = location.pathname + (qs ? '?' + qs : '') + location.hash;
   history.replaceState(null, '', url);
 }
 
@@ -264,7 +264,7 @@ function ensureLiveSource() {
       // Defense-in-depth: each step is independent. A bug in
       // updateDisplay must not break the manual override controls
       // (or vice versa).
-      var steps = [
+      const steps = [
         ['updateDisplay',              function () { updateDisplay(state, result); }],
         ['refreshConnectionIndicator', refreshConnectionIndicator],
         ['updateConnectionOverlays',   updateConnectionOverlays],
@@ -272,7 +272,7 @@ function ensureLiveSource() {
         ['updateDevicePushState',      updateDevicePushState],
         ['updateRelayBoard',           function () { updateRelayBoard(result); }],
       ];
-      for (var i = 0; i < steps.length; i++) {
+      for (let i = 0; i < steps.length; i++) {
         try { steps[i][1](); }
         catch (e) { console.error('liveSource.onUpdate ' + steps[i][0] + ' failed:', e); }
       }
@@ -326,15 +326,15 @@ function clearLiveDisplay() {
   document.getElementById('tank-temp-message').textContent = '';
   document.getElementById('tank-stat-energy').textContent = '--';
   document.getElementById('tank-stat-greenhouse').textContent = '--';
-  var ghTrendResetEl = document.getElementById('tank-stat-greenhouse-trend');
+  const ghTrendResetEl = document.getElementById('tank-stat-greenhouse-trend');
   if (ghTrendResetEl) ghTrendResetEl.innerHTML = '';
   document.getElementById('inactive-modes').innerHTML = '';
   resetLiveYesterdayHigh();
   document.getElementById('graph-peak-label').textContent = "Yesterday's High: --";
-  var arc = document.getElementById('tank-gauge-arc');
+  const arc = document.getElementById('tank-gauge-arc');
   if (arc) arc.setAttribute('stroke-dashoffset', '628');
   // Clear component statuses
-  var compEls = document.querySelectorAll('.comp-status');
+  const compEls = document.querySelectorAll('.comp-status');
   compEls.forEach(function(el) { el.textContent = '--'; });
   // Clear simulation graph data and redraw empty canvas
   timeSeriesStore.reset();
@@ -342,7 +342,7 @@ function clearLiveDisplay() {
   // Clear the transition log — fetchLiveEvents() will repopulate it from the DB
   transitionLog.length = 0;
   resetEventsState();
-  var logsEl = document.getElementById('logs-list');
+  const logsEl = document.getElementById('logs-list');
   if (logsEl) {
     logsEl.innerHTML = '<div data-empty="true" style="color:var(--on-surface-variant);font-size:13px;">Loading transitions…</div>';
   }
@@ -370,24 +370,24 @@ function switchToSimulation() {
 // so the Status view doesn't tell live users to "Adjust parameters in
 // Controls" or "Start the simulation".
 function updatePhaseAwareCopy() {
-  var isLive = store.get('phase') === 'live';
-  var desc = document.getElementById('status-view-description');
+  const isLive = store.get('phase') === 'live';
+  const desc = document.getElementById('status-view-description');
   if (desc) {
     desc.textContent = isLive
       ? 'Live readings from the Shelly controller. Mode, valves, actuators, and 24h history.'
       : 'Thermal simulation of the solar heating system. Adjust parameters in Controls and observe behavior here.';
   }
-  var logsEmpty = document.getElementById('logs-list');
+  const logsEmpty = document.getElementById('logs-list');
   if (logsEmpty && logsEmpty.children.length <= 1) {
     // Only replace the placeholder, not real log entries
-    var placeholder = logsEmpty.querySelector('div[data-empty]') || (logsEmpty.children.length === 0 ? null : logsEmpty.firstElementChild);
+    const placeholder = logsEmpty.querySelector('div[data-empty]') || (logsEmpty.children.length === 0 ? null : logsEmpty.firstElementChild);
     if (placeholder && placeholder.dataset && placeholder.dataset.empty === 'true') {
       placeholder.textContent = isLive
         ? 'No transitions yet. Awaiting controller activity…'
         : 'No transitions yet. Start the simulation.';
     }
   }
-  var ctrl = document.getElementById('comp-controller');
+  const ctrl = document.getElementById('comp-controller');
   if (ctrl && isLive) {
     // In live mode the simulation "running" flag is meaningless.
     // Show ACTIVE when the controller is responsive.
@@ -396,7 +396,7 @@ function updatePhaseAwareCopy() {
 }
 
 export function updateSidebarSubtitle() {
-  var el = document.getElementById('sidebar-subtitle');
+  const el = document.getElementById('sidebar-subtitle');
   if (!el) return;
 
   if (store.get('phase') === 'simulation') {
@@ -406,7 +406,7 @@ export function updateSidebarSubtitle() {
   }
 
   // Live mode: reflect connection state
-  var displayState = getConnectionDisplayState();
+  const displayState = getConnectionDisplayState();
   switch (displayState) {
     case 'active':
       el.textContent = 'Live';

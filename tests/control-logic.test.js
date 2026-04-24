@@ -773,13 +773,13 @@ describe('independent emergency heating overlay', () => {
 
   it('simulates late-season overnight: tank depletes, emergency takes over', () => {
     // Phase 1: warm tank — greenhouse heating + emergency overlay
-    var state = makeState({
+    const state = makeState({
       temps: { collector: -20, tank_top: 30, tank_bottom: 28, greenhouse: 8, outdoor: -30 },
       currentMode: MODES.IDLE,
       collectorsDrained: true
     });
 
-    var result = evaluate(state, null);
+    let result = evaluate(state, null);
     assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING,
       'Phase 1: tank 30°C has 22°C delta, pump runs');
     assert.strictEqual(result.actuators.space_heater, true,

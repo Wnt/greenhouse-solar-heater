@@ -51,11 +51,11 @@ const MIME = {
 // ── Static file serving ──
 // Playground is served at /; shelly/ and system.yaml served for simulation support.
 
-var SHELLY_DIR = path.join(__dirname, '..', 'shelly');
-var REPO_ROOT = path.join(__dirname, '..');
+const SHELLY_DIR = path.join(__dirname, '..', 'shelly');
+const REPO_ROOT = path.join(__dirname, '..');
 
 function serveStatic(req, res) {
-  var urlPath = new URL(req.url, 'http://localhost').pathname;
+  let urlPath = new URL(req.url, 'http://localhost').pathname;
 
   // Serve system.yaml from repo root (playground fetches /system.yaml)
   if (urlPath === '/system.yaml') {
@@ -64,14 +64,14 @@ function serveStatic(req, res) {
 
   // /shelly/* → serve from shelly/ dir (control-logic-loader fetches 'shelly/control-logic.js')
   if (urlPath.startsWith('/shelly/')) {
-    var shellyFile = path.join(SHELLY_DIR, urlPath.slice('/shelly'.length));
+    const shellyFile = path.join(SHELLY_DIR, urlPath.slice('/shelly'.length));
     if (!shellyFile.startsWith(SHELLY_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
     return serveFile(shellyFile, urlPath, res);
   }
 
   // Everything else from playground directory
   if (urlPath === '/') urlPath = '/index.html';
-  var filePath = path.join(PLAYGROUND_DIR, urlPath);
+  const filePath = path.join(PLAYGROUND_DIR, urlPath);
   if (!filePath.startsWith(PLAYGROUND_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
   serveFile(filePath, urlPath, res);
 }
@@ -83,8 +83,8 @@ function serveFile(filePath, urlPath, res) {
       res.end('Not found');
       return;
     }
-    var ext = path.extname(filePath);
-    var contentType = MIME[ext] || 'application/octet-stream';
+    const ext = path.extname(filePath);
+    const contentType = MIME[ext] || 'application/octet-stream';
     res.writeHead(200, { 'Content-Type': contentType });
     res.end(data);
   });
@@ -93,15 +93,15 @@ function serveFile(filePath, urlPath, res) {
 
 // ── Auth middleware ──
 
-var authMiddleware = null;
+let authMiddleware = null;
 if (AUTH_ENABLED) {
   authMiddleware = require('./auth/webauthn');
   log.info('auth enabled', { rpId: process.env.RPID || 'localhost' });
 }
 
-var db = null;
-var scriptMonitor = null;
-var handlers = null;
+let db = null;
+let scriptMonitor = null;
+let handlers = null;
 
 // ── HTTP route detection (for OTel span naming) ──
 
@@ -123,12 +123,12 @@ function resolveRoute(urlPath, method) {
 
 // ── HTTP Server ──
 
-var server = http.createServer(function (req, res) {
-  var urlPath = new URL(req.url, 'http://localhost').pathname;
+const server = http.createServer(function (req, res) {
+  const urlPath = new URL(req.url, 'http://localhost').pathname;
 
   // Set http.route on the active span for better grouping in APM
-  var route = resolveRoute(urlPath, req.method);
-  var span = otelApi.trace.getSpan(otelApi.context.active());
+  const route = resolveRoute(urlPath, req.method);
+  const span = otelApi.trace.getSpan(otelApi.context.active());
   if (span) {
     span.setAttribute('http.route', route);
     span.updateName(req.method + ' ' + route);
@@ -178,7 +178,7 @@ var server = http.createServer(function (req, res) {
 
   // Push VAPID public key — unauthenticated (needed to create PushSubscription)
   if (urlPath === '/api/push/vapid-key' && req.method === 'GET') {
-    var vapidKey = push.getPublicKey();
+    const vapidKey = push.getPublicKey();
     if (!vapidKey) {
       jsonResponse(res, 503, { error: 'Push not configured' });
     } else {
@@ -200,8 +200,8 @@ var server = http.createServer(function (req, res) {
   }
 
   // Auth gate for all other routes
-  var authedSession = null;
-  var currentUser = null;
+  let authedSession = null;
+  let currentUser = null;
   if (AUTH_ENABLED) {
     authedSession = authMiddleware.validateRequest(req);
     if (!authedSession) {
@@ -259,7 +259,7 @@ var server = http.createServer(function (req, res) {
   } else if (urlPath.startsWith('/api/sensor-config/apply/')) {
     if (req.method === 'POST') {
       if (!isAdminOrReject()) return;
-      var targetId = urlPath.split('/').pop();
+      const targetId = urlPath.split('/').pop();
       sensorConfig.handleApplyTarget(req, res, targetId, mqttBridge);
     } else {
       jsonResponse(res, 405, { error: 'Method not allowed' });
@@ -303,7 +303,7 @@ var server = http.createServer(function (req, res) {
   } else if (urlPath === '/api/watchdog/ack' && req.method === 'POST') {
     if (!isAdminOrReject()) return;
     readBody(req, function (body) {
-      var parsed;
+      let parsed;
       try { parsed = JSON.parse(body); } catch (e) {
         jsonResponse(res, 400, { error: 'Invalid JSON' });
         return;
@@ -317,14 +317,14 @@ var server = http.createServer(function (req, res) {
           jsonResponse(res, 200, result);
         })
         .catch(function (err) {
-          var code = /no matching pending/.test(err.message) ? 409 : 500;
+          const code = /no matching pending/.test(err.message) ? 409 : 500;
           jsonResponse(res, code, { error: err.message });
         });
     });
   } else if (urlPath === '/api/watchdog/shutdownnow' && req.method === 'POST') {
     if (!isAdminOrReject()) return;
     readBody(req, function (body) {
-      var parsed;
+      let parsed;
       try { parsed = JSON.parse(body); } catch (e) {
         jsonResponse(res, 400, { error: 'Invalid JSON' });
         return;
@@ -336,7 +336,7 @@ var server = http.createServer(function (req, res) {
       anomalyManager.shutdownNow(parsed.id, currentUser || { name: 'admin', role: 'admin' })
         .then(function () { jsonResponse(res, 200, { ok: true }); })
         .catch(function (err) {
-          var code = /no matching pending/.test(err.message) ? 409 : 500;
+          const code = /no matching pending/.test(err.message) ? 409 : 500;
           jsonResponse(res, code, { error: err.message });
         });
     });
@@ -344,14 +344,14 @@ var server = http.createServer(function (req, res) {
     jsonResponse(res, 200, scriptMonitor ? scriptMonitor.getStatus() : { running: null, reachable: false });
   } else if (urlPath === '/api/script/crashes' && req.method === 'GET') {
     if (!db) { jsonResponse(res, 503, { error: 'Database not available' }); return; }
-    var limit = parseInt(new URL(req.url, 'http://localhost').searchParams.get('limit'), 10) || 50;
+    const limit = parseInt(new URL(req.url, 'http://localhost').searchParams.get('limit'), 10) || 50;
     db.listScriptCrashes(limit, function (err, rows) {
       if (err) { jsonResponse(res, 500, { error: err.message }); return; }
       jsonResponse(res, 200, { crashes: rows });
     });
   } else if (urlPath.startsWith('/api/script/crashes/') && req.method === 'GET') {
     if (!db) { jsonResponse(res, 503, { error: 'Database not available' }); return; }
-    var crashId = urlPath.substring('/api/script/crashes/'.length);
+    const crashId = urlPath.substring('/api/script/crashes/'.length);
     db.getScriptCrash(crashId, function (err, row) {
       if (err) { jsonResponse(res, 500, { error: err.message }); return; }
       if (!row) { jsonResponse(res, 404, { error: 'Not found' }); return; }
@@ -367,7 +367,7 @@ var server = http.createServer(function (req, res) {
   } else if (urlPath === '/api/watchdog/enabled' && req.method === 'PUT') {
     if (!isAdminOrReject()) return;
     readBody(req, function (body) {
-      var parsed;
+      let parsed;
       try { parsed = JSON.parse(body); } catch (e) {
         jsonResponse(res, 400, { error: 'Invalid JSON' });
         return;
@@ -390,31 +390,31 @@ var server = http.createServer(function (req, res) {
 // ── WebSocket server + broadcast ──
 // anomaly-manager calls broadcastToWebSockets to push watchdog-state.
 
-var wsServer = null;
+let wsServer = null;
 
 function broadcastToWebSockets(msg) {
   if (!wsServer) return;
-  var str = JSON.stringify(msg);
+  const str = JSON.stringify(msg);
   wsServer.clients.forEach(function (ws) {
     if (ws.readyState === 1) ws.send(str);
   });
 }
 
 function initWebSocket() {
-  var WebSocketServer = require('ws').WebSocketServer;
+  const WebSocketServer = require('ws').WebSocketServer;
   wsServer = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', function (req, socket, head) {
-    var urlPath = new URL(req.url, 'http://localhost').pathname;
+    const urlPath = new URL(req.url, 'http://localhost').pathname;
     if (urlPath !== '/ws') {
       socket.destroy();
       return;
     }
 
     // Auth check for WebSocket upgrade
-    var wsUser = null;
+    let wsUser = null;
     if (AUTH_ENABLED) {
-      var session = authMiddleware.validateRequest(req);
+      const session = authMiddleware.validateRequest(req);
       if (!session) {
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
@@ -434,7 +434,7 @@ function initWebSocket() {
       }));
       // Replay the last cached state so the client can render an immediate
       // snapshot instead of waiting up to ~30s for the next Shelly publish.
-      var lastState = mqttBridge.getLastState();
+      const lastState = mqttBridge.getLastState();
       if (lastState) {
         ws.send(JSON.stringify({ type: 'state', data: lastState }));
       }
@@ -458,13 +458,13 @@ function initWebSocket() {
 
 function initServices(callback) {
   // Resolve DATABASE_URL from env or S3
-  var dbModule = require('./lib/db');
+  const dbModule = require('./lib/db');
   dbModule.resolveUrl(function (err, url) {
     function finish() {
       handlers = createHandlers({
-        db: db,
-        authMiddleware: authMiddleware,
-        broadcastToWebSockets: broadcastToWebSockets,
+        db,
+        authMiddleware,
+        broadcastToWebSockets,
       });
       callback();
     }
@@ -491,12 +491,12 @@ function initServices(callback) {
 
 function initAnomalyManager() {
   anomalyManager.bootstrap({
-    db: db,
-    push: push,
+    db,
+    push,
     wsBroadcast: broadcastToWebSockets,
-    mqttBridge: mqttBridge,
-    deviceConfig: deviceConfig,
-    log: log,
+    mqttBridge,
+    deviceConfig,
+    log,
   });
 }
 
@@ -506,13 +506,13 @@ function startMqttBridge() {
     return;
   }
 
-  var ws = initWebSocket();
+  const ws = initWebSocket();
 
   // Script monitor is started alongside the MQTT bridge so its snapshot
   // buffer is fed by the same stream the bridge handles. The monitor
   // pushes "script-status" WS messages on every transition — the
   // playground listens for these to show the crash banner.
-  scriptMonitor = createScriptMonitor({ db: db });
+  scriptMonitor = createScriptMonitor({ db });
   scriptMonitor.onStatusChange(function (status) {
     broadcastToWebSockets({ type: 'script-status', data: status });
   });
@@ -520,11 +520,11 @@ function startMqttBridge() {
   mqttBridge.start({
     mqttHost: MQTT_HOST,
     wsServer: ws,
-    db: db,
-    deviceConfig: deviceConfig,
-    sensorConfig: sensorConfig,
-    push: push,
-    anomalyManager: anomalyManager,
+    db,
+    deviceConfig,
+    sensorConfig,
+    push,
+    anomalyManager,
     onStateSnapshot: function (payload) {
       scriptMonitor.recordStateSnapshot(payload);
     },
@@ -558,7 +558,7 @@ function startServer() {
 
 // ── Graceful shutdown ──
 function shutdown(signal) {
-  log.info('shutdown signal received', { signal: signal });
+  log.info('shutdown signal received', { signal });
   server.close(function () {
     log.info('server closed');
     process.exit(0);
@@ -571,8 +571,8 @@ process.on('SIGINT', function () { shutdown('SIGINT'); });
 
 if (require.main === module) {
   if (AUTH_ENABLED) {
-    var session = require('./auth/session');
-    var secretCheck = session.validateSecret();
+    const session = require('./auth/session');
+    const secretCheck = session.validateSecret();
     if (!secretCheck.valid) {
       log.error('FATAL: ' + secretCheck.reason);
       process.exit(1);
@@ -593,6 +593,6 @@ if (require.main === module) {
 // same process as its pg-mem + aedes fixtures without relying on
 // require.main tricks.
 module.exports = {
-  handleWsCommand: handleWsCommand,
+  handleWsCommand,
   _startServer: startServer,
 };

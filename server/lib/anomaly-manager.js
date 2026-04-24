@@ -53,14 +53,14 @@ function bootstrap(opts) {
   }
 
   const wdHistoryDb = (db && typeof db.getPool === 'function') ? db.getPool() : null;
-  const watchdogHistory = createWatchdogHistory({ db: wdHistoryDb, log: log });
+  const watchdogHistory = createWatchdogHistory({ db: wdHistoryDb, log });
   init({
     history: watchdogHistory,
     push: opts.push,
     wsBroadcast: opts.wsBroadcast,
     mqttBridge: opts.mqttBridge,
     deviceConfig: opts.deviceConfig,
-    log: log,
+    log,
   });
   log.info('anomaly-manager initialized', { backend: wdHistoryDb ? 'postgres' : 'ring-buffer' });
 }

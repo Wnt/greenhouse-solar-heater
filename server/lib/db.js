@@ -8,25 +8,25 @@
  * CLI: node monitor/lib/db.js --init   (creates schema)
  */
 
-var createLogger = require('./logger');
-var log = createLogger('db');
+const createLogger = require('./logger');
+const log = createLogger('db');
 
-var pool = null;
-var resolvedUrl = null;
-var resolvedCa = null;
+let pool = null;
+let resolvedUrl = null;
+let resolvedCa = null;
 
 function getConnectionUrl() {
   return resolvedUrl || process.env.DATABASE_URL || null;
 }
 
 function resolveUrl(callback) {
-  var hasEnvUrl = !!process.env.DATABASE_URL;
+  const hasEnvUrl = !!process.env.DATABASE_URL;
   if (hasEnvUrl) {
     resolvedUrl = process.env.DATABASE_URL;
   }
 
   // Always check S3 for CA cert (and URL if not in env)
-  var dbConfig = require('./db-config');
+  const dbConfig = require('./db-config');
   dbConfig.load(function (err, url, ca) {
     if (err) {
       log.warn('failed to load config from S3', { error: err.message });
@@ -47,14 +47,14 @@ function resolveUrl(callback) {
 
 function getPool() {
   if (pool) return pool;
-  var url = getConnectionUrl();
+  const url = getConnectionUrl();
   if (!url) return null;
-  var Pool = require('pg').Pool;
+  const Pool = require('pg').Pool;
   // pg merges config as: Object.assign({}, config, parse(connectionString))
   // so parsed sslmode overrides explicit ssl options. To use our CA cert,
   // strip sslmode from the URL and configure SSL entirely via the ssl option.
-  var cleanUrl = url.replace(/[?&]sslmode=[^&]*/g, '');
-  var opts = {
+  const cleanUrl = url.replace(/[?&]sslmode=[^&]*/g, '');
+  const opts = {
     connectionString: cleanUrl,
     max: 5,
     idleTimeoutMillis: 30000,
@@ -62,7 +62,7 @@ function getPool() {
       ? { ca: resolvedCa, rejectUnauthorized: true }
       : url.indexOf('sslmode=') !== -1,
   };
-  var rawPool = new Pool(opts);
+  const rawPool = new Pool(opts);
   rawPool.on('error', function (err) {
     log.error('unexpected pool error', { error: err.message });
   });
@@ -85,12 +85,12 @@ function getPool() {
   return pool;
 }
 
-var { SCHEMA_SQL, AGGREGATE_SQL } = require('./db-schema');
-var maintenance = require('./db-maintenance').create(getPool, log);
+const { SCHEMA_SQL, AGGREGATE_SQL } = require('./db-schema');
+const maintenance = require('./db-maintenance').create(getPool, log);
 
 function initSchema(callback) {
-  var p = getPool();
-  var client;
+  const p = getPool();
+  let client;
 
   p.connect(function (err, c, release) {
     if (err) { callback(err); return; }
@@ -121,13 +121,13 @@ function runStatements(client, stmts, idx, callback) {
 // ── Insert functions ──
 
 function insertSensorReadings(ts, temps, callback) {
-  var p = getPool();
-  var names = ['collector', 'tank_top', 'tank_bottom', 'greenhouse', 'outdoor'];
-  var values = [];
-  var params = [];
-  var paramIdx = 1;
+  const p = getPool();
+  const names = ['collector', 'tank_top', 'tank_bottom', 'greenhouse', 'outdoor'];
+  const values = [];
+  const params = [];
+  let paramIdx = 1;
 
-  for (var i = 0; i < names.length; i++) {
+  for (let i = 0; i < names.length; i++) {
     if (temps[names[i]] !== undefined && temps[names[i]] !== null) {
       values.push('($' + paramIdx + ', $' + (paramIdx + 1) + ', $' + (paramIdx + 2) + ')');
       params.push(ts, names[i], temps[names[i]]);
@@ -140,7 +140,7 @@ function insertSensorReadings(ts, temps, callback) {
     return;
   }
 
-  var sql = 'INSERT INTO sensor_readings (ts, sensor_id, value) VALUES ' + values.join(', ');
+  const sql = 'INSERT INTO sensor_readings (ts, sensor_id, value) VALUES ' + values.join(', ');
   p.query(sql, params, function (err) {
     if (callback) callback(err || null);
   });
@@ -153,8 +153,8 @@ function insertSensorReadings(ts, temps, callback) {
 // columns. Positional signature preserved for callers that don't need
 // the extension.
 function insertStateEvent(ts, entityType, entityId, oldValue, newValue, optsOrCallback, maybeCallback) {
-  var p = getPool();
-  var opts, callback;
+  const p = getPool();
+  let opts, callback;
   if (typeof optsOrCallback === 'function') {
     opts = null;
     callback = optsOrCallback;
@@ -162,10 +162,10 @@ function insertStateEvent(ts, entityType, entityId, oldValue, newValue, optsOrCa
     opts = optsOrCallback || null;
     callback = maybeCallback;
   }
-  var cause = opts && opts.cause !== undefined ? opts.cause : null;
-  var reason = opts && opts.reason !== undefined ? opts.reason : null;
-  var sensors = opts && opts.sensors !== undefined ? opts.sensors : null;
-  var sql = 'INSERT INTO state_events (ts, entity_type, entity_id, old_value, new_value, cause, reason, sensors) ' +
+  const cause = opts && opts.cause !== undefined ? opts.cause : null;
+  const reason = opts && opts.reason !== undefined ? opts.reason : null;
+  const sensors = opts && opts.sensors !== undefined ? opts.sensors : null;
+  const sql = 'INSERT INTO state_events (ts, entity_type, entity_id, old_value, new_value, cause, reason, sensors) ' +
             'VALUES ($1, $2, $3, $4, $5, $6, $7, $8)';
   p.query(sql, [ts, entityType, entityId, oldValue, newValue, cause, reason, sensors], function (err) {
     if (callback) callback(err || null);
@@ -174,7 +174,7 @@ function insertStateEvent(ts, entityType, entityId, oldValue, newValue, optsOrCa
 
 // ── History queries ──
 
-var RANGE_INTERVALS = {
+const RANGE_INTERVALS = {
   '1h': '1 hour',
   '6h': '6 hours',
   '12h': '12 hours',
@@ -194,37 +194,37 @@ var RANGE_INTERVALS = {
 // `all` is intentionally absent: there's no UI button for it and the
 // e2e harness relies on `range=all` resolving against pg-mem (which has
 // no time_bucket).
-var COARSE_BUCKETS = {
+const COARSE_BUCKETS = {
   '7d': '5 minutes',
   '30d': '30 minutes',
   '1y': '6 hours',
 };
 
 function getHistory(range, sensor, callback) {
-  var p = getPool();
-  var interval = RANGE_INTERVALS[range];
+  const p = getPool();
+  const interval = RANGE_INTERVALS[range];
   if (!interval && range !== 'all') {
     callback(new Error('Invalid range: ' + range));
     return;
   }
 
   // Choose resolution: raw for ≤6h, 30s aggregate for ≥7d, blended for 24h/48h
-  var useAggregate = range === '7d' || range === '30d' || range === '1y' || range === 'all';
-  var useBlended = range === '24h' || range === '48h';
+  const useAggregate = range === '7d' || range === '30d' || range === '1y' || range === 'all';
+  const useBlended = range === '24h' || range === '48h';
 
-  var params = [];
-  var paramIdx = 1;
-  var sql;
+  const params = [];
+  let paramIdx = 1;
+  let sql;
 
   if (useAggregate) {
-    var aggWhereTime = range === 'all' ? '' : " WHERE bucket > NOW() - INTERVAL '" + interval + "'";
-    var aggWhereSensor = '';
+    const aggWhereTime = range === 'all' ? '' : " WHERE bucket > NOW() - INTERVAL '" + interval + "'";
+    let aggWhereSensor = '';
     if (sensor) {
       aggWhereSensor = (aggWhereTime ? ' AND' : ' WHERE') + ' sensor_id = $' + paramIdx;
       params.push(sensor);
       paramIdx++;
     }
-    var coarse = COARSE_BUCKETS[range];
+    const coarse = COARSE_BUCKETS[range];
     if (coarse) {
       // Re-bucket the 30 s aggregates to a coarser resolution to smooth
       // the long view and keep the response under the client's point cap.
@@ -238,8 +238,8 @@ function getHistory(range, sensor, callback) {
     }
   } else if (useBlended) {
     // Raw for last 6h, aggregate for older. Sensor param appears in both sub-queries.
-    var rawSensorClause = '';
-    var aggSensorClause = '';
+    let rawSensorClause = '';
+    let aggSensorClause = '';
     if (sensor) {
       aggSensorClause = ' AND sensor_id = $' + paramIdx;
       params.push(sensor);
@@ -248,21 +248,21 @@ function getHistory(range, sensor, callback) {
       params.push(sensor);
       paramIdx++;
     }
-    var rawSql = "SELECT ts, sensor_id, value FROM sensor_readings WHERE ts > NOW() - INTERVAL '6 hours'" +
+    const rawSql = "SELECT ts, sensor_id, value FROM sensor_readings WHERE ts > NOW() - INTERVAL '6 hours'" +
       rawSensorClause;
-    var aggSql = "SELECT bucket AS ts, sensor_id, avg_value AS value FROM sensor_readings_30s WHERE bucket <= NOW() - INTERVAL '6 hours' AND bucket > NOW() - INTERVAL '" + interval + "'" +
+    const aggSql = "SELECT bucket AS ts, sensor_id, avg_value AS value FROM sensor_readings_30s WHERE bucket <= NOW() - INTERVAL '6 hours' AND bucket > NOW() - INTERVAL '" + interval + "'" +
       aggSensorClause;
     sql = '(' + aggSql + ') UNION ALL (' + rawSql + ') ORDER BY ts';
   } else {
-    var whereTime = range === 'all' ? '' : " WHERE ts > NOW() - INTERVAL '" + interval + "'";
-    var whereSensor = '';
+    const whereTime = range === 'all' ? '' : " WHERE ts > NOW() - INTERVAL '" + interval + "'";
+    let whereSensor = '';
     if (sensor) {
       whereSensor = (whereTime ? ' AND' : ' WHERE') + ' sensor_id = $' + paramIdx;
       params.push(sensor);
       paramIdx++;
     }
     // Raw window data (rows inside the range).
-    var windowSql = 'SELECT ts, sensor_id, value FROM sensor_readings' + whereTime + whereSensor;
+    const windowSql = 'SELECT ts, sensor_id, value FROM sensor_readings' + whereTime + whereSensor;
 
     if (range === 'all') {
       sql = windowSql + ' ORDER BY ts';
@@ -273,14 +273,14 @@ function getHistory(range, sensor, callback) {
       // leaves the chart's left side blank. The client's line renderer
       // connects these leading-edge points across the window boundary,
       // visually interpolating through the gap.
-      var leadingSensorClause = sensor
+      const leadingSensorClause = sensor
         ? ' AND sensor_id = $' + paramIdx
         : '';
       if (sensor) {
         params.push(sensor);
         paramIdx++;
       }
-      var leadingSql = "SELECT DISTINCT ON (sensor_id) ts, sensor_id, value" +
+      const leadingSql = "SELECT DISTINCT ON (sensor_id) ts, sensor_id, value" +
         " FROM sensor_readings" +
         " WHERE ts <= NOW() - INTERVAL '" + interval + "'" + leadingSensorClause +
         " ORDER BY sensor_id, ts DESC";
@@ -292,7 +292,7 @@ function getHistory(range, sensor, callback) {
     if (err) { callback(err); return; }
 
     // Pivot rows into {ts, collector, tank_top, ...} format
-    var points = pivotReadings(result.rows);
+    const points = pivotReadings(result.rows);
     callback(null, points);
   });
 }
@@ -305,14 +305,14 @@ function getHistory(range, sensor, callback) {
 //   limit      — capped at 100
 //   before     — optional Unix ms cursor; returns rows with ts < before
 function getEventsPaginated(entityType, limit, before, callback) {
-  var p = getPool();
-  var cap = 100;
-  var effLimit = Math.max(1, Math.min(cap, parseInt(limit, 10) || 10));
+  const p = getPool();
+  const cap = 100;
+  const effLimit = Math.max(1, Math.min(cap, parseInt(limit, 10) || 10));
   // Query limit+1 so we can detect whether more rows exist beyond this page.
-  var fetchLimit = effLimit + 1;
+  const fetchLimit = effLimit + 1;
 
-  var params = [entityType];
-  var sql = 'SELECT ts, entity_type, entity_id, old_value, new_value, cause, reason, sensors FROM state_events WHERE entity_type = $1';
+  const params = [entityType];
+  let sql = 'SELECT ts, entity_type, entity_id, old_value, new_value, cause, reason, sensors FROM state_events WHERE entity_type = $1';
   if (before !== null && before !== undefined) {
     params.push(new Date(before));
     sql += ' AND ts < $' + params.length;
@@ -322,10 +322,10 @@ function getEventsPaginated(entityType, limit, before, callback) {
 
   p.query(sql, params, function (err, result) {
     if (err) { callback(err); return; }
-    var rows = result.rows;
-    var hasMore = rows.length > effLimit;
+    let rows = result.rows;
+    const hasMore = rows.length > effLimit;
     if (hasMore) rows = rows.slice(0, effLimit);
-    var events = rows.map(function (row) {
+    const events = rows.map(function (row) {
       return {
         ts: new Date(row.ts).getTime(),
         type: row.entity_type,
@@ -340,26 +340,26 @@ function getEventsPaginated(entityType, limit, before, callback) {
         sensors: row.sensors,
       };
     });
-    callback(null, { events: events, hasMore: hasMore });
+    callback(null, { events, hasMore });
   });
 }
 
 function getEvents(range, entityType, callback) {
-  var p = getPool();
-  var interval = RANGE_INTERVALS[range];
-  var whereTime = (!interval && range !== 'all') ? '' : (range === 'all' ? '' : " WHERE ts > NOW() - INTERVAL '" + interval + "'");
+  const p = getPool();
+  const interval = RANGE_INTERVALS[range];
+  const whereTime = (!interval && range !== 'all') ? '' : (range === 'all' ? '' : " WHERE ts > NOW() - INTERVAL '" + interval + "'");
 
-  var params = [];
-  var whereType = '';
+  const params = [];
+  let whereType = '';
   if (entityType) {
     whereType = (whereTime ? ' AND' : ' WHERE') + ' entity_type = $1';
     params.push(entityType);
   }
 
-  var sql = 'SELECT ts, entity_type, entity_id, old_value, new_value FROM state_events' + whereTime + whereType + ' ORDER BY ts';
+  const sql = 'SELECT ts, entity_type, entity_id, old_value, new_value FROM state_events' + whereTime + whereType + ' ORDER BY ts';
   p.query(sql, params, function (err, result) {
     if (err) { callback(err); return; }
-    var events = result.rows.map(function (row) {
+    const events = result.rows.map(function (row) {
       return {
         ts: new Date(row.ts).getTime(),
         type: row.entity_type,
@@ -380,11 +380,11 @@ function getEvents(range, entityType, callback) {
 // fires, script-monitor logs the drop and keeps the crash in memory on
 // its own in-process ring buffer for the WS layer.
 function insertScriptCrash(row, callback) {
-  var p = getPool();
+  const p = getPool();
   if (!p) { callback(new Error('no_db')); return; }
-  var sql = 'INSERT INTO script_crashes (ts, error_msg, error_trace, sys_status, recent_states) ' +
+  const sql = 'INSERT INTO script_crashes (ts, error_msg, error_trace, sys_status, recent_states) ' +
             'VALUES ($1, $2, $3, $4, $5) RETURNING id';
-  var params = [
+  const params = [
     row.ts || new Date(),
     row.error_msg || null,
     row.error_trace || null,
@@ -398,10 +398,10 @@ function insertScriptCrash(row, callback) {
 }
 
 function listScriptCrashes(limit, callback) {
-  var p = getPool();
+  const p = getPool();
   if (!p) { callback(null, []); return; }
-  var effLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
-  var sql = 'SELECT id, ts, error_msg, resolved_at FROM script_crashes ' +
+  const effLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
+  const sql = 'SELECT id, ts, error_msg, resolved_at FROM script_crashes ' +
             'ORDER BY ts DESC LIMIT $1';
   p.query(sql, [effLimit], function (err, result) {
     if (err) { callback(err); return; }
@@ -417,15 +417,15 @@ function listScriptCrashes(limit, callback) {
 }
 
 function getScriptCrash(id, callback) {
-  var p = getPool();
+  const p = getPool();
   if (!p) { callback(new Error('no_db')); return; }
-  var parsed = parseInt(id, 10);
+  const parsed = parseInt(id, 10);
   if (!parsed || parsed <= 0) { callback(null, null); return; }
-  var sql = 'SELECT id, ts, error_msg, error_trace, sys_status, recent_states, resolved_at ' +
+  const sql = 'SELECT id, ts, error_msg, error_trace, sys_status, recent_states, resolved_at ' +
             'FROM script_crashes WHERE id = $1';
   p.query(sql, [parsed], function (err, result) {
     if (err) { callback(err); return; }
-    var r = result.rows[0];
+    const r = result.rows[0];
     if (!r) { callback(null, null); return; }
     callback(null, {
       id: r.id,
@@ -440,11 +440,11 @@ function getScriptCrash(id, callback) {
 }
 
 function resolveScriptCrash(id, callback) {
-  var p = getPool();
+  const p = getPool();
   if (!p) { callback(new Error('no_db')); return; }
-  var parsed = parseInt(id, 10);
+  const parsed = parseInt(id, 10);
   if (!parsed || parsed <= 0) { callback(null, false); return; }
-  var sql = 'UPDATE script_crashes SET resolved_at = NOW() WHERE id = $1 AND resolved_at IS NULL';
+  const sql = 'UPDATE script_crashes SET resolved_at = NOW() WHERE id = $1 AND resolved_at IS NULL';
   p.query(sql, [parsed], function (err, result) {
     if (err) { callback(err); return; }
     callback(null, (result && result.rowCount) ? result.rowCount > 0 : false);
@@ -452,19 +452,19 @@ function resolveScriptCrash(id, callback) {
 }
 
 function pivotReadings(rows) {
-  var buckets = {};
-  for (var i = 0; i < rows.length; i++) {
-    var row = rows[i];
-    var ts = new Date(row.ts).getTime();
+  const buckets = {};
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const ts = new Date(row.ts).getTime();
     if (!buckets[ts]) {
-      buckets[ts] = { ts: ts };
+      buckets[ts] = { ts };
     }
     buckets[ts][row.sensor_id] = row.value;
   }
 
-  var keys = Object.keys(buckets).sort(function (a, b) { return a - b; });
-  var result = [];
-  for (var j = 0; j < keys.length; j++) {
+  const keys = Object.keys(buckets).sort(function (a, b) { return a - b; });
+  const result = [];
+  for (let j = 0; j < keys.length; j++) {
     result.push(buckets[keys[j]]);
   }
   return result;
@@ -505,21 +505,21 @@ if (require.main === module) {
 }
 
 module.exports = {
-  resolveUrl: resolveUrl,
-  getPool: getPool,
-  initSchema: initSchema,
+  resolveUrl,
+  getPool,
+  initSchema,
   startMaintenance: maintenance.start,
   stopMaintenance: maintenance.stop,
-  insertSensorReadings: insertSensorReadings,
-  insertStateEvent: insertStateEvent,
-  insertScriptCrash: insertScriptCrash,
-  listScriptCrashes: listScriptCrashes,
-  getScriptCrash: getScriptCrash,
-  resolveScriptCrash: resolveScriptCrash,
-  getHistory: getHistory,
-  getEvents: getEvents,
-  getEventsPaginated: getEventsPaginated,
-  close: close,
+  insertSensorReadings,
+  insertStateEvent,
+  insertScriptCrash,
+  listScriptCrashes,
+  getScriptCrash,
+  resolveScriptCrash,
+  getHistory,
+  getEvents,
+  getEventsPaginated,
+  close,
   _reset: function () { pool = null; resolvedCa = null; maintenance.stop(); },
   _runMaintenanceForTest: maintenance.run,
 };

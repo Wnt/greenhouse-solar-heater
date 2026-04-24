@@ -80,24 +80,24 @@ const MIN_RESUME_MS = 20;
 
 function createFuzzRuntime(opts) {
   opts = opts || {};
-  var now = opts.startTime || 1700000000000;
-  var events = [];
-  var timers = [];
-  var timerIdCounter = 0;
-  var kvs = {};
-  var configVersion = 100;
-  var eventHandlers = [];
-  var httpResponder = opts.httpResponder || function(url) {
+  let now = opts.startTime || 1700000000000;
+  const events = [];
+  let timers = [];
+  let timerIdCounter = 0;
+  const kvs = {};
+  let configVersion = 100;
+  const eventHandlers = [];
+  const httpResponder = opts.httpResponder || function(url) {
     return { ok: true, body: '' };
   };
-  var componentStatus = function() { return { apower: 50, output: true }; };
+  const componentStatus = function() { return { apower: 50, output: true }; };
 
   // Instrumentation. Each Timer.set call with a finite ms is recorded;
   // callers can inspect the distribution of delays to catch any synchronous
   // re-entry attempt.
-  var timerSetDelays = [];
+  const timerSetDelays = [];
 
-  function record(kind, detail) { events.push({ t: now, kind: kind, detail: detail }); }
+  function record(kind, detail) { events.push({ t: now, kind, detail }); }
 
   function shellyCall(method, params, cb) {
     params = params || {};
@@ -108,7 +108,7 @@ function createFuzzRuntime(opts) {
     }
     if (method === 'Switch.SetConfig') { setImmediate(function() { if (cb) cb({}, null); }); return; }
     if (method === 'KVS.Get') {
-      var val = kvs[params.key] || null;
+      const val = kvs[params.key] || null;
       setImmediate(function() { if (cb) cb(val ? { value: val } : null, null); });
       return;
     }
@@ -119,7 +119,7 @@ function createFuzzRuntime(opts) {
     }
     if (method === 'HTTP.GET') {
       record('http_get', { url: params.url || '' });
-      var resp = httpResponder(params.url || '');
+      const resp = httpResponder(params.url || '');
       setImmediate(function() {
         if (resp.ok) { if (cb) cb({ code: 200, body: resp.body || '' }, null); }
         else { if (cb) cb(null, resp.err || 'error'); }
@@ -130,16 +130,16 @@ function createFuzzRuntime(opts) {
   }
 
   function timerSet(ms, repeat, cb) {
-    var id = ++timerIdCounter;
-    timerSetDelays.push({ ms: ms, repeat: !!repeat, t: now });
-    timers.push({ id: id, dueAt: now + ms, cb: cb, repeat: repeat, ms: ms });
+    const id = ++timerIdCounter;
+    timerSetDelays.push({ ms, repeat: !!repeat, t: now });
+    timers.push({ id, dueAt: now + ms, cb, repeat, ms });
     return id;
   }
   function timerClear(id) {
     timers = timers.filter(function(t) { return t.id !== id; });
   }
 
-  var globals = {
+  const globals = {
     Shelly: {
       call: shellyCall,
       getComponentStatus: function(type) {
@@ -158,40 +158,40 @@ function createFuzzRuntime(opts) {
       isConnected: function() { return false; },
       setConnectHandler: function() {},
     },
-    JSON: JSON, Date: { now: function() { return now; } }, Math: Math,
-    parseInt: parseInt, print: function() {},
+    JSON, Date: { now: function() { return now; } }, Math,
+    parseInt, print: function() {},
   };
 
   return {
-    globals: globals,
+    globals,
     events: function() { return events.slice(); },
     clearEvents: function() { events.length = 0; timerSetDelays.length = 0; },
     timerSetDelays: function() { return timerSetDelays.slice(); },
     setConfig: function(cfg) {
       configVersion++;
-      var full = Object.assign({}, cfg, { v: configVersion });
+      const full = Object.assign({}, cfg, { v: configVersion });
       kvs.config = JSON.stringify(full);
-      for (var i = 0; i < eventHandlers.length; i++) {
+      for (let i = 0; i < eventHandlers.length; i++) {
         try { eventHandlers[i]({ info: { event: 'config_changed' } }); } catch(e) {}
       }
     },
     advance: function(ms, done) {
-      var endAt = now + ms;
+      const endAt = now + ms;
       function drainAsync(n) {
         if (n <= 0) return hop();
         setImmediate(function() { drainAsync(n - 1); });
       }
       function hop() {
         if (now >= endAt) { setImmediate(done); return; }
-        var nextDue = endAt;
-        for (var i = 0; i < timers.length; i++) {
+        let nextDue = endAt;
+        for (let i = 0; i < timers.length; i++) {
           if (timers[i].dueAt < nextDue) nextDue = timers[i].dueAt;
         }
         if (nextDue > now) now = (nextDue <= endAt) ? nextDue : endAt;
-        var fired;
+        let fired;
         do {
           fired = null;
-          for (var j = 0; j < timers.length; j++) {
+          for (let j = 0; j < timers.length; j++) {
             if (timers[j].dueAt <= now) {
               fired = timers[j];
               if (fired.repeat) fired.dueAt = now + fired.ms;
@@ -205,7 +205,7 @@ function createFuzzRuntime(opts) {
       }
       hop();
     },
-    kvs: kvs,
+    kvs,
   };
 }
 
@@ -215,10 +215,10 @@ function loadScript(runtime, ea) {
   });
   runtime.kvs.drained = '0';
   runtime.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
-  var src = fs.readFileSync(path.join(SHELLY_DIR, 'control-logic.js'), 'utf8') + '\n' +
+  const src = fs.readFileSync(path.join(SHELLY_DIR, 'control-logic.js'), 'utf8') + '\n' +
             fs.readFileSync(path.join(SHELLY_DIR, 'control.js'), 'utf8');
-  var g = runtime.globals;
-  var fn = new Function(
+  const g = runtime.globals;
+  const fn = new Function(
     'Shelly', 'Timer', 'MQTT', 'JSON', 'Date', 'Math', 'parseInt', 'print', '__TEST_HARNESS',
     src
   );
@@ -233,7 +233,7 @@ function bootAndAdvance(rt, ea, done) {
 // ── Invariant assertions ──
 
 function assertNoTimerUnderMinResume(rt, msg) {
-  var bad = rt.timerSetDelays().filter(function(d) {
+  const bad = rt.timerSetDelays().filter(function(d) {
     // Only inspect non-repeating, short-ish timers. Repeating control-loop
     // (POLL_INTERVAL=30s) and wait timers (VALVE_SETTLE_MS=1s etc.) are
     // legitimately longer. We flag non-repeating timers with ms < the
@@ -255,16 +255,16 @@ describe('scheduler stack safety — mode transition fuzz', function() {
   // Test 1: Every (fromMode → toMode) via forced mode must not schedule a
   // Timer under the MIN_RESUME_MS floor. Covers drain-exit,
   // drain-entry, solar entry, idle entry, and all cross-mode flips.
-  for (var i = 0; i < MODES.length; i++) {
-    for (var j = 0; j < MODES.length; j++) {
+  for (let i = 0; i < MODES.length; i++) {
+    for (let j = 0; j < MODES.length; j++) {
       if (MODES[i] === MODES[j]) continue;
       (function(fromMode, toMode) {
         it('forced ' + fromMode + ' → ' + toMode + ' never under-delays Timer.set', function(t, done) {
-          var rt = createFuzzRuntime();
+          const rt = createFuzzRuntime();
           bootAndAdvance(rt, 31, function() {
             // Drive into fromMode via forced override. If fromMode is IDLE
             // we skip the seeding — boot already put the script in IDLE.
-            var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+            const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
             if (fromMode !== 'IDLE') {
               rt.globals.Shelly.__test_driveTransition(fromMode, {
                 nextMode: fromMode, valves: MODE_VALVES[fromMode],
@@ -276,7 +276,7 @@ describe('scheduler stack safety — mode transition fuzz', function() {
             }
             function step2() {
               rt.clearEvents();
-              var code = ({ IDLE: 'IDLE', SOLAR_CHARGING: 'SC', GREENHOUSE_HEATING: 'GH',
+              const code = ({ IDLE: 'IDLE', SOLAR_CHARGING: 'SC', GREENHOUSE_HEATING: 'GH',
                             ACTIVE_DRAIN: 'AD', EMERGENCY_HEATING: 'EH' })[toMode];
               rt.setConfig({
                 ce: true, ea: 31,
@@ -290,7 +290,7 @@ describe('scheduler stack safety — mode transition fuzz', function() {
               rt.advance(120000, function() {
                 assertNoTimerUnderMinResume(rt,
                   'forced ' + fromMode + ' → ' + toMode);
-                var total = countTimerSets(rt);
+                const total = countTimerSets(rt);
                 // Sanity: bounded Timer.set count. In a runaway
                 // scheduleStep ↔ Timer loop we'd see thousands. A real
                 // transition schedules at most ~10-20 distinct timers
@@ -316,9 +316,9 @@ describe('scheduler stack safety — mode transition fuzz', function() {
     { label: 'past minOpenMs (drain-exit can close immediately)',   postEntryMs: 90000 },
   ].forEach(function(scenario) {
     it('AD → IDLE ' + scenario.label, function(t, done) {
-      var rt = createFuzzRuntime();
+      const rt = createFuzzRuntime();
       bootAndAdvance(rt, 31, function() {
-        var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+        const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
         rt.setConfig({
           ce: true, ea: 31, fm: null,
           mo: { a: true, ex: sysUnix + 3600, fm: 'AD' },
@@ -333,7 +333,7 @@ describe('scheduler stack safety — mode transition fuzz', function() {
           rt.setConfig({ ce: true, ea: 31, fm: null, mo: null, we: {}, wz: {}, wb: {} });
           rt.advance(120000, function() {
             assertNoTimerUnderMinResume(rt, 'AD → IDLE ' + scenario.label);
-            var total = countTimerSets(rt);
+            const total = countTimerSets(rt);
             assert.ok(total < 200,
               'drain-exit timer count too high (' + total + ') for ' + scenario.label);
             done();
@@ -351,12 +351,12 @@ describe('scheduler stack safety — mode transition fuzz', function() {
   // actuation paths.
   [31, 30, 29, 27, 23, 15, 0].forEach(function(ea) {
     it('forced AD entry with ea=' + ea + ' completes without Timer-loop', function(t, done) {
-      var rt = createFuzzRuntime();
+      const rt = createFuzzRuntime();
       bootAndAdvance(rt, ea, function() {
-        var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+        const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
         rt.clearEvents();
         rt.setConfig({
-          ce: true, ea: ea,
+          ce: true, ea,
           mo: { a: true, ex: sysUnix + 3600, fm: 'AD' },
           we: {}, wz: {}, wb: {},
         });
@@ -375,8 +375,8 @@ describe('scheduler stack safety — mode transition fuzz', function() {
   // trigger sensors (outdoor and the radiative-cooling collector
   // path added 2026-04-20), all non-drain source modes, and the
   // sync-setValve (ea=30) condition that torched the device earlier.
-  var AUTO_FREEZE_SOURCE_MODES = ['IDLE', 'SOLAR_CHARGING', 'GREENHOUSE_HEATING'];
-  var AUTO_FREEZE_SENSORS = [
+  const AUTO_FREEZE_SOURCE_MODES = ['IDLE', 'SOLAR_CHARGING', 'GREENHOUSE_HEATING'];
+  const AUTO_FREEZE_SENSORS = [
     { label: 'cold outdoor (collector warm)', temps: { collector: 10, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: -3 } },
     { label: 'cold collector (outdoor warm — clear-night radiative)', temps: { collector: -1, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 5 } },
     { label: 'both below threshold', temps: { collector: -2, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: -2 } },
@@ -388,14 +388,14 @@ describe('scheduler stack safety — mode transition fuzz', function() {
   // short-circuit. The sync-dispatch case from the 2026-04-20 crash is
   // covered by the forced-mode Test 3 (above), which enters AD directly
   // without needing a prior completed SC/GH transition.
-  var AUTO_FREEZE_EA = [31];
+  const AUTO_FREEZE_EA = [31];
 
   AUTO_FREEZE_SOURCE_MODES.forEach(function(fromMode) {
     AUTO_FREEZE_SENSORS.forEach(function(scenario) {
       AUTO_FREEZE_EA.forEach(function(ea) {
         it('automated freeze drain from ' + fromMode + ' via ' + scenario.label +
            ' (ea=' + ea + ') does not violate scheduler invariants', function(t, done) {
-          var rt = createFuzzRuntime();
+          const rt = createFuzzRuntime();
           bootAndAdvance(rt, ea, function() {
             // Prime temps with safe non-freezing values BEFORE the source
             // mode is driven. Without this the 30 s repeating controlLoop
@@ -430,8 +430,8 @@ describe('scheduler stack safety — mode transition fuzz', function() {
                 // A real automated freeze drain must produce at least one
                 // valve actuation — otherwise the safety path exited
                 // without actually draining, which defeats the purpose.
-                var evts = rt.events();
-                var actuations = evts.filter(function(e) {
+                const evts = rt.events();
+                const actuations = evts.filter(function(e) {
                   return (e.kind === 'http_get' && /Switch\.Set/.test(e.detail.url)) ||
                          (e.kind === 'switch_set');
                 });
@@ -455,9 +455,9 @@ describe('scheduler stack safety — mode transition fuzz', function() {
   // No Switch.Set / HTTP.GET valve events may fire. The only escape
   // is a user-triggered exit or TTL expiry.
   it('manual override blocks freeze-drain safety automation', function(t, done) {
-    var rt = createFuzzRuntime();
+    const rt = createFuzzRuntime();
     bootAndAdvance(rt, 31, function() {
-      var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+      const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
       rt.setConfig({
         ce: true, ea: 31,
         mo: { a: true, ex: sysUnix + 3600, fm: 'I' },
@@ -473,8 +473,8 @@ describe('scheduler stack safety — mode transition fuzz', function() {
         rt.globals.Shelly.__test_controlTick();
         rt.advance(120000, function() {
           assertNoTimerUnderMinResume(rt, 'override blocks freeze');
-          var evts = rt.events();
-          var valveActs = evts.filter(function(e) {
+          const evts = rt.events();
+          const valveActs = evts.filter(function(e) {
             return (e.kind === 'http_get' && /Switch\.Set/.test(e.detail.url));
           });
           assert.strictEqual(valveActs.length, 0,
@@ -491,11 +491,11 @@ describe('scheduler stack safety — mode transition fuzz', function() {
   // scheduler must not accidentally re-enter on the same stack no
   // matter how many times the target changes.
   it('rapid forced-mode flipping never violates the Timer.set floor', function(t, done) {
-    var rt = createFuzzRuntime();
+    const rt = createFuzzRuntime();
     bootAndAdvance(rt, 31, function() {
-      var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
-      var flips = ['AD', 'IDLE', 'SC', 'AD', 'IDLE', 'GH', 'AD', 'IDLE'];
-      var nextIdx = 0;
+      const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+      const flips = ['AD', 'IDLE', 'SC', 'AD', 'IDLE', 'GH', 'AD', 'IDLE'];
+      let nextIdx = 0;
       function nextFlip() {
         if (nextIdx >= flips.length) {
           rt.advance(30000, function() {
@@ -504,7 +504,7 @@ describe('scheduler stack safety — mode transition fuzz', function() {
           });
           return;
         }
-        var target = flips[nextIdx++];
+        const target = flips[nextIdx++];
         if (target === 'IDLE') {
           rt.setConfig({ ce: true, ea: 31, fm: null, mo: null, we: {}, wz: {}, wb: {} });
         } else {

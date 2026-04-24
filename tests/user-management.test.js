@@ -36,19 +36,19 @@ function jsonBody(res) {
 
 // Mock req that carries a session cookie so session.validateRequest works.
 function reqWithSession(method, urlPath, sessionToken, body) {
-  var session = require('../server/auth/session');
-  var headers = { cookie: 'session=' + encodeURIComponent(session.sign(sessionToken)) };
+  const session = require('../server/auth/session');
+  const headers = { cookie: 'session=' + encodeURIComponent(session.sign(sessionToken)) };
   return {
-    method: method,
+    method,
     url: urlPath,
-    headers: headers,
+    headers,
     socket: { remoteAddress: '127.0.0.1' },
   };
 }
 
 function unauthReq(method, urlPath) {
   return {
-    method: method,
+    method,
     url: urlPath,
     headers: {},
     socket: { remoteAddress: '127.0.0.1' },
@@ -56,10 +56,10 @@ function unauthReq(method, urlPath) {
 }
 
 describe('user management API', function () {
-  var credPath = path.join(__dirname, 'test-user-mgmt-' + process.pid + '.json');
-  var credStore;
-  var webauthn;
-  var invitations;
+  const credPath = path.join(__dirname, 'test-user-mgmt-' + process.pid + '.json');
+  let credStore;
+  let webauthn;
+  let invitations;
 
   before(function () {
     process.env.SESSION_SECRET = 'test-secret-32chars-minimum!!!!';
@@ -88,37 +88,37 @@ describe('user management API', function () {
   });
 
   function createAdminAndSession(name) {
-    var user = credStore.createUser(name || 'admin');
-    var sess = credStore.createSession(user.id);
-    return { user: user, sessionToken: sess.token };
+    const user = credStore.createUser(name || 'admin');
+    const sess = credStore.createSession(user.id);
+    return { user, sessionToken: sess.token };
   }
 
   function createReadonlyAndSession(name) {
-    var user = credStore.createUser(name || 'viewer', 'readonly');
-    var sess = credStore.createSession(user.id);
-    return { user: user, sessionToken: sess.token };
+    const user = credStore.createUser(name || 'viewer', 'readonly');
+    const sess = credStore.createSession(user.id);
+    return { user, sessionToken: sess.token };
   }
 
   // ── GET /auth/status ──
 
   it('GET /auth/status returns role and name when authenticated', function () {
-    var admin = createAdminAndSession('alice');
-    var req = reqWithSession('GET', '/auth/status', admin.sessionToken);
-    var res = mockRes();
+    const admin = createAdminAndSession('alice');
+    const req = reqWithSession('GET', '/auth/status', admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/status', '');
     assert.strictEqual(res.statusCode, 200);
-    var body = jsonBody(res);
+    const body = jsonBody(res);
     assert.strictEqual(body.authenticated, true);
     assert.strictEqual(body.role, 'admin');
     assert.strictEqual(body.name, 'alice');
   });
 
   it('GET /auth/status returns role=readonly for read-only user', function () {
-    var ro = createReadonlyAndSession('bob');
-    var req = reqWithSession('GET', '/auth/status', ro.sessionToken);
-    var res = mockRes();
+    const ro = createReadonlyAndSession('bob');
+    const req = reqWithSession('GET', '/auth/status', ro.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/status', '');
-    var body = jsonBody(res);
+    const body = jsonBody(res);
     assert.strictEqual(body.role, 'readonly');
     assert.strictEqual(body.name, 'bob');
   });
@@ -126,14 +126,14 @@ describe('user management API', function () {
   // ── GET /auth/users ──
 
   it('GET /auth/users requires authentication', function () {
-    var req = unauthReq('GET', '/auth/users');
-    var res = mockRes();
+    const req = unauthReq('GET', '/auth/users');
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users', '');
     assert.strictEqual(res.statusCode, 401);
   });
 
   it('GET /auth/users lists all users with role + isCurrent flag', function () {
-    var admin = createAdminAndSession('alice');
+    const admin = createAdminAndSession('alice');
     credStore.createUser('bob', 'readonly');
     credStore.addCredential({
       id: 'alice-cred',
@@ -146,14 +146,14 @@ describe('user management API', function () {
       lastUserAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15',
       lastUsedAt: '2026-04-13T09:00:00.000Z',
     });
-    var req = reqWithSession('GET', '/auth/users', admin.sessionToken);
-    var res = mockRes();
+    const req = reqWithSession('GET', '/auth/users', admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users', '');
     assert.strictEqual(res.statusCode, 200);
-    var body = jsonBody(res);
+    const body = jsonBody(res);
     assert.strictEqual(body.users.length, 2);
-    var alice = body.users.find(function (u) { return u.name === 'alice'; });
-    var bob = body.users.find(function (u) { return u.name === 'bob'; });
+    const alice = body.users.find(function (u) { return u.name === 'alice'; });
+    const bob = body.users.find(function (u) { return u.name === 'bob'; });
     assert.ok(alice);
     assert.ok(bob);
     assert.strictEqual(alice.role, 'admin');
@@ -166,35 +166,35 @@ describe('user management API', function () {
   });
 
   it('POST /auth/users creates an empty user for passkey transfers', function () {
-    var admin = createAdminAndSession('alice');
-    var req = reqWithSession('POST', '/auth/users', admin.sessionToken);
-    var res = mockRes();
+    const admin = createAdminAndSession('alice');
+    const req = reqWithSession('POST', '/auth/users', admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users', JSON.stringify({ name: 'tablet', role: 'readonly' }));
     assert.strictEqual(res.statusCode, 200);
-    var body = jsonBody(res);
+    const body = jsonBody(res);
     assert.strictEqual(body.user.name, 'tablet');
     assert.strictEqual(body.user.credentialCount, 0);
     assert.strictEqual(credStore.findUserByName('tablet').role, 'readonly');
   });
 
   it('GET /auth/users is also accessible to read-only users', function () {
-    var ro = createReadonlyAndSession('bob');
+    const ro = createReadonlyAndSession('bob');
     credStore.createUser('admin');
-    var req = reqWithSession('GET', '/auth/users', ro.sessionToken);
-    var res = mockRes();
+    const req = reqWithSession('GET', '/auth/users', ro.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users', '');
     assert.strictEqual(res.statusCode, 200);
-    var body = jsonBody(res);
+    const body = jsonBody(res);
     assert.strictEqual(body.users.length, 2);
   });
 
   // ── DELETE /auth/users/:id ──
 
   it('DELETE /auth/users/:id requires admin role', function () {
-    var ro = createReadonlyAndSession('bob');
-    var target = credStore.createUser('alice');
-    var req = reqWithSession('DELETE', '/auth/users/' + target.id, ro.sessionToken);
-    var res = mockRes();
+    const ro = createReadonlyAndSession('bob');
+    const target = credStore.createUser('alice');
+    const req = reqWithSession('DELETE', '/auth/users/' + target.id, ro.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users/' + target.id, '');
     assert.strictEqual(res.statusCode, 403);
     // Target still exists
@@ -202,9 +202,9 @@ describe('user management API', function () {
   });
 
   it('DELETE /auth/users/:id refuses self-delete', function () {
-    var admin = createAdminAndSession('alice');
-    var req = reqWithSession('DELETE', '/auth/users/' + admin.user.id, admin.sessionToken);
-    var res = mockRes();
+    const admin = createAdminAndSession('alice');
+    const req = reqWithSession('DELETE', '/auth/users/' + admin.user.id, admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users/' + admin.user.id, '');
     assert.strictEqual(res.statusCode, 400);
     assert.ok(jsonBody(res).error.match(/yourself/i));
@@ -212,31 +212,31 @@ describe('user management API', function () {
   });
 
   it('DELETE /auth/users/:id refuses to remove the last admin', function () {
-    var admin = createAdminAndSession('alice');
+    const admin = createAdminAndSession('alice');
     // Create another non-admin so admin can target someone, but also keep
     // alice as the only admin so the "last admin" guard fires.
     credStore.createUser('bob', 'readonly');
-    var anotherAdmin = credStore.createUser('charlie');
+    const anotherAdmin = credStore.createUser('charlie');
     // Delete charlie first (legal) so alice is the only admin again
-    var req1 = reqWithSession('DELETE', '/auth/users/' + anotherAdmin.id, admin.sessionToken);
-    var res1 = mockRes();
+    const req1 = reqWithSession('DELETE', '/auth/users/' + anotherAdmin.id, admin.sessionToken);
+    const res1 = mockRes();
     webauthn.handleRequest(req1, res1, '/auth/users/' + anotherAdmin.id, '');
     assert.strictEqual(res1.statusCode, 200);
     // Now try to delete alice — she is current user (refuses) and last admin
-    var req2 = reqWithSession('DELETE', '/auth/users/' + admin.user.id, admin.sessionToken);
-    var res2 = mockRes();
+    const req2 = reqWithSession('DELETE', '/auth/users/' + admin.user.id, admin.sessionToken);
+    const res2 = mockRes();
     webauthn.handleRequest(req2, res2, '/auth/users/' + admin.user.id, '');
     assert.strictEqual(res2.statusCode, 400);
   });
 
   it('DELETE /auth/users/:id removes a target user successfully', function () {
-    var admin = createAdminAndSession('alice');
-    var target = credStore.createUser('bob', 'readonly');
+    const admin = createAdminAndSession('alice');
+    const target = credStore.createUser('bob', 'readonly');
     credStore.addCredential({ id: 'bob-cred', userId: target.id, publicKey: 'pk', counter: 0, transports: [] });
-    var sess = credStore.createSession(target.id);
+    const sess = credStore.createSession(target.id);
 
-    var req = reqWithSession('DELETE', '/auth/users/' + target.id, admin.sessionToken);
-    var res = mockRes();
+    const req = reqWithSession('DELETE', '/auth/users/' + target.id, admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users/' + target.id, '');
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(credStore.getUserById(target.id), null);
@@ -245,9 +245,9 @@ describe('user management API', function () {
   });
 
   it('DELETE /auth/users/:id returns 404 for unknown user', function () {
-    var admin = createAdminAndSession('alice');
-    var req = reqWithSession('DELETE', '/auth/users/does-not-exist', admin.sessionToken);
-    var res = mockRes();
+    const admin = createAdminAndSession('alice');
+    const req = reqWithSession('DELETE', '/auth/users/does-not-exist', admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users/does-not-exist', '');
     assert.strictEqual(res.statusCode, 404);
   });
@@ -255,54 +255,54 @@ describe('user management API', function () {
   // ── PATCH /auth/users/:id ──
 
   it('PATCH /auth/users/:id requires admin role', function () {
-    var ro = createReadonlyAndSession('bob');
-    var target = credStore.createUser('alice');
-    var req = reqWithSession('PATCH', '/auth/users/' + target.id, ro.sessionToken);
-    var res = mockRes();
+    const ro = createReadonlyAndSession('bob');
+    const target = credStore.createUser('alice');
+    const req = reqWithSession('PATCH', '/auth/users/' + target.id, ro.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users/' + target.id, JSON.stringify({ name: 'eve' }));
     assert.strictEqual(res.statusCode, 403);
     assert.strictEqual(credStore.getUserById(target.id).name, 'alice');
   });
 
   it('PATCH /auth/users/:id renames a user', function () {
-    var admin = createAdminAndSession('alice');
-    var target = credStore.createUser('bob', 'readonly');
-    var req = reqWithSession('PATCH', '/auth/users/' + target.id, admin.sessionToken);
-    var res = mockRes();
+    const admin = createAdminAndSession('alice');
+    const target = credStore.createUser('bob', 'readonly');
+    const req = reqWithSession('PATCH', '/auth/users/' + target.id, admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users/' + target.id, JSON.stringify({ name: 'bobby' }));
     assert.strictEqual(res.statusCode, 200);
-    var body = jsonBody(res);
+    const body = jsonBody(res);
     assert.strictEqual(body.user.name, 'bobby');
     assert.strictEqual(credStore.getUserById(target.id).name, 'bobby');
   });
 
   it('PATCH /auth/users/:id rejects duplicate name', function () {
-    var admin = createAdminAndSession('alice');
+    const admin = createAdminAndSession('alice');
     credStore.createUser('eve', 'readonly');
-    var target = credStore.createUser('bob', 'readonly');
-    var req = reqWithSession('PATCH', '/auth/users/' + target.id, admin.sessionToken);
-    var res = mockRes();
+    const target = credStore.createUser('bob', 'readonly');
+    const req = reqWithSession('PATCH', '/auth/users/' + target.id, admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users/' + target.id, JSON.stringify({ name: 'eve' }));
     assert.strictEqual(res.statusCode, 400);
   });
 
   it('PATCH /auth/users/:id changes role between admin and readonly', function () {
-    var admin = createAdminAndSession('alice');
-    var target = credStore.createUser('bob', 'readonly');
-    var req = reqWithSession('PATCH', '/auth/users/' + target.id, admin.sessionToken);
-    var res = mockRes();
+    const admin = createAdminAndSession('alice');
+    const target = credStore.createUser('bob', 'readonly');
+    const req = reqWithSession('PATCH', '/auth/users/' + target.id, admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users/' + target.id, JSON.stringify({ role: 'admin' }));
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(credStore.getUserById(target.id).role, 'admin');
   });
 
   it('PATCH /auth/users/:id refuses changing your own role', function () {
-    var admin = createAdminAndSession('alice');
+    const admin = createAdminAndSession('alice');
     credStore.createUser('charlie'); // keeps another admin so the
     // last-admin guard doesn't fire — we want to confirm the
     // explicit self-demotion guard is the one rejecting.
-    var req = reqWithSession('PATCH', '/auth/users/' + admin.user.id, admin.sessionToken);
-    var res = mockRes();
+    const req = reqWithSession('PATCH', '/auth/users/' + admin.user.id, admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users/' + admin.user.id, JSON.stringify({ role: 'readonly' }));
     assert.strictEqual(res.statusCode, 400);
     assert.match(jsonBody(res).error, /your own role/i);
@@ -310,9 +310,9 @@ describe('user management API', function () {
   });
 
   it('PATCH /auth/users/:id refuses demoting the last admin', function () {
-    var admin = createAdminAndSession('alice');
-    var helper = credStore.createUser('helper');
-    var ses2 = credStore.createSession(helper.id);
+    const admin = createAdminAndSession('alice');
+    const helper = credStore.createUser('helper');
+    const ses2 = credStore.createSession(helper.id);
     // helper is also an admin; from helper's session we try to demote alice
     // — that would leave helper as the only admin, which is fine. So we
     // use a third user as a target instead: helper demotes alice while
@@ -327,30 +327,30 @@ describe('user management API', function () {
   });
 
   it('PATCH /auth/users/:id returns 404 for unknown user', function () {
-    var admin = createAdminAndSession('alice');
-    var req = reqWithSession('PATCH', '/auth/users/nope', admin.sessionToken);
-    var res = mockRes();
+    const admin = createAdminAndSession('alice');
+    const req = reqWithSession('PATCH', '/auth/users/nope', admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users/nope', JSON.stringify({ name: 'x' }));
     assert.strictEqual(res.statusCode, 404);
   });
 
   it('PUT /auth/users/:id is also accepted as an alias for PATCH', function () {
-    var admin = createAdminAndSession('alice');
-    var target = credStore.createUser('bob', 'readonly');
-    var req = reqWithSession('PUT', '/auth/users/' + target.id, admin.sessionToken);
-    var res = mockRes();
+    const admin = createAdminAndSession('alice');
+    const target = credStore.createUser('bob', 'readonly');
+    const req = reqWithSession('PUT', '/auth/users/' + target.id, admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/users/' + target.id, JSON.stringify({ name: 'bobby' }));
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(credStore.getUserById(target.id).name, 'bobby');
   });
 
   it('PATCH /auth/passkeys/:id updates label and owner', function () {
-    var admin = createAdminAndSession('alice');
-    var targetUser = credStore.createUser('tablet-owner', 'readonly');
+    const admin = createAdminAndSession('alice');
+    const targetUser = credStore.createUser('tablet-owner', 'readonly');
     credStore.addCredential({ id: 'alice-cred', userId: admin.user.id, publicKey: 'pk', counter: 0, transports: [] });
 
-    var req = reqWithSession('PATCH', '/auth/passkeys/alice-cred', admin.sessionToken);
-    var res = mockRes();
+    const req = reqWithSession('PATCH', '/auth/passkeys/alice-cred', admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/passkeys/alice-cred', JSON.stringify({
       label: 'iPad',
       userId: targetUser.id,
@@ -361,14 +361,14 @@ describe('user management API', function () {
   });
 
   it('DELETE /auth/passkeys/:id revokes only that device and its sessions', function () {
-    var admin = createAdminAndSession('alice');
+    const admin = createAdminAndSession('alice');
     credStore.addCredential({ id: 'keep', userId: admin.user.id, publicKey: 'pk1', counter: 0, transports: [] });
     credStore.addCredential({ id: 'remove', userId: admin.user.id, publicKey: 'pk2', counter: 0, transports: [] });
-    var keepSession = credStore.createSession(admin.user.id, 'keep');
-    var removeSession = credStore.createSession(admin.user.id, 'remove');
+    const keepSession = credStore.createSession(admin.user.id, 'keep');
+    const removeSession = credStore.createSession(admin.user.id, 'remove');
 
-    var req = reqWithSession('DELETE', '/auth/passkeys/remove', admin.sessionToken);
-    var res = mockRes();
+    const req = reqWithSession('DELETE', '/auth/passkeys/remove', admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/passkeys/remove', '');
     assert.strictEqual(res.statusCode, 200);
     assert.ok(credStore.getCredentialById('keep'));
@@ -380,55 +380,55 @@ describe('user management API', function () {
   // ── POST /auth/invite/create ──
 
   it('POST /auth/invite/create requires admin role', function () {
-    var ro = createReadonlyAndSession('bob');
-    var req = reqWithSession('POST', '/auth/invite/create', ro.sessionToken);
-    var res = mockRes();
+    const ro = createReadonlyAndSession('bob');
+    const req = reqWithSession('POST', '/auth/invite/create', ro.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/invite/create', JSON.stringify({ name: 'eve', role: 'readonly' }));
     assert.strictEqual(res.statusCode, 403);
   });
 
   it('POST /auth/invite/create requires a name', function () {
-    var admin = createAdminAndSession('alice');
-    var req = reqWithSession('POST', '/auth/invite/create', admin.sessionToken);
-    var res = mockRes();
+    const admin = createAdminAndSession('alice');
+    const req = reqWithSession('POST', '/auth/invite/create', admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/invite/create', JSON.stringify({ role: 'readonly' }));
     assert.strictEqual(res.statusCode, 400);
     assert.match(jsonBody(res).error, /name/i);
   });
 
   it('POST /auth/invite/create rejects duplicate names', function () {
-    var admin = createAdminAndSession('alice');
+    const admin = createAdminAndSession('alice');
     credStore.createUser('eve', 'readonly');
-    var req = reqWithSession('POST', '/auth/invite/create', admin.sessionToken);
-    var res = mockRes();
+    const req = reqWithSession('POST', '/auth/invite/create', admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/invite/create', JSON.stringify({ name: 'eve', role: 'readonly' }));
     assert.strictEqual(res.statusCode, 400);
   });
 
   it('POST /auth/invite/create returns a code with role + name', function () {
-    var admin = createAdminAndSession('alice');
-    var req = reqWithSession('POST', '/auth/invite/create', admin.sessionToken);
-    var res = mockRes();
+    const admin = createAdminAndSession('alice');
+    const req = reqWithSession('POST', '/auth/invite/create', admin.sessionToken);
+    const res = mockRes();
     webauthn.handleRequest(req, res, '/auth/invite/create', JSON.stringify({ name: 'eve', role: 'readonly' }));
     assert.strictEqual(res.statusCode, 200);
-    var body = jsonBody(res);
+    const body = jsonBody(res);
     assert.match(body.code, /^\d{6}$/);
     assert.strictEqual(body.role, 'readonly');
     assert.strictEqual(body.name, 'eve');
   });
 
   it('POST /auth/invite/validate exposes role + name to the new device', function () {
-    var admin = createAdminAndSession('alice');
-    var createReq = reqWithSession('POST', '/auth/invite/create', admin.sessionToken);
-    var createRes = mockRes();
+    const admin = createAdminAndSession('alice');
+    const createReq = reqWithSession('POST', '/auth/invite/create', admin.sessionToken);
+    const createRes = mockRes();
     webauthn.handleRequest(createReq, createRes, '/auth/invite/create', JSON.stringify({ name: 'eve', role: 'readonly' }));
-    var code = jsonBody(createRes).code;
+    const code = jsonBody(createRes).code;
 
-    var validateReq = unauthReq('POST', '/auth/invite/validate');
-    var validateRes = mockRes();
-    webauthn.handleRequest(validateReq, validateRes, '/auth/invite/validate', JSON.stringify({ code: code }));
+    const validateReq = unauthReq('POST', '/auth/invite/validate');
+    const validateRes = mockRes();
+    webauthn.handleRequest(validateReq, validateRes, '/auth/invite/validate', JSON.stringify({ code }));
     assert.strictEqual(validateRes.statusCode, 200);
-    var body = jsonBody(validateRes);
+    const body = jsonBody(validateRes);
     assert.strictEqual(body.valid, true);
     assert.strictEqual(body.role, 'readonly');
     assert.strictEqual(body.name, 'eve');
@@ -437,34 +437,34 @@ describe('user management API', function () {
   // ── requireAdmin / requireUser exposed helpers ──
 
   it('requireAdmin returns user for admin and writes 403 for read-only', function () {
-    var admin = createAdminAndSession('alice');
-    var ro = createReadonlyAndSession('bob');
+    const admin = createAdminAndSession('alice');
+    const ro = createReadonlyAndSession('bob');
 
-    var adminReq = reqWithSession('GET', '/anything', admin.sessionToken);
-    var adminRes = mockRes();
-    var adminUser = webauthn.requireAdmin(adminReq, adminRes);
+    const adminReq = reqWithSession('GET', '/anything', admin.sessionToken);
+    const adminRes = mockRes();
+    const adminUser = webauthn.requireAdmin(adminReq, adminRes);
     assert.ok(adminUser);
     assert.strictEqual(adminUser.role, 'admin');
     assert.strictEqual(adminRes.statusCode, 0);
 
-    var roReq = reqWithSession('GET', '/anything', ro.sessionToken);
-    var roRes = mockRes();
-    var blocked = webauthn.requireAdmin(roReq, roRes);
+    const roReq = reqWithSession('GET', '/anything', ro.sessionToken);
+    const roRes = mockRes();
+    const blocked = webauthn.requireAdmin(roReq, roRes);
     assert.strictEqual(blocked, null);
     assert.strictEqual(roRes.statusCode, 403);
   });
 
   it('requireUser allows both roles but rejects unauthenticated', function () {
-    var ro = createReadonlyAndSession('bob');
-    var roReq = reqWithSession('GET', '/anything', ro.sessionToken);
-    var roRes = mockRes();
-    var u = webauthn.requireUser(roReq, roRes);
+    const ro = createReadonlyAndSession('bob');
+    const roReq = reqWithSession('GET', '/anything', ro.sessionToken);
+    const roRes = mockRes();
+    const u = webauthn.requireUser(roReq, roRes);
     assert.ok(u);
     assert.strictEqual(u.role, 'readonly');
 
-    var unauth = unauthReq('GET', '/anything');
-    var unauthRes = mockRes();
-    var none = webauthn.requireUser(unauth, unauthRes);
+    const unauth = unauthReq('GET', '/anything');
+    const unauthRes = mockRes();
+    const none = webauthn.requireUser(unauth, unauthRes);
     assert.strictEqual(none, null);
     assert.strictEqual(unauthRes.statusCode, 401);
   });

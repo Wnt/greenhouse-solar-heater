@@ -20,21 +20,21 @@ const SHELLY_DIR = path.join(__dirname, '..', 'shelly');
 
 function createOrderingRuntime(opts) {
   opts = opts || {};
-  var now = opts.startTime || 1700000000000; // arbitrary epoch ms
-  var events = []; // { t, kind, detail }
-  var timers = []; // { id, dueAt, cb, repeat, ms }
-  var timerIdCounter = 0;
-  var kvs = {};
-  var eventHandlers = [];
-  var httpResponder = opts.httpResponder || function(url) {
+  let now = opts.startTime || 1700000000000; // arbitrary epoch ms
+  const events = []; // { t, kind, detail }
+  let timers = []; // { id, dueAt, cb, repeat, ms }
+  let timerIdCounter = 0;
+  const kvs = {};
+  const eventHandlers = [];
+  let httpResponder = opts.httpResponder || function(url) {
     return { ok: true, body: '' };
   };
-  var componentStatus = opts.componentStatus || function() {
+  let componentStatus = opts.componentStatus || function() {
     return { apower: 50, output: true };
   };
 
   function record(kind, detail) {
-    events.push({ t: now, kind: kind, detail: detail });
+    events.push({ t: now, kind, detail });
   }
 
   function shellyCall(method, params, cb) {
@@ -49,7 +49,7 @@ function createOrderingRuntime(opts) {
       return;
     }
     if (method === 'KVS.Get') {
-      var val = kvs[params.key] || null;
+      const val = kvs[params.key] || null;
       setImmediate(function() { if (cb) cb(val ? { value: val } : null, null); });
       return;
     }
@@ -59,9 +59,9 @@ function createOrderingRuntime(opts) {
       return;
     }
     if (method === 'HTTP.GET') {
-      var url = params.url || '';
-      record('http_get', { url: url });
-      var resp = httpResponder(url);
+      const url = params.url || '';
+      record('http_get', { url });
+      const resp = httpResponder(url);
       setImmediate(function() {
         if (resp.ok) {
           if (cb) cb({ code: 200, body: resp.body || '' }, null);
@@ -75,8 +75,8 @@ function createOrderingRuntime(opts) {
   }
 
   function timerSet(ms, repeat, cb) {
-    var id = ++timerIdCounter;
-    timers.push({ id: id, dueAt: now + ms, cb: cb, repeat: repeat, ms: ms });
+    const id = ++timerIdCounter;
+    timers.push({ id, dueAt: now + ms, cb, repeat, ms });
     return id;
   }
   function timerClear(id) {
@@ -84,12 +84,12 @@ function createOrderingRuntime(opts) {
   }
 
   function emitEvent(name, data) {
-    for (var i = 0; i < eventHandlers.length; i++) {
-      try { eventHandlers[i]({ info: { event: name, data: data } }); } catch(e) {}
+    for (let i = 0; i < eventHandlers.length; i++) {
+      try { eventHandlers[i]({ info: { event: name, data } }); } catch(e) {}
     }
   }
 
-  var globals = {
+  const globals = {
     Shelly: {
       call: shellyCall,
       getComponentStatus: function(type) {
@@ -97,7 +97,7 @@ function createOrderingRuntime(opts) {
         if (type === 'sys') return { unixtime: Math.floor(now / 1000) };
         return {};
       },
-      emitEvent: emitEvent,
+      emitEvent,
       addEventHandler: function(fn) { eventHandlers.push(fn); },
       addStatusHandler: function() {},
     },
@@ -108,15 +108,15 @@ function createOrderingRuntime(opts) {
       isConnected: function() { return false; },
       setConnectHandler: function() {},
     },
-    JSON: JSON,
+    JSON,
     Date: { now: function() { return now; } },
-    Math: Math,
-    parseInt: parseInt,
+    Math,
+    parseInt,
     print: function() {},
   };
 
   return {
-    globals: globals,
+    globals,
     events: function() { return events.slice(); },
     clearEvents: function() { events.length = 0; },
     setComponentStatus: function(fn) { componentStatus = fn; },
@@ -127,17 +127,17 @@ function createOrderingRuntime(opts) {
       // callbacks (which run via setImmediate in the mock) have a chance to
       // resolve before the next hop. done() is invoked on the next tick after
       // the advance completes.
-      var endAt = now + ms;
+      const endAt = now + ms;
       function hop() {
         if (now >= endAt) {
           setImmediate(done);
           return;
         }
         now += 1;
-        var fired;
+        let fired;
         do {
           fired = null;
-          for (var i = 0; i < timers.length; i++) {
+          for (let i = 0; i < timers.length; i++) {
             if (timers[i].dueAt <= now) {
               fired = timers[i];
               if (fired.repeat) {
@@ -156,11 +156,11 @@ function createOrderingRuntime(opts) {
       }
       hop();
     },
-    kvs: kvs,
+    kvs,
     // Drive a control loop tick and wait for its async chain to settle.
     tick: function(done) {
       // Find the repeating controlLoop timer (30 s period).
-      var controlLoop = timers.find(function(t) { return t.repeat && t.ms >= 10000; });
+      const controlLoop = timers.find(function(t) { return t.repeat && t.ms >= 10000; });
       if (controlLoop) controlLoop.cb();
       setImmediate(done);
     },
@@ -168,14 +168,14 @@ function createOrderingRuntime(opts) {
 }
 
 function loadScript(runtime, files) {
-  var src = files.map(function(f) {
+  const src = files.map(function(f) {
     return fs.readFileSync(path.join(SHELLY_DIR, f), 'utf8');
   }).join('\n');
-  var g = runtime.globals;
+  const g = runtime.globals;
   // __TEST_HARNESS enables the `Shelly.__test_driveTransition` hook in
   // control.js. On the real device this identifier is undefined and the
   // hook block is skipped entirely.
-  var fn = new Function(
+  const fn = new Function(
     'Shelly', 'Timer', 'MQTT', 'JSON', 'Date', 'Math', 'parseInt', 'print',
     '__TEST_HARNESS',
     src
@@ -221,7 +221,7 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
     // This is covered end-to-end by the simulation harness; for this unit
     // test we use the __test_driveTransition hook added in Task 3 which
     // calls transitionTo() directly with a specified source mode.
-    var rt = createOrderingRuntime();
+    const rt = createOrderingRuntime();
     rt.kvs.config = JSON.stringify({
       ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1
     });
@@ -245,11 +245,11 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
       // Advance through the full transition (pump_stop + settle + scheduleStep
       // + PUMP_PRIME). ≤ 10 s covers everything for non-drain transitions.
       rt.advance(10000, function() {
-        var events = rt.events();
-        var pumpOff = events.findIndex(function(e) {
+        const events = rt.events();
+        const pumpOff = events.findIndex(function(e) {
           return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
         });
-        var firstValve = events.findIndex(function(e) {
+        const firstValve = events.findIndex(function(e) {
           return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
         });
         assert.ok(pumpOff >= 0, 'expected a pump-off Switch.Set event');
@@ -262,7 +262,7 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
   });
 
   it('drain exit: closes valves BEFORE stopping pump', function(t, done) {
-    var rt = createOrderingRuntime();
+    const rt = createOrderingRuntime();
     rt.kvs.config = JSON.stringify({
       ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1
     });
@@ -286,11 +286,11 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
       // Advance long enough for valves to close AND the 20 s drain-exit wait
       // AND the trailing setActuators. 30 s covers everything.
       rt.advance(30000, function() {
-        var events = rt.events();
-        var firstValve = events.findIndex(function(e) {
+        const events = rt.events();
+        const firstValve = events.findIndex(function(e) {
           return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
         });
-        var pumpOff = events.findIndex(function(e) {
+        const pumpOff = events.findIndex(function(e) {
           return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
         });
         assert.ok(firstValve >= 0, 'expected at least one valve HTTP.GET');
@@ -303,7 +303,7 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
   });
 
   it('drain exit: waits ≥ 20 s between last valve close and pump-off', function(t, done) {
-    var rt = createOrderingRuntime();
+    const rt = createOrderingRuntime();
     rt.kvs.config = JSON.stringify({
       ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1
     });
@@ -325,17 +325,17 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
         suppressed: false, safetyOverride: false,
       });
       rt.advance(30000, function() {
-        var events = rt.events();
-        var valveCloses = events.filter(function(e) {
+        const events = rt.events();
+        const valveCloses = events.filter(function(e) {
           return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
         });
-        var pumpOff = events.find(function(e) {
+        const pumpOff = events.find(function(e) {
           return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
         });
         assert.ok(valveCloses.length > 0, 'expected at least one valve HTTP.GET');
         assert.ok(pumpOff, 'expected a pump-off Switch.Set');
-        var lastValveAt = valveCloses[valveCloses.length - 1].t;
-        var gap = pumpOff.t - lastValveAt;
+        const lastValveAt = valveCloses[valveCloses.length - 1].t;
+        const gap = pumpOff.t - lastValveAt;
         assert.ok(gap >= 20000,
           'pump-off must be ≥ 20 000 ms after last valve close (got ' + gap + ' ms)');
         done();
@@ -344,7 +344,7 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
   });
 
   it('drain exit: valve HTTP failure → pump stops immediately, no 20 s wait', function(t, done) {
-    var rt = createOrderingRuntime({
+    const rt = createOrderingRuntime({
       httpResponder: function(url) {
         // Fail every HTTP.GET (valve command) on both primary AND retry.
         return { ok: false, err: 'http fail' };
@@ -373,16 +373,16 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
       // Advance 5 s — well under 20 s. If the failure path waits 20 s, the
       // pump-off event won't be recorded yet and the assertion fails.
       rt.advance(5000, function() {
-        var events = rt.events();
-        var firstValve = events.find(function(e) {
+        const events = rt.events();
+        const firstValve = events.find(function(e) {
           return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
         });
-        var pumpOff = events.find(function(e) {
+        const pumpOff = events.find(function(e) {
           return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
         });
         assert.ok(firstValve, 'expected a valve HTTP.GET attempt');
         assert.ok(pumpOff, 'expected a pump-off Switch.Set within 5 s');
-        var gap = pumpOff.t - firstValve.t;
+        const gap = pumpOff.t - firstValve.t;
         assert.ok(gap < 5000,
           'on valve HTTP failure, pump-off must be within 5 s (got ' + gap + ' ms)');
         done();

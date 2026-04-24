@@ -28,18 +28,18 @@
 
 'use strict';
 
-var http = require('http');
-var createLogger = require('./logger');
-var log = createLogger('script-monitor');
+const http = require('http');
+const createLogger = require('./logger');
+const log = createLogger('script-monitor');
 
-var DEFAULT_POLL_INTERVAL_MS = 30 * 1000;
-var DEFAULT_RPC_TIMEOUT_MS = 5000;
-var DEFAULT_RECENT_STATES = 100;
+const DEFAULT_POLL_INTERVAL_MS = 30 * 1000;
+const DEFAULT_RPC_TIMEOUT_MS = 5000;
+const DEFAULT_RECENT_STATES = 100;
 
 function rpcCall(host, method, params, timeoutMs, callback) {
-  var body = JSON.stringify({ id: 1, method: method, params: params || {} });
-  var req = http.request({
-    host: host,
+  const body = JSON.stringify({ id: 1, method, params: params || {} });
+  const req = http.request({
+    host,
     port: 80,
     path: '/rpc',
     method: 'POST',
@@ -49,7 +49,7 @@ function rpcCall(host, method, params, timeoutMs, callback) {
     },
     timeout: timeoutMs,
   }, function (res) {
-    var chunks = [];
+    const chunks = [];
     res.on('data', function (c) { chunks.push(c); });
     res.on('end', function () {
       if (res.statusCode !== 200) {
@@ -57,7 +57,7 @@ function rpcCall(host, method, params, timeoutMs, callback) {
         return;
       }
       try {
-        var parsed = JSON.parse(Buffer.concat(chunks).toString());
+        const parsed = JSON.parse(Buffer.concat(chunks).toString());
         if (parsed.error) { callback(new Error(parsed.error.message || 'rpc_error')); return; }
         callback(null, parsed.result);
       } catch (e) {
@@ -76,19 +76,19 @@ function rpcCall(host, method, params, timeoutMs, callback) {
 
 function createScriptMonitor(options) {
   options = options || {};
-  var host = options.host || process.env.CONTROLLER_IP || '192.168.30.50';
-  var scriptId = parseInt(options.scriptId || process.env.CONTROLLER_SCRIPT_ID || '1', 10);
-  var pollIntervalMs = options.pollIntervalMs || DEFAULT_POLL_INTERVAL_MS;
-  var rpcTimeoutMs = options.rpcTimeoutMs || DEFAULT_RPC_TIMEOUT_MS;
-  var bufferSize = options.bufferSize || DEFAULT_RECENT_STATES;
-  var db = options.db || null;
+  const host = options.host || process.env.CONTROLLER_IP || '192.168.30.50';
+  const scriptId = parseInt(options.scriptId || process.env.CONTROLLER_SCRIPT_ID || '1', 10);
+  const pollIntervalMs = options.pollIntervalMs || DEFAULT_POLL_INTERVAL_MS;
+  const rpcTimeoutMs = options.rpcTimeoutMs || DEFAULT_RPC_TIMEOUT_MS;
+  const bufferSize = options.bufferSize || DEFAULT_RECENT_STATES;
+  const db = options.db || null;
   // Injectable so tests can mock the Shelly without real HTTP.
-  var rpc = options.rpc || rpcCall;
+  const rpc = options.rpc || rpcCall;
 
-  var timer = null;
-  var inflight = false;
-  var recentStates = []; // newest-last
-  var lastStatus = {
+  let timer = null;
+  let inflight = false;
+  let recentStates = []; // newest-last
+  const lastStatus = {
     running: null,         // true / false / null (unknown)
     checkedAt: null,       // last poll epoch ms
     reachable: false,      // did the last RPC succeed?
@@ -96,11 +96,11 @@ function createScriptMonitor(options) {
     error_trace: null,
     crashId: null,         // set when the latest observed crash produced a DB row
   };
-  var statusListeners = [];
+  const statusListeners = [];
 
   function emitStatus() {
-    var snap = getStatus();
-    for (var i = 0; i < statusListeners.length; i++) {
+    const snap = getStatus();
+    for (let i = 0; i < statusListeners.length; i++) {
       try { statusListeners[i](snap); } catch (e) {
         log.error('status listener threw', { error: e.message });
       }
@@ -115,15 +115,15 @@ function createScriptMonitor(options) {
       error_msg: lastStatus.error_msg,
       error_trace: lastStatus.error_trace,
       crashId: lastStatus.crashId,
-      host: host,
-      scriptId: scriptId,
+      host,
+      scriptId,
     };
   }
 
   function onStatusChange(cb) {
     statusListeners.push(cb);
     return function unsubscribe() {
-      var idx = statusListeners.indexOf(cb);
+      const idx = statusListeners.indexOf(cb);
       if (idx !== -1) statusListeners.splice(idx, 1);
     };
   }
@@ -132,7 +132,7 @@ function createScriptMonitor(options) {
     if (!payload) return;
     // Keep a trimmed view. MQTT payloads can include arbitrary extras —
     // we only need enough to debug a crash.
-    var snap = {
+    const snap = {
       ts: payload.ts || Date.now(),
       mode: payload.mode || null,
       cause: payload.cause || null,
@@ -163,8 +163,8 @@ function createScriptMonitor(options) {
       : null;
 
     rpc(host, 'Sys.GetStatus', {}, rpcTimeoutMs, function (sysErr, sysResult) {
-      var sysStatus = sysErr ? { error: sysErr.message } : sysResult;
-      var row = {
+      const sysStatus = sysErr ? { error: sysErr.message } : sysResult;
+      const row = {
         ts: new Date(),
         error_msg: lastStatus.error_msg,
         error_trace: lastStatus.error_trace,
@@ -185,7 +185,7 @@ function createScriptMonitor(options) {
           return;
         }
         lastStatus.crashId = id;
-        log.warn('script crash recorded', { id: id, error: row.error_msg });
+        log.warn('script crash recorded', { id, error: row.error_msg });
         if (callback) callback(null, id);
       });
     });
@@ -198,18 +198,18 @@ function createScriptMonitor(options) {
       inflight = false;
       lastStatus.checkedAt = Date.now();
       if (err) {
-        var reachabilityChanged = lastStatus.reachable !== false;
+        const reachabilityChanged = lastStatus.reachable !== false;
         lastStatus.reachable = false;
         if (reachabilityChanged) {
-          log.warn('script poll unreachable', { host: host, error: err.message });
+          log.warn('script poll unreachable', { host, error: err.message });
           emitStatus();
         }
         if (callback) callback(err, getStatus());
         return;
       }
       lastStatus.reachable = true;
-      var wasRunning = lastStatus.running;
-      var isRunning = !!result.running;
+      const wasRunning = lastStatus.running;
+      const isRunning = !!result.running;
       lastStatus.running = isRunning;
 
       if (isRunning) {
@@ -220,7 +220,7 @@ function createScriptMonitor(options) {
           lastStatus.error_msg = null;
           lastStatus.error_trace = null;
           lastStatus.crashId = null;
-          log.info('script running', { host: host });
+          log.info('script running', { host });
           emitStatus();
         }
         if (callback) callback(null, getStatus());
@@ -230,7 +230,7 @@ function createScriptMonitor(options) {
       // Not running. If we just transitioned from running → crashed, or
       // this is the first poll, persist a new crash row. If we were
       // already observed as not-running, the crashId stays the same.
-      var justCrashed = wasRunning === true || (wasRunning === null && lastStatus.crashId === null);
+      const justCrashed = wasRunning === true || (wasRunning === null && lastStatus.crashId === null);
       if (!justCrashed) {
         emitStatus();
         if (callback) callback(null, getStatus());
@@ -250,7 +250,7 @@ function createScriptMonitor(options) {
     // 30 s wait after server boot.
     pollOnce();
     timer = setInterval(pollOnce, pollIntervalMs);
-    log.info('script monitor started', { host: host, scriptId: scriptId, pollMs: pollIntervalMs });
+    log.info('script monitor started', { host, scriptId, pollMs: pollIntervalMs });
   }
 
   function stop() {
@@ -282,18 +282,18 @@ function createScriptMonitor(options) {
   }
 
   return {
-    start: start,
-    stop: stop,
-    pollOnce: pollOnce,
-    recordStateSnapshot: recordStateSnapshot,
-    getStatus: getStatus,
-    onStatusChange: onStatusChange,
-    triggerRestart: triggerRestart,
-    resolveCrash: resolveCrash,
+    start,
+    stop,
+    pollOnce,
+    recordStateSnapshot,
+    getStatus,
+    onStatusChange,
+    triggerRestart,
+    resolveCrash,
     // Test-only — lets the harness assert ring-buffer contents without
     // triggering a real crash.
     _getRecentStates: function () { return recentStates.slice(); },
   };
 }
 
-module.exports = { createScriptMonitor: createScriptMonitor };
+module.exports = { createScriptMonitor };

@@ -54,7 +54,7 @@ function createRuntime(options) {
       for (let i = 0; i < mqttSubscriptions.length; i++) {
         if (mqttSubscriptions[i].topic === topic) throw new Error('Invalid topic');
       }
-      mqttSubscriptions.push({ topic: topic, cb: cb });
+      mqttSubscriptions.push({ topic, cb });
     },
     unsubscribe: function (topic) {
       for (let i = mqttSubscriptions.length - 1; i >= 0; i--) {
@@ -62,7 +62,7 @@ function createRuntime(options) {
       }
     },
     publish: function (topic, payload, qos, retain) {
-      publishes.push({ topic: topic, payload: payload, qos: qos, retain: retain });
+      publishes.push({ topic, payload, qos, retain });
     },
     isConnected: function () { return mqttConnected; },
     setConnectHandler: function (cb) { mqttConnectHandler = cb; },

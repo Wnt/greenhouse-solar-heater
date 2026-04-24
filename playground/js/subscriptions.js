@@ -132,16 +132,16 @@ export function initSubscriptions(store) {
 
   // ── Connection overlays ──
   function updateOverlays() {
-    var displayState = derived.connectionDisplay;
-    var overlayIds = ['overlay-modes', 'overlay-gauge', 'overlay-components'];
-    var msg = OVERLAY_MESSAGES[displayState];
-    for (var i = 0; i < overlayIds.length; i++) {
-      var overlay = document.getElementById(overlayIds[i]);
+    const displayState = derived.connectionDisplay;
+    const overlayIds = ['overlay-modes', 'overlay-gauge', 'overlay-components'];
+    const msg = OVERLAY_MESSAGES[displayState];
+    for (let i = 0; i < overlayIds.length; i++) {
+      const overlay = document.getElementById(overlayIds[i]);
       if (!overlay) continue;
       if (msg) {
         overlay.classList.add('visible');
-        var titleEl = document.getElementById(overlayIds[i] + '-title');
-        var subtitleEl = document.getElementById(overlayIds[i] + '-subtitle');
+        const titleEl = document.getElementById(overlayIds[i] + '-title');
+        const subtitleEl = document.getElementById(overlayIds[i] + '-subtitle');
         if (titleEl) titleEl.textContent = msg.title;
         if (subtitleEl) subtitleEl.textContent = msg.subtitle;
       } else {
@@ -152,11 +152,11 @@ export function initSubscriptions(store) {
 
   // ── Device push state ──
   function updateDevicePush() {
-    var btn = document.getElementById('dc-save');
-    var warning = document.getElementById('dc-connection-warning');
+    const btn = document.getElementById('dc-save');
+    const warning = document.getElementById('dc-connection-warning');
     if (!btn || !warning) return;
-    var displayState = derived.connectionDisplay;
-    var canPush = store.get('phase') !== 'live' || displayState === 'active' || displayState === 'stale';
+    const displayState = derived.connectionDisplay;
+    const canPush = store.get('phase') !== 'live' || displayState === 'active' || displayState === 'stale';
     if (canPush) {
       btn.classList.remove('disabled');
       btn.disabled = false;

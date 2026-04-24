@@ -30,7 +30,7 @@ function loadWithRedirect(portMap) {
 // Programmable Add-on simulator. Tracks state across the remove→reboot→add
 // flow so tests can assert the RPC sequence and the final peripheral table.
 function makeFakeHub({ existing = {}, simulateStaleCache = false } = {}) {
-  let state = Object.assign({}, existing);
+  const state = Object.assign({}, existing);
   // Tracks addresses that were recently removed; until the fake reboot, an
   // Add for one of these addrs fails with the real Shelly -106 error.
   let staleAddrs = new Set();

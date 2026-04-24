@@ -7,56 +7,56 @@
  * MQTT spans are added manually in mqtt-bridge.js.
  */
 
-var licenseKey = process.env.NEW_RELIC_LICENSE_KEY;
+const licenseKey = process.env.NEW_RELIC_LICENSE_KEY;
 if (!licenseKey) {
   // No license key — skip all telemetry. OTel API returns no-op spans.
   return;
 }
 
-var opentelemetry = require('@opentelemetry/sdk-node');
-var { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
-var { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http');
-var { OTLPMetricExporter } = require('@opentelemetry/exporter-metrics-otlp-http');
-var { OTLPLogExporter } = require('@opentelemetry/exporter-logs-otlp-http');
-var { PeriodicExportingMetricReader } = require('@opentelemetry/sdk-metrics');
-var { BatchLogRecordProcessor } = require('@opentelemetry/sdk-logs');
-var { resourceFromAttributes } = require('@opentelemetry/resources');
+const opentelemetry = require('@opentelemetry/sdk-node');
+const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
+const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http');
+const { OTLPMetricExporter } = require('@opentelemetry/exporter-metrics-otlp-http');
+const { OTLPLogExporter } = require('@opentelemetry/exporter-logs-otlp-http');
+const { PeriodicExportingMetricReader } = require('@opentelemetry/sdk-metrics');
+const { BatchLogRecordProcessor } = require('@opentelemetry/sdk-logs');
+const { resourceFromAttributes } = require('@opentelemetry/resources');
 
 // Auto-detect EU vs US endpoint from license key prefix (eu01xx = EU)
-var defaultEndpoint = licenseKey.startsWith('eu01xx') ? 'https://otlp.eu01.nr-data.net' : 'https://otlp.nr-data.net';
-var endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || defaultEndpoint;
-var serviceName = process.env.OTEL_SERVICE_NAME || 'greenhouse-monitor';
-var gitCommit = process.env.GIT_COMMIT || 'unknown';
+const defaultEndpoint = licenseKey.startsWith('eu01xx') ? 'https://otlp.eu01.nr-data.net' : 'https://otlp.nr-data.net';
+const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || defaultEndpoint;
+const serviceName = process.env.OTEL_SERVICE_NAME || 'greenhouse-monitor';
+const gitCommit = process.env.GIT_COMMIT || 'unknown';
 
 // Resource attributes for service identification in New Relic
-var resourceAttrs = { 'service.version': gitCommit };
+const resourceAttrs = { 'service.version': gitCommit };
 if (gitCommit !== 'unknown') {
   resourceAttrs['git.commit.sha'] = gitCommit;
 }
 
-var headers = {
+const headers = {
   'api-key': licenseKey,
 };
 
-var traceExporter = new OTLPTraceExporter({
+const traceExporter = new OTLPTraceExporter({
   url: endpoint + '/v1/traces',
-  headers: headers,
+  headers,
 });
 
-var metricExporter = new OTLPMetricExporter({
+const metricExporter = new OTLPMetricExporter({
   url: endpoint + '/v1/metrics',
-  headers: headers,
+  headers,
 });
 
-var logExporter = new OTLPLogExporter({
+const logExporter = new OTLPLogExporter({
   url: endpoint + '/v1/logs',
-  headers: headers,
+  headers,
 });
 
-var sdk = new opentelemetry.NodeSDK({
-  serviceName: serviceName,
+const sdk = new opentelemetry.NodeSDK({
+  serviceName,
   resource: resourceFromAttributes(resourceAttrs),
-  traceExporter: traceExporter,
+  traceExporter,
   metricReader: new PeriodicExportingMetricReader({
     exporter: metricExporter,
     exportIntervalMillis: 60000,
@@ -73,13 +73,13 @@ var sdk = new opentelemetry.NodeSDK({
 sdk.start();
 
 // Log tracing config at startup (visible in container logs)
-var msg = JSON.stringify({
+const msg = JSON.stringify({
   ts: new Date().toISOString(),
   level: 'info',
   component: 'tracing',
   msg: 'OTel SDK started',
   service: serviceName,
-  endpoint: endpoint,
+  endpoint,
   commit: gitCommit,
 });
 process.stdout.write(msg + '\n');

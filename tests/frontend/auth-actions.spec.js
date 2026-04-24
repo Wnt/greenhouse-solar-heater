@@ -208,7 +208,7 @@ test.describe('Account actions (logout + Add Device)', () => {
         body: JSON.stringify({ authenticated: true, setupMode: false, registrationOpen: true, role: 'admin', name: 'alice' }),
       })
     );
-    let usersResponses = [
+    const usersResponses = [
       { users: [
         { id: 'u1', name: 'alice', role: 'admin', credentialCount: 1, isCurrent: true },
         { id: 'u2', name: 'bob', role: 'readonly', credentialCount: 1, isCurrent: false },
@@ -262,7 +262,7 @@ test.describe('Account actions (logout + Add Device)', () => {
         body: JSON.stringify({ authenticated: true, setupMode: false, registrationOpen: true, role: 'admin', name: 'alice' }),
       })
     );
-    let usersResponses = [
+    const usersResponses = [
       { users: [
         { id: 'u1', name: 'alice', role: 'admin', credentialCount: 1, isCurrent: true },
         { id: 'u2', name: 'bob', role: 'readonly', credentialCount: 1, isCurrent: false },

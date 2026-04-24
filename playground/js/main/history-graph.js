@@ -44,7 +44,7 @@ export function drawHistoryGraph() {
   const tMin = tMax - graphRange;
 
   // Y range for temperature
-  let yMin = 0, yMax = 100;
+  const yMin = 0, yMax = 100;
 
   // Grid lines
   ctx.strokeStyle = 'rgba(255,255,255,0.05)';

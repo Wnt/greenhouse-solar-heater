@@ -19,9 +19,9 @@ const DEFAULT_PER_HOST_TIMEOUT_MS = 25000;  // overall budget per host including
 
 function rpc(host, method, params, timeoutMs) {
   return new Promise(function (resolve, reject) {
-    const body = JSON.stringify({ id: 1, method: method, params: params || {} });
+    const body = JSON.stringify({ id: 1, method, params: params || {} });
     const req = http.request({
-      host: host,
+      host,
       port: 80,
       path: '/rpc',
       method: 'POST',
@@ -60,7 +60,7 @@ function rpc(host, method, params, timeoutMs) {
 function getTemperature(host, componentId, timeoutMs) {
   return new Promise(function (resolve, reject) {
     const req = http.get({
-      host: host,
+      host,
       port: 80,
       path: '/rpc/Temperature.GetStatus?id=' + encodeURIComponent(componentId),
       timeout: timeoutMs,
@@ -121,7 +121,7 @@ async function scanHost(host, options) {
       };
     });
     if (opts.skipTemp) {
-      return { host: host, ok: true, sensors: sensors };
+      return { host, ok: true, sensors };
     }
     // Fetch temperatures for sensors that have a bound component — in parallel.
     await Promise.all(sensors.map(async function (s) {
@@ -129,11 +129,11 @@ async function scanHost(host, options) {
       const cid = s.component.slice('temperature:'.length);
       s.tC = await getTemperature(host, cid, rpcTimeout);
     }));
-    log.info('scan ok', { host: host, count: sensors.length, ms: Date.now() - started });
-    return { host: host, ok: true, sensors: sensors };
+    log.info('scan ok', { host, count: sensors.length, ms: Date.now() - started });
+    return { host, ok: true, sensors };
   } catch (err) {
-    log.warn('scan failed', { host: host, error: err.message, ms: Date.now() - started });
-    return { host: host, ok: false, error: err.message, sensors: [] };
+    log.warn('scan failed', { host, error: err.message, ms: Date.now() - started });
+    return { host, ok: false, error: err.message, sensors: [] };
   }
 }
 
@@ -141,7 +141,7 @@ function withOverallTimeout(promise, ms, host) {
   let timer;
   const timeout = new Promise(function (resolve) {
     timer = setTimeout(function () {
-      resolve({ host: host, ok: false, error: host + ' scan exceeded ' + ms + 'ms budget', sensors: [] });
+      resolve({ host, ok: false, error: host + ' scan exceeded ' + ms + 'ms budget', sensors: [] });
     }, ms);
   });
   return Promise.race([
@@ -158,12 +158,12 @@ function discoverSensors(hosts, options) {
   return Promise.all(hostList.map(function (host) {
     return withOverallTimeout(scanHost(host, opts), perHost, host);
   })).then(function (results) {
-    return { id: id, results: results };
+    return { id, results };
   });
 }
 
 module.exports = {
-  discoverSensors: discoverSensors,
-  scanHost: scanHost,
-  _internals: { rpc: rpc, getTemperature: getTemperature, friendlyNetError: friendlyNetError },
+  discoverSensors,
+  scanHost,
+  _internals: { rpc, getTemperature, friendlyNetError },
 };

@@ -16,7 +16,7 @@ async function load() {
 
   // Provide a `module` shim so the CommonJS export block works
   const module = { exports: {} };
-  // eslint-disable-next-line no-new-func
+   
   const fn = new Function('module', src);
   fn(module);
 

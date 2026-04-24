@@ -12,15 +12,15 @@ function jsonResponse(res, statusCode, data) {
 }
 
 function requireUser(req, res) {
-  var sess = session.validateRequest(req);
+  const sess = session.validateRequest(req);
   if (!sess) { jsonResponse(res, 401, { error: 'Not authenticated' }); return null; }
-  var user = credStore.getUserById(sess.userId);
+  const user = credStore.getUserById(sess.userId);
   if (!user) { jsonResponse(res, 401, { error: 'Not authenticated' }); return null; }
   return user;
 }
 
 function requireAdmin(req, res) {
-  var user = requireUser(req, res);
+  const user = requireUser(req, res);
   if (!user) return null;
   if (user.role !== 'admin') { jsonResponse(res, 403, { error: 'Admin role required' }); return null; }
   return user;
@@ -44,13 +44,13 @@ function serializeCredential(cred, currentCredentialId) {
 }
 
 function handleListUsers(req, res) {
-  var caller = requireUser(req, res);
+  const caller = requireUser(req, res);
   if (!caller) return;
-  var sess = session.validateRequest(req);
-  var currentCredentialId = sess && sess.credentialId || null;
+  const sess = session.validateRequest(req);
+  const currentCredentialId = sess && sess.credentialId || null;
 
-  var users = credStore.getUsers().map(function (u) {
-    var creds = credStore.getCredentialsForUser(u.id);
+  const users = credStore.getUsers().map(function (u) {
+    const creds = credStore.getCredentialsForUser(u.id);
     return {
       id: u.id,
       name: u.name,
@@ -63,14 +63,14 @@ function handleListUsers(req, res) {
       }),
     };
   });
-  jsonResponse(res, 200, { users: users });
+  jsonResponse(res, 200, { users });
 }
 
 function handleCreateUser(req, res, body) {
-  var caller = requireAdmin(req, res);
+  const caller = requireAdmin(req, res);
   if (!caller) return;
 
-  var parsed = {};
+  let parsed = {};
   try {
     parsed = body ? JSON.parse(body) : {};
   } catch (e) {
@@ -78,10 +78,10 @@ function handleCreateUser(req, res, body) {
     return;
   }
 
-  var name = typeof parsed.name === 'string' ? parsed.name : '';
-  var role = typeof parsed.role === 'string' ? parsed.role : 'readonly';
+  const name = typeof parsed.name === 'string' ? parsed.name : '';
+  const role = typeof parsed.role === 'string' ? parsed.role : 'readonly';
   try {
-    var user = credStore.createUser(name, role);
+    const user = credStore.createUser(name, role);
     jsonResponse(res, 200, {
       ok: true,
       user: {
@@ -100,21 +100,21 @@ function handleCreateUser(req, res, body) {
 }
 
 function handleUpdateUser(req, res, urlPath, body) {
-  var caller = requireAdmin(req, res);
+  const caller = requireAdmin(req, res);
   if (!caller) return;
 
-  var userId = urlPath.substring('/auth/users/'.length);
+  const userId = urlPath.substring('/auth/users/'.length);
   if (!userId) {
     jsonResponse(res, 400, { error: 'Missing user id' });
     return;
   }
-  var target = credStore.getUserById(userId);
+  const target = credStore.getUserById(userId);
   if (!target) {
     jsonResponse(res, 404, { error: 'User not found' });
     return;
   }
 
-  var parsed;
+  let parsed;
   try {
     parsed = body ? JSON.parse(body) : {};
   } catch (e) {
@@ -122,7 +122,7 @@ function handleUpdateUser(req, res, urlPath, body) {
     return;
   }
 
-  var updates = {};
+  const updates = {};
   if (typeof parsed.name === 'string') updates.name = parsed.name;
   if (typeof parsed.role === 'string') updates.role = parsed.role;
 
@@ -133,27 +133,27 @@ function handleUpdateUser(req, res, urlPath, body) {
   }
 
   try {
-    var updated = credStore.updateUser(userId, updates);
+    const updated = credStore.updateUser(userId, updates);
     jsonResponse(res, 200, {
       ok: true,
       user: { id: updated.id, name: updated.name, role: updated.role },
     });
   } catch (err) {
-    var status = err.message === 'User not found' ? 404 : 400;
+    const status = err.message === 'User not found' ? 404 : 400;
     jsonResponse(res, status, { error: err.message });
   }
 }
 
 function handleDeleteUser(req, res, urlPath) {
-  var caller = requireAdmin(req, res);
+  const caller = requireAdmin(req, res);
   if (!caller) return;
 
-  var userId = urlPath.substring('/auth/users/'.length);
+  const userId = urlPath.substring('/auth/users/'.length);
   if (!userId) {
     jsonResponse(res, 400, { error: 'Missing user id' });
     return;
   }
-  var target = credStore.getUserById(userId);
+  const target = credStore.getUserById(userId);
   if (!target) {
     jsonResponse(res, 404, { error: 'User not found' });
     return;
@@ -171,21 +171,21 @@ function handleDeleteUser(req, res, urlPath) {
 }
 
 function handleUpdatePasskey(req, res, urlPath, body) {
-  var caller = requireAdmin(req, res);
+  const caller = requireAdmin(req, res);
   if (!caller) return;
 
-  var credentialId = urlPath.substring('/auth/passkeys/'.length);
+  const credentialId = urlPath.substring('/auth/passkeys/'.length);
   if (!credentialId) {
     jsonResponse(res, 400, { error: 'Missing passkey id' });
     return;
   }
-  var cred = credStore.getCredentialById(credentialId);
+  const cred = credStore.getCredentialById(credentialId);
   if (!cred) {
     jsonResponse(res, 404, { error: 'Passkey not found' });
     return;
   }
 
-  var parsed = {};
+  let parsed = {};
   try {
     parsed = body ? JSON.parse(body) : {};
   } catch (e) {
@@ -193,29 +193,29 @@ function handleUpdatePasskey(req, res, urlPath, body) {
     return;
   }
 
-  var updates = {};
+  const updates = {};
   if (typeof parsed.label === 'string') updates.label = parsed.label;
   if (typeof parsed.userId === 'string') updates.userId = parsed.userId;
 
   try {
-    var updated = credStore.updateCredential(credentialId, updates);
+    const updated = credStore.updateCredential(credentialId, updates);
     jsonResponse(res, 200, { ok: true, passkey: serializeCredential(updated, null) });
   } catch (err) {
-    var status = /not found/i.test(err.message) ? 404 : 400;
+    const status = /not found/i.test(err.message) ? 404 : 400;
     jsonResponse(res, status, { error: err.message });
   }
 }
 
 function handleDeletePasskey(req, res, urlPath) {
-  var caller = requireAdmin(req, res);
+  const caller = requireAdmin(req, res);
   if (!caller) return;
 
-  var credentialId = urlPath.substring('/auth/passkeys/'.length);
+  const credentialId = urlPath.substring('/auth/passkeys/'.length);
   if (!credentialId) {
     jsonResponse(res, 400, { error: 'Missing passkey id' });
     return;
   }
-  var cred = credStore.getCredentialById(credentialId);
+  const cred = credStore.getCredentialById(credentialId);
   if (!cred) {
     jsonResponse(res, 404, { error: 'Passkey not found' });
     return;

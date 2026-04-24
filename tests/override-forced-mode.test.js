@@ -41,22 +41,22 @@ const SHELLY_DIR = path.join(__dirname, '..', 'shelly');
 
 function createOrderingRuntime(opts) {
   opts = opts || {};
-  var now = opts.startTime || 1700000000000; // arbitrary epoch ms
-  var events = []; // { t, kind, detail }
-  var timers = []; // { id, dueAt, cb, repeat, ms }
-  var timerIdCounter = 0;
-  var kvs = {};
-  var configVersion = 100; // bumped by setConfig() — must exceed the BASE_CONFIG v seeded into KVS
-  var eventHandlers = [];
-  var httpResponder = opts.httpResponder || function(url) {
+  let now = opts.startTime || 1700000000000; // arbitrary epoch ms
+  const events = []; // { t, kind, detail }
+  let timers = []; // { id, dueAt, cb, repeat, ms }
+  let timerIdCounter = 0;
+  const kvs = {};
+  let configVersion = 100; // bumped by setConfig() — must exceed the BASE_CONFIG v seeded into KVS
+  const eventHandlers = [];
+  let httpResponder = opts.httpResponder || function(url) {
     return { ok: true, body: '' };
   };
-  var componentStatus = opts.componentStatus || function() {
+  let componentStatus = opts.componentStatus || function() {
     return { apower: 50, output: true };
   };
 
   function record(kind, detail) {
-    events.push({ t: now, kind: kind, detail: detail });
+    events.push({ t: now, kind, detail });
   }
 
   function shellyCall(method, params, cb) {
@@ -71,7 +71,7 @@ function createOrderingRuntime(opts) {
       return;
     }
     if (method === 'KVS.Get') {
-      var val = kvs[params.key] || null;
+      const val = kvs[params.key] || null;
       setImmediate(function() { if (cb) cb(val ? { value: val } : null, null); });
       return;
     }
@@ -81,9 +81,9 @@ function createOrderingRuntime(opts) {
       return;
     }
     if (method === 'HTTP.GET') {
-      var url = params.url || '';
-      record('http_get', { url: url });
-      var resp = httpResponder(url);
+      const url = params.url || '';
+      record('http_get', { url });
+      const resp = httpResponder(url);
       setImmediate(function() {
         if (resp.ok) {
           if (cb) cb({ code: 200, body: resp.body || '' }, null);
@@ -97,8 +97,8 @@ function createOrderingRuntime(opts) {
   }
 
   function timerSet(ms, repeat, cb) {
-    var id = ++timerIdCounter;
-    timers.push({ id: id, dueAt: now + ms, cb: cb, repeat: repeat, ms: ms });
+    const id = ++timerIdCounter;
+    timers.push({ id, dueAt: now + ms, cb, repeat, ms });
     return id;
   }
   function timerClear(id) {
@@ -106,12 +106,12 @@ function createOrderingRuntime(opts) {
   }
 
   function emitEvent(name, data) {
-    for (var i = 0; i < eventHandlers.length; i++) {
-      try { eventHandlers[i]({ info: { event: name, data: data } }); } catch(e) {}
+    for (let i = 0; i < eventHandlers.length; i++) {
+      try { eventHandlers[i]({ info: { event: name, data } }); } catch(e) {}
     }
   }
 
-  var globals = {
+  const globals = {
     Shelly: {
       call: shellyCall,
       getComponentStatus: function(type) {
@@ -119,7 +119,7 @@ function createOrderingRuntime(opts) {
         if (type === 'sys') return { unixtime: Math.floor(now / 1000) };
         return {};
       },
-      emitEvent: emitEvent,
+      emitEvent,
       addEventHandler: function(fn) { eventHandlers.push(fn); },
       addStatusHandler: function() {},
     },
@@ -133,15 +133,15 @@ function createOrderingRuntime(opts) {
       isConnected: function() { return true; },
       setConnectHandler: function(cb) { globals.MQTT._connectHandler = cb; if (cb) cb(); },
     },
-    JSON: JSON,
+    JSON,
     Date: { now: function() { return now; } },
-    Math: Math,
-    parseInt: parseInt,
+    Math,
+    parseInt,
     print: function() {},
   };
 
   return {
-    globals: globals,
+    globals,
     events: function() { return events.slice(); },
     clearEvents: function() { events.length = 0; },
     setComponentStatus: function(fn) { componentStatus = fn; },
@@ -153,7 +153,7 @@ function createOrderingRuntime(opts) {
     // (newCfg.v === deviceConfig.v) doesn't skip the update.
     setConfig: function(cfg) {
       cfg = Object.assign({}, cfg, { v: (configVersion++) });
-      var cb = globals.MQTT._subs['greenhouse/config'];
+      const cb = globals.MQTT._subs['greenhouse/config'];
       if (cb) cb('greenhouse/config', JSON.stringify(cfg));
     },
     advance: function(ms, done) {
@@ -162,22 +162,22 @@ function createOrderingRuntime(opts) {
       // callbacks via a short setImmediate chain (3 yields) so callback
       // chains complete before the next timer fires. Much faster than
       // 1 ms hops for long advances.
-      var endAt = now + ms;
+      const endAt = now + ms;
       function drainAndContinue(n) {
         if (n <= 0) return hop();
         setImmediate(function() { drainAndContinue(n - 1); });
       }
       function hop() {
         if (now >= endAt) { setImmediate(done); return; }
-        var nextDue = endAt;
-        for (var i = 0; i < timers.length; i++) {
+        let nextDue = endAt;
+        for (let i = 0; i < timers.length; i++) {
           if (timers[i].dueAt < nextDue) nextDue = timers[i].dueAt;
         }
         if (nextDue > now) now = (nextDue <= endAt) ? nextDue : endAt;
-        var fired;
+        let fired;
         do {
           fired = null;
-          for (var j = 0; j < timers.length; j++) {
+          for (let j = 0; j < timers.length; j++) {
             if (timers[j].dueAt <= now) {
               fired = timers[j];
               if (fired.repeat) fired.dueAt = now + fired.ms;
@@ -191,11 +191,11 @@ function createOrderingRuntime(opts) {
       }
       hop();
     },
-    kvs: kvs,
+    kvs,
     // Drive a control loop tick and wait for its async chain to settle.
     tick: function(done) {
       // Find the repeating controlLoop timer (30 s period).
-      var controlLoop = timers.find(function(t) { return t.repeat && t.ms >= 10000; });
+      const controlLoop = timers.find(function(t) { return t.repeat && t.ms >= 10000; });
       if (controlLoop) controlLoop.cb();
       setImmediate(done);
     },
@@ -203,14 +203,14 @@ function createOrderingRuntime(opts) {
 }
 
 function loadScript(runtime, files) {
-  var src = files.map(function(f) {
+  const src = files.map(function(f) {
     return fs.readFileSync(path.join(SHELLY_DIR, f), 'utf8');
   }).join('\n');
-  var g = runtime.globals;
+  const g = runtime.globals;
   // __TEST_HARNESS enables the `Shelly.__test_driveTransition` hook in
   // control.js. On the real device this identifier is undefined and the
   // hook block is skipped entirely.
-  var fn = new Function(
+  const fn = new Function(
     'Shelly', 'Timer', 'MQTT', 'JSON', 'Date', 'Math', 'parseInt', 'print',
     '__TEST_HARNESS',
     src
@@ -220,7 +220,7 @@ function loadScript(runtime, files) {
 
 // Standard KVS seed used by all tests. All actuators enabled, override NOT
 // active (tests activate it themselves via setConfig).
-var BASE_CONFIG = {
+const BASE_CONFIG = {
   ce: true, ea: 31, we: {}, wz: {}, wb: {}, v: 1
 };
 
@@ -243,23 +243,23 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
     // pump-first path: pump-off → VALVE_SETTLE_MS(1s) → valve opens →
     // openWindowMs(20s) → resumeTransition → finalizeTransitionOK →
     // PUMP_PRIME_MS(5s) → pump-on. Total ≈ 26 s; advance 35 s to be safe.
-    var rt = createOrderingRuntime();
+    const rt = createOrderingRuntime();
     bootScript(rt, function() {
       rt.clearEvents();
-      var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
-      var overrideCfg = Object.assign({}, BASE_CONFIG, {
+      const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+      const overrideCfg = Object.assign({}, BASE_CONFIG, {
         mo: { a: true, ex: sysUnix + 3600, fm: 'SC' }
       });
       rt.setConfig(overrideCfg);
       rt.advance(35000, function() {
-        var evts = rt.events();
-        var pumpOff = evts.findIndex(function(e) {
+        const evts = rt.events();
+        const pumpOff = evts.findIndex(function(e) {
           return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
         });
-        var firstValve = evts.findIndex(function(e) {
+        const firstValve = evts.findIndex(function(e) {
           return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
         });
-        var pumpOn = evts.findIndex(function(e) {
+        const pumpOn = evts.findIndex(function(e) {
           return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === true;
         });
         assert.ok(pumpOff >= 0, 'expected pump-off Switch.Set (pump_stop phase)');
@@ -281,10 +281,10 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
     // enforced we would wait 5 min; instead transitionTo() accepts an in-place
     // target update and GH valve commands appear within the existing
     // openWindowMs(20s) window.
-    var rt = createOrderingRuntime();
+    const rt = createOrderingRuntime();
     bootScript(rt, function() {
-      var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
-      var cfgSC = Object.assign({}, BASE_CONFIG, {
+      const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+      const cfgSC = Object.assign({}, BASE_CONFIG, {
         mo: { a: true, ex: sysUnix + 3600, fm: 'SC' }
       });
       rt.setConfig(cfgSC);
@@ -292,16 +292,16 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
       // state.transitioning is true and targetValves is set.
       rt.advance(2000, function() {
         rt.clearEvents();
-        var cfgGH = Object.assign({}, BASE_CONFIG, {
+        const cfgGH = Object.assign({}, BASE_CONFIG, {
           mo: { a: true, ex: sysUnix + 3600, fm: 'GH' }
         });
         rt.setConfig(cfgGH);
         // Advance 30 s: GH valve commands must appear within the 20 s open
         // window + settle, well under the 5-min min-duration hold.
         rt.advance(30000, function() {
-          var evts = rt.events();
+          const evts = rt.events();
           // GH valves: vi_top (192.168.30.51 id=1) and vo_rad (192.168.30.53 id=0)
-          var ghValves = evts.filter(function(e) {
+          const ghValves = evts.filter(function(e) {
             return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0 &&
               ((e.detail.url.indexOf('192.168.30.51') >= 0 && e.detail.url.indexOf('id=1') >= 0) ||
                (e.detail.url.indexOf('192.168.30.53') >= 0 && e.detail.url.indexOf('id=0') >= 0));
@@ -320,9 +320,9 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
     // so the SC transition completes AND minOpenMs=60 s hold expires (valves
     // openSince ≈ t+31s; readyAt = t+91s < t+100s). Then clear mo → pump-first
     // IDLE transition: pump-off → 1 s settle → valve closes → 5 s prime.
-    var rt = createOrderingRuntime();
+    const rt = createOrderingRuntime();
     bootScript(rt, function() {
-      var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+      const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
       // Establish override in in-memory config so prevMo.a=true on next update
       rt.setConfig(Object.assign({}, BASE_CONFIG, {
         mo: { a: true, ex: sysUnix + 3600, fm: 'SC' }
@@ -344,11 +344,11 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
         rt.setConfig(Object.assign({}, BASE_CONFIG, { mo: null }));
         // 20 s covers: pump-stop + 1 s settle + valve closes + 5 s prime
         rt.advance(20000, function() {
-          var evts = rt.events();
-          var pumpOff = evts.findIndex(function(e) {
+          const evts = rt.events();
+          const pumpOff = evts.findIndex(function(e) {
             return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
           });
-          var firstValve = evts.findIndex(function(e) {
+          const firstValve = evts.findIndex(function(e) {
             return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
           });
           assert.ok(pumpOff >= 0, 'expected pump-off on override exit from SC');
@@ -370,9 +370,9 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
     // Setup: same as test 3 but for ACTIVE_DRAIN. After 90 s (AD transition
     // complete, minOpenMs expired), clear mo. v_air needs a 20 s open-window
     // to physically close, so total drain-exit time is ≥ 40 s. Advance 50 s.
-    var rt = createOrderingRuntime();
+    const rt = createOrderingRuntime();
     bootScript(rt, function() {
-      var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+      const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
       rt.setConfig(Object.assign({}, BASE_CONFIG, {
         mo: { a: true, ex: sysUnix + 3600, fm: 'AD' }
       }));
@@ -391,11 +391,11 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
         // 50 s: valve closes (immediate) + v_air 20 s open-window +
         //       DRAIN_EXIT_PUMP_RUN_MS (20 s) + margin
         rt.advance(50000, function() {
-          var evts = rt.events();
-          var firstValve = evts.findIndex(function(e) {
+          const evts = rt.events();
+          const firstValve = evts.findIndex(function(e) {
             return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
           });
-          var pumpOff = evts.findIndex(function(e) {
+          const pumpOff = evts.findIndex(function(e) {
             return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
           });
           assert.ok(firstValve >= 0, 'expected valve commands on override exit from AD');
@@ -404,14 +404,14 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
             'AD exit must close valves (' + firstValve +
             ') BEFORE stopping pump (' + pumpOff + ')');
           // Verify the 20 s post-valve wait
-          var valveCloses = evts.filter(function(e) {
+          const valveCloses = evts.filter(function(e) {
             return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
           });
-          var lastValveAt = valveCloses[valveCloses.length - 1].t;
-          var pumpOffEvt = evts.find(function(e) {
+          const lastValveAt = valveCloses[valveCloses.length - 1].t;
+          const pumpOffEvt = evts.find(function(e) {
             return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
           });
-          var gap = pumpOffEvt.t - lastValveAt;
+          const gap = pumpOffEvt.t - lastValveAt;
           assert.ok(gap >= 20000,
             'pump-off must be ≥ 20 000 ms after last valve command on AD exit (got ' + gap + ' ms)');
           done();
@@ -439,11 +439,11 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
     //   rt.tick(): controlLoop → isManualOverrideActive() detects expiry →
     //              clears mo → state.transitioning=false → transitionTo(IDLE)
     //   Advance 35 s more: IDLE transition runs
-    var rt = createOrderingRuntime();
+    const rt = createOrderingRuntime();
     bootScript(rt, function() {
-      var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+      const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
       // Override with no fm (plain relay-testing session, no mode forced)
-      var shortTtl = sysUnix + 5;
+      const shortTtl = sysUnix + 5;
       rt.setConfig(Object.assign({}, BASE_CONFIG, {
         mo: { a: true, ex: shortTtl, fm: 'I' }
       }));
@@ -457,11 +457,11 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
           // + valve work (all already closed from boot → targetReached immediately)
           // + PUMP_PRIME_MS=5 s)
           rt.advance(35000, function() {
-            var evts = rt.events();
+            const evts = rt.events();
             // All IDLE valves are already closed from boot, so the scheduler
             // immediately reaches targetReached → finalizeTransitionOK →
             // PUMP_PRIME_MS timer → setActuators(pump:false) → Switch.Set id=0 on=false
-            var pumpOff = evts.find(function(e) {
+            const pumpOff = evts.find(function(e) {
               return e.kind === 'switch_set' && e.detail.id === 0 && e.detail.on === false;
             });
             assert.ok(pumpOff,
@@ -490,7 +490,7 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
   // After the fix drain() iterates instead of recursing, so N synchronous
   // completions fit in a single stack frame of the bounded-pool call.
   it('forced ACTIVE_DRAIN with EA_VALVES cleared does not blow the stack', function(t, done) {
-    var rt = createOrderingRuntime();
+    const rt = createOrderingRuntime();
     // Seed config with ea=30 (everything enabled EXCEPT EA_VALVES=1). This is
     // the config shape that reproduced the 2026-04-20 crash: setValve's open
     // path hits the sync early-return for every valve, so the bounded pool
@@ -502,12 +502,12 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
     rt.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
     loadScript(rt, ['control-logic.js', 'control.js']);
     rt.advance(10000, function() {
-      var sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
-      var throwsSeen = [];
+      const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+      const throwsSeen = [];
       // Wrap every fired Timer.cb so a synchronous stack-overflow throw
       // surfaces to the test instead of being swallowed by the runtime's
       // `try { fired.cb(); } catch(e) {}` in advance().
-      var origSet = rt.globals.Timer.set;
+      const origSet = rt.globals.Timer.set;
       rt.globals.Timer.set = function(ms, repeat, cb) {
         return origSet(ms, repeat, function() {
           try { cb(); } catch (e) { throwsSeen.push(String(e && e.message || e)); throw e; }
@@ -521,7 +521,7 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
       // this completes cleanly; with the old drain() it throws before any
       // of the stages finish.
       rt.advance(35000, function() {
-        var overflow = throwsSeen.filter(function(m) {
+        const overflow = throwsSeen.filter(function(m) {
           return /recursion|stack/i.test(m);
         });
         assert.strictEqual(overflow.length, 0,
