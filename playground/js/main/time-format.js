@@ -15,7 +15,7 @@ export function formatTimeOfDay(simSeconds) {
   return h.toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0');
 }
 
-export const HELSINKI_TZ = 'Europe/Helsinki';
+const HELSINKI_TZ = 'Europe/Helsinki';
 const fmtClockHelsinki = new Intl.DateTimeFormat('fi-FI', {
   hour: '2-digit', minute: '2-digit', hour12: false, timeZone: HELSINKI_TZ,
 });
