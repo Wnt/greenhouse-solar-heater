@@ -117,6 +117,25 @@ export function formatFullTimeHelsinki(unixMs) {
          get('hour') + ':' + get('minute') + ':' + get('second');
 }
 
+// Full ISO-8601 with the Helsinki UTC offset (e.g. "2026-04-19T13:00:00+03:00").
+// Machine-readable AND unambiguous — used by Copy-JSON exports so bug
+// reports carry the user's wall clock without losing the offset.
+export function formatIsoHelsinki(unixMs) {
+  const d = new Date(unixMs);
+  const local = formatFullTimeHelsinki(unixMs).replace(' ', 'T');
+  // DST-aware offset between the instant and the Helsinki wall clock.
+  const parts = fmtFullHelsinki.formatToParts(d);
+  const get = (type) => { const p = parts.find(x => x.type === type); return p ? parseInt(p.value, 10) : 0; };
+  const wallMs = Date.UTC(get('year'), get('month') - 1, get('day'),
+                          get('hour'), get('minute'), get('second'));
+  const offsetMin = Math.round((wallMs - d.getTime()) / 60000);
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMin);
+  const oh = Math.floor(abs / 60).toString().padStart(2, '0');
+  const om = (abs % 60).toString().padStart(2, '0');
+  return local + sign + oh + ':' + om;
+}
+
 export function escapeHtml(s) {
   return String(s)
     .replace(/&/g, '&amp;')

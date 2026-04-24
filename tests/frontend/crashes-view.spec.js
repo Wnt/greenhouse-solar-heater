@@ -143,4 +143,24 @@ test.describe('#crashes view', () => {
     const clipboard = await page.evaluate(() => navigator.clipboard.readText());
     expect(clipboard).toContain('"id": 1001');
   });
+
+  test.describe('Copy JSON uses Helsinki timezone', () => {
+    test.use({ timezoneId: 'UTC' });
+
+    test('detail row timestamps carry the +03:00 / +02:00 Helsinki offset', async ({ page }) => {
+      const detail = { ...crashB, sys_status: {}, recent_states: [] };
+      await mockScaffold(page, { crashes: [crashB], detailById: { 1002: detail } });
+      await page.goto('/playground/#crashes');
+      const row = page.locator('#crashes-list li[data-id="1002"]');
+      await row.click();
+
+      const json = await row.locator('.crashes-detail').textContent();
+      // crashB ts is 2026-04-21T20:00:00Z → Helsinki EEST (+03) → 23:00:00.
+      expect(json).toContain('"ts": "2026-04-21T23:00:00+03:00"');
+      // resolved_at 21:00:00Z → 00:00:00 next day in Helsinki.
+      expect(json).toContain('"resolved_at": "2026-04-22T00:00:00+03:00"');
+      // And never the raw "…Z" UTC form.
+      expect(json).not.toContain('20:00:00.000Z');
+    });
+  });
 });

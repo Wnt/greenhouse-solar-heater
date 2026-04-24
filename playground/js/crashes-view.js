@@ -8,6 +8,8 @@
  * it's easy to paste into a bug report or chat.
  */
 
+import { formatIsoHelsinki } from './main/time-format.js';
+
 function formatTs(ms) {
   if (!ms) return '—';
   try {
@@ -32,12 +34,12 @@ function detailTemplate(row) {
   const copyBtn = '<button class="crashes-copy" type="button">Copy JSON</button>';
   const detail = JSON.stringify({
     id: row.id,
-    ts: new Date(row.ts).toISOString(),
+    ts: formatIsoHelsinki(row.ts),
     error_msg: row.error_msg,
     error_trace: row.error_trace,
     sys_status: row.sys_status,
     recent_states: row.recent_states,
-    resolved_at: row.resolved_at ? new Date(row.resolved_at).toISOString() : null,
+    resolved_at: row.resolved_at ? formatIsoHelsinki(row.resolved_at) : null,
   }, null, 2);
   return '<div class="crashes-detail">' + escapeHtml(detail) + '</div>' + copyBtn;
 }
