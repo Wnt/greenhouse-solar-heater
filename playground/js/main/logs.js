@@ -216,7 +216,7 @@ function buildLogsClipboardText() {
   // Header
   lines.push('=== Greenhouse Solar Heater — System Logs ===');
   lines.push('Mode: ' + (isLive ? 'Live' : 'Simulation'));
-  lines.push('Exported: ' + new Date().toISOString());
+  lines.push('Exported: ' + formatFullTimeHelsinki(Date.now()));
   lines.push('');
 
   if (isLive) {
@@ -226,7 +226,7 @@ function buildLogsClipboardText() {
     const readings = downsampleHistory(1200); // 20 minutes = 1200 seconds
     for (let i = 0; i < readings.length; i++) {
       const r = readings[i];
-      const ts = new Date(r.time * 1000).toISOString().replace('T', ' ').slice(0, 19);
+      const ts = formatFullTimeHelsinki(r.time * 1000);
       lines.push(
         ts + '  ' +
         fmtTempCol(r.t_collector) + '  ' +

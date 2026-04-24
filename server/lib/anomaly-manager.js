@@ -180,13 +180,12 @@ function _dispatchSnoozeAckPush(id, pendingSnapshot) {
   const label = meta ? meta.shortLabel : id;
   const reason = pendingSnapshot.snoozeReason || '(no reason provided)';
   const until = new Date(pendingSnapshot.snoozeUntil * 1000);
-  // Compact "HH:MM" formatting using local-time UTC offset of the
-  // server. The user's wall-clock interpretation matches whatever
-  // their browser sees in the in-app banner.
-  const hh = until.getHours();
-  const mm = until.getMinutes();
-  const untilStr = (hh < 10 ? '0' + hh : '' + hh) + ':' +
-                   (mm < 10 ? '0' + mm : '' + mm);
+  // Compact "HH:MM" in Europe/Helsinki so the cloud server (typically
+  // UTC) renders the same wall clock the user sees in-app.
+  const untilStr = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: 'Europe/Helsinki',
+  }).format(until);
 
   const payload = {
     title: 'Snooze applied \u2014 ' + label,

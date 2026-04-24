@@ -291,3 +291,56 @@ test.describe('Copy System Logs — live mode', () => {
     expect(text).toContain('idle');
   });
 });
+
+// ── Timezone tests ──
+// The clipboard export and all visible timestamps must render in
+// Europe/Helsinki regardless of the browser's local timezone.
+// Browser timezone pinned to UTC to make the assertion unambiguous: a
+// UTC formatter would emit "…T12:00:00Z", a Helsinki one would emit
+// the same wall clock shifted by +02:00 / +03:00 (DST-aware).
+
+test.describe('Copy System Logs — Helsinki timezone', () => {
+  test.use({ timezoneId: 'UTC' });
+
+  test('exported timestamp and sensor readings render in Europe/Helsinki', async ({ page }) => {
+    // 2026-04-19T10:00:00Z — Helsinki is UTC+3 in April (EEST), so the
+    // same instant reads as 13:00 in Helsinki wall clock.
+    const fixedMs = Date.UTC(2026, 3, 19, 10, 0, 0);
+    const historyPoints = [{
+      ts: fixedMs,
+      collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10,
+    }];
+
+    await installMockWs(page);
+    await mockHistoryApi(page, historyPoints);
+    await mockEventsApi(page, []);
+
+    // Freeze the clock used for the "Exported:" header.
+    await page.addInitScript((frozenMs) => {
+      const OrigDate = Date;
+      // eslint-disable-next-line no-global-assign
+      Date = class extends OrigDate {
+        constructor(...args) {
+          if (args.length === 0) { super(frozenMs); return; }
+          super(...args);
+        }
+        static now() { return frozenMs; }
+      };
+      Date.UTC = OrigDate.UTC;
+      Date.parse = OrigDate.parse;
+    }, fixedMs);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+
+    // Helsinki wall clock for 2026-04-19T10:00:00Z is 13:00:00 (EEST, UTC+3).
+    // Both the header "Exported:" line and the sensor row should carry that.
+    expect(text).toContain('Exported: 2026-04-19 13:00:00');
+    expect(text).toMatch(/2026-04-19 13:00:00\s+25\.0/);
+    // And never the raw UTC ISO.
+    expect(text).not.toContain('2026-04-19T10:00:00');
+  });
+});

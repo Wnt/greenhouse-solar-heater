@@ -7,6 +7,7 @@ import { store } from '../app-state.js';
 import { SIM_START_HOUR } from '../sim-bootstrap.js';
 import { timeSeriesStore, graphRange, showAllSensors } from './state.js';
 import { tankAvgOf } from './history-graph.js';
+import { formatClockTime } from './time-format.js';
 
 let inspectorX = null; // null = hidden, otherwise CSS pixel x relative to canvas
 
@@ -72,19 +73,18 @@ export function setupInspector() {
     const v = timeSeriesStore.values[bestIdx];
     const t = timeSeriesStore.times[bestIdx];
 
-    // Time of day — live data stores Unix epoch seconds, simulation
-    // stores seconds since sim start + SIM_START_HOUR offset.
-    let todH, todM;
+    // Time of day — live data stores Unix epoch seconds (shown in
+    // Europe/Helsinki), simulation stores seconds since sim start +
+    // SIM_START_HOUR offset.
+    let label;
     if (store.get('phase') === 'live') {
-      const d = new Date(t * 1000);
-      todH = d.getHours();
-      todM = d.getMinutes();
+      label = formatClockTime(t * 1000);
     } else {
-      todH = Math.floor((SIM_START_HOUR + t / 3600) % 24);
-      todM = Math.floor(((SIM_START_HOUR + t / 3600) % 1) * 60);
+      const todH = Math.floor((SIM_START_HOUR + t / 3600) % 24);
+      const todM = Math.floor(((SIM_START_HOUR + t / 3600) % 1) * 60);
+      label = todH.toString().padStart(2, '0') + ':' + todM.toString().padStart(2, '0');
     }
-    document.getElementById('inspector-time').textContent =
-      todH.toString().padStart(2, '0') + ':' + todM.toString().padStart(2, '0');
+    document.getElementById('inspector-time').textContent = label;
 
     // Temperature values (null-tolerant for unbound live sensors)
     const fmtInspTemp = function (x) { return isNum(x) ? x.toFixed(1) + '°C' : TEMP_PLACEHOLDER; };
