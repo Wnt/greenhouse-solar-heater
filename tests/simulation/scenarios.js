@@ -471,12 +471,21 @@ const scenarios = [
     irradiance: constant(300),  // just enough to hover near threshold
     assertions: [
       {
-        description: 'no rapid oscillation (min 50s between transitions)',
+        // Relaxed 50s \u2192 25s on 2026-04-23 after the thermal-model flow
+        // rate was re-calibrated from 5 L/min to 2.5 L/min against
+        // production data. Lower flow means solar sessions don't cool
+        // the collector as much, so after a minModeDuration=60s session
+        // the re-entry threshold (collector > tank_bottom + 3) is
+        // crossed within 30s. That is the correct thermodynamic
+        // response to irradiance = 300 W/m\u00b2 (genuinely marginal). The
+        // 25s threshold matches the sibling semi-cloudy scenario and
+        // still catches truly pathological sub-25s bounces.
+        description: 'no rapid oscillation (min 25s between transitions)',
         check: function(trace) {
           let lastT = 0;
           for (const s of trace) {
             if (s.event && s.event.includes('\u2192')) {
-              if (lastT > 0 && (s.t - lastT) < 50) {
+              if (lastT > 0 && (s.t - lastT) < 25) {
                 throw new Error('oscillation: transitions at t=' + lastT + ' and t=' + s.t);
               }
               lastT = s.t;
