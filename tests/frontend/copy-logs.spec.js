@@ -318,7 +318,7 @@ test.describe('Copy System Logs — Helsinki timezone', () => {
     // Freeze the clock used for the "Exported:" header.
     await page.addInitScript((frozenMs) => {
       const OrigDate = Date;
-      // eslint-disable-next-line no-global-assign
+      // eslint-disable-next-line no-global-assign, no-implicit-globals
       Date = class extends OrigDate {
         constructor(...args) {
           if (args.length === 0) { super(frozenMs); return; }
