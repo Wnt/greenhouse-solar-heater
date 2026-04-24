@@ -73,6 +73,11 @@ module.exports = [
       'playground/public/qrcode-generator.mjs',
       'playground/public/simplewebauthn-browser.mjs',
       'playground/assets/**',
+      // Runtime copy of shelly/ (and system.yaml) staged under playground/
+      // for GitHub Pages compatibility. Gitignored; lint the source, not
+      // the copy. See .gitignore "Copied runtime deps for playground".
+      'playground/shelly/**',
+      'playground/system.yaml',
       'shelly/lint/**',
       'deploy/**',
       'design/**',

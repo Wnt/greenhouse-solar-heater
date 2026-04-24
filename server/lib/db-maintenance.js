@@ -88,4 +88,6 @@ function create(getPool, log) {
   return { run, start, stop };
 }
 
-module.exports = { create };
+// knip 6.x mis-resolves shorthand here; see server/auth/session.js for context.
+// eslint-disable-next-line object-shorthand
+module.exports = { create: create };

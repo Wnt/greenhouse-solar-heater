@@ -97,14 +97,19 @@ function validateSecret() {
   return { valid: true };
 }
 
+// knip 6.x mis-resolves shorthand exports in modules consumed via namespace
+// access (`session.validateRequest(…)` pattern), flagging every entry as
+// unused. Explicit-property form sidesteps it.
+/* eslint-disable object-shorthand */
 module.exports = {
-  sign,
-  verify,
-  parseCookies,
-  getSessionToken,
-  validateRequest,
-  setSessionCookie,
-  clearSessionCookie,
-  validateSecret,
-  DEV_SECRET,
+  sign: sign,
+  verify: verify,
+  parseCookies: parseCookies,
+  getSessionToken: getSessionToken,
+  validateRequest: validateRequest,
+  setSessionCookie: setSessionCookie,
+  clearSessionCookie: clearSessionCookie,
+  validateSecret: validateSecret,
+  DEV_SECRET: DEV_SECRET,
 };
+/* eslint-enable object-shorthand */

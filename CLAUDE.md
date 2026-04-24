@@ -148,6 +148,22 @@ These files are **generated, not hand-edited**. Regenerate and commit in the **s
 
 A threshold change in `control-logic.js` without a regenerated snapshot fails CI with a pointer to the first diverging line and the fix command. Topology palette overrides live in `topology-layout.yaml` under `themes.{light,playground}.{fill,font,stroke}`.
 
+## Pre-Push Checklist
+
+**Before pushing any non-trivial change, run the full local CI gate suite.** These are the exact checks `.github/workflows/ci.yml` runs; running them locally is a 30–60 s feedback loop vs. a 3–5 min round-trip through GitHub Actions, so always do it locally first:
+
+```bash
+npm run lint                             # ESLint — 0 errors
+npm run knip                             # dead-code / unresolved imports — exit 0
+npm run check:file-size -- --strict      # file-size budget — 0 over hard cap
+npm run check:assets -- --strict         # unused playground assets — exit 0
+timeout 30 npm run test:unit             # 808 unit tests in ~10 s
+# Playwright (if touching UI or server):
+timeout 120 npm test                     # unit + frontend + e2e — full suite
+```
+
+If any of these fail on the PR but passed locally, that's a signal something is environment-dependent — investigate rather than re-pushing.
+
 ## Test Setup Gotchas
 
 - **Run `npm ci` first if `node_modules/` is missing.** With deps installed, the full unit suite (`npm run test:unit`, 788 tests) completes in **~20 s** locally; individual files are sub-second to a few seconds. If a run is taking materially longer, something is wrong — don't "wait it out." Common causes: missing deps (several tests hang indefinitely on missing transitive requires rather than erroring; `sensor-apply` and `sensor-discovery` are the usual offenders because they build local HTTP servers that wait on a peer module that never loads), or stale `node` processes from a previous killed run (check `ps -C node` and `pkill -9 node`).
