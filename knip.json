@@ -38,7 +38,8 @@
   "ignoreDependencies": [
     "playwright",
     "qrcode-generator",
-    "serve"
+    "serve",
+    "js-yaml"
   ],
   "ignoreUnresolved": [
     "/playground/js/app-state.js"

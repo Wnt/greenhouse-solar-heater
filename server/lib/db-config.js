@@ -32,7 +32,7 @@ function getS3Config() {
 
 function getS3Client(config) {
   if (s3Client) return s3Client;
-  const S3Client = require('@aws-sdk/client-s3').S3Client;
+  const S3Client = require('./s3-client').S3Client;
   s3Client = new S3Client({
     endpoint: config.endpoint,
     region: config.region,
@@ -48,7 +48,7 @@ function load(callback) {
     callback(new Error('S3 not configured'));
     return;
   }
-  const GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
+  const GetObjectCommand = require('./s3-client').GetObjectCommand;
   const client = getS3Client(config);
   const cmd = new GetObjectCommand({ Bucket: config.bucket, Key: S3_KEY });
   client.send(cmd).then(function (response) {
@@ -79,7 +79,7 @@ function store(url, ca, callback) {
     callback(new Error('S3 not configured'));
     return;
   }
-  const PutObjectCommand = require('@aws-sdk/client-s3').PutObjectCommand;
+  const PutObjectCommand = require('./s3-client').PutObjectCommand;
   const client = getS3Client(config);
   const data = { url };
   if (ca) data.ca = ca;
