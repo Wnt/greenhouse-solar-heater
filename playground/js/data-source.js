@@ -204,8 +204,12 @@ export class LiveSource extends DataSource {
       // 2026-04-20: carry transition-cause tag + temps snapshot through
       // to detectLiveTransition() so the System Logs card can show why
       // the controller changed mode and what the sensors read at the
-      // moment of the transition.
+      // moment of the transition. `reason` is the evaluator's decision
+      // code (solar_enter, solar_stall, …); without it, live-detected
+      // transitions show only the bare cause until a reload pulls the
+      // row back from /api/events.
       cause: data.cause || null,
+      reason: data.reason || null,
       temps: data.temps || null,
       // Carries `collectors_drained` / `emergency_heating_active` from
       // the controller snapshot. Consumed by display-update.js so the
