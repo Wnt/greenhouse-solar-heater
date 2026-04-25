@@ -80,6 +80,21 @@ describe('ws-server live round-trip', () => {
     });
   }
 
+  // Tear down the server *and* every upgraded WebSocket socket. After
+  // handleUpgrade() the http server detaches the socket, so server.close()
+  // and closeAllConnections() do not reach upgraded connections — without
+  // this, lingering sockets keep node:test's event loop alive and the
+  // process never exits.
+  function closeServer({ server, wss }) {
+    if (wss) {
+      wss.clients.forEach((c) => { try { c.terminate(); } catch (_) { /* ignore */ } });
+      wss.clients.clear();
+    }
+    server.close();
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    server.unref();
+  }
+
   function rawHandshake(port) {
     return new Promise((resolve, reject) => {
       const sock = net.connect(port, '127.0.0.1');
@@ -107,7 +122,7 @@ describe('ws-server live round-trip', () => {
   }
 
   it('completes the upgrade handshake with correct Sec-WebSocket-Accept', async () => {
-    const { server, port } = await startServer();
+    const { server, wss, port } = await startServer();
     try {
       const { sock, headerStr, key } = await rawHandshake(port);
       assert.match(headerStr, /^HTTP\/1\.1 101 /);
@@ -120,8 +135,8 @@ describe('ws-server live round-trip', () => {
       );
       sock.destroy();
     } finally {
-      server.close();
-      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+      closeServer({ server, wss });
+      
     }
   });
 
@@ -139,8 +154,8 @@ describe('ws-server live round-trip', () => {
       assert.deepStrictEqual(received, ['hello', 'world']);
       sock.destroy();
     } finally {
-      server.close();
-      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+      closeServer({ server, wss });
+      
     }
   });
 
@@ -161,13 +176,13 @@ describe('ws-server live round-trip', () => {
       assert.strictEqual(buf.slice(2, 11).toString('utf8'), 'greetings');
       sock.destroy();
     } finally {
-      server.close();
-      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+      closeServer({ server, wss });
+      
     }
   });
 
   it('responds to ping with pong containing same payload', async () => {
-    const { server, port } = await startServer();
+    const { server, wss, port } = await startServer();
     try {
       const { sock } = await rawHandshake(port);
       const pingPayload = Buffer.from('ping-data', 'utf8');
@@ -189,8 +204,8 @@ describe('ws-server live round-trip', () => {
       assert.strictEqual(buf.slice(2, 2 + pingPayload.length).toString('utf8'), 'ping-data');
       sock.destroy();
     } finally {
-      server.close();
-      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+      closeServer({ server, wss });
+      
     }
   });
 
@@ -208,8 +223,8 @@ describe('ws-server live round-trip', () => {
       await new Promise((r) => setTimeout(r, 30));
       assert.strictEqual(wss.clients.size, 0);
     } finally {
-      server.close();
-      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+      closeServer({ server, wss });
+      
     }
   });
 
@@ -223,13 +238,13 @@ describe('ws-server live round-trip', () => {
       assert.strictEqual(connectedWs.readyState, 1);
       sock.destroy();
     } finally {
-      server.close();
-      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+      closeServer({ server, wss });
+      
     }
   });
 
   it('rejects upgrade missing Sec-WebSocket-Key', async () => {
-    const { server, port } = await startServer();
+    const { server, wss, port } = await startServer();
     try {
       const sock = net.connect(port, '127.0.0.1');
       let buf = Buffer.alloc(0);
@@ -246,8 +261,8 @@ describe('ws-server live round-trip', () => {
       await ended;
       assert.match(buf.toString('utf8'), /^HTTP\/1\.1 400 /);
     } finally {
-      server.close();
-      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+      closeServer({ server, wss });
+      
     }
   });
 });
