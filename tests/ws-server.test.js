@@ -95,6 +95,17 @@ describe('ws-server live round-trip', () => {
     server.unref();
   }
 
+  // Wait for `predicate()` to return truthy, polling every 5 ms up to
+  // `timeoutMs`. Avoids fixed setTimeout sleeps that race CI under load.
+  async function waitFor(predicate, timeoutMs = 2000, label = 'condition') {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (predicate()) return;
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    throw new Error('waitFor timed out (' + timeoutMs + 'ms): ' + label);
+  }
+
   function rawHandshake(port) {
     return new Promise((resolve, reject) => {
       const sock = net.connect(port, '127.0.0.1');
@@ -150,7 +161,7 @@ describe('ws-server live round-trip', () => {
       const { sock } = await rawHandshake(port);
       sock.write(maskedClientFrame('hello'));
       sock.write(maskedClientFrame('world'));
-      await new Promise((r) => setTimeout(r, 30));
+      await waitFor(() => received.length >= 2, 2000, 'received 2 messages');
       assert.deepStrictEqual(received, ['hello', 'world']);
       sock.destroy();
     } finally {
@@ -165,11 +176,11 @@ describe('ws-server live round-trip', () => {
       let connectedWs = null;
       wss.on('connection', (ws) => { connectedWs = ws; });
       const { sock } = await rawHandshake(port);
-      await new Promise((r) => setTimeout(r, 10));
+      await waitFor(() => connectedWs !== null, 2000, 'wss emitted connection');
       const collected = [];
       sock.on('data', (c) => collected.push(c));
       connectedWs.send('greetings');
-      await new Promise((r) => setTimeout(r, 30));
+      await waitFor(() => Buffer.concat(collected).length >= 11, 2000, 'received frame');
       const buf = Buffer.concat(collected);
       assert.strictEqual(buf[0], 0x81);
       assert.strictEqual(buf[1], 9);  // unmasked text, len 9
@@ -197,7 +208,7 @@ describe('ws-server live round-trip', () => {
       const collected = [];
       sock.on('data', (c) => collected.push(c));
       sock.write(frame);
-      await new Promise((r) => setTimeout(r, 30));
+      await waitFor(() => Buffer.concat(collected).length >= 2 + pingPayload.length, 2000, 'pong frame');
       const buf = Buffer.concat(collected);
       assert.strictEqual(buf[0], 0x8a);  // FIN | pong
       assert.strictEqual(buf[1], pingPayload.length);
@@ -214,14 +225,11 @@ describe('ws-server live round-trip', () => {
     try {
       const { sock: s1 } = await rawHandshake(port);
       const { sock: s2 } = await rawHandshake(port);
-      await new Promise((r) => setTimeout(r, 20));
-      assert.strictEqual(wss.clients.size, 2);
+      await waitFor(() => wss.clients.size === 2, 2000, '2 clients connected');
       s1.destroy();
-      await new Promise((r) => setTimeout(r, 30));
-      assert.strictEqual(wss.clients.size, 1);
+      await waitFor(() => wss.clients.size === 1, 2000, 'first client cleaned up');
       s2.destroy();
-      await new Promise((r) => setTimeout(r, 30));
-      assert.strictEqual(wss.clients.size, 0);
+      await waitFor(() => wss.clients.size === 0, 2000, 'all clients cleaned up');
     } finally {
       closeServer({ server, wss });
       
@@ -234,7 +242,7 @@ describe('ws-server live round-trip', () => {
       let connectedWs = null;
       wss.on('connection', (ws) => { connectedWs = ws; });
       const { sock } = await rawHandshake(port);
-      await new Promise((r) => setTimeout(r, 10));
+      await waitFor(() => connectedWs !== null, 2000, 'wss emitted connection');
       assert.strictEqual(connectedWs.readyState, 1);
       sock.destroy();
     } finally {
