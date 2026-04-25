@@ -50,6 +50,26 @@ describe('data-source contract', () => {
     assert.strictEqual(result.controls_enabled, true);
   });
 
+  it('LiveSource carries cause + reason from MQTT snapshot to result', () => {
+    // Regression: the WebSocket → result mapping was dropping `reason`,
+    // so live transitions appeared in System Logs as bare "[automation]"
+    // until a page reload pulled the row back from /api/events with the
+    // reason intact. Both fields originate in the device's
+    // buildSnapshotFromState() and must reach detectLiveTransition().
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', 'playground', 'js', 'data-source.js'),
+      'utf8'
+    );
+    const handleStateBody = src.match(/_handleState\(data\) \{([\s\S]*?)\n {2}\}/)[1];
+    assert.match(
+      handleStateBody,
+      /reason: data\.reason \|\| null/,
+      '_handleState must propagate data.reason into the result object'
+    );
+  });
+
   it('LiveSource maps transitioning state correctly', () => {
     const data = {
       mode: 'solar_charging',
