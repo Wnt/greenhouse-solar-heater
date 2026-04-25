@@ -24,13 +24,13 @@ Solar thermal greenhouse heating system for Southwest Finland. Shelly-controlled
 - `playground/vendor/` — vendored third-party libraries for authed views (see Critical Rules)
 - `server/` — Node.js API: HTTP + WebSocket + MQTT bridge + auth + device/sensor config + history + push notifications
 - `server/auth/` — WebAuthn passkey auth (multi-user, role-based: `admin` / `readonly`)
-- `server/lib/` — shared modules: `mqtt-bridge`, `device-config`, `sensor-config`, `db` (PostgreSQL/TimescaleDB), `s3-storage`, `notifications`, `push`, `tracing`, `logger`, config CLI helpers
+- `server/lib/` — shared modules: `mqtt-bridge`, `device-config`, `sensor-config`, `db` (PostgreSQL/TimescaleDB), `s3-storage`, `notifications`, `push`, `tracing`, `logger`, config CLI helpers. Hand-rolled minimal protocol clients (replacing npm deps): `s3-client` (SigV4), `web-push` (VAPID + RFC 8291 aes128gcm), `ws-server` (RFC 6455). See Critical Rules: don't reintroduce `@aws-sdk/client-s3`, `web-push`, or `ws` as npm deps.
 - `deploy/terraform/` — UpCloud K8s + PostgreSQL + Object Storage (Terraform)
 - `deploy/k8s/` — K8s manifests (Deployment with openvpn + mosquitto sidecars, Ingress, RBAC)
 - `deploy/docker/`, `deploy/openvpn/` — Dockerfiles
 - `design/` — prose docs, hand-authored SVG diagrams, Mermaid control logic, construction notes
 - `tests/` — unit + simulation + auth; `tests/frontend/` Playwright against static serve (frontend with mocked APIs); `tests/e2e/` Playwright against real `server/server.js` + pg-mem + aedes MQTT
-- `scripts/` — generators: `generate-bootstrap-history.mjs`, `make-icons.mjs`, `generate-liquid-glass.mjs`
+- `scripts/` — generators: `generate-bootstrap-history.mjs`, `make-icons.mjs`, `generate-liquid-glass.mjs`. `scripts/lib/yaml-load.js` is the in-tree YAML loader used by Node-side build scripts (`design/diagrams/generate-topology.js`, `shelly/lint/bin/shelly-lint.js`). The browser still uses `playground/vendor/js-yaml.mjs` via importmap.
 - `.github/workflows/` — CI (test), CD (deploy to K8s + Shelly), GitHub Pages, Shelly lint
 
 File-level details are discoverable by reading the file. Don't re-document here.
@@ -79,6 +79,19 @@ If you add more operations that need multi-step async waits or cross-hub orchest
 ### Vendored dependencies must stay vendored
 
 `playground/vendor/` contains `js-yaml.mjs` (authed-only). `playground/public/` contains `simplewebauthn-browser.mjs`, `qrcode-generator.mjs`, `material-symbols.css`, `material-symbols-outlined.woff2`, plus the shared `style.css`. Importmaps in each HTML file point at `./vendor/...` or `./public/...`. **Do not replace with CDN URLs.** To upgrade: `npm pack <package>`, extract, copy dist files.
+
+### In-tree protocol clients replace npm deps — don't re-add
+
+We removed four npm deps in favour of small hand-written protocol clients in this repo. Don't re-add the packages without strong justification; the in-tree code is intentionally minimal (covers only the calls we make) and audited by the tests next to it.
+
+| Removed npm dep | In-tree replacement | Tests |
+|---|---|---|
+| `@aws-sdk/client-s3` | `server/lib/s3-client.js` (SigV4 + HTTPS Get/Put/Head, path-style only) | `tests/s3-client.test.js` (incl. AWS reference vector) |
+| `web-push` | `server/lib/web-push.js` (VAPID JWT ES256 + RFC 8291 aes128gcm) | `tests/web-push.test.js` (incl. self-decrypt round-trip) |
+| `ws` | `server/lib/ws-server.js` (RFC 6455, `noServer: true` only, no extensions) | `tests/ws-server.test.js` |
+| `js-yaml` | `scripts/lib/yaml-load.js` (Node-side; browser still uses vendored `playground/vendor/js-yaml.mjs`) | `tests/yaml-load.test.js` |
+
+If a feature needs an API that the in-tree client doesn't cover, extend the client (and add a test) rather than re-adding the npm package.
 
 ### Readonly role blocks every mutating endpoint
 

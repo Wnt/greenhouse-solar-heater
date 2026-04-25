@@ -34,7 +34,7 @@ function getS3Config() {
 
 function getS3Client(config) {
   if (s3Client) return s3Client;
-  const S3Client = require('@aws-sdk/client-s3').S3Client;
+  const S3Client = require('./s3-client').S3Client;
   s3Client = new S3Client({
     endpoint: config.endpoint,
     region: config.region,
@@ -50,7 +50,7 @@ function download(localPath, callback) {
     callback(new Error('S3 not configured'));
     return;
   }
-  const GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
+  const GetObjectCommand = require('./s3-client').GetObjectCommand;
   const client = getS3Client(config);
   const cmd = new GetObjectCommand({ Bucket: config.bucket, Key: config.key });
   client.send(cmd).then(function (response) {
@@ -87,7 +87,7 @@ function upload(localPath, callback) {
   }
 
   // Check if S3 already has this config (skip unnecessary writes)
-  const s3 = require('@aws-sdk/client-s3');
+  const s3 = require('./s3-client');
   const client = getS3Client(config);
   const headCmd = new s3.HeadObjectCommand({ Bucket: config.bucket, Key: config.key });
   client.send(headCmd).then(function () {

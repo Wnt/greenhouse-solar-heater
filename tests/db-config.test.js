@@ -31,9 +31,9 @@ describe('db-config', () => {
       },
     };
 
-    // Mock the S3 module
-    require.cache[require.resolve('@aws-sdk/client-s3')] = {
-      id: require.resolve('@aws-sdk/client-s3'),
+    // Mock the in-tree S3 client module
+    require.cache[require.resolve('../server/lib/s3-client.js')] = {
+      id: require.resolve('../server/lib/s3-client.js'),
       exports: {
         S3Client: function () { return mockS3Client; },
         GetObjectCommand: function (params) { this.input = params; },

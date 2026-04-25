@@ -3,7 +3,9 @@
  * Loaded via --require before server.js to enable auto-instrumentation.
  *
  * If NEW_RELIC_LICENSE_KEY is not set, exits immediately (no-op).
- * When active, auto-instruments: http, pg, @aws-sdk, dns, net.
+ * When active, auto-instruments: http, pg, dns, net.
+ * (S3 traffic flows through our in-tree s3-client; the http
+ * instrumentation captures those calls.)
  * MQTT spans are added manually in mqtt-bridge.js.
  */
 

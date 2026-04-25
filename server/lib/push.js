@@ -59,7 +59,7 @@ function isS3Enabled() {
 function getS3Client() {
   if (s3Client) return s3Client;
   const config = getS3Config();
-  const S3Client = require('@aws-sdk/client-s3').S3Client;
+  const S3Client = require('./s3-client').S3Client;
   s3Client = new S3Client({
     endpoint: config.endpoint,
     region: config.region,
@@ -74,7 +74,7 @@ function getS3Client() {
 function load(callback) {
   if (isS3Enabled()) {
     const config = getS3Config();
-    const GetObjectCommand = require('@aws-sdk/client-s3').GetObjectCommand;
+    const GetObjectCommand = require('./s3-client').GetObjectCommand;
     const client = getS3Client();
     const cmd = new GetObjectCommand({ Bucket: config.bucket, Key: S3_KEY });
     client.send(cmd).then(function (response) {
@@ -116,7 +116,7 @@ function save(callback) {
 
   if (isS3Enabled()) {
     const config = getS3Config();
-    const PutObjectCommand = require('@aws-sdk/client-s3').PutObjectCommand;
+    const PutObjectCommand = require('./s3-client').PutObjectCommand;
     const client = getS3Client();
     const cmd = new PutObjectCommand({
       Bucket: config.bucket,
@@ -149,7 +149,7 @@ function save(callback) {
 
 function ensureWebPush() {
   if (!webpush) {
-    webpush = require('web-push');
+    webpush = require('./web-push');
   }
   return webpush;
 }

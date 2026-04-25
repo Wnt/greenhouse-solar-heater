@@ -10,7 +10,7 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import * as acorn from 'acorn';
-import { load as loadYaml } from 'js-yaml';
+import { load as loadYaml } from '../../../scripts/lib/yaml-load.js';
 import { lintScript, formatFindings } from '../rules/index.js';
 
 const args = process.argv.slice(2);

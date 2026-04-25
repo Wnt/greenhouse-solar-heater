@@ -401,7 +401,7 @@ function broadcastToWebSockets(msg) {
 }
 
 function initWebSocket() {
-  const WebSocketServer = require('ws').WebSocketServer;
+  const WebSocketServer = require('./lib/ws-server').WebSocketServer;
   wsServer = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', function (req, socket, head) {

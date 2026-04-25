@@ -18,7 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const yaml = require('js-yaml');
+const yaml = require('../../scripts/lib/yaml-load.js');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_SYSTEM_FILE = path.join(REPO_ROOT, 'system.yaml');
