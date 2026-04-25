@@ -234,8 +234,14 @@ function evaluate(payload) {
   }
 
   // ── Pre-emergency alerts (only with fresh data) ──
-  checkOverheatWarning(temps);
-  checkFreezeWarning(temps);
+  // Drained collectors hold no water, so neither the freeze drain nor
+  // the overheat drain (which both circulate fluid through the
+  // collector loop) can fire. Suppressing the predictive warnings
+  // avoids cluttering the operator with alerts that reference a
+  // physically-impossible action.
+  const collectorsDrained = !!(payload.flags && payload.flags.collectors_drained);
+  checkOverheatWarning(temps, collectorsDrained);
+  checkFreezeWarning(temps, collectorsDrained);
 
   // ── Scheduled reports (only with fresh data) ──
   checkEveningReport();
@@ -298,7 +304,8 @@ function tick() {
   }
 }
 
-function checkOverheatWarning(temps) {
+function checkOverheatWarning(temps, collectorsDrained) {
+  if (collectorsDrained) return;
   if (typeof temps.tank_top !== 'number') return;
   const thresholds = getThresholds();
   const current = temps.tank_top;
@@ -321,7 +328,8 @@ function checkOverheatWarning(temps) {
   }
 }
 
-function checkFreezeWarning(temps) {
+function checkFreezeWarning(temps, collectorsDrained) {
+  if (collectorsDrained) return;
   // Match control-logic's trigger: whichever of outdoor/collector is
   // colder drives the drain. On clear nights the sky-facing collector
   // reads several K below sheltered ambient, so warning on outdoor

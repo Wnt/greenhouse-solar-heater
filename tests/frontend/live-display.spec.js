@@ -300,3 +300,29 @@ test.describe("Graph 'All sensors' toggle", () => {
     await expect(page.locator('#inspector-tank-bottom')).toHaveText(/\d+\.\d°C/);
   });
 });
+
+test.describe('Collectors fluid-state indicator', () => {
+  test('shows DRAINED when the live frame reports collectors_drained=true', async ({ page }) => {
+    await installMockWs(page, {
+      mode: 'idle',
+      flags: { collectors_drained: true, emergency_heating_active: false },
+    });
+    await mockHistoryApi(page);
+    await page.goto('/playground/#status', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+    await expect(page.locator('#comp-collectors')).toHaveText('DRAINED');
+  });
+
+  test('shows FILLED when the live frame reports collectors_drained=false', async ({ page }) => {
+    await installMockWs(page, {
+      mode: 'solar_charging',
+      flags: { collectors_drained: false, emergency_heating_active: false },
+    });
+    await mockHistoryApi(page);
+    await page.goto('/playground/#status', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+    await expect(page.locator('#comp-collectors')).toHaveText('FILLED');
+  });
+});
