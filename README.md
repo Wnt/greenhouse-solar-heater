@@ -1,6 +1,6 @@
 # Greenhouse Solar Heating System
 
-![Thermal simulation playground showing 24h of simulated data](tests/e2e/screenshots/readme-hero.png)
+![Thermal simulation playground showing 24h of simulated data](tests/frontend/screenshots/readme-hero.png)
 
 Solar thermal heating system for a greenhouse in Southwest Finland.
 
@@ -16,29 +16,30 @@ An open (unpressurized) solar thermal system that:
 
 **[Try it live →](https://wnt.github.io/greenhouse-solar-heater/playground/)**
 
-Web-based tools for simulating and validating the system, deployed via GitHub Pages.
+A hash-routed SPA/PWA deployed via GitHub Pages. In simulator mode it runs entirely client-side, loading `system.yaml` as configuration and re-using the on-device control logic verbatim.
 
-| Tool | Description |
+| View | Description |
 |------|-------------|
-| [Thermal Simulation](playground/thermal.html) | Set outdoor temp, irradiance, tank state — watch the control system respond in real time |
-| [Hydraulic Simulation](playground/hydraulic.html) | Explore communicating vessels, reservoir sizing, drainback dynamics, and air management |
-
-All tools run entirely client-side (no backend), load `system.yaml` as configuration, and use ES modules with no build step.
+| [`#status`](playground/index.html#status) | Live readings, current operating mode, and energy balance |
+| [`#components`](playground/index.html#components) | System topology with valve/pump state overlaid |
+| [`#controls`](playground/index.html#controls) | Manual mode override and 24 h simulation controls |
+| [`#device`](playground/index.html#device) | Sensor discovery, role assignment, and Shelly device config |
+| [`#settings`](playground/index.html#settings) | Notifications, data source, and account management |
 
 ## Project Files
 
 | File | Purpose |
 |------|---------|
 | `system.yaml` | **Source of truth** — all component specs, heights, valve states, operating modes |
-| `shelly/` | Shelly control software — control logic + shell integration + platform linter |
-| `playground/` | Interactive web tools — thermal sim, hydraulic sim |
-| `monitor/` | Temperature monitor web app — server, UI, auth, push notifications |
-| `deploy/` | Cloud deployment — Terraform, Docker, deployer, WireGuard |
+| `shelly/` | Shelly control software — control logic, telemetry, deploy script, platform linter |
+| `playground/` | SPA/PWA — status, components, controls, device, settings views |
+| `server/` | Node.js API — HTTP + WebSocket + MQTT bridge + WebAuthn auth + history (PostgreSQL/TimescaleDB) |
+| `deploy/` | Cloud deployment — Terraform (UpCloud K8s + Postgres + S3), Docker, OpenVPN sidecar, K8s manifests |
 | `design/docs/` | Design documentation — architecture, modes, safety rules, BOM |
 | `design/diagrams/` | SVG schematics + Mermaid state/sequence diagrams |
 | `design/construction/` | Physical build instructions |
 | `design/photos/` | Photos of owned components (pump, panels, tank) |
-| `tests/` | Unit tests, thermal simulation scenarios, and e2e tests |
+| `tests/` | Unit tests, thermal simulation scenarios, frontend Playwright, and e2e tests |
 
 ## Documentation Format
 
@@ -48,10 +49,10 @@ All tools run entirely client-side (no backend), load `system.yaml` as configura
 
 ## Key Design Decisions
 
-- **Unpressurized system** — Jäspi tank used open/vented via reservoir on top
-- **On/off valve manifold** — 8 motorized on/off valves (DN15) in input/output manifolds around pump
+- **Unpressurized system** — Jäspi tank sealed but vented via an open reservoir on the dip-tube port
+- **On/off valve manifold** — 7 motorized on/off DN15 valves (3 input, 3 output, plus V_air) around a single pump
 - **Active drainback** — pump empties collectors; air enters via V_air at collector top
-- **Pump power monitoring** — Pro 4PM detects dry-run via power draw, no physical flow sensor
+- **Pump power monitoring** — fixed-duration drain run; no physical flow sensor
 - **Open reservoir** — primary air separator; trapped air from collector loop and tank vents here
 - **Manual service valves** — SV-drain and SV-fill for system maintenance
-- **Shelly control** — Pro 4PM + 4× Pro 2PM + 1 Gen3 with Add-on
+- **Shelly control** — Pro 4PM (main) + Pro 2PM × valves + Shelly 1 Gen3 with Add-on (sensors)
