@@ -18,6 +18,7 @@ import { attachScriptStatusWebSocket } from '../actions/script-monitor.js';
 import { graphRange, timeSeriesStore, running } from './state.js';
 import { attachWatchdogWebSocket } from './watchdog-ui.js';
 import { handleOverrideResponse, updateRelayBoard } from './relay-board.js';
+import { updateDrainageControl } from './drainage-control.js';
 import { updateDisplay, setLiveFrameSeen } from './display-update.js';
 import { drawHistoryGraph } from './history-graph.js';
 import {
@@ -271,6 +272,7 @@ function ensureLiveSource() {
         ['updateSidebarSubtitle',      updateSidebarSubtitle],
         ['updateDevicePushState',      updateDevicePushState],
         ['updateRelayBoard',           function () { updateRelayBoard(result); }],
+        ['updateDrainageControl',      function () { updateDrainageControl(result); }],
       ];
       for (let i = 0; i < steps.length; i++) {
         try { steps[i][1](); }

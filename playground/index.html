@@ -448,11 +448,12 @@
     <!-- ═══ DEVICE VIEW (live mode only) ═══ -->
     <!--
       Section order (top → bottom):
-        1. Manual relay testing   — fastest-feedback diagnostic, used during commissioning
-        2. Controller settings    — runtime toggles and mode bans
-        3. Sensor configuration   — scan + assign probes (usually one-time setup)
-      Keep this order: the reorg in claude/reorganize-device-view-eTLeU puts
-      hands-on testing first and the noisier sensor block last.
+        1. Drainage control       — high-level drain/refill action, surfaces persisted KVS state
+        2. Manual relay testing   — fastest-feedback diagnostic, used during commissioning
+        3. Controller settings    — runtime toggles and mode bans
+        4. Sensor configuration   — scan + assign probes (usually one-time setup)
+      Keep drain/refill at the top: it's the operator-facing action that
+      reads/writes the persisted "drained" KVS key on the controller.
     -->
     <section id="view-device" class="view" data-admin-only>
       <div class="view-header">
@@ -469,7 +470,50 @@
         <div id="staged-valve-detail-pending-close" class="staged-valve-list"></div>
       </div>
 
-      <!-- ── 1. Manual relay testing ── -->
+      <!-- ── 1. Drainage control ──
+           High-level wrapper around the existing override→AD / override→SC flows.
+           The drainage status (collectors drained vs. filled) is the canonical
+           operator-actionable safety state — it lives in KVS key "drained" on
+           the controller and survives reboots. This card surfaces that state
+           and provides one-click drain / refill operations that auto-exit the
+           override once the controller confirms completion (so freeze-drain
+           safety automation comes straight back online). -->
+      <div class="card" id="drainage-control-card">
+        <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);margin:0 0 8px;">Drainage control.</h3>
+        <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 16px;">Drain the collector loop into the tank, or refill it via the solar charging path. The controller persists drainage status to non-volatile storage (KVS key <code>drained</code>) — it survives reboots and informs freeze-drain decisions on the next boot.</p>
+
+        <!-- Status badge: reflects flags.collectors_drained from the live state frame -->
+        <div id="drainage-status-row" style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:12px;border:1px solid var(--outline-variant);border-radius:8px;">
+          <span class="material-symbols-outlined" id="drainage-status-icon" style="font-size:28px;color:var(--on-surface-variant);">help</span>
+          <div style="flex:1;">
+            <div style="font-size:14px;font-weight:600;color:var(--on-surface);">Collector loop status</div>
+            <div id="drainage-status-text" style="font-size:13px;color:var(--on-surface-variant);">Waiting for controller…</div>
+          </div>
+          <span id="drainage-status-badge" style="font-size:11px;font-weight:700;letter-spacing:0.08em;padding:4px 10px;border-radius:4px;background:var(--surface-variant);color:var(--on-surface-variant);">UNKNOWN</span>
+        </div>
+
+        <!-- Action buttons — disabled until first state frame arrives -->
+        <div id="drainage-actions" style="display:flex;flex-wrap:wrap;gap:12px;">
+          <button class="primary" id="drainage-drain-btn" disabled>Drain System</button>
+          <button class="primary" id="drainage-refill-btn" disabled>Refill via Solar</button>
+        </div>
+
+        <!-- In-progress banner: visible only while THIS card has an op in flight -->
+        <div id="drainage-progress" style="display:none;margin-top:16px;padding:12px;border:1px solid var(--primary);border-radius:8px;background:var(--surface-variant);">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--primary);" id="drainage-progress-title">Operation in progress</div>
+              <div style="font-size:12px;color:var(--on-surface-variant);margin-top:2px;" id="drainage-progress-detail"></div>
+            </div>
+            <button class="primary" id="drainage-abort-btn" style="background:var(--error);font-size:12px;padding:6px 14px;">Abort</button>
+          </div>
+        </div>
+
+        <!-- Error / info message — short-lived, fades after a few seconds -->
+        <div id="drainage-msg" style="display:none;font-size:13px;margin-top:8px;"></div>
+      </div>
+
+      <!-- ── 2. Manual relay testing ── -->
       <div class="card" id="relay-override-card">
         <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);margin:0 0 8px;">Manual relay testing.</h3>
         <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 16px;">Directly toggle individual relays to verify wiring and valve actuation. All automation — <strong>including freeze-drain safety</strong> — is suspended while active. Pick a forced mode to enter.</p>
@@ -560,7 +604,7 @@
         <div id="override-expired-msg" style="display:none;font-size:13px;color:var(--on-surface-variant);margin-top:8px;"></div>
       </div>
 
-      <!-- ── 2. Controller settings ── -->
+      <!-- ── 3. Controller settings ── -->
       <div class="card" id="device-config-card" style="margin-top:20px;">
         <h3 style="font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);margin:0 0 8px;">Controller settings.</h3>
         <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 16px;">Enable or disable hardware control, individual actuators, and operating modes. Pushed to the controller over MQTT.</p>
@@ -600,7 +644,7 @@
         </div>
       </div>
 
-      <!-- ── 3. Sensor configuration (rendered by sensors.js into #sensors-content) ── -->
+      <!-- ── 4. Sensor configuration (rendered by sensors.js into #sensors-content) ── -->
       <div id="sensors-content" style="margin-top:20px;">
         <div class="card"><p style="color:var(--on-surface-variant);">Loading sensor configuration...</p></div>
       </div>

@@ -24,6 +24,7 @@ import {
   renderModeEnablement, getWatchdogSnapshot,
 } from './main/watchdog-ui.js';
 import { initRelayBoard, updateRelayBoard } from './main/relay-board.js';
+import { initDrainageControl } from './main/drainage-control.js';
 import { initDeviceConfig } from './main/device-config.js';
 import { wireNotificationUI } from './main/notifications-ui.js';
 import { drawHistoryGraph, tankAvgOf, toSchematicState } from './main/history-graph.js';
@@ -142,6 +143,7 @@ async function init() {
   initModeToggle();
   initDeviceConfig();
   initRelayBoard({ getLiveSource });
+  initDrainageControl({ getLiveSource });
   initWatchdogUI({ getLiveSource });
 
   // On deploys without live mode (e.g. GitHub Pages) load the
