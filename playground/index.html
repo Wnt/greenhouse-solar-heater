@@ -254,14 +254,21 @@
               <h3 style="margin-bottom:0;">24h History</h3>
               <span class="graph-peak" id="graph-peak-label">Yesterday's High: --</span>
             </div>
-            <div class="time-range-pills" id="time-range-pills">
-              <button data-range="3600">1h</button>
-              <button data-range="21600">6h</button>
-              <button data-range="43200">12h</button>
-              <button data-range="86400" class="active">24h</button>
-              <button data-range="604800" class="live-only" style="display:none;">7d</button>
-              <button data-range="2592000" class="live-only" style="display:none;">30d</button>
-              <button data-range="31536000" class="live-only" style="display:none;">1y</button>
+            <div class="time-range-slider" id="time-range-slider" role="slider" tabindex="0" aria-label="Timeframe"
+                 aria-valuemin="0" aria-valuemax="6" aria-valuenow="3" aria-valuetext="24h">
+              <div class="time-range-slider-track">
+                <div class="time-range-slider-fill"></div>
+                <div class="time-range-slider-thumb"></div>
+              </div>
+              <div class="time-range-slider-steps">
+                <button type="button" class="time-range-slider-step" data-range="3600" data-step="0">1h</button>
+                <button type="button" class="time-range-slider-step" data-range="21600" data-step="1">6h</button>
+                <button type="button" class="time-range-slider-step" data-range="43200" data-step="2">12h</button>
+                <button type="button" class="time-range-slider-step active" data-range="86400" data-step="3">24h</button>
+                <button type="button" class="time-range-slider-step live-only" data-range="259200" data-step="4" style="display:none;">3d</button>
+                <button type="button" class="time-range-slider-step live-only" data-range="604800" data-step="5" style="display:none;">7d</button>
+                <button type="button" class="time-range-slider-step live-only" data-range="10368000" data-step="6" style="display:none;">4mo</button>
+              </div>
             </div>
             <div class="graph-option-toggle" id="graph-show-all-sensors-toggle">
               <span>All sensors</span>

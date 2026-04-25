@@ -180,8 +180,10 @@ const RANGE_INTERVALS = {
   '12h': '12 hours',
   '24h': '24 hours',
   '48h': '48 hours',
+  '3d': '3 days',
   '7d': '7 days',
   '30d': '30 days',
+  '4mo': '4 months',
   '1y': '1 year',
 };
 
@@ -195,8 +197,10 @@ const RANGE_INTERVALS = {
 // e2e harness relies on `range=all` resolving against pg-mem (which has
 // no time_bucket).
 const COARSE_BUCKETS = {
+  '3d': '2 minutes',
   '7d': '5 minutes',
   '30d': '30 minutes',
+  '4mo': '2 hours',
   '1y': '6 hours',
 };
 
@@ -208,8 +212,9 @@ function getHistory(range, sensor, callback) {
     return;
   }
 
-  // Choose resolution: raw for ≤6h, 30s aggregate for ≥7d, blended for 24h/48h
-  const useAggregate = range === '7d' || range === '30d' || range === '1y' || range === 'all';
+  // Choose resolution: raw for ≤6h, 30s aggregate for ≥3d, blended for 24h/48h.
+  // 3d must use the aggregate — raw sensor_readings is pruned at 48h.
+  const useAggregate = range === '3d' || range === '7d' || range === '30d' || range === '4mo' || range === '1y' || range === 'all';
   const useBlended = range === '24h' || range === '48h';
 
   const params = [];

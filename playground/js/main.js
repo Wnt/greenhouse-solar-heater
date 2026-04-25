@@ -108,7 +108,7 @@ async function init() {
   initNavigation(store);
 
   setupControls();
-  setupTimeRangePills();
+  setupTimeRangeSlider();
   setupAllSensorsToggle();
   setupFAB();
   resetSim();
@@ -189,21 +189,154 @@ function buildFallbackConfig() {
 // ── Navigation is now store-driven via js/actions/navigation.js + js/subscriptions.js ──
 
 
-// ── Time range pills ──
+// ── Timeframe progressive slider ──
 
-function setupTimeRangePills() {
-  document.getElementById('time-range-pills').addEventListener('click', (e) => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    setGraphRange(parseInt(btn.dataset.range));
-    document.querySelectorAll('#time-range-pills button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    if (store.get('phase') === 'live') {
-      fetchLiveHistory(graphRange);
-    } else {
-      drawHistoryGraph();
+// Haptic tick on snap. Matches the createSlider pattern in ui.js so the
+// feel is consistent with the simulation-controls sliders (8 ms pulse).
+function hapticTick() {
+  try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* noop */ }
+}
+
+function setupTimeRangeSlider() {
+  const slider = document.getElementById('time-range-slider');
+  if (!slider) return;
+  const thumb = slider.querySelector('.time-range-slider-thumb');
+  const fill = slider.querySelector('.time-range-slider-fill');
+  const stepsWrap = slider.querySelector('.time-range-slider-steps');
+  const allSteps = Array.from(stepsWrap.querySelectorAll('.time-range-slider-step'));
+
+  function visibleSteps() {
+    return allSteps.filter(el => el.style.display !== 'none');
+  }
+
+  function updateThumb(stepEls, activeIdx) {
+    if (stepEls.length === 0) return;
+    // Position thumb over the active step. Width/position are fractions of
+    // the steps-container width so the thumb tracks flex sizing regardless
+    // of how many steps are visible.
+    const widthPct = 100 / stepEls.length;
+    const leftPct = widthPct * activeIdx;
+    thumb.style.width = widthPct + '%';
+    thumb.style.transform = 'translateX(' + (leftPct / widthPct * 100) + '%)';
+    fill.style.width = (leftPct + widthPct) + '%';
+    allSteps.forEach(b => b.classList.remove('active'));
+    stepEls[activeIdx].classList.add('active');
+    slider.setAttribute('aria-valuemin', '0');
+    slider.setAttribute('aria-valuemax', String(stepEls.length - 1));
+    slider.setAttribute('aria-valuenow', String(activeIdx));
+    slider.setAttribute('aria-valuetext', stepEls[activeIdx].textContent);
+  }
+
+  function commit(stepEls, idx, fromUser) {
+    idx = Math.max(0, Math.min(stepEls.length - 1, idx));
+    const el = stepEls[idx];
+    const seconds = parseInt(el.dataset.range, 10);
+    const changed = graphRange !== seconds;
+    setGraphRange(seconds);
+    updateThumb(stepEls, idx);
+    if (changed) {
+      if (fromUser) hapticTick();
+      if (store.get('phase') === 'live') {
+        fetchLiveHistory(graphRange);
+      } else {
+        drawHistoryGraph();
+      }
     }
+  }
+
+  function idxFromClientX(stepEls, clientX) {
+    const rect = stepsWrap.getBoundingClientRect();
+    const frac = (clientX - rect.left) / rect.width;
+    return Math.round(frac * (stepEls.length - 1));
+  }
+
+  // Initialize: reflect the current graphRange (default 24h / step 3).
+  function syncFromState() {
+    const stepEls = visibleSteps();
+    let idx = stepEls.findIndex(el => parseInt(el.dataset.range, 10) === graphRange);
+    if (idx < 0) {
+      // graphRange points at a step hidden in this phase (e.g. switched
+      // live→sim while on 7d). Clamp to the largest visible step and
+      // rewrite state so subsequent fetches use a supported range.
+      idx = stepEls.length - 1;
+      const el = stepEls[idx];
+      setGraphRange(parseInt(el.dataset.range, 10));
+    }
+    updateThumb(stepEls, idx);
+  }
+  syncFromState();
+
+  // Clicks on an individual step snap directly — same as the old pills.
+  stepsWrap.addEventListener('click', (e) => {
+    const btn = e.target.closest('.time-range-slider-step');
+    if (!btn || btn.style.display === 'none') return;
+    const stepEls = visibleSteps();
+    const idx = stepEls.indexOf(btn);
+    if (idx >= 0) commit(stepEls, idx, true);
   });
+
+  // Drag support: pointer events cover mouse + touch + pen uniformly.
+  let dragging = false;
+  let activePointer = null;
+  let lastIdx = -1;
+
+  function onDown(e) {
+    // Only react to the primary button; touch/pen pointer types always have button=0.
+    if (e.button !== undefined && e.button !== 0) return;
+    dragging = true;
+    activePointer = e.pointerId;
+    slider.classList.add('dragging');
+    try { slider.setPointerCapture(e.pointerId); } catch (_) { /* noop */ }
+    const stepEls = visibleSteps();
+    const idx = idxFromClientX(stepEls, e.clientX);
+    lastIdx = idx;
+    commit(stepEls, idx, true);
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!dragging || e.pointerId !== activePointer) return;
+    const stepEls = visibleSteps();
+    const idx = idxFromClientX(stepEls, e.clientX);
+    if (idx !== lastIdx) {
+      lastIdx = idx;
+      commit(stepEls, idx, true);
+    }
+  }
+
+  function onUp(e) {
+    if (!dragging || (activePointer !== null && e.pointerId !== activePointer)) return;
+    dragging = false;
+    activePointer = null;
+    lastIdx = -1;
+    slider.classList.remove('dragging');
+  }
+
+  slider.addEventListener('pointerdown', onDown);
+  slider.addEventListener('pointermove', onMove);
+  slider.addEventListener('pointerup', onUp);
+  slider.addEventListener('pointercancel', onUp);
+
+  // Keyboard access: arrow keys step, Home/End jump to bounds.
+  slider.addEventListener('keydown', (e) => {
+    const stepEls = visibleSteps();
+    const current = stepEls.findIndex(el => parseInt(el.dataset.range, 10) === graphRange);
+    const cur = current < 0 ? 0 : current;
+    let next = cur;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = cur - 1;
+    else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = cur + 1;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = stepEls.length - 1;
+    else return;
+    e.preventDefault();
+    commit(stepEls, next, true);
+  });
+
+  // Re-sync when phase flips live↔sim — .live-only steps show/hide and
+  // the visible set changes. subscriptions.js has already toggled
+  // display:none by the time this subscriber fires (it registers earlier
+  // via initSubscriptions).
+  store.subscribe('phase', () => { syncFromState(); });
 }
 
 function setupAllSensorsToggle() {
