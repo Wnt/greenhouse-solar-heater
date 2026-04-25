@@ -22,11 +22,19 @@ const { URL } = require('node:url');
 
 const EMPTY_SHA256 = crypto.createHash('sha256').update('').digest('hex');
 
+// AWS SigV4 mandates SHA-256 for the canonical-request and payload digest.
+// See docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html.
+// Inputs are HTTP request bytes (method, path, headers, body) — never used
+// for password storage. CodeQL's js/insufficient-password-hash heuristic
+// otherwise flags this when the request body happens to be credential
+// material being uploaded to object storage.
 function sha256Hex(data) {
-  return crypto.createHash('sha256').update(data).digest('hex');
+  return crypto.createHash('sha256').update(data).digest('hex'); // lgtm [js/insufficient-password-hash]
 }
-function hmac(key, data) {
-  return crypto.createHmac('sha256', key).update(data).digest();
+// HMAC-SHA-256 is the SigV4 signing-key derivation primitive (RFC 4868).
+// `signingKey` is the staged HMAC chain output, not user-supplied material.
+function hmac(signingKey, message) {
+  return crypto.createHmac('sha256', signingKey).update(message).digest();
 }
 
 // RFC 3986 unreserved chars + percent-encode everything else.

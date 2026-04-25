@@ -112,7 +112,12 @@ describe('ws-server live round-trip', () => {
       const { sock, headerStr, key } = await rawHandshake(port);
       assert.match(headerStr, /^HTTP\/1\.1 101 /);
       const expected = _acceptKey(key);
-      assert.match(headerStr, new RegExp('Sec-WebSocket-Accept: ' + expected.replace(/\+/g, '\\+').replace(/\//g, '\\/')));
+      // Plain substring check — `expected` is base64 (`A-Za-z0-9+/=`) and
+      // would otherwise need every regex metachar escaped.
+      assert.ok(
+        headerStr.includes('Sec-WebSocket-Accept: ' + expected),
+        'response missing expected Sec-WebSocket-Accept header'
+      );
       sock.destroy();
     } finally {
       server.close();
