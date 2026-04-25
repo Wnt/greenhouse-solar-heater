@@ -222,6 +222,54 @@ describe('notifications', () => {
       assert.strictEqual(freezeNotifs.length, 0);
     });
 
+    it('does not send freeze warning when collectors are already drained', () => {
+      // Same trending payload as the "sends freeze warning" test, but
+      // with flags.collectors_drained=true. There is no water in the
+      // collector loop to freeze, so warning the operator that "freeze
+      // drain may activate" is misleading — it cannot, the system is
+      // already in the post-drain state.
+      const CONTROL = require('../shelly/control-logic.js');
+      const freezeT = CONTROL.DEFAULT_CONFIG.freezeDrainTemp;
+      const now = Date.now();
+      const history = [];
+      for (let i = 0; i <= 6; i++) {
+        notifications.addSample(history, now - (6 - i) * 60000, freezeT + 3 - i * 0.5);
+      }
+      notifications._setOutdoorHistory(history);
+
+      notifications.evaluate({
+        temps: { tank_top: 50, outdoor: freezeT + 0.1 },
+        mode: 'IDLE',
+        flags: { collectors_drained: true },
+      });
+
+      const freezeNotifs = sentNotifications.filter(function (n) { return n.type === 'freeze_warning'; });
+      assert.strictEqual(freezeNotifs.length, 0);
+    });
+
+    it('does not send overheat warning when collectors are already drained', () => {
+      // Overheat drain only activates during SOLAR_CHARGING, which
+      // requires water in the collectors. If they are drained, the
+      // drain mode the warning references cannot trigger.
+      const CONTROL = require('../shelly/control-logic.js');
+      const overheatT = CONTROL.DEFAULT_CONFIG.overheatDrainTemp;
+      const now = Date.now();
+      const tankHistory = [];
+      for (let k = 0; k <= 5; k++) {
+        notifications.addSample(tankHistory, now - (5 - k) * 60000, overheatT - 7 + k);
+      }
+      notifications._setTankHistory(tankHistory);
+
+      notifications.evaluate({
+        temps: { tank_top: overheatT - 2, outdoor: 10 },
+        mode: 'SOLAR_CHARGING',
+        flags: { collectors_drained: true },
+      });
+
+      const overheatNotifs = sentNotifications.filter(function (n) { return n.type === 'overheat_warning'; });
+      assert.strictEqual(overheatNotifs.length, 0);
+    });
+
     it('tracks energy during solar charging', () => {
       notifications.evaluate({ temps: { tank_top: 50, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
       assert.strictEqual(notifications._getDailyEnergyWh(), 0);

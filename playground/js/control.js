@@ -113,6 +113,10 @@ export class ControlStateMachine {
         space_heater: !!result.actuators.space_heater,
       },
       valves: result.valves,
+      flags: {
+        collectors_drained: !!this.collectorsDrained,
+        emergency_heating_active: !!this.emergencyHeatingActive,
+      },
       transition,
     };
   }

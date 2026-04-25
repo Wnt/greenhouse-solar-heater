@@ -275,6 +275,24 @@ export function updateDisplay(state, result) {
   updateComponent('comp-pump', result.actuators.pump, 'ACTIVE', 'OFF');
   updateComponent('comp-fan', result.actuators.fan, 'ON', 'OFF');
   updateComponent('comp-heater', result.actuators.space_heater, 'ON', 'OFF');
+
+  // Collectors fluid state. Drained = the freeze-drain or overheat-drain
+  // sequence has emptied the collector loop into the tank; refilling
+  // happens automatically on the next safe SOLAR_CHARGING window.
+  // Highlighted when drained because that's the protected (and the
+  // operator-actionable) state — drained means no freeze warning will
+  // fire, the system is parked.
+  const drained = !!(result.flags && result.flags.collectors_drained);
+  const collectorsEl = document.getElementById('comp-collectors');
+  if (collectorsEl) {
+    collectorsEl.textContent = drained ? 'DRAINED' : 'FILLED';
+    collectorsEl.className = 'component-value ' +
+      (drained ? 'component-value-optimal' : 'component-value-off');
+  }
+  const collectorsIcon = document.getElementById('comp-collectors-icon');
+  if (collectorsIcon) {
+    collectorsIcon.textContent = drained ? 'humidity_low' : 'water_drop';
+  }
   // Live mode: 'running' is meaningless (sim-only). Reflect actual
   // operation by checking whether mode is non-idle.
   const isLivePhase = store.get('phase') === 'live';

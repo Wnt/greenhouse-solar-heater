@@ -207,6 +207,11 @@ export class LiveSource extends DataSource {
       // moment of the transition.
       cause: data.cause || null,
       temps: data.temps || null,
+      // Carries `collectors_drained` / `emergency_heating_active` from
+      // the controller snapshot. Consumed by display-update.js so the
+      // Status view can show whether the collector loop currently
+      // holds water.
+      flags: data.flags || {},
     };
 
     this._emitUpdate(state, result);
