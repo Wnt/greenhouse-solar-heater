@@ -104,6 +104,16 @@ const MODE_CODE_LABELS = {
   EH: 'Emergency Heating',
 };
 
+// ea (enabled-actuator bitmask) per-bit names → human label. Bit names
+// originate in server/lib/config-events.js EA_BITS — keep in sync.
+const EA_BIT_LABELS = {
+  valves: 'Valves',
+  pump: 'Pump',
+  fan: 'Fan',
+  space_heater: 'Space Heater',
+  immersion_heater: 'Immersion Heater',
+};
+
 // Source attribution for config_events. Combined with actor for the
 // per-row description in the System Logs view.
 const CONFIG_SOURCE_LABELS = {
@@ -118,10 +128,12 @@ export function formatConfigSourceLabel(s) {
 }
 
 // Render a config_events row to a { title, desc } pair for the log
-// list. Three flavors:
+// list. Flavors:
 //   wb add (e.g. SC=9999999999)  — "Disabled mode: Solar Charging"
 //   wb remove (e.g. SC=null)     — "Re-enabled mode: Solar Charging"
 //   wb change (timestamp swap)   — "Updated ban: Solar Charging"
+//   ea bit on  (0 → 1)           — "Enabled actuator: Fan"
+//   ea bit off (1 → 0)           — "Disabled actuator: Fan"
 //   mo enter (null → object)     — "Manual override: Solar Charging (until 14:30)"
 //   mo exit (object → null)      — "Manual override exited"
 //   mo change (object → object)  — "Manual override updated: Active Drain"
@@ -142,6 +154,12 @@ export function formatConfigEntry(t) {
       return { title: 'Re-enabled mode: ' + modeLabel, desc: subtitle };
     }
     return { title: 'Updated ban: ' + modeLabel, desc: subtitle };
+  }
+
+  if (t.configKind === 'ea') {
+    const bitLabel = EA_BIT_LABELS[t.configKey] || t.configKey || 'unknown actuator';
+    const verb = t.to === '1' ? 'Enabled actuator' : 'Disabled actuator';
+    return { title: verb + ': ' + bitLabel, desc: subtitle };
   }
 
   if (t.configKind === 'mo') {

@@ -351,6 +351,50 @@ test.describe('Copy System Logs — live mode', () => {
     expect(text).toContain('Config version:     42');
   });
 
+  test('clipboard export renders config events (ea / wb) with friendly labels', async ({ page }) => {
+    // Regression: config_events used to fall through the mode-row
+    // formatter in the clipboard export (because t.mode is undefined
+    // for config rows) and rendered as empty "Idle" lines. Each
+    // config row should now render as a "Config" line with a friendly
+    // title plus a "source:" subtitle.
+    const now = Date.now();
+    const rows = [
+      makeEvent(now - 30_000, 'idle', 'solar_charging'),
+      {
+        ts: now - 60_000, type: 'config', kind: 'ea', key: 'fan',
+        from: '0', to: '1', source: 'api', actor: 'alice',
+      },
+      {
+        ts: now - 90_000, type: 'config', kind: 'wb', key: 'GH',
+        from: null, to: '9999999999', source: 'api', actor: 'alice',
+      },
+    ];
+
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, rows);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(3, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+    expect(text).toContain('Enabled actuator: Fan');
+    expect(text).toContain('Disabled mode: Greenhouse Heating');
+    expect(text).toContain('source: mode-enablement UI by alice');
+    expect(text).toContain('[config: api]');
+
+    // Guard the original bug: config rows must not be rendered as bare "Idle"
+    // lines (no payload, no description). Pull out only the lines under
+    // the Transition Log section to scope the assertion.
+    const tlIdx = text.indexOf('--- Transition Log ---');
+    expect(tlIdx).toBeGreaterThan(-1);
+    const transitionLogLines = text.slice(tlIdx).split('\n');
+    const bareIdle = transitionLogLines.filter(line => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\s+Idle\s*$/.test(line));
+    expect(bareIdle).toHaveLength(0);
+  });
+
   test('controller state shows manual-override forced mode + permanent SC ban', async ({ page }) => {
     const nowSec = Math.floor(Date.now() / 1000);
 

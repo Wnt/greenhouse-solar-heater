@@ -9,7 +9,7 @@ import { store } from '../app-state.js';
 import {
   formatClockTime, formatFullTimeHelsinki, formatCauseLabel,
   formatReasonLabel, formatSensorsLine, escapeHtml, formatTimeOfDay,
-  formatConfigEntry,
+  formatConfigEntry, formatConfigSourceLabel,
 } from './time-format.js';
 import { model, params, MODE_INFO, timeSeriesStore, transitionLog, lastLiveFrame } from './state.js';
 import { getWatchdogSnapshot } from './watchdog-ui.js';
@@ -376,10 +376,26 @@ function buildLogsClipboardText() {
   } else {
     for (let i = 0; i < transitionLog.length; i++) {
       const t = transitionLog[i];
-      const mi = MODE_INFO[t.mode] || MODE_INFO.idle;
       const timeLabel = t.kind === 'live'
         ? formatFullTimeHelsinki(t.ts)
         : formatTimeOfDay(t.time);
+
+      // Config events (wb / ea / mo) get a one-line "Config: <title>"
+      // entry tagged with the source/actor. Without this branch they
+      // fell through the mode-row formatter and rendered as bare
+      // "Idle" rows because t.mode is undefined for config events.
+      if (t.eventType === 'config') {
+        const fmt = formatConfigEntry(t);
+        const tag = '[config: ' + (t.source || 'unknown') + ']';
+        lines.push(timeLabel + '  Config  ' + fmt.title + '  ' + tag);
+        const subtitle = t.actor
+          ? formatConfigSourceLabel(t.source) + ' by ' + t.actor
+          : formatConfigSourceLabel(t.source);
+        lines.push('    source: ' + subtitle);
+        continue;
+      }
+
+      const mi = MODE_INFO[t.mode] || MODE_INFO.idle;
       // Header row carries cause and, when present, the evaluator's
       // decision code in the form `[cause: reason]` so `grep` on a
       // single bracketed pair still matches the cause.
