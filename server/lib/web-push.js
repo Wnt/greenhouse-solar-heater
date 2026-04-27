@@ -47,9 +47,17 @@ function hkdfExpand(prk, info, length) {
 function generateVAPIDKeys() {
   const ecdh = crypto.createECDH('prime256v1');
   ecdh.generateKeys();
+  // getPrivateKey() returns the BIGNUM with leading-zero bytes
+  // stripped, so ~1/256 of the time the result is 31 bytes (or fewer)
+  // instead of the 32 bytes JWK / web-push consumers expect. Left-pad
+  // to a fixed 32 bytes.
+  let privateKey = ecdh.getPrivateKey();
+  if (privateKey.length < 32) {
+    privateKey = Buffer.concat([Buffer.alloc(32 - privateKey.length), privateKey]);
+  }
   return {
     publicKey: b64uEncode(ecdh.getPublicKey(null, 'uncompressed')),  // 65 bytes
-    privateKey: b64uEncode(ecdh.getPrivateKey()),                    // 32 bytes
+    privateKey: b64uEncode(privateKey),                              // 32 bytes
   };
 }
 

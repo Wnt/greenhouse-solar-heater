@@ -63,8 +63,16 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: pw-browsers-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
-      - name: Install Playwright browser + system deps
-        run: npx playwright install --with-deps chromium
+      # Browser binary: ~1 s no-op on cache hit, ~5 s download on miss.
+      - name: Install Playwright browser
+        run: npx playwright install chromium
+      # apt-get install of ~30 system libs costs ~20 s every time and
+      # is not cacheable across runners — only run it on cache miss.
+      # On cache hit we rely on the runner image's preinstalled libs
+      # (ubuntu-24.04 ships Chrome and most of the same deps).
+      - name: Install Playwright system deps (cache miss only)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install-deps chromium
       - name: Save Playwright browser cache
         if: always() && steps.pw-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
