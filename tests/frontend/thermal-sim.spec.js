@@ -17,8 +17,11 @@ async function setSlider(page, id, value) {
 test.describe('Thermal Simulation UI', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/playground/?mode=sim');
-    // Wait for app to initialize (FAB becomes clickable when ready)
-    await expect(page.locator('#fab-play')).toBeVisible();
+    // Nav links have no href — the click handler is wired inside the
+    // async init() function. __initComplete fires only when init() has
+    // run past initNavigation + initModeToggle, i.e. when phase is set
+    // to 'simulation' so 'controls' is in availableViews.
+    await page.waitForFunction(() => window.__initComplete === true);
   });
 
   test('page loads with correct title and initial state', async ({ page }) => {

@@ -40,7 +40,7 @@ async function getClipboardText(page) {
 test.describe('Copy System Logs — simulation mode', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/playground/?mode=sim');
-    await expect(page.locator('#fab-play')).toBeVisible();
+    await page.waitForFunction(() => window.__initComplete === true);
     await waitForTestHook(page);
   });
 

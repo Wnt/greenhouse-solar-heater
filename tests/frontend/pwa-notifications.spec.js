@@ -43,6 +43,8 @@ async function mockPushApi(page) {
 }
 
 async function gotoSettings(page) {
+  // Hashchange listener is wired inside async init(); see auth-actions.spec.js.
+  await page.waitForFunction(() => window.__initComplete === true);
   // Navigate to the Settings view (URL hash based routing)
   await page.evaluate(() => { window.location.hash = 'settings'; });
   await expect(page.locator('#view-settings')).toHaveClass(/active/);
@@ -57,7 +59,7 @@ test.describe('Settings view — desktop', () => {
   test.beforeEach(async ({ page }) => {
     await mockPushApi(page);
     await page.goto('/playground/?mode=sim');
-    await expect(page.locator('#fab-play')).toBeVisible();
+    await page.waitForFunction(() => window.__initComplete === true);
     await gotoSettings(page);
   });
 
@@ -157,7 +159,7 @@ test.describe('Install card state when running standalone', () => {
   test('idle card is shown by default (browser mode)', async ({ page }) => {
     await mockPushApi(page);
     await page.goto('/playground/?mode=sim');
-    await expect(page.locator('#fab-play')).toBeVisible();
+    await page.waitForFunction(() => window.__initComplete === true);
     await page.evaluate(() => { window.location.hash = 'settings'; });
     await expect(page.locator('#view-settings')).toHaveClass(/active/);
 
@@ -192,7 +194,7 @@ test.describe('Install card state when running standalone', () => {
 
     await mockPushApi(page);
     await page.goto('/playground/?mode=sim');
-    await expect(page.locator('#fab-play')).toBeVisible();
+    await page.waitForFunction(() => window.__initComplete === true);
     await page.evaluate(() => { window.location.hash = 'settings'; });
     await expect(page.locator('#view-settings')).toHaveClass(/active/);
 
@@ -223,7 +225,7 @@ test.describe('Install card state when running standalone', () => {
 
     await mockPushApi(page);
     await page.goto('/playground/?mode=sim');
-    await expect(page.locator('#fab-play')).toBeVisible();
+    await page.waitForFunction(() => window.__initComplete === true);
     await page.evaluate(() => { window.location.hash = 'settings'; });
 
     const desc = page.locator('#pwa-uninstall-desc');
@@ -313,7 +315,7 @@ test.describe('Settings view — mobile viewport', () => {
   test.beforeEach(async ({ page }) => {
     await mockPushApi(page);
     await page.goto('/playground/?mode=sim');
-    await expect(page.locator('#fab-play')).toBeVisible();
+    await page.waitForFunction(() => window.__initComplete === true);
   });
 
   test('Settings nav item is visible in mobile bottom nav', async ({ page }) => {

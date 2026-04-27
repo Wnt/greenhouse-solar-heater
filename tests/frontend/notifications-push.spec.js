@@ -116,6 +116,8 @@ async function installPushMocks(page) {
 }
 
 async function gotoSettings(page) {
+  // Hashchange listener is wired inside async init(); see auth-actions.spec.js.
+  await page.waitForFunction(() => window.__initComplete === true);
   await page.evaluate(() => { window.location.hash = 'settings'; });
   await expect(page.locator('#view-settings')).toHaveClass(/active/);
   // Wait for initNotifications to settle — the toggle button gets its
