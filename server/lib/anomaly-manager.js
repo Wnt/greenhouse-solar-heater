@@ -14,7 +14,7 @@ const {
 } = require('../../shelly/watchdogs-meta.js');
 
 // Module-scoped state — set by init()
-let _deps = null;         // { deviceConfig, mqttBridge, push, wsBroadcast, history, log }
+let _deps = null;         // { deviceConfig, mqttBridge, push, wsBroadcast, history, db, log }
 let _pending = null;      // { id, firedAt, mode, triggerReason, dbEventId } | null
 // Mirror of deviceConfig fields that the playground needs to render
 // the watchdog UI and the System Logs export. Broadcast over WS as
@@ -67,6 +67,7 @@ function bootstrap(opts) {
     wsBroadcast: opts.wsBroadcast,
     mqttBridge: opts.mqttBridge,
     deviceConfig: opts.deviceConfig,
+    db,
     log,
   });
   log.info('anomaly-manager initialized', { backend: wdHistoryDb ? 'postgres' : 'ring-buffer' });
@@ -160,6 +161,37 @@ async function _handleFired(msg) {
 async function _handleResolved(msg) {
   const resolvedAt = new Date((msg.ts || Math.floor(Date.now() / 1000)) * 1000);
   const matches = !!(_pending && _pending.id === msg.id);
+
+  // Audit-log device-driven auto-shutdowns. shutdown_auto means the
+  // 5-minute pending grace expired without user action; the device
+  // wrote wb[modeCode] = now + WATCHDOG_BAN_SECONDS and transitioned
+  // to IDLE. The server's deviceConfig mirror does NOT see this write
+  // (no device → server config feedback), so without an explicit
+  // event row the auto-shutdown is invisible in the System Logs.
+  // shutdown_user goes through the regular config-PUT path so it's
+  // already covered by the http-handlers diff.
+  if (msg.how === 'shutdown_auto') {
+    const meta = getWatchdog(msg.id);
+    if (meta && meta.modeCode && _deps && _deps.db &&
+        typeof _deps.db.insertConfigEvent === 'function') {
+      const tsSec = msg.ts || Math.floor(Date.now() / 1000);
+      _deps.db.insertConfigEvent({
+        ts: new Date(tsSec * 1000),
+        kind: 'wb',
+        key: meta.modeCode,
+        old_value: null,
+        new_value: String(tsSec + WATCHDOG_BAN_SECONDS),
+        source: 'watchdog_auto',
+        actor: 'device',
+      }, function (err) {
+        if (err && _deps.log) {
+          _deps.log.error('config_event insert failed (watchdog_auto)', {
+            error: err.message, watchdog: msg.id, mode: meta.modeCode,
+          });
+        }
+      });
+    }
+  }
 
   if (matches) {
     await _deps.history.update(_pending.dbEventId, {

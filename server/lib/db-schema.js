@@ -57,6 +57,33 @@ const SCHEMA_SQL = [
   ")",
 
   "CREATE INDEX IF NOT EXISTS script_crashes_ts ON script_crashes (ts DESC)",
+
+  // Config-mutation events. Captures every wb (mode-ban) and mo (manual-
+  // override) change so the System Logs view can render an audit trail
+  // alongside mode transitions. Sources:
+  //   'api'           — PUT /api/device-config (mode-enablement UI, etc.)
+  //   'ws_override'   — WS override-enter/exit/update (refill, drain)
+  //   'watchdog_auto' — device-side auto-shutdown after watchdog fired,
+  //                     surfaced via the watchdog "resolved" MQTT event
+  //   'watchdog_user' — user-acknowledged watchdog shutdown via banner
+  // For wb events, `key` is the mode short code (SC/GH/AD/EH/I); for mo
+  // events `key` is null (the mo field has only one slot per device).
+  // old_value / new_value carry the raw value as a string: unix-sec
+  // timestamp for wb, JSON for mo, null = absent. `actor` is the
+  // username for human actions or 'device' for watchdog_auto.
+  "CREATE TABLE IF NOT EXISTS config_events (\n" +
+  "  ts        TIMESTAMPTZ NOT NULL,\n" +
+  "  kind      TEXT        NOT NULL,\n" +
+  "  key       TEXT,\n" +
+  "  old_value TEXT,\n" +
+  "  new_value TEXT,\n" +
+  "  source    TEXT        NOT NULL,\n" +
+  "  actor     TEXT\n" +
+  ")",
+
+  "SELECT create_hypertable('config_events', 'ts', if_not_exists => true)",
+
+  "CREATE INDEX IF NOT EXISTS config_events_ts ON config_events (ts DESC)",
 ];
 
 // Pre-aggregated 30-second buckets, used by getHistory for ranges ≥ 24 h.

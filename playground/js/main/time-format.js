@@ -95,6 +95,78 @@ export function formatReasonLabel(r) {
   return REASON_LABELS[r] || r;
 }
 
+// Mode short codes (matching `wb` keys / `mo.fm` values) → human label.
+const MODE_CODE_LABELS = {
+  I: 'Idle',
+  SC: 'Solar Charging',
+  GH: 'Greenhouse Heating',
+  AD: 'Active Drain',
+  EH: 'Emergency Heating',
+};
+
+// Source attribution for config_events. Combined with actor for the
+// per-row description in the System Logs view.
+const CONFIG_SOURCE_LABELS = {
+  api: 'mode-enablement UI',
+  ws_override: 'device view',
+  watchdog_auto: 'watchdog auto-shutdown',
+  watchdog_user: 'watchdog banner',
+};
+
+export function formatConfigSourceLabel(s) {
+  return CONFIG_SOURCE_LABELS[s] || s || 'unknown source';
+}
+
+// Render a config_events row to a { title, desc } pair for the log
+// list. Three flavors:
+//   wb add (e.g. SC=9999999999)  — "Disabled mode: Solar Charging"
+//   wb remove (e.g. SC=null)     — "Re-enabled mode: Solar Charging"
+//   wb change (timestamp swap)   — "Updated ban: Solar Charging"
+//   mo enter (null → object)     — "Manual override: Solar Charging (until 14:30)"
+//   mo exit (object → null)      — "Manual override exited"
+//   mo change (object → object)  — "Manual override updated: Active Drain"
+export function formatConfigEntry(t) {
+  const PERMANENT = 9999999999;
+  const sourceLabel = formatConfigSourceLabel(t.source);
+  const actorLabel = t.actor ? ' by ' + t.actor : '';
+  const subtitle = sourceLabel + actorLabel;
+
+  if (t.configKind === 'wb') {
+    const modeLabel = MODE_CODE_LABELS[t.configKey] || t.configKey || 'unknown mode';
+    if (t.from === null && t.to !== null) {
+      const isPermanent = parseInt(t.to, 10) === PERMANENT;
+      const verb = isPermanent ? 'Disabled mode' : 'Banned mode (cool-off)';
+      return { title: verb + ': ' + modeLabel, desc: subtitle };
+    }
+    if (t.from !== null && t.to === null) {
+      return { title: 'Re-enabled mode: ' + modeLabel, desc: subtitle };
+    }
+    return { title: 'Updated ban: ' + modeLabel, desc: subtitle };
+  }
+
+  if (t.configKind === 'mo') {
+    const fromMo = t.from ? safeParseJson(t.from) : null;
+    const toMo = t.to ? safeParseJson(t.to) : null;
+    if (!fromMo && toMo) {
+      const fmLabel = MODE_CODE_LABELS[toMo.fm] || toMo.fm || 'unknown';
+      return { title: 'Manual override: ' + fmLabel, desc: subtitle };
+    }
+    if (fromMo && !toMo) {
+      return { title: 'Manual override exited', desc: subtitle };
+    }
+    if (toMo) {
+      const fmLabel = MODE_CODE_LABELS[toMo.fm] || toMo.fm || 'unknown';
+      return { title: 'Manual override updated: ' + fmLabel, desc: subtitle };
+    }
+  }
+
+  return { title: 'Config change', desc: subtitle };
+}
+
+function safeParseJson(s) {
+  try { return JSON.parse(s); } catch (e) { return null; }
+}
+
 // Render the temp snapshot as "coll 62.3° · tank 41/29° · gh 12° · out 8°"
 export function formatSensorsLine(sensors) {
   if (!sensors) return '';

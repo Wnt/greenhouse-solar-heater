@@ -8,9 +8,20 @@
 
 const mqttBridge = require('./mqtt-bridge');
 const deviceConfig = require('./device-config');
+const { emitConfigEvents } = require('./config-events');
+const createLogger = require('./logger');
+
+const log = createLogger('ws-command');
 
 const VALID_RELAYS = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air', 'pump', 'fan'];
 let overrideTtlTimer = null;
+
+// Database handle for config_events audit writes. Injected after db
+// init from server.js so we don't carry a circular require. Optional —
+// when null (e.g. tests that don't init the DB), audit writes are
+// silently skipped.
+let _db = null;
+function setDb(db) { _db = db; }
 
 function wsSend(ws, msg) {
   if (ws.readyState === 1) ws.send(JSON.stringify(msg));
@@ -65,13 +76,14 @@ function handleOverrideEnter(ws, msg) {
   const ttl = Math.max(60, Math.min(3600, parseInt(msg.ttl, 10) || 300));
   const ex = Math.floor(Date.now() / 1000) + ttl;
 
-  deviceConfig.updateConfig({ mo: { a: true, ex, fm } }, function (err, updated) {
+  deviceConfig.updateConfig({ mo: { a: true, ex, fm } }, function (err, updated, prev) {
     if (err) {
       wsSend(ws, { type: 'override-error', message: err.message });
       return;
     }
     mqttBridge.publishConfig(updated);
     wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, forcedMode: fm });
+    emitConfigEvents(_db, log, prev, updated, 'ws_override', ws._userName || 'admin');
 
     // Secondary server-side TTL tracking
     clearOverrideTtlTimer();
@@ -79,8 +91,10 @@ function handleOverrideEnter(ws, msg) {
       overrideTtlTimer = null;
       const current = deviceConfig.getConfig();
       if (current.mo && current.mo.a) {
-        deviceConfig.updateConfig({ mo: null }, function (err2, cleared) {
-          if (!err2) mqttBridge.publishConfig(cleared);
+        deviceConfig.updateConfig({ mo: null }, function (err2, cleared, prevTtl) {
+          if (err2) return;
+          mqttBridge.publishConfig(cleared);
+          emitConfigEvents(_db, log, prevTtl, cleared, 'ws_override', 'ttl_expiry');
         });
       }
     }, ttl * 1000);
@@ -89,13 +103,14 @@ function handleOverrideEnter(ws, msg) {
 
 function handleOverrideExit(ws) {
   clearOverrideTtlTimer();
-  deviceConfig.updateConfig({ mo: null }, function (err, updated) {
+  deviceConfig.updateConfig({ mo: null }, function (err, updated, prev) {
     if (err) {
       wsSend(ws, { type: 'override-error', message: err.message });
       return;
     }
     mqttBridge.publishConfig(updated);
     wsSend(ws, { type: 'override-ack', active: false, forcedMode: null });
+    emitConfigEvents(_db, log, prev, updated, 'ws_override', ws._userName || 'admin');
   });
 }
 
@@ -110,13 +125,14 @@ function handleOverrideUpdate(ws, msg) {
   const ex = Math.floor(Date.now() / 1000) + ttl;
 
   const newMo = { a: cfg.mo.a, ex, fm: cfg.mo.fm };
-  deviceConfig.updateConfig({ mo: newMo }, function (err, updated) {
+  deviceConfig.updateConfig({ mo: newMo }, function (err, updated, prev) {
     if (err) {
       wsSend(ws, { type: 'override-error', message: err.message });
       return;
     }
     mqttBridge.publishConfig(updated);
     wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, forcedMode: (updated.mo && updated.mo.fm) || null });
+    emitConfigEvents(_db, log, prev, updated, 'ws_override', ws._userName || 'admin');
 
     // Reset secondary TTL timer
     clearOverrideTtlTimer();
@@ -124,8 +140,10 @@ function handleOverrideUpdate(ws, msg) {
       overrideTtlTimer = null;
       const current = deviceConfig.getConfig();
       if (current.mo && current.mo.a) {
-        deviceConfig.updateConfig({ mo: null }, function (err2, cleared) {
-          if (!err2) mqttBridge.publishConfig(cleared);
+        deviceConfig.updateConfig({ mo: null }, function (err2, cleared, prevTtl) {
+          if (err2) return;
+          mqttBridge.publishConfig(cleared);
+          emitConfigEvents(_db, log, prevTtl, cleared, 'ws_override', 'ttl_expiry');
         });
       }
     }, ttl * 1000);
@@ -195,4 +213,4 @@ function clearOverrideTtlTimer() {
   }
 }
 
-module.exports = { handleWsCommand };
+module.exports = { handleWsCommand, setDb };
