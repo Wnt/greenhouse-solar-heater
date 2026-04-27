@@ -472,19 +472,49 @@ function checkEveningReport() {
 
   lastEveningReport = day;
 
-  pushRef.sendNotification('evening_report', {
-    title: 'Daily Solar Report',
-    body: buildEveningBody(dailyEnergyWh, dailyHeatingLossWh, dailyLeakageLossWh),
-    tag: 'evening-report',
-    icon: pushRef.iconFor('evening_report'),
-    url: '/#status',
-  });
+  sendEveningReport(Date.now());
+}
 
-  // Reset daily counters. Keep lastTankEnergyKwh so the next sample
-  // doesn't treat the reset as a huge "gain" on re-accumulation.
-  dailyEnergyWh = 0;
-  dailyHeatingLossWh = 0;
-  dailyLeakageLossWh = 0;
+function sendEveningReport(now) {
+  function dispatch(stats) {
+    pushRef.sendNotification('evening_report', {
+      title: 'Daily Solar Report',
+      body: buildEveningBody(stats.gatheredWh, stats.heatingLossWh, stats.leakageLossWh),
+      tag: 'evening-report',
+      icon: pushRef.iconFor('evening_report'),
+      url: '/#status',
+    });
+
+    // Reset daily counters. Keep lastTankEnergyKwh so the next sample
+    // doesn't treat the reset as a huge "gain" on re-accumulation.
+    dailyEnergyWh = 0;
+    dailyHeatingLossWh = 0;
+    dailyLeakageLossWh = 0;
+  }
+
+  // Same DB-first strategy as the noon report. The in-memory daily*
+  // accumulators are still maintained as a fallback when the database
+  // is unreachable.
+  if (dbRef) {
+    computeDailyStats(dbRef, now, function (err, stats) {
+      if (err) {
+        log.warn('evening report: DB query failed, falling back to live accumulators', { error: err.message });
+        dispatch({
+          gatheredWh: dailyEnergyWh,
+          heatingLossWh: dailyHeatingLossWh,
+          leakageLossWh: dailyLeakageLossWh,
+        });
+      } else {
+        dispatch(stats);
+      }
+    });
+  } else {
+    dispatch({
+      gatheredWh: dailyEnergyWh,
+      heatingLossWh: dailyHeatingLossWh,
+      leakageLossWh: dailyLeakageLossWh,
+    });
+  }
 }
 
 function checkNoonReport() {
@@ -578,11 +608,7 @@ function computeOvernightStats(db, now, callback) {
 
 function computeOvernightFromHistory(points, events, now) {
   const windowStart = now - OVERNIGHT_WINDOW_MS;
-
-  const modeEvents = (events || [])
-    .filter(function (e) { return e && e.type === 'mode' && typeof e.ts === 'number'; })
-    .slice()
-    .sort(function (a, b) { return a.ts - b.ts; });
+  const modeEvents = sortModeEvents(events);
 
   // Mode at windowStart — last event with ts <= windowStart.
   let modeAtStart = 'idle';
@@ -614,12 +640,31 @@ function computeOvernightFromHistory(points, events, now) {
     durationMs += now - segStart;
   }
 
-  // Energy bucketing: walk points (which include a pre-window leading
-  // edge from getHistory's UNION) and credit each tank-energy drop to
-  // the mode active at that point. Same algorithm as
-  // playground/js/energy-balance.js bucketRange().
+  const buckets = bucketEnergyByMode(points, modeEvents, windowStart);
+
+  return {
+    durationMinutes: Math.round(durationMs / 60000),
+    heatingLossWh: buckets.heatingLossWh,
+    leakageLossWh: buckets.leakageLossWh,
+  };
+}
+
+function sortModeEvents(events) {
+  return (events || [])
+    .filter(function (e) { return e && e.type === 'mode' && typeof e.ts === 'number'; })
+    .slice()
+    .sort(function (a, b) { return a.ts - b.ts; });
+}
+
+// Walk points (which include a pre-window leading edge from getHistory's
+// UNION) and credit each tank-energy delta to the mode active at the
+// later sample. Positive deltas → gathered, negative → heating (during
+// heating modes) or leakage (otherwise). Same algorithm as
+// playground/js/energy-balance.js bucketRange().
+function bucketEnergyByMode(points, modeEvents, windowStart) {
   let pMode = 'idle';
   let evIdx = 0;
+  let gatheredWh = 0;
   let heatingLossWh = 0;
   let leakageLossWh = 0;
   let prevEnergy = null;
@@ -636,7 +681,9 @@ function computeOvernightFromHistory(points, events, now) {
     const e = tankStoredEnergyKwh((p.tank_top + p.tank_bottom) / 2);
     if (prevEnergy !== null && p.ts >= windowStart) {
       const d = e - prevEnergy;
-      if (d < 0) {
+      if (d > 0) {
+        gatheredWh += d * 1000;
+      } else if (d < 0) {
         const lossWh = -d * 1000;
         if (HEATING_MODES[pMode]) heatingLossWh += lossWh;
         else leakageLossWh += lossWh;
@@ -644,12 +691,38 @@ function computeOvernightFromHistory(points, events, now) {
     }
     prevEnergy = e;
   }
+  return { gatheredWh, heatingLossWh, leakageLossWh };
+}
 
-  return {
-    durationMinutes: Math.round(durationMs / 60000),
-    heatingLossWh,
-    leakageLossWh,
-  };
+// Daily stats for the 20:00 evening report — same brittleness story as
+// computeOvernightStats: in-memory daily* accumulators reset on every
+// server restart, so a redeploy mid-afternoon would silently truncate
+// the report. Window = last 24 h, matching the cadence between evening
+// reports.
+const DAILY_WINDOW_MS = 24 * 3600 * 1000;
+
+function computeDailyStats(db, now, callback) {
+  if (!db || typeof db.getHistory !== 'function' || typeof db.getEvents !== 'function') {
+    callback(new Error('db_unavailable'));
+    return;
+  }
+  db.getHistory('24h', null, function (hErr, points) {
+    if (hErr) { callback(hErr); return; }
+    db.getEvents('24h', 'mode', function (eErr, events) {
+      if (eErr) { callback(eErr); return; }
+      try {
+        callback(null, computeDailyFromHistory(points || [], events || [], now));
+      } catch (e) {
+        callback(e);
+      }
+    });
+  });
+}
+
+function computeDailyFromHistory(points, events, now) {
+  const windowStart = now - DAILY_WINDOW_MS;
+  const modeEvents = sortModeEvents(events);
+  return bucketEnergyByMode(points, modeEvents, windowStart);
 }
 
 // ── Lifecycle ──
@@ -732,6 +805,8 @@ module.exports = {
   buildNoonBody,
   computeOvernightStats,
   computeOvernightFromHistory,
+  computeDailyStats,
+  computeDailyFromHistory,
   _setLastEveningReport: function (v) { lastEveningReport = v; },
   _setLastNoonReport: function (v) { lastNoonReport = v; },
   _setLastEvaluateTs: function (v) { lastEvaluateTs = v; },

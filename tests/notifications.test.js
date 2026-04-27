@@ -723,6 +723,110 @@ describe('notifications', () => {
     });
   });
 
+  describe('computeDailyFromHistory (DB-backed evening report)', () => {
+    // A representative day: tank starts at 16°C (1.40 kWh), solar pulse
+    // mid-morning brings it to 30°C (6.28 kWh = +4.88 kWh gathered),
+    // afternoon idle leakage drops 1 K (−0.35 kWh), evening greenhouse
+    // heating drops 4 K (−1.40 kWh).
+    function buildDayScenario(now) {
+      const HOUR = 3600 * 1000;
+      const events = [
+        { ts: now - 25 * HOUR, type: 'mode', to: 'idle' },
+        { ts: now - 10 * HOUR, type: 'mode', to: 'solar_charging' },
+        { ts: now - 7 * HOUR, type: 'mode', to: 'idle' },
+        { ts: now - 3 * HOUR, type: 'mode', to: 'greenhouse_heating' },
+      ];
+      const points = [];
+      // Pre-window leading edge
+      points.push({ ts: now - 26 * HOUR, tank_top: 17, tank_bottom: 15 });
+      // First in-window: avg 16
+      points.push({ ts: now - 23 * HOUR, tank_top: 17, tank_bottom: 15 });
+      // Pre-charge: avg 16
+      points.push({ ts: now - 11 * HOUR, tank_top: 17, tank_bottom: 15 });
+      // Solar charge climbing: avg 23
+      points.push({ ts: now - 8 * HOUR - 30 * 60 * 1000, tank_top: 24, tank_bottom: 22 });
+      // Solar charge peak (still in solar_charging): avg 30
+      points.push({ ts: now - 7 * HOUR - 60 * 1000, tank_top: 31, tank_bottom: 29 });
+      // Mode flips to idle, no temp change yet
+      points.push({ ts: now - 7 * HOUR, tank_top: 31, tank_bottom: 29 });
+      // Afternoon idle leakage: avg 29
+      points.push({ ts: now - 3 * HOUR - 60 * 1000, tank_top: 30, tank_bottom: 28 });
+      // Mode flips to greenhouse_heating, no temp change
+      points.push({ ts: now - 3 * HOUR, tank_top: 30, tank_bottom: 28 });
+      // Evening heating drop: avg 25
+      points.push({ ts: now, tank_top: 26, tank_bottom: 24 });
+      return { points, events };
+    }
+
+    it('credits solar deltas to gathered, heating to heating, idle to leakage', () => {
+      const now = Date.now();
+      const { points, events } = buildDayScenario(now);
+
+      const stats = notifications.computeDailyFromHistory(points, events, now);
+
+      // Gathered: avg 16 → avg 30 = +14 K → ≈4884 Wh
+      assert.ok(
+        stats.gatheredWh > 4700 && stats.gatheredWh < 5000,
+        'gatheredWh=' + stats.gatheredWh
+      );
+      // Idle leakage: avg 30 → avg 29 = −1 K → ≈349 Wh
+      assert.ok(
+        stats.leakageLossWh > 250 && stats.leakageLossWh < 450,
+        'leakageLossWh=' + stats.leakageLossWh
+      );
+      // Heating: avg 29 → avg 25 = −4 K → ≈1395 Wh
+      assert.ok(
+        stats.heatingLossWh > 1300 && stats.heatingLossWh < 1500,
+        'heatingLossWh=' + stats.heatingLossWh
+      );
+    });
+
+    it('returns zero stats with empty inputs', () => {
+      const now = Date.now();
+      const stats = notifications.computeDailyFromHistory([], [], now);
+      assert.strictEqual(stats.gatheredWh, 0);
+      assert.strictEqual(stats.heatingLossWh, 0);
+      assert.strictEqual(stats.leakageLossWh, 0);
+    });
+
+    it('integration: evening report pulls from DB when available', () => {
+      const now = Date.now();
+      const { points, events } = buildDayScenario(now);
+
+      const mockPush = {
+        sendNotification: function () {},
+        iconFor: function () { return ''; },
+      };
+      const mockDb = {
+        getHistory: function (range, sensor, cb) { cb(null, points); },
+        getEvents: function (range, entityType, cb) { cb(null, events); },
+      };
+
+      notifications.init({ push: mockPush, deviceConfig: null, db: mockDb });
+      // Live accumulators are wiped (simulating a server restart) but
+      // the DB remembers the day.
+      notifications._setDailyEnergyWh(0);
+      notifications._setDailyHeatingLossWh(0);
+      notifications._setDailyLeakageLossWh(0);
+
+      return new Promise(function (resolve, reject) {
+        notifications.computeDailyStats(mockDb, now, function (err, stats) {
+          if (err) { reject(err); return; }
+          try {
+            assert.ok(stats.gatheredWh > 4000, 'gatheredWh=' + stats.gatheredWh);
+            assert.ok(stats.heatingLossWh > 1000, 'heatingLossWh=' + stats.heatingLossWh);
+            const body = notifications.buildEveningBody(
+              stats.gatheredWh, stats.heatingLossWh, stats.leakageLossWh
+            );
+            assert.match(body, /gathered/);
+            assert.match(body, /greenhouse drew/);
+            resolve();
+          } catch (e) { reject(e); }
+        });
+      });
+    });
+  });
+
   describe('heating-disabled detection via deviceConfig', () => {
     it('noon report mentions disabled state when GH is in wb with future timestamp', () => {
       const cfg = { wb: { GH: 9999999999 } };
