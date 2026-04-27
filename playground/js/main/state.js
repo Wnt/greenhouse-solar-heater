@@ -82,6 +82,16 @@ export const timeSeriesStore = {
 // both reach it through state.js without a cycle.
 export const transitionLog = [];
 
+// Last frame rendered by display-update.js. Stashed here (rather than
+// kept private in display-update) so logs.js can read it without
+// re-importing display-update — that import would close the cycle
+// display-update → logs → display-update, which the ESM-graph guard
+// in tests/playground-esm-imports.test.js rejects.
+export let lastLiveFrame = { state: null, result: null };
+export function setLastLiveFrame(state, result) {
+  lastLiveFrame = { state, result };
+}
+
 // Static per-mode UI metadata (label, description, icon). No
 // writes.
 export const MODE_INFO = {

@@ -10,8 +10,7 @@ import {
   formatClockTime, formatFullTimeHelsinki, formatCauseLabel,
   formatReasonLabel, formatSensorsLine, escapeHtml, formatTimeOfDay,
 } from './time-format.js';
-import { model, params, MODE_INFO, timeSeriesStore, transitionLog } from './state.js';
-import { getLastFrame } from './display-update.js';
+import { model, params, MODE_INFO, timeSeriesStore, transitionLog, lastLiveFrame } from './state.js';
 import { getWatchdogSnapshot } from './watchdog-ui.js';
 
 export { transitionLog };
@@ -328,49 +327,95 @@ function buildLogsClipboardText() {
   return lines.join('\n');
 }
 
+// Mirrors the deviceConfig actuator bitmask (server/lib/device-config.js
+// — `ea` field). Order is the bit order, not alphabetical.
+const EA_BITS = [
+  { bit: 1,  name: 'valves' },
+  { bit: 2,  name: 'pump' },
+  { bit: 4,  name: 'fan' },
+  { bit: 8,  name: 'space_heater' },
+  { bit: 16, name: 'immersion_heater' },
+];
+
+function formatEnabledActuators(ea) {
+  if (typeof ea !== 'number') return '(unknown)';
+  const on = EA_BITS.filter(b => (ea & b.bit) !== 0).map(b => b.name);
+  return (on.length ? on.join(', ') : 'none') + ' (ea=' + ea + ')';
+}
+
+function formatBanList(wb, nowSec) {
+  const PERMANENT = 9999999999;
+  const out = [];
+  Object.keys(wb || {}).forEach(code => {
+    const until = wb[code];
+    if (typeof until !== 'number' || until <= nowSec) return;
+    if (until === PERMANENT) {
+      out.push(code + '=disabled');
+    } else {
+      const rem = until - nowSec;
+      const h = Math.floor(rem / 3600);
+      const m = Math.floor((rem % 3600) / 60);
+      out.push(code + '=' + h + 'h' + (m < 10 ? '0' : '') + m + 'm');
+    }
+  });
+  return out.length ? out.join(' ') : 'none';
+}
+
+function formatWatchdogEnabled(we) {
+  const on = Object.keys(we || {}).filter(id => we[id]);
+  return on.length ? on.join(', ') : 'none';
+}
+
+function formatWatchdogSnoozed(wz, nowSec) {
+  const out = [];
+  Object.keys(wz || {}).forEach(id => {
+    const until = wz[id];
+    if (typeof until !== 'number' || until <= nowSec) return;
+    const rem = until - nowSec;
+    const m = Math.floor(rem / 60);
+    out.push(id + '=' + m + 'm');
+  });
+  return out.length ? out.join(' ') : 'none';
+}
+
 function appendControllerState(lines) {
-  const frame = getLastFrame();
-  const result = (frame && frame.result) || null;
-  const wb = (getWatchdogSnapshot() || {}).wb || {};
+  const result = (lastLiveFrame && lastLiveFrame.result) || null;
+  const snap = getWatchdogSnapshot() || {};
   const nowSec = Math.floor(Date.now() / 1000);
 
   lines.push('--- Controller State ---');
-  if (!result) {
+  if (!result && !snap.v) {
     lines.push('(no live snapshot received yet)');
     lines.push('');
     return;
   }
 
-  lines.push('Mode:               ' + (result.mode || 'idle'));
-  lines.push('Controls enabled:   ' + (result.controls_enabled ? 'yes' : 'no'));
-
-  const flags = result.flags || {};
+  // Live state (sensors / mode / flags) from the WS state push.
+  const flags = (result && result.flags) || {};
+  lines.push('Mode:               ' + ((result && result.mode) || 'idle'));
   lines.push('Collectors drained: ' + (flags.collectors_drained ? 'yes' : 'no'));
   lines.push('Emergency heating:  ' + (flags.emergency_heating_active ? 'on' : 'off'));
 
-  const mo = result.manual_override;
-  if (mo && mo.active) {
-    const exp = mo.expiresAt ? formatFullTimeHelsinki(mo.expiresAt * 1000) : '—';
-    lines.push('Manual override:    ' + (mo.forcedMode || 'active') + ' (until ' + exp + ')');
+  // Device config mirror (ce/ea/mo/we/wz/wb/v) from the watchdog-state
+  // broadcast. These are the evaluator's gating fields — invisible from
+  // the temperature table, but each one can independently keep the
+  // controller from picking a mode the temperatures would otherwise
+  // call for.
+  lines.push('Controls enabled:   ' + (snap.ce ? 'yes' : 'no'));
+  lines.push('Enabled actuators:  ' + formatEnabledActuators(snap.ea));
+
+  const mo = snap.mo;
+  if (mo && mo.a) {
+    const exp = mo.ex ? formatFullTimeHelsinki(mo.ex * 1000) : '—';
+    lines.push('Manual override:    ' + (mo.fm || 'active') + ' (until ' + exp + ')');
   } else {
     lines.push('Manual override:    off');
   }
 
-  const PERMANENT = 9999999999;
-  const banned = [];
-  Object.keys(wb).forEach(code => {
-    const until = wb[code];
-    if (typeof until !== 'number' || until <= nowSec) return;
-    if (until === PERMANENT) {
-      banned.push(code + '=disabled');
-    } else {
-      const rem = until - nowSec;
-      const h = Math.floor(rem / 3600);
-      const m = Math.floor((rem % 3600) / 60);
-      banned.push(code + '=' + h + 'h' + (m < 10 ? '0' : '') + m + 'm');
-    }
-  });
-  lines.push('Mode bans (wb):     ' + (banned.length ? banned.join(' ') : 'none'));
+  lines.push('Watchdogs enabled:  ' + formatWatchdogEnabled(snap.we));
+  lines.push('Watchdogs snoozed:  ' + formatWatchdogSnoozed(snap.wz, nowSec));
+  lines.push('Mode bans (wb):     ' + formatBanList(snap.wb, nowSec));
+  lines.push('Config version:     ' + (typeof snap.v === 'number' ? snap.v : '(unknown)'));
   lines.push('');
 }
 

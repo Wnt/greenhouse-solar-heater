@@ -14,7 +14,7 @@
 
 import { store } from '../app-state.js';
 import { tankStoredEnergyKwh } from '../physics.js';
-import { timeSeriesStore, MODE_INFO, running } from './state.js';
+import { timeSeriesStore, MODE_INFO, running, setLastLiveFrame } from './state.js';
 import { detectLiveTransition, renderLogsList } from './logs.js';
 import { drawHistoryGraph, toSchematicState } from './history-graph.js';
 import { appendBalanceLivePoint, getLiveYesterdayHigh } from './balance-card.js';
@@ -442,6 +442,7 @@ export function updateDisplay(state, result) {
   // ── Schematic ──
   lastState = state;
   lastResult = result;
+  setLastLiveFrame(state, result);
   if (schematicHandle) {
     schematicHandle.update(toSchematicState(state, result));
   }
