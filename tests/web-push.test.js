@@ -16,6 +16,16 @@ describe('web-push VAPID', () => {
     assert.strictEqual(wp._b64uDecode(keys.publicKey)[0], 0x04);
   });
 
+  // ECDH BIGNUM strips leading zero bytes, so ~1/256 keys come out
+  // shorter than 32 bytes without a left-pad. 500 iterations make the
+  // odds of a regression slipping through < 1 in 10^17.
+  it('private key is always 32 bytes even when high byte is zero', () => {
+    for (let i = 0; i < 500; i++) {
+      const { privateKey } = wp.generateVAPIDKeys();
+      assert.strictEqual(wp._b64uDecode(privateKey).length, 32, `iter ${i}`);
+    }
+  });
+
   it('buildVapidJwt produces a valid ES256-signed JWT verifiable with the public key', () => {
     const keys = wp.generateVAPIDKeys();
     wp.setVapidDetails('mailto:test@example.com', keys.publicKey, keys.privateKey);

@@ -208,7 +208,7 @@ If any of these fail on the PR but passed locally, that's a signal something is 
   npm test
   ```
 
-  Revert by re-running `npm ci` before committing. **In-repo, always track the latest production-ready `@playwright/test` release** — CI runs inside `mcr.microsoft.com/playwright:vX.Y.Z-noble`, so bump the `ci.yml` container image tag in lockstep with the package bump.
+  Revert by re-running `npm ci` before committing. **In-repo, always track the latest production-ready `@playwright/test` release** — CI installs the matching Chromium via `npx playwright install --with-deps chromium`, with `~/.cache/ms-playwright` cached by `actions/cache` keyed on the package version, so a bump invalidates the cache automatically and pulls a fresh browser on the next run.
 - **Use plain `serve`, NOT `serve -s`.** SPA mode rewrites `/schematic-tester.html` → `/schematic-tester` → `index.html`, so standalone pages (schematic-tester, liquid-glass-test) become unreachable. Playwright config auto-starts plain `serve` on port 3210.
 
 ## Cloud Deployment

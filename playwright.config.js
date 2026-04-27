@@ -18,8 +18,14 @@ export default defineConfig({
   timeout: 15000,
   retries: 0,
   fullyParallel: true,
+  // 4 workers matches the GitHub-hosted runner's vCPU count. Tried 6
+  // and saw no wall-time improvement (the 4 cores are already
+  // saturated) but did pick up init-race flakes in specs without
+  // explicit __initComplete gates — keep it at 4.
   workers: 4,
-  reporter: 'list',
+  // CI: dot reporter (one char per test) + github (annotations on failure)
+  // keeps logs scannable. Local: list reporter shows full test names live.
+  reporter: process.env.CI ? [['dot'], ['github']] : 'list',
   use: {
     headless: true,
     viewport: { width: 1280, height: 720 },
