@@ -18,10 +18,11 @@ export default defineConfig({
   timeout: 15000,
   retries: 0,
   fullyParallel: true,
-  // CI runs unit tests in a separate job, so Playwright gets the full
-  // 4-vCPU runner. Tests are largely I/O-bound (selectors, fetches),
-  // so 6 workers improves wall-time even though we only have 4 cores.
-  workers: process.env.CI ? 6 : 4,
+  // 4 workers matches the GitHub-hosted runner's vCPU count. Tried 6
+  // and saw no wall-time improvement (the 4 cores are already
+  // saturated) but did pick up init-race flakes in specs without
+  // explicit __initComplete gates — keep it at 4.
+  workers: 4,
   // CI: dot reporter (one char per test) + github (annotations on failure)
   // keeps logs scannable. Local: list reporter shows full test names live.
   reporter: process.env.CI ? [['dot'], ['github']] : 'list',

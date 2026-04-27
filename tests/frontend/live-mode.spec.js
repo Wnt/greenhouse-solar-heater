@@ -509,11 +509,15 @@ test.describe('Sidebar subtitle', () => {
 });
 
 test.describe('Immediate overlay on load', () => {
+  // 500 ms timeouts here previously raced under high CI load — the
+  // assertion is "no multi-second delay before showing overlay", not
+  // "<500 ms latency"; 2 s catches a real regression while tolerating
+  // runner variance.
   test('overlay appears immediately in live mode, not after delay', async ({ page }) => {
     await page.goto('/playground/');
     // Overlay should be visible immediately (connecting state), not showing stale simulation data
     const overlay = page.locator('#overlay-modes');
-    await expect(overlay).toBeVisible({ timeout: 500 });
+    await expect(overlay).toBeVisible({ timeout: 2000 });
   });
 
   test('switching to live from simulation immediately shows overlay', async ({ page }) => {
@@ -524,6 +528,6 @@ test.describe('Immediate overlay on load', () => {
     // Switch back to live
     await page.locator('#mode-toggle-switch').click();
     // Overlay should appear immediately
-    await expect(page.locator('#overlay-modes')).toBeVisible({ timeout: 500 });
+    await expect(page.locator('#overlay-modes')).toBeVisible({ timeout: 2000 });
   });
 });

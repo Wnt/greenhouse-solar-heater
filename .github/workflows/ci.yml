@@ -52,17 +52,25 @@ jobs:
         id: pw-version
         run: |
           echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-      # Cache the Chromium binary keyed by Playwright version. On hit
-      # (the common case) the install step below skips the ~120 MB
-      # download; on miss it populates the cache for subsequent runs.
-      - name: Cache Playwright browsers
+      # Cache the Chromium binary keyed by Playwright version. Restore
+      # and Save are split so the cache populates even when a downstream
+      # step fails — actions/cache@v4's combined post-save step is
+      # skipped on job failure, which would otherwise prevent the next
+      # run from ever benefiting after a flaky test.
+      - name: Restore Playwright browser cache
         id: pw-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/.cache/ms-playwright
           key: pw-browsers-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
       - name: Install Playwright browser + system deps
         run: npx playwright install --with-deps chromium
+      - name: Save Playwright browser cache
+        if: always() && steps.pw-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-browsers-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
       - name: Playwright tests (frontend + e2e)
         run: npx playwright test
         env:
