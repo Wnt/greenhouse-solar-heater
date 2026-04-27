@@ -532,4 +532,125 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
     });
   });
 
+  // Regression: 2026-04-26 the live Pro 4PM crashed with the same
+  //   "Too much recursion - the stack is about to overflow"
+  // error as the 2026-04-20 incidents — but the device had ea=31 (all
+  // permission bits set) so the previous setValve sync early-return /
+  // skip-empty-batches fixes did not apply. Trace:
+  //
+  //   at Shelly.call("HTTP.GET", {url: url}, function(res, err) {
+  //   in function "setValve" called from setValve(pair[0], pair[1], inner);
+  //   in function "dispatch"  called from dispatch(it, onItem);
+  //   in function "drain"     called from drain();
+  //   in function "runBoundedPool" called from }, cb);
+  //   in function "runValveBatch"  called fr…   ← truncated (runOpens)
+  //
+  // Root cause: scheduleStep chains `runValveBatch(closes) →
+  // runValveBatch(opens)` through a synchronous callback. When the last
+  // close's HTTP.GET cb fires via Shelly's event loop, the chain
+  //   Shelly.call cb → setValve cb → onItem → done(okC) → cb1 →
+  //   runOpens → runValveBatch → runBoundedPool → drain → dispatch →
+  //   setValve → Shelly.call
+  // accumulates ~13-14 frames before re-entering Shelly.call, blowing
+  // Espruino's tight stack budget on the Pro 4PM. The fix defers
+  // runOpens via Timer.set(MIN_RESUME_MS, ...) so the open batch starts
+  // on a fresh stack, the same trick scheduleResume() already uses.
+  //
+  // We pin the property by simulating Espruino's tighter event loop —
+  // Shelly.call HTTP.GET cbs fire SYNCHRONOUSLY rather than via
+  // setImmediate, so the close→runOpens chain accumulates real stack
+  // frames in Node. Stack depth at the open dispatch then exceeds the
+  // close dispatch by ~5-7 frames; the defer fix makes them match.
+  it('runOpens deferred — open batch starts on a fresh stack, not nested under close cb chain', function(t, done) {
+    // Custom runtime: same as createOrderingRuntime but with synchronous
+    // HTTP.GET callbacks. This is the Espruino model — when the device
+    // fires Shelly.call's cb, it does so on a thin event-loop frame, not
+    // a node-style setImmediate yield. Synchronously chaining the
+    // close-batch done callback into runOpens then accumulates real
+    // stack depth that Node can measure.
+    const rt = createOrderingRuntime();
+    const origShellyCall = rt.globals.Shelly.call;
+    rt.globals.Shelly.call = function(method, params, cb) {
+      // Replay the original Shelly.call's record/dispatch logic for
+      // every method except HTTP.GET; for HTTP.GET, fire cb on the
+      // current stack so close→open chaining is visible.
+      params = params || {};
+      if (method === 'HTTP.GET') {
+        // Mirror the runtime's record() side-effect for the events()
+        // log so order assertions in other tests still work.
+        rt.events().push({ kind: 'http_get', detail: { url: params.url || '' } });
+        if (cb) cb({ code: 200, body: '' }, null);
+        return;
+      }
+      return origShellyCall.call(this, method, params, cb);
+    };
+
+    bootScript(rt, function() {
+      const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+      // Drive into GREENHOUSE_HEATING (vi_top + vo_rad open) so the
+      // subsequent forced AD requires both closes (vi_top, vo_rad) and
+      // opens (vi_coll, vo_tank).
+      rt.setConfig(Object.assign({}, BASE_CONFIG, {
+        mo: { a: true, ex: sysUnix + 3600, fm: 'GH' }
+      }));
+      rt.advance(40000, function() {
+        // Wait minOpenMs (60 s) so close-now is allowed for vi_top/vo_rad.
+        rt.advance(70000, function() {
+          // Now wrap Shelly.call AGAIN to capture stack depth at every
+          // valve HTTP.GET. The wrapper runs inside the synchronous
+          // chain that setValve sets up, so depths reflect the real
+          // script stack.
+          const valveCallDepths = [];
+          const innerCall = rt.globals.Shelly.call;
+          // Lift Node's default 10-frame Error.stack cap so we can see
+          // the full call chain at each Shelly.call entry.
+          const prevLimit = Error.stackTraceLimit;
+          Error.stackTraceLimit = Infinity;
+          rt.globals.Shelly.call = function(method, params, cb) {
+            if (method === 'HTTP.GET' && params && params.url &&
+                params.url.indexOf('/rpc/Switch.Set') >= 0) {
+              valveCallDepths.push({
+                depth: new Error().stack.split('\n').length,
+                on: params.url.indexOf('on=true') >= 0,
+                url: params.url,
+              });
+            }
+            return innerCall.call(this, method, params, cb);
+          };
+
+          rt.clearEvents();
+          // Force-mode flip GH → AD: needs to close vi_top, vo_rad and
+          // open vi_coll, vo_tank (v_air queues for next slot).
+          rt.setConfig(Object.assign({}, BASE_CONFIG, {
+            mo: { a: true, ex: sysUnix + 3600, fm: 'AD' }
+          }));
+          rt.advance(60000, function() {
+            const closes = valveCallDepths.filter(function(c) { return !c.on; });
+            const opens = valveCallDepths.filter(function(c) { return c.on; });
+            assert.ok(closes.length >= 2,
+              'expected ≥2 close HTTP.GETs (vi_top, vo_rad); saw ' + closes.length +
+              ' (urls=' + valveCallDepths.map(function(c) { return c.url; }).join(', ') + ')');
+            assert.ok(opens.length >= 1,
+              'expected ≥1 open HTTP.GET; saw ' + opens.length);
+            // Stack-depth invariant: with HTTP.GET cb firing on the
+            // current stack (the Espruino model), opens must still
+            // dispatch from approximately the same depth as closes
+            // because runOpens is deferred via Timer.set. Without the
+            // defer, open dispatches are ~5-7 frames deeper.
+            const maxClose = Math.max.apply(null, closes.map(function(c) { return c.depth; }));
+            const maxOpen = Math.max.apply(null, opens.map(function(c) { return c.depth; }));
+            Error.stackTraceLimit = prevLimit;
+            assert.ok(
+              maxOpen <= maxClose + 3,
+              'open dispatch must not nest deeper than close dispatch ' +
+              '(close maxDepth=' + maxClose + ', open maxDepth=' + maxOpen + '). ' +
+              'runOpens must defer via Timer.set so the open batch starts on a fresh stack.'
+            );
+            done();
+          });
+        });
+      });
+    });
+  });
+
 });
