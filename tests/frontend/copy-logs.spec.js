@@ -6,7 +6,7 @@
  *   Simulation mode — sim parameters + sensor history + transition log
  *   Live mode       — sensor readings at 20-min resolution + transition log
  */
-import { test, expect } from './fixtures.js';
+import { test, expect, waitForAppReady } from './fixtures.js';
 
 // ── Helpers ──
 
@@ -40,7 +40,7 @@ async function getClipboardText(page) {
 test.describe('Copy System Logs — simulation mode', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/playground/?mode=sim');
-    await expect(page.locator('#fab-play')).toBeVisible();
+    await waitForAppReady(page);
     await waitForTestHook(page);
   });
 

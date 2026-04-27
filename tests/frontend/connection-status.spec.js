@@ -1,5 +1,5 @@
 // @ts-check
-import { test, expect } from './fixtures.js';
+import { test, expect, waitForAppReady } from './fixtures.js';
 
 test.describe('Connection status and overlays', () => {
 
@@ -61,6 +61,7 @@ test.describe('Connection status and overlays', () => {
     }));
 
     await page.goto('/playground/');
+    await waitForAppReady(page);
     // Navigate to device view
     await page.locator('.sidebar-nav [data-view="device"]').click();
     await expect(page.locator('#view-device')).toBeVisible();
@@ -88,6 +89,7 @@ test.describe('Connection status and overlays', () => {
     }));
 
     await page.goto('/playground/');
+    await waitForAppReady(page);
     await page.locator('.sidebar-nav [data-view="device"]').click();
     await expect(page.locator('#device-config-form')).toBeVisible();
     // "Try anyway" link should be visible

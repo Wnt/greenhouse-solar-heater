@@ -1,5 +1,5 @@
 // @ts-check
-import { test, expect } from './fixtures.js';
+import { test, expect, waitForAppReady } from './fixtures.js';
 
 const MOBILE = { width: 375, height: 812 };
 
@@ -77,6 +77,7 @@ test.describe('Mobile: mode toggle visibility', () => {
   test('page content below status bar is interactable on mobile', async ({ page }) => {
     await page.setViewportSize(MOBILE);
     await page.goto('/playground/');
+    await waitForAppReady(page);
     // Bottom nav links must be clickable without interception from the status bar
     await page.locator('.bottom-nav [data-view="components"]').click();
     await expect(page.locator('#view-components')).toHaveClass(/active/);
@@ -90,6 +91,7 @@ test.describe('Mobile: Device view does not overflow horizontally', () => {
   test('device config form does not cause horizontal scroll', async ({ page }) => {
     await page.setViewportSize(MOBILE);
     await page.goto('/playground/');
+    await waitForAppReady(page);
     // Navigate to Device view via bottom nav (available in live mode on localhost)
     await page.locator('.bottom-nav [data-view="device"]').click();
     // Force-show the config form (normally hidden until API loads config)

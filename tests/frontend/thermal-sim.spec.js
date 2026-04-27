@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.js';
+import { test, expect, waitForAppReady } from './fixtures.js';
 
 // Helper: navigate to a view via sidebar (desktop) or bottom nav
 async function goToView(page, viewName) {
@@ -17,8 +17,10 @@ async function setSlider(page, id, value) {
 test.describe('Thermal Simulation UI', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/playground/?mode=sim');
-    // Wait for app to initialize (FAB becomes clickable when ready)
-    await expect(page.locator('#fab-play')).toBeVisible();
+    // Wait for the SPA's async init pipeline (config load, control-logic
+    // load, navigation/notification wiring) to finish before tests click
+    // nav links — otherwise clicks land before listeners are attached.
+    await waitForAppReady(page);
   });
 
   test('page loads with correct title and initial state', async ({ page }) => {

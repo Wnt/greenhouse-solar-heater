@@ -60,4 +60,19 @@ export const test = base.extend({
   },
 });
 
+/**
+ * Wait until the playground SPA has finished its async init pipeline
+ * (config load, control-logic load, navigation/notification wiring).
+ * Tests that click navigation links or buttons whose handlers are
+ * attached during init must call this after `page.goto('/playground/...')`
+ * to avoid racing with the wire-up — clicks dispatched before then
+ * land on inert elements and silently no-op.
+ *
+ * The signal is `document.body.dataset.ready = '1'`, set in
+ * `playground/js/main.js` after `wireNotificationUI()` resolves.
+ */
+export async function waitForAppReady(page) {
+  await expect(page.locator('body[data-ready="1"]')).toBeAttached();
+}
+
 export { expect };

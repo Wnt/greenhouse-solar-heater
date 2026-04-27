@@ -165,8 +165,13 @@ async function init() {
   captureInstallPrompt();
 
   // Initialize push notifications (service worker, VAPID key, existing subscription)
+  // Ready marker fires after notification UI wiring (the only post-init async
+  // step that attaches click handlers). Tests gate nav/button clicks on it
+  // to avoid racing with init-time event-listener attachment.
   initNotifications().then(function () {
     wireNotificationUI();
+  }).finally(function () {
+    document.body.dataset.ready = '1';
   });
 
   // Start polling for JS source updates

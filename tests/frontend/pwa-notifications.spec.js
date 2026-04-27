@@ -18,7 +18,7 @@
  *     main content on other views
  */
 
-import { test, expect } from './fixtures.js';
+import { test, expect, waitForAppReady } from './fixtures.js';
 
 // The Playwright test server serves static files via `npx serve` and has
 // no /api/push/vapid-key endpoint, so we mock it with a valid-looking key.
@@ -57,7 +57,7 @@ test.describe('Settings view — desktop', () => {
   test.beforeEach(async ({ page }) => {
     await mockPushApi(page);
     await page.goto('/playground/?mode=sim');
-    await expect(page.locator('#fab-play')).toBeVisible();
+    await waitForAppReady(page);
     await gotoSettings(page);
   });
 
@@ -161,7 +161,7 @@ test.describe('Install card state when running standalone', () => {
   test('idle card is shown by default (browser mode)', async ({ page }) => {
     await mockPushApi(page);
     await page.goto('/playground/?mode=sim');
-    await expect(page.locator('#fab-play')).toBeVisible();
+    await waitForAppReady(page);
     await page.evaluate(() => { window.location.hash = 'settings'; });
     await expect(page.locator('#view-settings')).toHaveClass(/active/);
 
@@ -196,7 +196,7 @@ test.describe('Install card state when running standalone', () => {
 
     await mockPushApi(page);
     await page.goto('/playground/?mode=sim');
-    await expect(page.locator('#fab-play')).toBeVisible();
+    await waitForAppReady(page);
     await page.evaluate(() => { window.location.hash = 'settings'; });
     await expect(page.locator('#view-settings')).toHaveClass(/active/);
 
@@ -227,7 +227,7 @@ test.describe('Install card state when running standalone', () => {
 
     await mockPushApi(page);
     await page.goto('/playground/?mode=sim');
-    await expect(page.locator('#fab-play')).toBeVisible();
+    await waitForAppReady(page);
     await page.evaluate(() => { window.location.hash = 'settings'; });
 
     const desc = page.locator('#pwa-uninstall-desc');
@@ -332,7 +332,7 @@ test.describe('Settings view — mobile viewport', () => {
   test.beforeEach(async ({ page }) => {
     await mockPushApi(page);
     await page.goto('/playground/?mode=sim');
-    await expect(page.locator('#fab-play')).toBeVisible();
+    await waitForAppReady(page);
   });
 
   test('Settings nav item is visible in mobile bottom nav', async ({ page }) => {
