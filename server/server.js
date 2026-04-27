@@ -21,7 +21,7 @@ const sensorDiscovery = require('./lib/sensor-discovery');
 const push = require('./lib/push');
 const anomalyManager = require('./lib/anomaly-manager');
 const { createScriptMonitor } = require('./lib/script-monitor');
-const { handleWsCommand } = require('./lib/ws-command-handlers');
+const { handleWsCommand, setDb: setWsCommandHandlersDb } = require('./lib/ws-command-handlers');
 const { createHandlers, readBody, jsonResponse } = require('./lib/http-handlers');
 const { getNetworkAddress, printBanner } = require('./lib/banner');
 
@@ -424,8 +424,8 @@ function initWebSocket() {
     }
 
     wsServer.handleUpgrade(req, socket, head, function (ws) {
-      // Stamp the role on the socket so command handlers can gate writes.
       ws._role = wsUser ? wsUser.role : 'admin';
+      ws._userName = (wsUser && wsUser.name) || 'admin';
       wsServer.emit('connection', ws, req);
       // Send current MQTT connection status on connect
       ws.send(JSON.stringify({
@@ -478,6 +478,7 @@ function initServices(callback) {
           log.info('database initialized');
           db.startMaintenance();
         }
+        setWsCommandHandlersDb(db);
         initAnomalyManager();
         finish();
       });

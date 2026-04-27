@@ -270,4 +270,41 @@ test.describe('System Logs card is backed by live state events', () => {
     await expect(first.locator('.log-cause')).toHaveCount(0);
     await expect(first.locator('.log-sensors')).toHaveCount(0);
   });
+
+  test('config_events rows render alongside mode transitions, interleaved by ts', async ({ page }) => {
+    const now = Date.now();
+    // mode row at now-30s; config rows at now-60s and now-90s; mode row at now-120s.
+    // Expected newest-first order: mode(-30s) → config(-60s) → config(-90s) → mode(-120s)
+    const rows = [
+      // newest → oldest
+      makeEvent(now - 30_000, 'idle', 'solar_charging'),
+      {
+        ts: now - 60_000, type: 'config', kind: 'wb', key: 'GH',
+        from: null, to: '9999999999', source: 'api', actor: 'alice',
+      },
+      {
+        ts: now - 90_000, type: 'config', kind: 'mo', key: null,
+        from: null, to: JSON.stringify({ a: true, ex: 1840003600, fm: 'SC' }),
+        source: 'ws_override', actor: 'alice',
+      },
+      makeEvent(now - 120_000, 'solar_charging', 'idle'),
+    ];
+
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, rows);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    const items = page.locator('#logs-list .log-item');
+    await expect(items).toHaveCount(4, { timeout: 3000 });
+
+    await expect(items.nth(0)).toContainText('Collecting Solar Energy');
+    await expect(items.nth(1)).toContainText('Disabled mode: Greenhouse Heating');
+    await expect(items.nth(1)).toContainText('mode-enablement UI by alice');
+    await expect(items.nth(2)).toContainText('Manual override: Solar Charging');
+    await expect(items.nth(2)).toContainText('device view by alice');
+    await expect(items.nth(3)).toContainText('Idle');
+  });
 });

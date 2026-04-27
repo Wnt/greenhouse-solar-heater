@@ -51,6 +51,8 @@ require.cache[schemaPath] = {
       'CREATE INDEX IF NOT EXISTS state_events_type_ts ON state_events (entity_type, ts DESC)',
       'CREATE TABLE IF NOT EXISTS script_crashes (id BIGSERIAL PRIMARY KEY, ts TIMESTAMPTZ NOT NULL DEFAULT NOW(), error_msg TEXT, error_trace TEXT, sys_status JSONB, recent_states JSONB, resolved_at TIMESTAMPTZ)',
       'CREATE INDEX IF NOT EXISTS script_crashes_ts ON script_crashes (ts DESC)',
+      'CREATE TABLE IF NOT EXISTS config_events (ts TIMESTAMPTZ NOT NULL, kind TEXT NOT NULL, key TEXT, old_value TEXT, new_value TEXT, source TEXT NOT NULL, actor TEXT)',
+      'CREATE INDEX IF NOT EXISTS config_events_ts ON config_events (ts DESC)',
       // pg-mem has no materialized views + no time_bucket. Stand in
       // with a plain view so queries that target the aggregate (range
       // = '7d'/'30d'/'1y'/'all') resolve. Values are passed through

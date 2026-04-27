@@ -17,6 +17,7 @@ const deviceConfig = require('./device-config');
 const sensorDiscovery = require('./sensor-discovery');
 const push = require('./push');
 const anomalyManager = require('./anomaly-manager');
+const { emitConfigEvents } = require('./config-events');
 const createLogger = require('./logger');
 
 const log = createLogger('http');
@@ -116,6 +117,23 @@ function createHandlers(deps) {
       return;
     }
 
+    // type=config queries the separate config_events table (wb/mo
+     // mutations: mode-enablement edits, manual override enter/exit,
+     // device auto-shutdowns). Same { events, hasMore } shape as the
+     // mode-events feed; the System Logs view fetches both and
+     // interleaves by ts.
+    if (type === 'config') {
+      db.getConfigEventsPaginated(limit, before, function (err, result) {
+        if (err) {
+          log.error('config events query failed', { error: err.message });
+          jsonResponse(res, 500, { error: 'Query failed' });
+          return;
+        }
+        jsonResponse(res, 200, result);
+      });
+      return;
+    }
+
     db.getEventsPaginated(type, limit, before, function (err, result) {
       if (err) {
         log.error('events query failed', { error: err.message });
@@ -135,7 +153,15 @@ function createHandlers(deps) {
     if (req.method === 'PUT') {
       // PUT requires admin role
       if (AUTH_ENABLED && !authMiddleware.requireAdmin(req, res)) return;
-      deviceConfig.handlePut(req, res, body, function (config) {
+      // Capture user identity at request time — needed for the config-
+      // events audit row written below. Falls back to 'admin' when auth
+      // is disabled (local LAN dev mode) so single-user setups still
+      // get a non-null actor in the log.
+      const user = authMiddleware && authMiddleware.getCurrentUser
+        ? authMiddleware.getCurrentUser(req)
+        : null;
+      const actor = (user && user.name) || 'admin';
+      deviceConfig.handlePut(req, res, body, function (config, prevConfig) {
         // Publish to MQTT for instant push to device
         mqttBridge.publishConfig(config);
         // Mirror the latest snapshot into anomaly-manager so wb-clear
@@ -150,6 +176,9 @@ function createHandlers(deps) {
           watchdogs: require('../../shelly/watchdogs-meta.js').WATCHDOGS,
           snapshot: { we: config.we || {}, wz: config.wz || {}, wb: config.wb || {} }
         });
+        // Audit-log wb / mo deltas. Best-effort — emitConfigEvents
+        // logs and swallows individual insert failures.
+        emitConfigEvents(db, log, prevConfig, config, 'api', actor);
       });
       return;
     }

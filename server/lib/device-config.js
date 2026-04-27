@@ -184,6 +184,12 @@ function validationError(message) {
 
 function updateConfig(newConfig, callback) {
   const config = getConfig();
+  // Deep-copy of the prior state — passed through the success callback
+  // as the third arg so callers can diff (prev → updated) for audit
+  // logging without re-fetching after the mutation. `config` is
+  // mutated in place by the field-by-field assignments below, so a
+  // shallow alias would silently track post-update values.
+  const prevConfig = deepCopy(config);
   // Snapshot for no-op detection (compare BEFORE mutating)
   const beforeSnapshot = JSON.stringify(stripVersion(config));
 
@@ -289,14 +295,14 @@ function updateConfig(newConfig, callback) {
   // version. Saves S3 writes and MQTT republishes for repeated identical PUTs.
   const afterSnapshot = JSON.stringify(stripVersion(config));
   if (afterSnapshot === beforeSnapshot) {
-    callback(null, config);
+    callback(null, config, prevConfig);
     return;
   }
 
   config.v = (config.v || 0) + 1;
   save(config, function (err) {
     if (err) { callback(err); return; }
-    callback(null, config);
+    callback(null, config, prevConfig);
   });
 }
 
@@ -326,7 +332,7 @@ function handlePut(req, res, body, onUpdate) {
     return;
   }
 
-  updateConfig(parsed, function (err, config) {
+  updateConfig(parsed, function (err, config, prevConfig) {
     if (err) {
       // Validation errors are user-correctable — surface them as 400 with the
       // exact message so the UI can show it to the user.
@@ -345,7 +351,7 @@ function handlePut(req, res, body, onUpdate) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(config));
 
-    if (onUpdate) onUpdate(config);
+    if (onUpdate) onUpdate(config, prevConfig);
   });
 }
 

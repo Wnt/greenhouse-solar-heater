@@ -172,6 +172,71 @@ function insertStateEvent(ts, entityType, entityId, oldValue, newValue, optsOrCa
   });
 }
 
+// ── Config events ──
+//
+// Every wb / mo mutation is logged here as one row per delta, sourced
+// from PUT /api/device-config (mode-enablement UI), WS override
+// commands (refill / drain), or the device's auto-shutdown path. The
+// System Logs view interleaves these with mode transitions to give a
+// single audit trail. Source / actor / key / value semantics are
+// documented on the table definition in db-schema.js.
+function insertConfigEvent(row, callback) {
+  const p = getPool();
+  const sql = 'INSERT INTO config_events (ts, kind, key, old_value, new_value, source, actor) ' +
+              'VALUES ($1, $2, $3, $4, $5, $6, $7)';
+  const params = [
+    row.ts || new Date(),
+    row.kind,
+    row.key || null,
+    row.old_value === undefined ? null : row.old_value,
+    row.new_value === undefined ? null : row.new_value,
+    row.source,
+    row.actor || null,
+  ];
+  p.query(sql, params, function (err) {
+    if (callback) callback(err || null);
+  });
+}
+
+// Newest-first paginated query mirroring getEventsPaginated for state_events.
+//   limit  — capped at 100
+//   before — optional Unix ms cursor; returns rows with ts < before
+function getConfigEventsPaginated(limit, before, callback) {
+  const p = getPool();
+  const cap = 100;
+  const effLimit = Math.max(1, Math.min(cap, parseInt(limit, 10) || 10));
+  const fetchLimit = effLimit + 1;
+
+  const params = [];
+  let sql = 'SELECT ts, kind, key, old_value, new_value, source, actor FROM config_events';
+  if (before !== null && before !== undefined) {
+    params.push(new Date(before));
+    sql += ' WHERE ts < $' + params.length;
+  }
+  params.push(fetchLimit);
+  sql += ' ORDER BY ts DESC LIMIT $' + params.length;
+
+  p.query(sql, params, function (err, result) {
+    if (err) { callback(err); return; }
+    let rows = result.rows;
+    const hasMore = rows.length > effLimit;
+    if (hasMore) rows = rows.slice(0, effLimit);
+    const events = rows.map(function (row) {
+      return {
+        ts: new Date(row.ts).getTime(),
+        type: 'config',
+        kind: row.kind,
+        key: row.key,
+        from: row.old_value,
+        to: row.new_value,
+        source: row.source,
+        actor: row.actor,
+      };
+    });
+    callback(null, { events, hasMore });
+  });
+}
+
 // ── History queries ──
 
 const RANGE_INTERVALS = {
@@ -517,6 +582,8 @@ module.exports = {
   stopMaintenance: maintenance.stop,
   insertSensorReadings,
   insertStateEvent,
+  insertConfigEvent,
+  getConfigEventsPaginated,
   insertScriptCrash,
   listScriptCrashes,
   getScriptCrash,

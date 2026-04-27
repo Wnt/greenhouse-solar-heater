@@ -9,6 +9,7 @@ import { store } from '../app-state.js';
 import {
   formatClockTime, formatFullTimeHelsinki, formatCauseLabel,
   formatReasonLabel, formatSensorsLine, escapeHtml, formatTimeOfDay,
+  formatConfigEntry,
 } from './time-format.js';
 import { model, params, MODE_INFO, timeSeriesStore, transitionLog, lastLiveFrame } from './state.js';
 import { getWatchdogSnapshot } from './watchdog-ui.js';
@@ -16,65 +17,119 @@ import { getWatchdogSnapshot } from './watchdog-ui.js';
 export { transitionLog };
 
 const EVENTS_PAGE_SIZE = 10;
-let eventsCursor = null;   // ms timestamp of oldest entry currently shown
-let eventsHasMore = false; // true if the DB has older entries to load
-let eventsLoading = false; // in-flight guard
+// Two parallel cursors so config and mode events scroll independently.
+// The transitionLog merges them by ts; "Load more" fetches another page
+// of each, taking only the half that still has older rows on the
+// server. Without separate cursors, a long quiet stretch on one feed
+// would prematurely block scrolling for the other.
+let modeCursor = null;
+let modeHasMore = false;
+let configCursor = null;
+let configHasMore = false;
+let eventsLoading = false; // in-flight guard for either side
 let lastLiveMode = null;   // last observed live mode (change detector)
 
 // Drop pagination + mode-change state. Called when the mode-switch UI
 // clears the live display; fetchLiveEvents(null) will repopulate.
 export function resetEventsState() {
-  eventsCursor = null;
-  eventsHasMore = false;
+  modeCursor = null;
+  modeHasMore = false;
+  configCursor = null;
+  configHasMore = false;
   lastLiveMode = null;
 }
 
-// Fetch the next page of mode-transition events from the DB. When `before`
-// is null this is a fresh load (replaces the log); otherwise appended.
-export function fetchLiveEvents(before) {
+function fetchEventPage(type, before) {
+  let url = '/api/events?type=' + type + '&limit=' + EVENTS_PAGE_SIZE;
+  if (before !== null && before !== undefined) url += '&before=' + before;
+  return fetch(url)
+    .then(r => r.ok ? r.json() : { events: [], hasMore: false })
+    .catch(() => ({ events: [], hasMore: false }));
+}
+
+function modeRowToLogEntry(e) {
+  return {
+    kind: 'live',
+    eventType: 'mode',
+    ts: e.ts,
+    mode: e.to,
+    from: e.from,
+    text: formatLiveTransitionText(e.from, e.to),
+    // cause/sensors may be null for pre-2026-04-20 rows or for
+    // firmware that doesn't yet carry the transition cause.
+    // reason (added 2026-04-21) is the evaluator's decision code;
+    // null when the transition did not come from evaluate().
+    cause: e.cause || null,
+    reason: e.reason || null,
+    sensors: e.sensors || null,
+  };
+}
+
+function configRowToLogEntry(e) {
+  return {
+    kind: 'live',
+    eventType: 'config',
+    ts: e.ts,
+    configKind: e.kind,    // 'wb' | 'mo'
+    configKey: e.key,      // mode short code for wb; null for mo
+    from: e.from,
+    to: e.to,
+    source: e.source,      // 'api' | 'ws_override' | 'watchdog_auto'
+    actor: e.actor,
+  };
+}
+
+// Fetch the next page of events. `reset` true clears the log and
+// fetches both feeds afresh; otherwise advances each feed's cursor
+// independently and appends to the existing list. Sorting by ts DESC
+// happens once after both fetches return.
+export function fetchLiveEvents(reset) {
   if (store.get('phase') !== 'live') return;
   if (eventsLoading) return;
   eventsLoading = true;
 
-  let url = '/api/events?type=mode&limit=' + EVENTS_PAGE_SIZE;
-  if (before !== null && before !== undefined) url += '&before=' + before;
+  const isReset = reset === null || reset === undefined || reset === true;
+  const modeBefore = isReset ? null : (modeHasMore ? modeCursor : null);
+  const configBefore = isReset ? null : (configHasMore ? configCursor : null);
 
-  fetch(url)
-    .then(r => r.json())
-    .then(data => {
+  // Skip a side that has no more rows AND it isn't a reset, to avoid
+  // re-fetching identical pages.
+  const modePromise = (isReset || modeHasMore)
+    ? fetchEventPage('mode', modeBefore)
+    : Promise.resolve({ events: [], hasMore: false, _skipped: true });
+  const configPromise = (isReset || configHasMore)
+    ? fetchEventPage('config', configBefore)
+    : Promise.resolve({ events: [], hasMore: false, _skipped: true });
+
+  Promise.all([modePromise, configPromise])
+    .then(function ([modeData, configData]) {
       // Only apply to the current phase — the user may have switched back
-      // to simulation while the request was in flight.
+      // to simulation while the requests were in flight.
       if (store.get('phase') !== 'live') return;
-      const events = (data && Array.isArray(data.events)) ? data.events : [];
-      if (before === null) {
-        // First load: replace everything
-        transitionLog.length = 0;
+      const modeEvents = (modeData && Array.isArray(modeData.events)) ? modeData.events : [];
+      const configEvents = (configData && Array.isArray(configData.events)) ? configData.events : [];
+
+      if (isReset) transitionLog.length = 0;
+
+      for (let i = 0; i < modeEvents.length; i++) {
+        transitionLog.push(modeRowToLogEntry(modeEvents[i]));
       }
-      for (let i = 0; i < events.length; i++) {
-        const e = events[i];
-        transitionLog.push({
-          kind: 'live',
-          ts: e.ts,
-          mode: e.to,
-          from: e.from,
-          text: formatLiveTransitionText(e.from, e.to),
-          // cause/sensors may be null for pre-2026-04-20 rows or for
-          // firmware that doesn't yet carry the transition cause.
-          // reason (added 2026-04-21) is the evaluator's decision code;
-          // null when the transition did not come from evaluate().
-          cause: e.cause || null,
-          reason: e.reason || null,
-          sensors: e.sensors || null,
-        });
+      for (let i = 0; i < configEvents.length; i++) {
+        transitionLog.push(configRowToLogEntry(configEvents[i]));
       }
-      if (events.length > 0) {
-        eventsCursor = events[events.length - 1].ts;
+      // Re-sort the merged list newest-first. Stable enough for our N (~20).
+      transitionLog.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+      if (!modeData._skipped) {
+        if (modeEvents.length > 0) modeCursor = modeEvents[modeEvents.length - 1].ts;
+        modeHasMore = !!(modeData && modeData.hasMore);
       }
-      eventsHasMore = !!(data && data.hasMore);
+      if (!configData._skipped) {
+        if (configEvents.length > 0) configCursor = configEvents[configEvents.length - 1].ts;
+        configHasMore = !!(configData && configData.hasMore);
+      }
+
       renderLogsList();
-    })
-    .catch(() => {
-      // Silent fail — leave whatever is already rendered
     })
     .then(() => { eventsLoading = false; });
 }
@@ -83,6 +138,21 @@ function formatLiveTransitionText(from, to) {
   const fromLabel = (from && MODE_INFO[from]) ? MODE_INFO[from].label : (from || '—');
   const toLabel = (to && MODE_INFO[to]) ? MODE_INFO[to].label : (to || '—');
   return fromLabel + ' → ' + toLabel;
+}
+
+function renderConfigEntry(t, timeLabel) {
+  const fmt = formatConfigEntry(t);
+  // Use a neutral muted dot for config edits — they aren't mode
+  // transitions, so the green/orange/red mode-color palette would be
+  // misleading.
+  return '<div class="log-item">' +
+    '<div class="log-dot log-dot-muted"></div>' +
+    '<div class="log-content">' +
+      '<div class="log-title">' + escapeHtml(fmt.title) + '</div>' +
+      '<div class="log-desc">' + escapeHtml(fmt.desc) + '</div>' +
+    '</div>' +
+    '<div class="log-time">' + timeLabel + '</div>' +
+  '</div>';
 }
 
 // Detect client-side mode changes from incoming live state frames and
@@ -99,6 +169,7 @@ export function detectLiveTransition(result) {
   if (lastLiveMode === mode) return;
   transitionLog.unshift({
     kind: 'live',
+    eventType: 'mode',
     ts: Date.now(),
     mode,
     from: lastLiveMode,
@@ -138,11 +209,17 @@ export function renderLogsList() {
   let html = '';
   for (let i = 0; i < visible.length; i++) {
     const t = visible[i];
+    const timeLabel = t.kind === 'live' ? formatClockTime(t.ts) : formatTimeOfDay(t.time);
+
+    if (t.eventType === 'config') {
+      html += renderConfigEntry(t, timeLabel);
+      continue;
+    }
+
     const mi = MODE_INFO[t.mode] || MODE_INFO.idle;
     const dotClass = t.mode === 'solar_charging' || t.mode === 'active_drain' ? 'log-dot-charging'
       : t.mode === 'greenhouse_heating' ? 'log-dot-heating'
       : t.mode === 'emergency_heating' ? 'log-dot-emergency' : 'log-dot-muted';
-    const timeLabel = t.kind === 'live' ? formatClockTime(t.ts) : formatTimeOfDay(t.time);
     const causeChip = t.cause ? ' <span class="log-cause">' + escapeHtml(formatCauseLabel(t.cause)) + '</span>' : '';
     // reason sits on its own line so operators can skim the cause chip
     // row and dive into the decision code only when needed.
@@ -162,7 +239,7 @@ export function renderLogsList() {
     '</div>';
   }
 
-  if (isLive && eventsHasMore) {
+  if (isLive && (modeHasMore || configHasMore)) {
     html += '<div class="log-loading" data-log-loading="true" style="color:var(--on-surface-variant);font-size:12px;text-align:center;padding:8px 0;">' +
       (eventsLoading ? 'Loading older transitions…' : 'Scroll to load older transitions') +
     '</div>';
@@ -179,11 +256,12 @@ export function setupLogsScrollLoader() {
   container._scrollHandlerAttached = true;
   container.addEventListener('scroll', function () {
     if (store.get('phase') !== 'live') return;
-    if (!eventsHasMore || eventsLoading || eventsCursor === null) return;
+    if (eventsLoading) return;
+    if (!modeHasMore && !configHasMore) return;
     // Trigger when the scroll reaches within 40px of the bottom
     const remaining = container.scrollHeight - container.scrollTop - container.clientHeight;
     if (remaining < 40) {
-      fetchLiveEvents(eventsCursor);
+      fetchLiveEvents(false);
     }
   });
 }
