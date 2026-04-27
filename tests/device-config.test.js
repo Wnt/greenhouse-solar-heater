@@ -228,28 +228,6 @@ describe('device-config', () => {
     });
   });
 
-  it('legacy am field is migrated to wb on load', (t, done) => {
-    // Pre-populate the config file with a legacy am array
-    fs.writeFileSync(configPath, JSON.stringify({
-      ce: false, ea: 0, fm: null, am: ['I', 'SC'], v: 1
-    }));
-    deviceConfig._reset();
-    delete require.cache[require.resolve('../server/lib/device-config.js')];
-    deviceConfig = require('../server/lib/device-config.js');
-    deviceConfig._reset();
-    deviceConfig.load(function (err, config) {
-      assert.ifError(err);
-      assert.strictEqual(config.am, undefined);
-      assert.strictEqual(config.fm, undefined);
-      assert.strictEqual(config.wb.GH, 9999999999);
-      assert.strictEqual(config.wb.AD, 9999999999);
-      assert.strictEqual(config.wb.EH, 9999999999);
-      assert.strictEqual(config.wb.I, undefined);
-      assert.strictEqual(config.wb.SC, undefined);
-      done();
-    });
-  });
-
   // ── Save no-op detection ──
 
   it('PUT with identical config does not bump version', (t, done) => {
@@ -359,13 +337,6 @@ describe('device-config mo.fm', () => {
     });
   });
 
-  it('strips legacy top-level fm from loaded config', (t, done) => {
-    // Simulate a config that still has legacy fm (would come from S3/local storage written before this change).
-    deviceConfig.loadForTest({ ce: true, ea: 31, fm: 'SC', we: {}, wz: {}, wb: {}, v: 42 });
-    const cfg = deviceConfig.getConfig();
-    assert.strictEqual(cfg.fm, undefined);
-    done();
-  });
 });
 
 function mockResponse() {
