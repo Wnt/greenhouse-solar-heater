@@ -42,6 +42,7 @@
     "js-yaml"
   ],
   "ignoreUnresolved": [
-    "/playground/js/app-state.js"
+    "/playground/js/app-state.js",
+    "/playground/js/main/display-update.js"
   ]
 }

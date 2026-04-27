@@ -119,6 +119,10 @@ let lastDay = 0;
 export function setSchematicHandle(h) { schematicHandle = h; }
 export function getLastFrame() { return { state: lastState, result: lastResult }; }
 export function setLiveFrameSeen(v) { liveFrameSeen = v; }
+// Test hook — frontend specs use it to verify the sync coordinator's
+// onResyncStart hook actually clears the flag, which is the seam
+// that fixes the Android wrong-direction-arrow bug.
+window.__getLiveFrameSeen = function () { return liveFrameSeen; };
 export function resetYesterdayTracking() {
   yesterdayHigh = 0;
   confirmedYesterdayHigh = 0;

@@ -14,12 +14,15 @@
 
 import { LiveSource, SimulationSource } from '../data-source.js';
 import { store } from '../app-state.js';
+import { initSyncCoordinator } from '../sync/coordinator.js';
 import { attachScriptStatusWebSocket } from '../actions/script-monitor.js';
 import { graphRange, timeSeriesStore, running } from './state.js';
 import { attachWatchdogWebSocket } from './watchdog-ui.js';
 import { handleOverrideResponse, updateRelayBoard } from './relay-board.js';
 import { updateDrainageControl } from './drainage-control.js';
-import { updateDisplay, setLiveFrameSeen } from './display-update.js';
+import {
+  updateDisplay, setLiveFrameSeen, rerenderWithHistoryFallback,
+} from './display-update.js';
 import { drawHistoryGraph } from './history-graph.js';
 import {
   transitionLog, fetchLiveEvents, resetEventsState,
@@ -27,8 +30,12 @@ import {
 import {
   fetchBalanceHistory, renderBalanceCard,
   resetLiveYesterdayHigh, resetBalanceState,
+  registerBalanceHistorySource,
 } from './balance-card.js';
-import { fetchLiveHistory, clearLiveHistoryData } from './live-history.js';
+import {
+  fetchLiveHistory, clearLiveHistoryData,
+  registerLiveHistorySource,
+} from './live-history.js';
 
 // Detect deployment context: GitHub Pages = simulation only, deployed app = live capable
 // `window.__simulateGitHubPagesDeploy` is a test-only hatch (set via
@@ -60,6 +67,52 @@ export function getLiveSource() { return liveSource; }
 
 export function initConnection({ setRunning } = {}) {
   if (typeof setRunning === 'function') _setRunning = setRunning;
+
+  // Register the live-mode data sources with the sync registry. Both
+  // sources are gated on phase === 'live' so they're inert in
+  // simulation mode without anything having to deregister them.
+  registerLiveHistorySource(() => graphRange);
+  registerBalanceHistorySource();
+
+  // Repaint connection indicator + overlays the moment store.syncing
+  // flips. This is what collapses the old "blur clears, then banner
+  // clears" two-step into a single transition: the syncing → active
+  // edge fires one repaint, both elements update together.
+  store.subscribe('syncing', function () {
+    if (store.get('phase') !== 'live') return;
+    refreshConnectionIndicator();
+    updateConnectionOverlays();
+    updateSidebarSubtitle();
+    // Drop the staleness banner immediately on syncing=true; the
+    // unified overlay takes over.
+    const banner = document.getElementById('staleness-banner');
+    if (banner && store.get('syncing')) banner.classList.remove('visible');
+  });
+
+  // Wire visibility / pageshow / online listeners. On every resume,
+  // reset the live-frame flag so the UI falls back to the fresh
+  // history snapshot until a new WS frame lands (otherwise the
+  // pre-background `lastState` would feed stale temperatures + wrong
+  // trend arrows). On completion, re-render to pick up the freshly
+  // applied data even if no WS frame has arrived yet.
+  initSyncCoordinator({
+    onResyncStart: function () {
+      if (store.get('phase') !== 'live') return;
+      setLiveFrameSeen(false);
+      // Reset the staleness clock so the banner doesn't briefly
+      // re-flash 'stale' between syncing → active.
+      lastDataTime = Date.now();
+    },
+    onResyncComplete: function () {
+      if (store.get('phase') !== 'live') return;
+      rerenderWithHistoryFallback();
+      // Repaint the connection indicator + overlays now that
+      // store.syncing has flipped back to false.
+      refreshConnectionIndicator();
+      updateConnectionOverlays();
+      updateSidebarSubtitle();
+    },
+  });
 }
 
 function updateConnectionUI(status) {
@@ -86,6 +139,10 @@ function refreshConnectionIndicator() {
       dot.className = 'connection-dot connected';
       label.textContent = 'Live';
       break;
+    case 'syncing':
+      dot.className = 'connection-dot reconnecting';
+      label.textContent = 'Syncing…';
+      break;
     case 'connecting':
       dot.className = 'connection-dot reconnecting';
       label.textContent = 'Connecting…';
@@ -108,8 +165,16 @@ function checkStaleness() {
   if (store.get('phase') !== 'live') return;
   const banner = document.getElementById('staleness-banner');
   if (banner) {
+    // Suppress the banner while a resync is in flight — the
+    // unified syncing overlay already communicates the catch-up
+    // state. Otherwise the banner would briefly show "stale" right
+    // before fresh data arrives, repeating the old two-step UX.
+    const syncing = !!store.get('syncing');
     const elapsed = Date.now() - lastDataTime;
-    banner.classList.toggle('visible', elapsed > 60000 && lastDataTime > 0);
+    banner.classList.toggle(
+      'visible',
+      !syncing && elapsed > 60000 && lastDataTime > 0,
+    );
   }
   refreshConnectionIndicator();
   updateConnectionOverlays();
@@ -137,11 +202,23 @@ const OVERLAY_MESSAGES = {
   stale: {
     title: 'Your sanctuary has gone quiet.',
     subtitle: 'No data received for over 60 seconds.'
-  }
+  },
+  // 'syncing' deliberately renders without the heavy
+  // backdrop-blur copy block. It marks the overlays with
+  // .connection-overlay--syncing instead, so style.css can apply a
+  // light "Syncing…" pill while leaving the cards readable. This
+  // gives a graceful fallback during the Android-resume re-fetch
+  // instead of the old fully-blurred + banner combo.
+  syncing: { title: '', subtitle: '', light: true }
 };
 
 function getConnectionDisplayState() {
   if (store.get('phase') !== 'live') return 'active';
+  // A resync is in flight (Android resume / network recovery / focus).
+  // Surface as a single 'syncing' state so the overlay + banner
+  // unify into one transition. Cleared by onResyncComplete via
+  // store.syncing → false.
+  if (store.get('syncing')) return 'syncing';
   const hasData = liveSource && liveSource.hasReceivedData;
   const mqttStatus = liveSource ? liveSource.mqttStatus : 'unknown';
 
@@ -178,12 +255,17 @@ function updateConnectionOverlays() {
     if (!overlay) continue;
     if (msg) {
       overlay.classList.add('visible');
+      // Light variant: the syncing state shows last-known values
+      // through a subtle Syncing… pill instead of the full
+      // backdrop-blur copy block. Cards stay readable.
+      overlay.classList.toggle('connection-overlay--syncing', !!msg.light);
       const titleEl = document.getElementById(overlayIds[i] + '-title');
       const subtitleEl = document.getElementById(overlayIds[i] + '-subtitle');
       if (titleEl) titleEl.textContent = msg.title;
       if (subtitleEl) subtitleEl.textContent = msg.subtitle;
     } else {
       overlay.classList.remove('visible');
+      overlay.classList.remove('connection-overlay--syncing');
     }
   }
 }
@@ -413,6 +495,10 @@ export function updateSidebarSubtitle() {
     case 'active':
       el.textContent = 'Live';
       el.className = 'subtitle-live';
+      break;
+    case 'syncing':
+      el.textContent = 'Syncing…';
+      el.className = 'subtitle-connecting';
       break;
     case 'connecting':
       el.textContent = 'Connecting…';
