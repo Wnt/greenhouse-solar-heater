@@ -46,6 +46,10 @@ async function mockUnauthenticated(page) {
 
 // Navigate into the Settings view where the Account card lives.
 async function gotoSettings(page) {
+  // The hashchange listener is wired inside the async init() function.
+  // Setting the hash before init reaches initNavigation is silent (no
+  // listener yet), so wait for init to finish before navigating.
+  await page.waitForFunction(() => window.__initComplete === true);
   await page.evaluate(() => { window.location.hash = 'settings'; });
   await expect(page.locator('#view-settings')).toHaveClass(/active/);
 }

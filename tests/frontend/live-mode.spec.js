@@ -17,6 +17,8 @@ test.describe('Live mode toggle', () => {
 
   test('switching to simulation mode shows controls view', async ({ page }) => {
     await page.goto('/playground/');
+    // The mode-toggle click handler is wired inside async init().
+    await page.waitForFunction(() => window.__initComplete === true);
     // Click toggle to switch to simulation
     const sw = page.locator('#mode-toggle-switch');
     await sw.click();
@@ -27,6 +29,7 @@ test.describe('Live mode toggle', () => {
 
   test('simulation mode still works after toggle', async ({ page }) => {
     await page.goto('/playground/');
+    await page.waitForFunction(() => window.__initComplete === true);
     // Switch to simulation
     await page.locator('#mode-toggle-switch').click();
     // Start simulation
@@ -71,7 +74,7 @@ test.describe('Connection state overlays', () => {
 
   test('switching to simulation removes all overlays', async ({ page }) => {
     await page.goto('/playground/');
-    await page.waitForTimeout(1500);
+    await page.waitForFunction(() => window.__initComplete === true);
     // Overlays should be visible in live mode
     await expect(page.locator('#overlay-modes')).toBeVisible();
     // Switch to simulation

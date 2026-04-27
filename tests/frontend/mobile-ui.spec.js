@@ -7,7 +7,10 @@ test.describe('Simulation-only mode overlays (GitHub Pages context)', () => {
   test('connection overlays are hidden in simulation-only mode', async ({ page }) => {
     // ?mode=sim forces simulation-only mode (same as GitHub Pages)
     await page.goto('/playground/?mode=sim');
-    await page.waitForTimeout(300);
+    // Overlays are toggled inside the async init() pipeline (initModeToggle
+    // → switchToSimulation → updateConnectionOverlays). Wait for init to
+    // finish so the assertion isn't racing the boot path.
+    await page.waitForFunction(() => window.__initComplete === true);
     // No connection overlay should appear — simulation mode doesn't need a server
     await expect(page.locator('#overlay-modes')).not.toBeVisible();
     await expect(page.locator('#overlay-gauge')).not.toBeVisible();
@@ -18,7 +21,10 @@ test.describe('Simulation-only mode overlays (GitHub Pages context)', () => {
 test.describe('Settings visibility on GitHub Pages', () => {
   test('Settings nav is hidden when isLiveCapable is false', async ({ page }) => {
     await page.goto('/playground/');
-    await page.waitForSelector('.sidebar-nav');
+    // The store mutation below relies on initSubscriptions having wired the
+    // phase subscriber. __initComplete fires only after init() has run end
+    // to end, so this is the safe gate.
+    await page.waitForFunction(() => window.__initComplete === true);
     // We can't fake location.hostname reliably across browsers, so stub the
     // store value after boot and re-fire the phase subscription to refresh
     // nav visibility. Setting phase to the same value is a no-op in the
@@ -30,7 +36,6 @@ test.describe('Settings visibility on GitHub Pages', () => {
       store.set('phase', '__refresh__');
       store.set('phase', phase);
     });
-    await page.waitForTimeout(200);
     // The Settings anchor stays in the DOM (HTML unchanged) but must be hidden
     await expect(page.locator('.sidebar-nav [data-view="settings"]')).toBeHidden();
     await expect(page.locator('.bottom-nav [data-view="settings"]')).toBeHidden();
@@ -42,8 +47,7 @@ test.describe('Settings visibility on GitHub Pages', () => {
 
   test('Settings nav is visible on localhost (live-capable)', async ({ page }) => {
     await page.goto('/playground/');
-    await page.waitForSelector('.sidebar-nav');
-    await page.waitForTimeout(200);
+    await page.waitForFunction(() => window.__initComplete === true);
     await expect(page.locator('.sidebar-nav [data-view="settings"]')).toBeVisible();
   });
 });
@@ -77,6 +81,8 @@ test.describe('Mobile: mode toggle visibility', () => {
   test('page content below status bar is interactable on mobile', async ({ page }) => {
     await page.setViewportSize(MOBILE);
     await page.goto('/playground/');
+    // Nav links have no href — the click handler is wired inside async init().
+    await page.waitForFunction(() => window.__initComplete === true);
     // Bottom nav links must be clickable without interception from the status bar
     await page.locator('.bottom-nav [data-view="components"]').click();
     await expect(page.locator('#view-components')).toHaveClass(/active/);
@@ -90,6 +96,7 @@ test.describe('Mobile: Device view does not overflow horizontally', () => {
   test('device config form does not cause horizontal scroll', async ({ page }) => {
     await page.setViewportSize(MOBILE);
     await page.goto('/playground/');
+    await page.waitForFunction(() => window.__initComplete === true);
     // Navigate to Device view via bottom nav (available in live mode on localhost)
     await page.locator('.bottom-nav [data-view="device"]').click();
     // Force-show the config form (normally hidden until API loads config)

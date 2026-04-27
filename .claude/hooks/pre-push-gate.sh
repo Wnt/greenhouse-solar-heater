@@ -195,7 +195,7 @@ else
 fi
 
 pw_start=$(date +%s)
-if npx playwright test --reporter=line --retries=1 >"$pw_log" 2>&1; then
+if npx playwright test --reporter=line >"$pw_log" 2>&1; then
   printf "  ✓ %-30s (%ds)\n" "Playwright (frontend + e2e)" "$(( $(date +%s) - pw_start ))" >&2
   echo "✅ All gates green — proceeding with push." >&2
   exit 0
