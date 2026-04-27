@@ -19,6 +19,7 @@ import {
   editorialNightSentence,
 } from '../energy-balance.js';
 import { helsinkiParts } from './time-format.js';
+import { registerDataSource } from '../sync/registry.js';
 
 const HELSINKI_TZ = 'Europe/Helsinki';
 const fmtWindowClock = new Intl.DateTimeFormat('en-GB', {
@@ -77,24 +78,46 @@ export function resetBalanceState() {
   liveYesterdayHigh = null;
 }
 
+// Fetcher: returns Promise<data>. AbortSignal honoured so the sync
+// coordinator can cancel an in-flight request on overlapping resyncs.
+function balanceHistoryFetch(signal) {
+  return fetch('/api/history?range=48h', { signal }).then(r => r.json());
+}
+
+// Applier: idempotent write of the 48h snapshot into module state +
+// re-render. Resets the live-tail buffers because the fresh history
+// already covers everything they were tracking.
+function applyBalanceHistory(data) {
+  if (store.get('phase') !== 'live') return;
+  balanceHistory = data;
+  balanceLivePoints = [];
+  balanceLiveEvents = [];
+  balanceLiveLastMode = null;
+  liveYesterdayHigh = computeLiveYesterdayHigh(data && data.points);
+  renderBalanceCard();
+  // Balance fetch completes independently of the WS state stream,
+  // so re-render so the peak label reflects the freshly-computed
+  // yesterdayHigh instead of waiting for the next state frame.
+  _onRerender();
+}
+
 export function fetchBalanceHistory() {
   if (store.get('phase') !== 'live') return;
-  fetch('/api/history?range=48h')
-    .then(r => r.json())
-    .then(data => {
-      if (store.get('phase') !== 'live') return;
-      balanceHistory = data;
-      balanceLivePoints = [];
-      balanceLiveEvents = [];
-      balanceLiveLastMode = null;
-      liveYesterdayHigh = computeLiveYesterdayHigh(data && data.points);
-      renderBalanceCard();
-      // Balance fetch completes independently of the WS state stream,
-      // so re-render so the peak label reflects the freshly-computed
-      // yesterdayHigh instead of waiting for the next state frame.
-      _onRerender();
-    })
+  balanceHistoryFetch()
+    .then(applyBalanceHistory)
     .catch(() => { balanceHistory = null; });
+}
+
+// Register the balance-history source with the sync coordinator so
+// Android resume / network recovery / focus events refresh the
+// 48h energy-balance card alongside the rest of the view.
+export function registerBalanceHistorySource() {
+  return registerDataSource({
+    id: 'balance-history',
+    isActive: () => store.get('phase') === 'live',
+    fetch: (signal) => balanceHistoryFetch(signal),
+    applyToStore: (data) => applyBalanceHistory(data),
+  });
 }
 
 // Peak tank average ((tank_top + tank_bottom) / 2) across points whose

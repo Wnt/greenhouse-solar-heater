@@ -49,6 +49,14 @@ export const store = createStore({
 
   // Internal: staleness tick for periodic re-evaluation
   _staleTick: 0,
+
+  // Sync coordinator (./sync/coordinator.js). `syncing` is true from
+  // the moment a resync is triggered (visibility/pageshow/online) until
+  // every active data source has settled. `syncReason` is the trigger
+  // tag — UI components that distinguish between e.g. user-initiated
+  // refresh and Android background-resume can read it.
+  syncing: false,
+  syncReason: null,
 });
 
 /**
@@ -88,6 +96,12 @@ export const derived = {
 
   get connectionDisplay() {
     if (store.get('phase') !== 'live') return 'active';
+
+    // A resync is in flight (Android resume / network recovery / user
+    // returned focus). Surface as a single 'syncing' state so the
+    // overlay + banner unify into one transition instead of the old
+    // "blur clears, then banner clears" two-step.
+    if (store.get('syncing')) return 'syncing';
 
     const ws = store.get('wsStatus');
     const mqtt = store.get('mqttStatus');

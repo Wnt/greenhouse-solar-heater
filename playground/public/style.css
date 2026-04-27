@@ -1519,6 +1519,38 @@ button.primary:disabled {
   line-height: 1.5;
 }
 
+/* Light variant — used while the sync coordinator is re-fetching
+ * data after page-visibility / focus / online events. The full
+ * backdrop blur would hide the last-known values mid-resync; the
+ * light variant lets cards stay readable and shows a small Syncing…
+ * pill instead. Driven by .connection-overlay--syncing applied via
+ * connection.js.updateConnectionOverlays(). */
+.connection-overlay.connection-overlay--syncing {
+  background: transparent;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  pointer-events: none;
+  justify-content: flex-start;
+  padding-top: 12px;
+}
+.connection-overlay.connection-overlay--syncing .connection-overlay-title,
+.connection-overlay.connection-overlay--syncing .connection-overlay-subtitle {
+  display: none;
+}
+.connection-overlay.connection-overlay--syncing::before {
+  content: 'Syncing\2026';
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--on-surface);
+  background: rgba(17, 19, 25, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 4px 12px;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
 /* ── Device Push Disabled State ── */
 
 button.primary.disabled {

@@ -1,9 +1,14 @@
 // Live-mode history fetch + live-frame append. Extracted from main.js.
 //
-// - fetchLiveHistory(rangeSeconds): pulls /api/history?range=<key>,
-//   loads the response into the shared timeSeriesStore, redraws the
-//   graph, and invokes onRerender so the gauge / trend arrows catch
-//   up without waiting for the next WS frame.
+// - fetchLiveHistory(rangeSeconds): user-triggered (mode-switch, range
+//   slider). Pulls /api/history?range=<key>, applies into the shared
+//   timeSeriesStore, redraws the graph, re-renders the gauge / trend
+//   arrows. Internally split into liveHistoryFetch (async fetch only)
+//   and applyLiveHistory (sync store-write + redraw) so the sync
+//   coordinator can drive the same path on Android resume.
+// - registerLiveHistorySource(getRange): registers the live-history
+//   data source with the sync registry so visibility / pageshow /
+//   online events automatically refresh the graph.
 // - recordLiveHistoryPoint(state, result): appends a single live
 //   frame (rate-limited to ~5 s) so the sliding window advances
 //   between /api/history fetches.
@@ -12,6 +17,7 @@ import { store } from '../app-state.js';
 import { timeSeriesStore } from './state.js';
 import { drawHistoryGraph } from './history-graph.js';
 import { rerenderWithHistoryFallback } from './display-update.js';
+import { registerDataSource } from '../sync/registry.js';
 
 const RANGE_MAP = {
   3600: '1h', 21600: '6h', 43200: '12h', 86400: '24h',
@@ -22,26 +28,53 @@ let liveHistoryData = null;
 
 export function clearLiveHistoryData() { liveHistoryData = null; }
 
+function rangeKeyFor(rangeSeconds) {
+  return RANGE_MAP[rangeSeconds] || '6h';
+}
+
+// Fetcher: returns Promise<data> or rejects. Honours AbortSignal so
+// the sync coordinator can cancel an in-flight request when a newer
+// resync supersedes it.
+function liveHistoryFetch(rangeSeconds, signal) {
+  return fetch('/api/history?range=' + rangeKeyFor(rangeSeconds), { signal })
+    .then(r => r.json());
+}
+
+// Applier: writes data into the shared store + redraws. Idempotent.
+function applyLiveHistory(data) {
+  // Phase guard — the user may have flipped to simulation while the
+  // fetch was in flight, in which case dumping live data into the
+  // store would clobber the simulation history.
+  if (store.get('phase') !== 'live') return;
+  liveHistoryData = data;
+  loadLiveHistoryIntoStore(data);
+  drawHistoryGraph();
+  // The history fetch is async; the first WebSocket state frame may
+  // have already rendered the UI with empty trend arrows (because the
+  // store was empty at that moment). Re-render now so trends and the
+  // tank-avg gauge reflect the freshly-loaded 15-min window instead
+  // of waiting for the next ~1 Hz WS frame to trigger a refresh.
+  rerenderWithHistoryFallback();
+}
+
 export function fetchLiveHistory(rangeSeconds) {
   if (store.get('phase') !== 'live') return;
-  const rangeKey = RANGE_MAP[rangeSeconds] || '6h';
-  fetch('/api/history?range=' + rangeKey)
-    .then(r => r.json())
-    .then(data => {
-      // Only apply to the current phase — the user may have switched
-      // back to simulation while the request was in flight.
-      if (store.get('phase') !== 'live') return;
-      liveHistoryData = data;
-      loadLiveHistoryIntoStore(data);
-      drawHistoryGraph();
-      // The history fetch is async; the first WebSocket state frame may
-      // have already rendered the UI with empty trend arrows (because the
-      // store was empty at that moment). Re-render now so trends and the
-      // tank-avg gauge reflect the freshly-loaded 15-min window instead
-      // of waiting for the next ~1 Hz WS frame to trigger a refresh.
-      rerenderWithHistoryFallback();
-    })
+  liveHistoryFetch(rangeSeconds)
+    .then(applyLiveHistory)
     .catch(() => { liveHistoryData = null; });
+}
+
+// Wires this module into the sync coordinator so visibilitychange /
+// pageshow / online trigger a re-fetch of the current range.
+// `getRange` is a thunk that returns the live graph range so the
+// registered source always picks up the user's current selection.
+export function registerLiveHistorySource(getRange) {
+  return registerDataSource({
+    id: 'live-history',
+    isActive: () => store.get('phase') === 'live',
+    fetch: (signal) => liveHistoryFetch(getRange(), signal),
+    applyToStore: (data) => applyLiveHistory(data),
+  });
 }
 
 // Convert /api/history response into timeSeriesStore format.

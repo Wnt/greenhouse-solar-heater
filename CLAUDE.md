@@ -23,7 +23,7 @@ This codebase is dense with short codes — `wb`, `mo`, `ce`, `ea`, `we`, `wz` (
 - `system.yaml` — authoritative hardware spec
 - `shelly/` — device scripts (`control.js`, `control-logic.js`, `telemetry.js`, `deploy.sh`)
 - `shelly/lint/` — Shelly platform conformance linter (standalone Node.js CLI, Acorn-based)
-- `playground/` — SPA/PWA: 5 hash-routed views (`#status`, `#components`, `#controls`, `#device`, `#settings`). Passkey-protected in cloud mode. Legacy `#schematic` → `#components` and `#sensors` → `#device` aliases live in `js/actions/navigation.js`.
+- `playground/` — SPA/PWA: 5 hash-routed views (`#status`, `#components`, `#controls`, `#device`, `#settings`). Passkey-protected in cloud mode. Legacy `#schematic` → `#components` and `#sensors` → `#device` aliases live in `js/actions/navigation.js`. Cross-cutting **data-sync framework** in `playground/js/sync/` — new full-stack features that fetch from the server should register a source there so they refresh automatically on Android resume / focus / network recovery (see `playground/js/sync/README.md`).
 - `playground/public/` — assets served without auth (login page, shared CSS/font, libraries needed by unauthenticated views). The server whitelists `/public/*`, so anything placed here is reachable without a session — do not put sensitive data here.
 - `playground/vendor/` — vendored third-party libraries for authed views (see Critical Rules)
 - `server/` — Node.js API: HTTP + WebSocket + MQTT bridge + auth + device/sensor config + history + push notifications
