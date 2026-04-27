@@ -71,7 +71,7 @@ test.describe('script-crash banner', () => {
   test('banner is hidden when the script is running', async ({ page }) => {
     await mockLiveConnectionWithScriptStatus(page, { running: true, reachable: true });
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#mode-toggle')).toBeVisible();
+    await page.waitForFunction(() => window.__initComplete === true);
     // Banner stays hidden for a healthy script.
     await expect(page.locator('#script-crash-banner')).toBeHidden();
   });
@@ -79,7 +79,7 @@ test.describe('script-crash banner', () => {
   test('banner appears when a crash broadcast arrives', async ({ page }) => {
     await mockLiveConnectionWithScriptStatus(page, { running: true, reachable: true });
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#mode-toggle')).toBeVisible();
+    await page.waitForFunction(() => window.__initComplete === true);
     await expect(page.locator('#script-crash-banner')).toBeHidden();
 
     // Inject crash broadcast
@@ -115,6 +115,7 @@ test.describe('script-crash banner', () => {
     });
 
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.__initComplete === true);
     await expect(page.locator('#script-crash-banner')).toBeVisible();
     await page.click('#script-crash-banner-restart');
     await expect.poll(() => posted.length).toBeGreaterThan(0);

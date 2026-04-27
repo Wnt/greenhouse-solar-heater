@@ -56,6 +56,7 @@ test.describe('Mobile: mode toggle visibility', () => {
   test('mode toggle is visible at mobile viewport width', async ({ page }) => {
     await page.setViewportSize(MOBILE);
     await page.goto('/playground/');
+    await page.waitForFunction(() => window.__initComplete === true);
     // Mode toggle must be accessible on mobile, not hidden inside the sidebar
     await expect(page.locator('#mode-toggle')).toBeVisible();
   });
