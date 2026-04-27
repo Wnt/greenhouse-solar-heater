@@ -196,6 +196,77 @@ describe('anomaly-manager handleDeviceEvent fired', () => {
     const ackPushes = mocks.calls.push.filter(p => p.payload.data.kind === 'watchdog_ack');
     assert.strictEqual(ackPushes.length, 0);
   });
+
+  it('mirrors the device-set mode-ban into server deviceConfig on shutdown_auto', async () => {
+    // The device writes wb[modeCode] = now + 14400 to its own KVS when
+    // a watchdog auto-shutdown fires. The server has no device→server
+    // config feedback channel, so without explicit mirroring, the
+    // server's deviceConfig stays empty, the watchdog-state broadcast
+    // tells the UI "no ban", and the next config republish clobbers
+    // the device's auto-set ban back to nothing.
+    const mocks = makeMocks();
+    anomalyManager.init(mocks);
+
+    const firedTs = 1700000000;
+    const resolvedTs = firedTs + 305; // device's 5 min grace expired
+    await anomalyManager.handleDeviceEvent({
+      t: 'fired', id: 'ggr', mode: 'GREENHOUSE_HEATING',
+      el: 905, dT: 0.3, dC: 0, dG: 0.2, ts: firedTs
+    });
+    mocks.calls.deviceConfigPut.length = 0;
+    mocks.calls.publishedConfigs.length = 0;
+    mocks.calls.ws.length = 0;
+
+    await anomalyManager.handleDeviceEvent({
+      t: 'resolved', id: 'ggr', how: 'shutdown_auto', ts: resolvedTs
+    });
+
+    // The server's mirror should now carry the Greenhouse Heating cool-off
+    // ban (key "GH" in the deviceConfig wb map), with the same TTL the
+    // device just applied: resolvedTs + WATCHDOG_BAN_SECONDS (14400 = 4 h).
+    const expectedUntil = resolvedTs + 14400;
+    const wbPuts = mocks.calls.deviceConfigPut.filter(p => p.wb && p.wb.GH !== undefined);
+    assert.strictEqual(wbPuts.length, 1, 'expected one wb update on shutdown_auto');
+    assert.strictEqual(wbPuts[0].wb.GH, expectedUntil);
+
+    // The server should publish the updated config back to MQTT so the
+    // device sees a matching v+1 (no behaviour change on the device, but
+    // prevents a future republish from clobbering the ban) and so other
+    // observers see the new state.
+    assert.strictEqual(mocks.calls.publishedConfigs.length, 1);
+    assert.strictEqual(mocks.calls.publishedConfigs[0].wb.GH, expectedUntil);
+
+    // The watchdog-state broadcast that re-renders the Mode Enablement
+    // panel should now include the Greenhouse Heating cool-off entry —
+    // that's what makes the panel show "⏸ cool-off — Xh Ym" instead of
+    // "+ allowed".
+    const stateBroadcasts = mocks.calls.ws.filter(m => m.type === 'watchdog-state');
+    assert.ok(stateBroadcasts.length >= 1, 'expected at least one watchdog-state broadcast');
+    const last = stateBroadcasts[stateBroadcasts.length - 1];
+    assert.strictEqual(last.snapshot.wb.GH, expectedUntil);
+  });
+
+  it('does not write a wb mirror update on shutdown_user (config PUT already covered it)', async () => {
+    // shutdown_user arrives when the user pressed "Shutdown now" on the
+    // watchdog banner. That path is driven by the server: it PUTs
+    // wb[modeCode] = now + 14400, the device sees the new wb, transitions
+    // to IDLE, and replies with how=shutdown_user. The wb is already in
+    // the server's mirror — re-mirroring would be a redundant write.
+    const mocks = makeMocks();
+    anomalyManager.init(mocks);
+    await anomalyManager.handleDeviceEvent({
+      t: 'fired', id: 'ggr', mode: 'GREENHOUSE_HEATING',
+      el: 905, dT: 0.3, dC: 0, dG: 0.2, ts: 1700000000
+    });
+    mocks.calls.deviceConfigPut.length = 0;
+
+    await anomalyManager.handleDeviceEvent({
+      t: 'resolved', id: 'ggr', how: 'shutdown_user', ts: 1700000400
+    });
+
+    const wbPuts = mocks.calls.deviceConfigPut.filter(p => p.wb && p.wb.GH !== undefined);
+    assert.strictEqual(wbPuts.length, 0);
+  });
 });
 
 describe('anomaly-manager ack', () => {

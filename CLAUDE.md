@@ -14,6 +14,10 @@ Solar thermal greenhouse heating system for Southwest Finland. Shelly-controlled
 
 **Before finishing any work, review this file and update it if your changes affect project structure, conventions, commands, or workflows described here.** Stale guidance is worse than none. Add new rules here; don't re-describe files that are self-explanatory from their path and content.
 
+## Communicating with the user
+
+This codebase is dense with short codes — `wb`, `mo`, `ce`, `ea`, `we`, `wz` (deviceConfig fields), `I` / `SC` / `GH` / `AD` / `EH` (mode short codes), `sng` / `scs` / `ggr` (watchdog ids). The compact form exists because Shelly KVS values are capped at 256 bytes, so on-device JSON has to fit. **In user-facing prose, always lead with the full name** (e.g. "Solar Charging mode", "manual override", "watchdog auto-shutdown ban") and parenthesise the short code only when it adds wiring-level insight (e.g. "the Greenhouse Heating ban (`wb["GH"]`) is set until 12:32"). Bare `wb`, `mo`, `EH`, `ggr`, etc. with no expansion will lose the user — assume the user is reading the *operational* layer, not the on-device JSON. The mapping table is in `server/lib/device-config.js` (top of file) and `shelly/watchdogs-meta.js`; in code (comments, tests, identifiers) the short codes stay.
+
 ## Repository Layout
 
 - `system.yaml` — authoritative hardware spec

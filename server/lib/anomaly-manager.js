@@ -162,35 +162,15 @@ async function _handleResolved(msg) {
   const resolvedAt = new Date((msg.ts || Math.floor(Date.now() / 1000)) * 1000);
   const matches = !!(_pending && _pending.id === msg.id);
 
-  // Audit-log device-driven auto-shutdowns. shutdown_auto means the
-  // 5-minute pending grace expired without user action; the device
-  // wrote wb[modeCode] = now + WATCHDOG_BAN_SECONDS and transitioned
-  // to IDLE. The server's deviceConfig mirror does NOT see this write
-  // (no device → server config feedback), so without an explicit
-  // event row the auto-shutdown is invisible in the System Logs.
-  // shutdown_user goes through the regular config-PUT path so it's
-  // already covered by the http-handlers diff.
+  // Device-driven auto-shutdown: the 5-minute pending grace expired
+  // without user action; the device wrote wb[modeCode] = now +
+  // WATCHDOG_BAN_SECONDS to its own KVS and transitioned to IDLE.
+  // There is no device → server config feedback, so we mirror the
+  // ban into the server's deviceConfig + audit-log it. shutdown_user
+  // takes the normal config-PUT path so both halves are already
+  // handled by http-handlers.
   if (msg.how === 'shutdown_auto') {
-    const meta = getWatchdog(msg.id);
-    if (meta && meta.modeCode && _deps && _deps.db &&
-        typeof _deps.db.insertConfigEvent === 'function') {
-      const tsSec = msg.ts || Math.floor(Date.now() / 1000);
-      _deps.db.insertConfigEvent({
-        ts: new Date(tsSec * 1000),
-        kind: 'wb',
-        key: meta.modeCode,
-        old_value: null,
-        new_value: String(tsSec + WATCHDOG_BAN_SECONDS),
-        source: 'watchdog_auto',
-        actor: 'device',
-      }, function (err) {
-        if (err && _deps.log) {
-          _deps.log.error('config_event insert failed (watchdog_auto)', {
-            error: err.message, watchdog: msg.id, mode: meta.modeCode,
-          });
-        }
-      });
-    }
+    await _handleAutoShutdownBan(msg);
   }
 
   if (matches) {
@@ -297,6 +277,57 @@ function _buildNotificationPayload(pending) {
 // snooze, wb[modeCode] for shutdown) and reacts. This avoids needing
 // a second MQTT subscription on the Shelly device, which has a
 // limited subscription budget.
+// Mirror a device-driven mode-ban into the server's deviceConfig and
+// audit-log it. The device wrote wb[modeCode] = ts + 14400 to its own
+// KVS when its watchdog auto-shutdown grace expired. There is no
+// device → server config feedback channel, so without this mirror:
+//   - the next config republish (server → MQTT → device) would
+//     clobber the device's auto-set ban back to nothing (the server's
+//     wb mirror would be empty);
+//   - the Mode Enablement panel's cool-off TTL line would not show
+//     because watchdog-state broadcasts carry the server mirror, not
+//     the device's actual KVS.
+async function _handleAutoShutdownBan(msg) {
+  const meta = getWatchdog(msg.id);
+  if (!meta || !meta.modeCode) return;
+  const tsSec = msg.ts || Math.floor(Date.now() / 1000);
+  const banUntil = tsSec + WATCHDOG_BAN_SECONDS;
+
+  // Audit row first — even if mirroring the wb fails, we want the
+  // event in the System Logs so the user can see what happened.
+  if (_deps && _deps.db && typeof _deps.db.insertConfigEvent === 'function') {
+    _deps.db.insertConfigEvent({
+      ts: new Date(tsSec * 1000),
+      kind: 'wb',
+      key: meta.modeCode,
+      old_value: null,
+      new_value: String(banUntil),
+      source: 'watchdog_auto',
+      actor: 'device',
+    }, function (err) {
+      if (err && _deps.log) {
+        _deps.log.error('config_event insert failed (watchdog_auto)', {
+          error: err.message, watchdog: msg.id, mode: meta.modeCode,
+        });
+      }
+    });
+  }
+
+  // Mirror into the server's deviceConfig + republish + updateSnapshot.
+  // _updateConfigAndPublish handles the persistence + broadcast plumbing.
+  const patch = { wb: {} };
+  patch.wb[meta.modeCode] = banUntil;
+  try {
+    await _updateConfigAndPublish(patch);
+  } catch (err) {
+    if (_deps && _deps.log) {
+      _deps.log.error('failed to mirror watchdog auto-shutdown ban', {
+        error: err.message, watchdog: msg.id, mode: meta.modeCode,
+      });
+    }
+  }
+}
+
 function _updateConfigAndPublish(patch) {
   return new Promise((resolve, reject) => {
     _deps.deviceConfig.updateConfig(patch, (err, updated) => {
