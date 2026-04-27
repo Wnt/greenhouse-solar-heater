@@ -1,103 +1,50 @@
-/**
- * Push notification module.
- * Manages VAPID keys, push subscriptions with per-category opt-in,
- * and sending with per-type rate limiting (1 notification per type per hour).
- *
- * Subscription format in storage:
- *   { vapidKeys: { publicKey, privateKey },
- *     subscriptions: [ { endpoint, keys, categories: [...] }, ... ] }
- *
- * Categories:
- *   - evening_report:  Wh collected during the day (sent ~20:00)
- *   - noon_report:     heating operations during the night (sent ~12:00)
- *   - overheat_warning: tank temp approaching overheat drain threshold
- *   - freeze_warning:   outdoor temp approaching freeze drain threshold
- */
+// Web push module — VAPID, per-category subscription opt-in, and
+// 1-per-type-per-hour rate limiting. Storage shape:
+//   { vapidKeys: { publicKey, privateKey },
+//     subscriptions: [ { endpoint, keys, categories: [...] } ] }
 
 const fs = require('fs');
 const path = require('path');
 const createLogger = require('./logger');
+const s3Helper = require('./s3-config-helper');
 const log = createLogger('push');
 
 let webpush = null;
-let s3Client = null;
-let s3Config = null;
 let pushData = null;
 
-// Rate-limit map: { type: timestamp_ms }
 let lastSentAt = {};
-
-const RATE_LIMIT_MS = 3600000; // 1 hour
+const RATE_LIMIT_MS = 3600000;
 
 const VALID_CATEGORIES = ['evening_report', 'noon_report', 'overheat_warning', 'freeze_warning', 'offline_warning', 'watchdog_fired', 'script_crash'];
 
 const S3_KEY = 'push-config.json';
 const LOCAL_PATH = process.env.PUSH_CONFIG_PATH || path.join(__dirname, '..', 'push-config.json');
 
-// ── S3 helpers (same pattern as device-config.js) ──
-
-function getS3Config() {
-  if (s3Config) return s3Config;
-  const endpoint = process.env.S3_ENDPOINT;
-  const bucket = process.env.S3_BUCKET;
-  const accessKeyId = process.env.S3_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
-  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return null;
-  s3Config = {
-    endpoint,
-    bucket,
-    region: process.env.S3_REGION || 'europe-1',
-    credentials: { accessKeyId, secretAccessKey },
-  };
-  return s3Config;
-}
-
-function isS3Enabled() {
-  return getS3Config() !== null;
-}
-
-function getS3Client() {
-  if (s3Client) return s3Client;
-  const config = getS3Config();
-  const S3Client = require('./s3-client').S3Client;
-  s3Client = new S3Client({
-    endpoint: config.endpoint,
-    region: config.region,
-    credentials: config.credentials,
-    forcePathStyle: true,
-  });
-  return s3Client;
-}
-
-// ── Persistence ──
-
 function load(callback) {
-  if (isS3Enabled()) {
-    const config = getS3Config();
-    const GetObjectCommand = require('./s3-client').GetObjectCommand;
-    const client = getS3Client();
-    const cmd = new GetObjectCommand({ Bucket: config.bucket, Key: S3_KEY });
-    client.send(cmd).then(function (response) {
-      return response.Body.transformToString();
-    }).then(function (bodyStr) {
-      try {
-        pushData = JSON.parse(bodyStr);
-        callback(null);
-      } catch (e) {
-        callback(new Error('Failed to parse push config JSON'));
-      }
-    }).catch(function (err) {
-      if (err.name === 'NoSuchKey' || (err.$metadata && err.$metadata.httpStatusCode === 404)) {
-        pushData = null;
-        callback(null);
-      } else {
-        callback(err);
-      }
-    });
+  if (s3Helper.isS3Enabled()) {
+    const s3 = s3Helper.getS3CredsConfig();
+    const { GetObjectCommand } = require('./s3-client');
+    s3Helper.getS3Client().send(new GetObjectCommand({ Bucket: s3.bucket, Key: S3_KEY }))
+      .then(function (response) { return response.Body.transformToString(); })
+      .then(function (bodyStr) {
+        try {
+          pushData = JSON.parse(bodyStr);
+          callback(null);
+        } catch (e) {
+          callback(new Error('Failed to parse push config JSON'));
+        }
+      })
+      .catch(function (err) {
+        if (err.name === 'NoSuchKey' || (err.$metadata && err.$metadata.httpStatusCode === 404)) {
+          pushData = null;
+          callback(null);
+        } else {
+          callback(err);
+        }
+      });
   } else {
     try {
-      const data = fs.readFileSync(LOCAL_PATH, 'utf8');
-      pushData = JSON.parse(data);
+      pushData = JSON.parse(fs.readFileSync(LOCAL_PATH, 'utf8'));
       callback(null);
     } catch (err) {
       if (err.code === 'ENOENT') {
@@ -114,26 +61,20 @@ function save(callback) {
   if (!pushData) { callback(null); return; }
   const json = JSON.stringify(pushData, null, 2);
 
-  if (isS3Enabled()) {
-    const config = getS3Config();
-    const PutObjectCommand = require('./s3-client').PutObjectCommand;
-    const client = getS3Client();
-    const cmd = new PutObjectCommand({
-      Bucket: config.bucket,
+  if (s3Helper.isS3Enabled()) {
+    const s3 = s3Helper.getS3CredsConfig();
+    const { PutObjectCommand } = require('./s3-client');
+    s3Helper.getS3Client().send(new PutObjectCommand({
+      Bucket: s3.bucket,
       Key: S3_KEY,
       Body: json,
       ContentType: 'application/json',
-    });
-    client.send(cmd).then(function () {
-      callback(null);
-    }).catch(function (err) {
-      callback(err);
-    });
+    }))
+      .then(function () { callback(null); })
+      .catch(callback);
   } else {
     const dir = path.dirname(LOCAL_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     try {
       const tmpPath = LOCAL_PATH + '.tmp';
       fs.writeFileSync(tmpPath, json);
@@ -538,8 +479,7 @@ function init(callback) {
 
 function _reset() {
   webpush = null;
-  s3Client = null;
-  s3Config = null;
+  s3Helper._reset();
   pushData = null;
   lastSentAt = {};
 }

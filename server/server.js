@@ -23,7 +23,7 @@ const anomalyManager = require('./lib/anomaly-manager');
 const { createScriptMonitor } = require('./lib/script-monitor');
 const { createScriptCrashNotifier } = require('./lib/script-crash-notifier');
 const { handleWsCommand, setDb: setWsCommandHandlersDb } = require('./lib/ws-command-handlers');
-const { createHandlers, readBody, jsonResponse } = require('./lib/http-handlers');
+const { createHandlers, readBody, jsonResponse, parseJsonOrFail } = require('./lib/http-handlers');
 const { getNetworkAddress, printBanner } = require('./lib/banner');
 
 const log = createLogger('server');
@@ -302,12 +302,9 @@ const server = http.createServer(function (req, res) {
   } else if (urlPath === '/api/watchdog/ack' && req.method === 'POST') {
     if (!isAdminOrReject()) return;
     readBody(req, function (body) {
-      let parsed;
-      try { parsed = JSON.parse(body); } catch (e) {
-        jsonResponse(res, 400, { error: 'Invalid JSON' });
-        return;
-      }
-      if (!parsed || !parsed.id || typeof parsed.reason !== 'string') {
+      const parsed = parseJsonOrFail(res, body);
+      if (parsed === undefined) return;
+      if (!parsed.id || typeof parsed.reason !== 'string') {
         jsonResponse(res, 400, { error: 'Missing id or reason' });
         return;
       }
@@ -323,12 +320,9 @@ const server = http.createServer(function (req, res) {
   } else if (urlPath === '/api/watchdog/shutdownnow' && req.method === 'POST') {
     if (!isAdminOrReject()) return;
     readBody(req, function (body) {
-      let parsed;
-      try { parsed = JSON.parse(body); } catch (e) {
-        jsonResponse(res, 400, { error: 'Invalid JSON' });
-        return;
-      }
-      if (!parsed || !parsed.id) {
+      const parsed = parseJsonOrFail(res, body);
+      if (parsed === undefined) return;
+      if (!parsed.id) {
         jsonResponse(res, 400, { error: 'Missing id' });
         return;
       }
@@ -366,12 +360,9 @@ const server = http.createServer(function (req, res) {
   } else if (urlPath === '/api/watchdog/enabled' && req.method === 'PUT') {
     if (!isAdminOrReject()) return;
     readBody(req, function (body) {
-      let parsed;
-      try { parsed = JSON.parse(body); } catch (e) {
-        jsonResponse(res, 400, { error: 'Invalid JSON' });
-        return;
-      }
-      if (!parsed || !parsed.id || typeof parsed.enabled !== 'boolean') {
+      const parsed = parseJsonOrFail(res, body);
+      if (parsed === undefined) return;
+      if (!parsed.id || typeof parsed.enabled !== 'boolean') {
         jsonResponse(res, 400, { error: 'Missing id or enabled' });
         return;
       }
