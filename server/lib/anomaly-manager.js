@@ -1,11 +1,7 @@
-// server/lib/anomaly-manager.js
-//
-// Server-side bridge for the watchdog anomaly detection feature.
-// Receives device MQTT events (fired/resolved), formats human-readable
-// reasons, persists history to Postgres (with ring-buffer fallback),
-// dispatches push notifications and WebSocket state broadcasts, and
-// exposes ack/shutdownNow/setEnabled/getState/getHistory for the HTTP
-// endpoint handlers.
+// Server-side bridge for watchdog anomaly detection. Receives device
+// MQTT fired/resolved events, formats human-readable reasons, persists
+// history (Postgres or ring-buffer), broadcasts WS state, and exposes
+// the ack / shutdownNow / setEnabled / getState / getHistory API.
 
 'use strict';
 
@@ -13,31 +9,25 @@ const {
   WATCHDOGS, WATCHDOG_IDS, WATCHDOG_BAN_SECONDS, getWatchdog
 } = require('../../shelly/watchdogs-meta.js');
 
-// Module-scoped state — set by init()
-let _deps = null;         // { deviceConfig, mqttBridge, push, wsBroadcast, history, db, log }
-let _pending = null;      // { id, firedAt, mode, triggerReason, dbEventId } | null
-// Mirror of deviceConfig fields that the playground needs to render
-// the watchdog UI and the System Logs export. Broadcast over WS as
-// `watchdog-state.snapshot`. Updated whenever a config push completes.
-// Keep this in sync with DEFAULT_CONFIG in server/lib/device-config.js
-// — every field the evaluator reads on the device should be visible
-// here, otherwise debugging "why did the controller pick mode X?" has
-// to fall back to direct device inspection.
+let _deps = null;
+let _pending = null;
+// Mirror of deviceConfig fields needed to render the watchdog UI.
+// Broadcast as watchdog-state.snapshot. Stay in sync with
+// DEFAULT_CONFIG in device-config.js — every field the evaluator
+// reads on the device should appear here.
 let _lastSnapshot = {};
 
 function init(deps) {
   _deps = deps;
   _pending = null;
   _lastSnapshot = {};
-  // Initial snapshot from current device config if available
   if (deps && deps.deviceConfig && typeof deps.deviceConfig.getConfig === 'function') {
     try { updateSnapshot(deps.deviceConfig.getConfig()); } catch (e) { /* ignore */ }
   }
 }
 
-// Bootstrap helper called from server.js. Applies the watchdog_events
-// schema (if a Postgres pool is available), creates the history
-// backend (Postgres or ring-buffer fallback), and calls init().
+// Applies the watchdog_events schema (if a Postgres pool is available),
+// builds the history backend, and calls init().
 function bootstrap(opts) {
   const path = require('path');
   const fs = require('fs');
@@ -162,13 +152,10 @@ async function _handleResolved(msg) {
   const resolvedAt = new Date((msg.ts || Math.floor(Date.now() / 1000)) * 1000);
   const matches = !!(_pending && _pending.id === msg.id);
 
-  // Device-driven auto-shutdown: the 5-minute pending grace expired
-  // without user action; the device wrote wb[modeCode] = now +
-  // WATCHDOG_BAN_SECONDS to its own KVS and transitioned to IDLE.
-  // There is no device → server config feedback, so we mirror the
-  // ban into the server's deviceConfig + audit-log it. shutdown_user
-  // takes the normal config-PUT path so both halves are already
-  // handled by http-handlers.
+  // shutdown_auto: device's 5-min grace expired and it wrote wb[modeCode]
+  // itself. No device→server config feedback, so we mirror the ban back
+  // into the server's mirror + audit log. shutdown_user already takes
+  // the normal config-PUT path.
   if (msg.how === 'shutdown_auto') {
     await _handleAutoShutdownBan(msg);
   }
@@ -179,14 +166,9 @@ async function _handleResolved(msg) {
       resolved_at: resolvedAt
     });
 
-    // Snooze ack push: the user submitted a snooze (via inline reply
-    // or web UI), the server pushed the wz config, and the device has
-    // now confirmed it processed the snooze. Send a positive
-    // confirmation push so the user sees the result of their action
-    // even if they were interacting purely via the system notification
-    // and never had the app open. The push is dispatched BEFORE
-    // _pending is cleared so the stashed snooze metadata is still
-    // available.
+    // Replace the original "fired" push with a snooze-applied
+    // confirmation; dispatch before clearing _pending so the metadata
+    // is still around.
     if (msg.how === 'snoozed' && _pending.snoozeUntil) {
       _dispatchSnoozeAckPush(msg.id, _pending);
     }
@@ -203,8 +185,8 @@ function _dispatchSnoozeAckPush(id, pendingSnapshot) {
   const label = meta ? meta.shortLabel : id;
   const reason = pendingSnapshot.snoozeReason || '(no reason provided)';
   const until = new Date(pendingSnapshot.snoozeUntil * 1000);
-  // Compact "HH:MM" in Europe/Helsinki so the cloud server (typically
-  // UTC) renders the same wall clock the user sees in-app.
+  // Helsinki HH:MM so the cloud server (UTC) shows the same wall clock
+  // the user sees in-app.
   const untilStr = new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit', minute: '2-digit', hour12: false,
     timeZone: 'Europe/Helsinki',
@@ -215,9 +197,8 @@ function _dispatchSnoozeAckPush(id, pendingSnapshot) {
     body: '"' + reason + '" \u2014 running until ' + untilStr,
     icon: 'assets/notif-watchdog.png',
     badge: 'assets/badge-72.png',
-    // Same tag as the original fire notification so this REPLACES it
-    // on the device rather than stacking. The user sees the original
-    // notification turn into the ack confirmation.
+    // Same tag as the fire notification so this replaces it on-device
+    // rather than stacking.
     tag: 'watchdog-' + id,
     data: {
       kind: 'watchdog_ack',
@@ -268,33 +249,18 @@ function _buildNotificationPayload(pending) {
   };
 }
 
-// Internal helper: PUT a partial device-config update and publish the
-// resulting full config via the existing greenhouse/config retained
-// MQTT topic. Returns a Promise that resolves with the merged config.
-//
-// The device picks up the change in its existing config_changed event
-// handler, where it detects watchdog-relevant transitions (wz[id] for
-// snooze, wb[modeCode] for shutdown) and reacts. This avoids needing
-// a second MQTT subscription on the Shelly device, which has a
-// limited subscription budget.
-// Mirror a device-driven mode-ban into the server's deviceConfig and
-// audit-log it. The device wrote wb[modeCode] = ts + 14400 to its own
-// KVS when its watchdog auto-shutdown grace expired. There is no
-// device → server config feedback channel, so without this mirror:
-//   - the next config republish (server → MQTT → device) would
-//     clobber the device's auto-set ban back to nothing (the server's
-//     wb mirror would be empty);
-//   - the Mode Enablement panel's cool-off TTL line would not show
-//     because watchdog-state broadcasts carry the server mirror, not
-//     the device's actual KVS.
+// Mirror the device's auto-set wb[modeCode] back into the server
+// config. Without this, the next config republish would clobber the
+// device's ban (server mirror was empty) and the Mode Enablement
+// cool-off display would also be wrong.
 async function _handleAutoShutdownBan(msg) {
   const meta = getWatchdog(msg.id);
   if (!meta || !meta.modeCode) return;
   const tsSec = msg.ts || Math.floor(Date.now() / 1000);
   const banUntil = tsSec + WATCHDOG_BAN_SECONDS;
 
-  // Audit row first — even if mirroring the wb fails, we want the
-  // event in the System Logs so the user can see what happened.
+  // Audit row first — if the wb mirror fails, the System Logs should
+  // still record the event.
   if (_deps && _deps.db && typeof _deps.db.insertConfigEvent === 'function') {
     _deps.db.insertConfigEvent({
       ts: new Date(tsSec * 1000),
@@ -313,8 +279,6 @@ async function _handleAutoShutdownBan(msg) {
     });
   }
 
-  // Mirror into the server's deviceConfig + republish + updateSnapshot.
-  // _updateConfigAndPublish handles the persistence + broadcast plumbing.
   const patch = { wb: {} };
   patch.wb[meta.modeCode] = banUntil;
   try {
@@ -358,21 +322,15 @@ async function ack(id, reason, user) {
     resolved_by: user.name
   });
 
-  // Stash snooze metadata on _pending so _handleResolved can build
-  // the ack notification once the device confirms it processed the
-  // snooze. We don't fire the ack push here directly — we wait for
-  // the device's "resolved snoozed" event so the confirmation truly
-  // means "the device has applied your snooze", not just "the server
-  // accepted your request".
+  // Stash on _pending so _handleResolved can build the ack push once
+  // the device confirms it processed the snooze — we want the
+  // confirmation to mean "the device applied it", not "server got it".
   _pending.snoozeUntil = snoozeUntil;
   _pending.snoozeReason = reason;
   _pending.snoozedBy = user.name;
 
-  // Encode the snooze as a wz[id] config update. The device's
-  // config_changed handler detects "wz[id] just became set while a
-  // pending fire exists for this id" and treats it as the snooze
-  // ack — same effect as the old MQTT cmd path, but uses the
-  // existing greenhouse/config subscription.
+  // The device's config_changed handler treats a fresh wz[id] as the
+  // snooze ack, riding on the greenhouse/config subscription.
   const patch = { wz: {} };
   patch.wz[id] = snoozeUntil;
   await _updateConfigAndPublish(patch);
@@ -392,11 +350,9 @@ async function shutdownNow(id, user) {
     resolved_by: user.name
   });
 
-  // Encode the user-triggered shutdown as a wb[modeCode] cool-off
-  // ban set to (now + WATCHDOG_BAN_SECONDS). The device detects
-  // "wb[modeCode] just became set while a pending fire exists for
-  // a watchdog of this mode" and reacts: clears pending, transitions
-  // to IDLE, publishes "resolved shutdown_user".
+  // wb[modeCode] = (now + WATCHDOG_BAN_SECONDS) — the device picks
+  // this up via config_changed, transitions to IDLE, and publishes
+  // "resolved shutdown_user".
   const banUntil = Math.floor(Date.now() / 1000) + WATCHDOG_BAN_SECONDS;
   const patch = { wb: {} };
   patch.wb[meta.modeCode] = banUntil;

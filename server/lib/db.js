@@ -1,12 +1,7 @@
-/**
- * PostgreSQL/TimescaleDB module for sensor readings and state events.
- *
- * Connection URL resolution (in order):
- *   1. DATABASE_URL environment variable
- *   2. S3 object storage (database-url.json) — loaded via resolveUrl()
- *
- * CLI: node monitor/lib/db.js --init   (creates schema)
- */
+// PostgreSQL/TimescaleDB module for sensor readings and state events.
+// Connection URL resolves from DATABASE_URL env var, falling back to S3
+// (database-url.json) via resolveUrl().
+// CLI: node monitor/lib/db.js --init   (creates schema)
 
 const createLogger = require('./logger');
 const log = createLogger('db');
@@ -24,8 +19,7 @@ function resolveUrl(callback) {
   if (hasEnvUrl) {
     resolvedUrl = process.env.DATABASE_URL;
   }
-
-  // Always check S3 for CA cert (and URL if not in env)
+  // Always check S3 for the CA cert (and the URL if it's not in env).
   const dbConfig = require('./db-config');
   dbConfig.load(function (err, url, ca) {
     if (err) {
@@ -50,9 +44,9 @@ function getPool() {
   const url = getConnectionUrl();
   if (!url) return null;
   const Pool = require('pg').Pool;
-  // pg merges config as: Object.assign({}, config, parse(connectionString))
-  // so parsed sslmode overrides explicit ssl options. To use our CA cert,
-  // strip sslmode from the URL and configure SSL entirely via the ssl option.
+  // pg merges config as Object.assign({}, config, parse(url)) so an
+  // sslmode in the URL silently overrides our explicit ssl option;
+  // strip it so the CA-cert path below actually wins.
   const cleanUrl = url.replace(/[?&]sslmode=[^&]*/g, '');
   const opts = {
     connectionString: cleanUrl,
@@ -66,8 +60,9 @@ function getPool() {
   rawPool.on('error', function (err) {
     log.error('unexpected pool error', { error: err.message });
   });
-  // Safe wrapper: pool.query() requires a params array to prevent SQL injection.
-  // Schema/maintenance queries use pool.connect() → client.query() which bypasses this.
+  // pool.query() requires a params array — schema/maintenance paths
+  // that need string-templated SQL must go through pool.connect() →
+  // client.query() instead.
   pool = {
     query: function safeQuery(sql, params, cb) {
       if (typeof params === 'function') {
@@ -146,12 +141,9 @@ function insertSensorReadings(ts, temps, callback) {
   });
 }
 
-// Signature accepts an optional opts object {cause, reason, sensors} so
-// mode rows can carry transition context (what triggered the change,
-// the evaluator's decision code, and the sensor snapshot at transition
-// time). Valve/actuator writes omit opts and store NULL in those
-// columns. Positional signature preserved for callers that don't need
-// the extension.
+// opts = {cause, reason, sensors} carries mode-transition context for
+// state_events rows that need it. Valve/actuator writes pass no opts
+// and end up with NULLs there.
 function insertStateEvent(ts, entityType, entityId, oldValue, newValue, optsOrCallback, maybeCallback) {
   const p = getPool();
   let opts, callback;
@@ -172,14 +164,8 @@ function insertStateEvent(ts, entityType, entityId, oldValue, newValue, optsOrCa
   });
 }
 
-// ── Config events ──
-//
-// Every wb / mo mutation is logged here as one row per delta, sourced
-// from PUT /api/device-config (mode-enablement UI), WS override
-// commands (refill / drain), or the device's auto-shutdown path. The
-// System Logs view interleaves these with mode transitions to give a
-// single audit trail. Source / actor / key / value semantics are
-// documented on the table definition in db-schema.js.
+// One row per wb/mo/ea delta — see db-schema.js for column semantics.
+// The System Logs view interleaves these with mode transitions.
 function insertConfigEvent(row, callback) {
   const p = getPool();
   const sql = 'INSERT INTO config_events (ts, kind, key, old_value, new_value, source, actor) ' +
@@ -198,9 +184,7 @@ function insertConfigEvent(row, callback) {
   });
 }
 
-// Newest-first paginated query mirroring getEventsPaginated for state_events.
-//   limit  — capped at 100
-//   before — optional Unix ms cursor; returns rows with ts < before
+// Newest-first cursor pagination (limit ≤ 100, before = Unix-ms cursor).
 function getConfigEventsPaginated(limit, before, callback) {
   const p = getPool();
   const cap = 100;
@@ -252,15 +236,10 @@ const RANGE_INTERVALS = {
   '1y': '1 year',
 };
 
-// For long views, re-bucket the 30-second aggregates to a coarser
-// resolution. Without this, 7 days at 30 s = ~20 160 points per sensor —
-// noisy on screen and at the edge of the client's 20 000-point store cap.
-// The values are SQL fragments interpolated into time_bucket(...); they
-// must stay constants (never user input) because we string-concat them.
-//
-// `all` is intentionally absent: there's no UI button for it and the
-// e2e harness relies on `range=all` resolving against pg-mem (which has
-// no time_bucket).
+// SQL fragments interpolated into time_bucket() — must stay constant
+// (never user input) since we string-concat them. Re-buckets the 30 s
+// aggregate so 7 d / 30 d / 1 y views stay under the client's point
+// cap. `all` is intentionally absent — pg-mem has no time_bucket().
 const COARSE_BUCKETS = {
   '3d': '2 minutes',
   '7d': '5 minutes',
@@ -277,8 +256,7 @@ function getHistory(range, sensor, callback) {
     return;
   }
 
-  // Choose resolution: raw for ≤6h, 30s aggregate for ≥3d, blended for 24h/48h.
-  // 3d must use the aggregate — raw sensor_readings is pruned at 48h.
+  // Raw for ≤6h, 30s aggregate for ≥3d (raw is pruned at 48h), blended for 24h/48h.
   const useAggregate = range === '3d' || range === '7d' || range === '30d' || range === '4mo' || range === '1y' || range === 'all';
   const useBlended = range === '24h' || range === '48h';
 
@@ -296,8 +274,6 @@ function getHistory(range, sensor, callback) {
     }
     const coarse = COARSE_BUCKETS[range];
     if (coarse) {
-      // Re-bucket the 30 s aggregates to a coarser resolution to smooth
-      // the long view and keep the response under the client's point cap.
       sql = "SELECT time_bucket('" + coarse + "', bucket) AS ts, sensor_id," +
         " AVG(avg_value) AS value FROM sensor_readings_30s" +
         aggWhereTime + aggWhereSensor +
@@ -337,12 +313,9 @@ function getHistory(range, sensor, callback) {
     if (range === 'all') {
       sql = windowSql + ' ORDER BY ts';
     } else {
-      // Leading-edge row per sensor: the last reading BEFORE the window
-      // starts. Without this, a gap between the last pre-window reading
-      // (e.g. at 11:18) and the first in-window reading (e.g. at 11:33)
-      // leaves the chart's left side blank. The client's line renderer
-      // connects these leading-edge points across the window boundary,
-      // visually interpolating through the gap.
+      // Last reading BEFORE the window per sensor — the line renderer
+      // joins it to the first in-window point so a wide gap (e.g.
+      // 11:18 → 11:33) doesn't leave the chart's left side blank.
       const leadingSensorClause = sensor
         ? ' AND sensor_id = $' + paramIdx
         : '';
@@ -367,18 +340,13 @@ function getHistory(range, sensor, callback) {
   });
 }
 
-// Paginated newest-first query for state_events, with a cursor for
-// infinite-scroll UIs. Returns { events, hasMore } where `hasMore` is true
-// if at least one row exists older than the oldest returned row.
-//
-//   entityType — required (e.g. 'mode', 'valve', 'actuator')
-//   limit      — capped at 100
-//   before     — optional Unix ms cursor; returns rows with ts < before
+// Newest-first cursor pagination over state_events.
+// entityType: 'mode' / 'valve' / 'actuator'. limit ≤ 100.
 function getEventsPaginated(entityType, limit, before, callback) {
   const p = getPool();
   const cap = 100;
   const effLimit = Math.max(1, Math.min(cap, parseInt(limit, 10) || 10));
-  // Query limit+1 so we can detect whether more rows exist beyond this page.
+  // limit+1 lets us detect whether older rows exist for hasMore.
   const fetchLimit = effLimit + 1;
 
   const params = [entityType];
@@ -402,9 +370,6 @@ function getEventsPaginated(entityType, limit, before, callback) {
         id: row.entity_id,
         from: row.old_value,
         to: row.new_value,
-        // cause / sensors populated only for mode rows written after
-        // 2026-04-20; reason added 2026-04-21. Older rows and
-        // valve/actuator rows carry null.
         cause: row.cause,
         reason: row.reason,
         sensors: row.sensors,
@@ -442,13 +407,9 @@ function getEvents(range, entityType, callback) {
   });
 }
 
-// ── Script crash log ──
-//
-// Writers go through insertScriptCrash; the UI reads via listScriptCrashes
-// / getScriptCrash. Postgres-only: crashes are rare and we prefer a real
-// record over an ephemeral ring buffer. If the DB is down when a crash
-// fires, script-monitor logs the drop and keeps the crash in memory on
-// its own in-process ring buffer for the WS layer.
+// Postgres-only: crashes are rare and worth a durable record. When the
+// DB is down, script-monitor keeps an in-process ring buffer so the WS
+// layer still surfaces the crash.
 function insertScriptCrash(row, callback) {
   const p = getPool();
   if (!p) { callback(new Error('no_db')); return; }

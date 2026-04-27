@@ -1,30 +1,12 @@
-/**
- * Control-script monitor.
- *
- * Polls Script.GetStatus on the Pro 4PM every 30 s. When the script
- * transitions from running to not-running the monitor captures
- *
- *   - the error_msg / error trace from Script.GetStatus
- *   - Sys.GetStatus (ram, uptime, reset_reason)
- *   - a ring buffer of the last N greenhouse/state snapshots from MQTT
- *
- * and writes one row to script_crashes. A single callback fires on every
- * status change so the HTTP/WS layer can push "script down" banners to
- * connected playgrounds without polling their own.
- *
- * Reachability: the Pro 4PM is addressable from the server over the
- * greenhouse VLAN in local mode, and over the openvpn sidecar in cloud
- * mode — both expose it on the same IP:port. CONTROLLER_IP sets the
- * host (defaults to 192.168.30.50, the greenhouse-VLAN DHCP
- * reservation). CONTROLLER_SCRIPT_ID sets the Shelly script slot id
- * (defaults to 1).
- *
- * Adding a new direct-HTTP path here is a deliberate third exception
- * to the MQTT-only rule in CLAUDE.md, joining sensor-discovery /
- * sensor-config/apply. Justification: we need to observe the script's
- * health *when MQTT has gone silent* — if we routed this through MQTT
- * we'd be querying the crashed script's own MQTT subscription.
- */
+// Control-script monitor: polls Script.GetStatus on the Pro 4PM every
+// 30 s. On a running→stopped transition captures the script's error
+// trace, Sys.GetStatus, and the recent-states ring buffer, then writes
+// one script_crashes row. Status changes fan out via callbacks for the
+// HTTP/WS "script down" banner.
+//
+// Direct HTTP (not MQTT) is intentional — see CLAUDE.md: we need to
+// observe the script's health *when MQTT has gone silent*. Joins
+// sensor-discovery / sensor-config/apply as the third exception.
 
 'use strict';
 
@@ -130,8 +112,6 @@ function createScriptMonitor(options) {
 
   function recordStateSnapshot(payload) {
     if (!payload) return;
-    // Keep a trimmed view. MQTT payloads can include arbitrary extras —
-    // we only need enough to debug a crash.
     const snap = {
       ts: payload.ts || Date.now(),
       mode: payload.mode || null,
@@ -149,13 +129,9 @@ function createScriptMonitor(options) {
     }
   }
 
-  // ── Crash capture ──
-  //
-  // On the first poll that observes running:false + errors, fetch
-  // Sys.GetStatus for context and write one script_crashes row
-  // containing the error, sys status, and the snapshot buffer. Until
-  // the script comes back up we keep emitting the same crash snapshot
-  // to status listeners — no repeated rows per poll cycle.
+  // First running:false poll: fetch Sys.GetStatus and write one
+  // script_crashes row. Subsequent polls just re-emit the same snapshot
+  // — no duplicate rows per cycle.
   function captureCrash(scriptStatus, callback) {
     lastStatus.error_msg = scriptStatus.error_msg || null;
     lastStatus.error_trace = (scriptStatus.errors && scriptStatus.errors.length)
@@ -213,9 +189,8 @@ function createScriptMonitor(options) {
       lastStatus.running = isRunning;
 
       if (isRunning) {
-        // Clear any stuck crash context when the script is back up. The
-        // DB row is preserved; crashId stays pointing at it so the UI
-        // can still mark the incident resolved.
+        // Clear stuck crash fields on recovery. DB row is preserved;
+        // crashId still points at it for the resolved-incident UI.
         if (wasRunning !== true) {
           lastStatus.error_msg = null;
           lastStatus.error_trace = null;

@@ -46,14 +46,10 @@ import {
 import {
   initConnection, initModeToggle, updateSidebarSubtitle, getLiveSource,
 } from './main/connection.js';
-// Expose for e2e testing
 window.__triggerVersionCheck = triggerVersionCheck;
 
-
-// ── State ──
 // Shared mutable state lives in ./main/state.js as a leaf module so
-// sibling modules don't have to import back from main.js (which
-// would form a cycle). main.js still writes to it via the setters.
+// siblings don't have to import back from main.js (which would cycle).
 import {
   model, controller, running, simSpeed, graphRange, showAllSensors,
   params, timeSeriesStore, MODE_INFO,
@@ -64,8 +60,6 @@ import {
 let config = null;
 const DT = 1;
 
-// Scenario presets — only read by setupControls/applyPreset in this
-// file, so they stay local.
 const PRESETS = {
   spring_fall:   { label: 'Spring / Fall',      t_outdoor: 10,   irradiance: 500, t_tank_top: 12, t_tank_bottom: 9,  t_greenhouse: 11, gh_thermal_mass: 250000, gh_heat_loss: 100 },
   summer_peak:   { label: 'Summer Peak Heat',   t_outdoor: 26,   irradiance: 500, t_tank_top: 88, t_tank_bottom: 85, t_greenhouse: 11, gh_thermal_mass: 250000, gh_heat_loss: 100 },
