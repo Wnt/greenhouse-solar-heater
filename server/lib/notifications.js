@@ -29,8 +29,15 @@ const log = createLogger('notifications');
 // overheatDrainTemp was already 95 while this file still said 85).
 const CONTROL_DEFAULTS = require('../../shelly/control-logic.js').DEFAULT_CONFIG;
 
+// Mode names arrive lowercased on greenhouse/state — the device's
+// buildStatePayload() in shelly/control-logic.js does st.mode.toLowerCase()
+// before publishing, and state_events store the lowercased values.
+// Match the same set the playground uses (energy-balance.js).
+const HEATING_MODES = { greenhouse_heating: 1, emergency_heating: 1 };
+
 let pushRef = null;
 let deviceConfigRef = null;
+let dbRef = null;
 
 // Temperature history buffers for trend prediction
 let tankTempHistory = [];    // { ts: ms, value: number }
@@ -196,11 +203,12 @@ function evaluate(payload) {
     addSample(collectorTempHistory, now, temps.collector);
   }
 
-  // Track mode for reports
+  // Track mode for reports. payload.mode is lowercase (the device
+  // lowercases it in buildStatePayload before publishing).
   const mode = payload.mode || null;
   if (lastModeCheckTs > 0 && mode && lastMode) {
     const elapsed = (now - lastModeCheckTs) / 60000; // minutes
-    if (lastMode === 'GREENHOUSE_HEATING' || lastMode === 'EMERGENCY_HEATING') {
+    if (HEATING_MODES[lastMode]) {
       nightHeatingMinutes += elapsed;
     }
   }
@@ -221,7 +229,7 @@ function evaluate(payload) {
         dailyEnergyWh += delta * 1000;
       } else if (delta < 0) {
         const lossWh = -delta * 1000;
-        if (lastMode === 'GREENHOUSE_HEATING' || lastMode === 'EMERGENCY_HEATING') {
+        if (HEATING_MODES[lastMode]) {
           dailyHeatingLossWh += lossWh;
           nightHeatingLossWh += lossWh;
         } else {
@@ -489,20 +497,159 @@ function checkNoonReport() {
   if (hour !== 12 || day === lastNoonReport) return;
 
   lastNoonReport = day;
-  const minutes = Math.round(nightHeatingMinutes);
 
-  pushRef.sendNotification('noon_report', {
-    title: 'Overnight Heating Report',
-    body: buildNoonBody(minutes, nightHeatingLossWh, nightLeakageLossWh, isHeatingDisabled()),
-    tag: 'noon-report',
-    icon: pushRef.iconFor('noon_report'),
-    url: '/#status',
+  sendNoonReport(Date.now());
+}
+
+function sendNoonReport(now) {
+  function dispatch(stats) {
+    pushRef.sendNotification('noon_report', {
+      title: 'Overnight Heating Report',
+      body: buildNoonBody(stats.durationMinutes, stats.heatingLossWh, stats.leakageLossWh, isHeatingDisabled()),
+      tag: 'noon-report',
+      icon: pushRef.iconFor('noon_report'),
+      url: '/#status',
+    });
+
+    // Reset live accumulators (they are no longer the report's source
+    // of truth, but we keep them to avoid a one-off jump on the next
+    // evening report).
+    nightHeatingMinutes = 0;
+    nightHeatingLossWh = 0;
+    nightLeakageLossWh = 0;
+  }
+
+  // Prefer the durable database history. The in-memory accumulators
+  // are wiped on every server restart, which produced "no heating
+  // needed" notifications even after a long heating night when the
+  // server happened to redeploy that morning. The database survives
+  // restarts and is the same source the in-app balance card draws
+  // from, so the notification now matches the UI.
+  if (dbRef) {
+    computeOvernightStats(dbRef, now, function (err, stats) {
+      if (err) {
+        log.warn('noon report: DB query failed, falling back to live accumulators', { error: err.message });
+        dispatch({
+          durationMinutes: Math.round(nightHeatingMinutes),
+          heatingLossWh: nightHeatingLossWh,
+          leakageLossWh: nightLeakageLossWh,
+        });
+      } else {
+        dispatch(stats);
+      }
+    });
+  } else {
+    dispatch({
+      durationMinutes: Math.round(nightHeatingMinutes),
+      heatingLossWh: nightHeatingLossWh,
+      leakageLossWh: nightLeakageLossWh,
+    });
+  }
+}
+
+// Compute overnight heating stats from durable history. Called from
+// checkNoonReport at noon to summarise the night that just ended,
+// independently of in-memory accumulators that get wiped on restart.
+//
+// Window: last 18 h. At 12:00 local that reaches back to ~18:00 the
+// previous evening, capturing the full night plus pre-sunset leakage.
+// We don't try to identify the precise sunset/sunrise transition —
+// any positive solar deltas in the window are not reported anyway
+// (only heating loss and leakage are).
+const OVERNIGHT_WINDOW_MS = 18 * 3600 * 1000;
+
+function computeOvernightStats(db, now, callback) {
+  if (!db || typeof db.getHistory !== 'function' || typeof db.getEvents !== 'function') {
+    callback(new Error('db_unavailable'));
+    return;
+  }
+  db.getHistory('24h', null, function (hErr, points) {
+    if (hErr) { callback(hErr); return; }
+    db.getEvents('24h', 'mode', function (eErr, events) {
+      if (eErr) { callback(eErr); return; }
+      try {
+        callback(null, computeOvernightFromHistory(points || [], events || [], now));
+      } catch (e) {
+        callback(e);
+      }
+    });
   });
+}
 
-  // Reset night counters
-  nightHeatingMinutes = 0;
-  nightHeatingLossWh = 0;
-  nightLeakageLossWh = 0;
+function computeOvernightFromHistory(points, events, now) {
+  const windowStart = now - OVERNIGHT_WINDOW_MS;
+
+  const modeEvents = (events || [])
+    .filter(function (e) { return e && e.type === 'mode' && typeof e.ts === 'number'; })
+    .slice()
+    .sort(function (a, b) { return a.ts - b.ts; });
+
+  // Mode at windowStart — last event with ts <= windowStart.
+  let modeAtStart = 'idle';
+  let firstInWindow = 0;
+  for (let i = 0; i < modeEvents.length; i++) {
+    if (modeEvents[i].ts > windowStart) { firstInWindow = i; break; }
+    modeAtStart = modeEvents[i].to || modeAtStart;
+    firstInWindow = i + 1;
+  }
+
+  // Heating duration: sum (segment end - segment start) for each
+  // greenhouse_heating / emergency_heating run that overlaps the window.
+  let durationMs = 0;
+  let curMode = modeAtStart;
+  let segStart = HEATING_MODES[curMode] ? windowStart : null;
+  for (let i = firstInWindow; i < modeEvents.length; i++) {
+    const ev = modeEvents[i];
+    if (ev.ts >= now) break;
+    if (HEATING_MODES[curMode] && segStart !== null) {
+      durationMs += ev.ts - segStart;
+      segStart = null;
+    }
+    if (ev.to && HEATING_MODES[ev.to]) {
+      segStart = ev.ts;
+    }
+    curMode = ev.to || curMode;
+  }
+  if (HEATING_MODES[curMode] && segStart !== null) {
+    durationMs += now - segStart;
+  }
+
+  // Energy bucketing: walk points (which include a pre-window leading
+  // edge from getHistory's UNION) and credit each tank-energy drop to
+  // the mode active at that point. Same algorithm as
+  // playground/js/energy-balance.js bucketRange().
+  let pMode = 'idle';
+  let evIdx = 0;
+  let heatingLossWh = 0;
+  let leakageLossWh = 0;
+  let prevEnergy = null;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    while (evIdx < modeEvents.length && modeEvents[evIdx].ts <= p.ts) {
+      pMode = modeEvents[evIdx].to || pMode;
+      evIdx++;
+    }
+    if (typeof p.tank_top !== 'number' || typeof p.tank_bottom !== 'number') {
+      prevEnergy = null;
+      continue;
+    }
+    const e = tankStoredEnergyKwh((p.tank_top + p.tank_bottom) / 2);
+    if (prevEnergy !== null && p.ts >= windowStart) {
+      const d = e - prevEnergy;
+      if (d < 0) {
+        const lossWh = -d * 1000;
+        if (HEATING_MODES[pMode]) heatingLossWh += lossWh;
+        else leakageLossWh += lossWh;
+      }
+    }
+    prevEnergy = e;
+  }
+
+  return {
+    durationMinutes: Math.round(durationMs / 60000),
+    heatingLossWh,
+    leakageLossWh,
+  };
 }
 
 // ── Lifecycle ──
@@ -510,6 +657,7 @@ function checkNoonReport() {
 function init(options) {
   pushRef = options.push || null;
   deviceConfigRef = options.deviceConfig || null;
+  dbRef = options.db || null;
   // Start periodic tick for offline/online detection.
   // .unref() prevents the timer from keeping the event loop alive when
   // the process is otherwise idle (e.g. in tests that don't call stop()).
@@ -529,6 +677,7 @@ function _reset() {
   stop();
   pushRef = null;
   deviceConfigRef = null;
+  dbRef = null;
   tankTempHistory = [];
   outdoorTempHistory = [];
   collectorTempHistory = [];
@@ -581,6 +730,8 @@ module.exports = {
   _getNightHeatingMinutes: function () { return nightHeatingMinutes; },
   buildEveningBody,
   buildNoonBody,
+  computeOvernightStats,
+  computeOvernightFromHistory,
   _setLastEveningReport: function (v) { lastEveningReport = v; },
   _setLastNoonReport: function (v) { lastNoonReport = v; },
   _setLastEvaluateTs: function (v) { lastEvaluateTs = v; },

@@ -32,7 +32,7 @@ function start(options) {
   anomalyManagerRef = options.anomalyManager || null;
   stateSnapshotListener = options.onStateSnapshot || null;
 
-  notifications.init({ push: pushRef, deviceConfig: deviceConfigRef });
+  notifications.init({ push: pushRef, deviceConfig: deviceConfigRef, db });
 
   const host = options.mqttHost || process.env.MQTT_HOST || '127.0.0.1';
   const port = options.mqttPort || process.env.MQTT_PORT || 1883;

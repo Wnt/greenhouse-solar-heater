@@ -101,7 +101,7 @@ describe('notifications', () => {
         iconFor: function (type) { return 'assets/notif-' + type + '.png'; },
       };
       notifications.init({ push: mockPush, deviceConfig: null });
-      notifications.evaluate({ temps: {}, mode: 'IDLE' });
+      notifications.evaluate({ temps: {}, mode: 'idle' });
       assert.strictEqual(notifications.isDataFresh(), true);
     });
 
@@ -141,7 +141,7 @@ describe('notifications', () => {
       notifications._setTankHistory(tankHistory);
 
       notifications.evaluate({
-        temps: { tank_top: overheatT - 2, outdoor: 10 }, mode: 'SOLAR_CHARGING',
+        temps: { tank_top: overheatT - 2, outdoor: 10 }, mode: 'solar_charging',
       });
 
       const overheatNotifs = sentNotifications.filter(function (n) { return n.type === 'overheat_warning'; });
@@ -161,7 +161,7 @@ describe('notifications', () => {
       }
       notifications._setTankHistory(history);
 
-      notifications.evaluate({ temps: { tank_top: 50, outdoor: 10 }, mode: 'IDLE' });
+      notifications.evaluate({ temps: { tank_top: 50, outdoor: 10 }, mode: 'idle' });
 
       const overheatNotifs = sentNotifications.filter(function (n) { return n.type === 'overheat_warning'; });
       assert.strictEqual(overheatNotifs.length, 0);
@@ -177,7 +177,7 @@ describe('notifications', () => {
       }
       notifications._setTankHistory(history);
 
-      notifications.evaluate({ temps: { tank_top: overheatT + 6, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+      notifications.evaluate({ temps: { tank_top: overheatT + 6, outdoor: 10 }, mode: 'solar_charging' });
 
       const overheatNotifs = sentNotifications.filter(function (n) { return n.type === 'overheat_warning'; });
       assert.strictEqual(overheatNotifs.length, 0);
@@ -195,7 +195,7 @@ describe('notifications', () => {
       }
       notifications._setOutdoorHistory(history);
 
-      notifications.evaluate({ temps: { tank_top: 50, outdoor: freezeT + 0.1 }, mode: 'IDLE' });
+      notifications.evaluate({ temps: { tank_top: 50, outdoor: freezeT + 0.1 }, mode: 'idle' });
 
       const freezeNotifs = sentNotifications.filter(function (n) { return n.type === 'freeze_warning'; });
       assert.strictEqual(freezeNotifs.length, 1);
@@ -216,7 +216,7 @@ describe('notifications', () => {
       }
       notifications._setOutdoorHistory(history);
 
-      notifications.evaluate({ temps: { tank_top: 50, outdoor: freezeT - 1.5 }, mode: 'IDLE' });
+      notifications.evaluate({ temps: { tank_top: 50, outdoor: freezeT - 1.5 }, mode: 'idle' });
 
       const freezeNotifs = sentNotifications.filter(function (n) { return n.type === 'freeze_warning'; });
       assert.strictEqual(freezeNotifs.length, 0);
@@ -239,7 +239,7 @@ describe('notifications', () => {
 
       notifications.evaluate({
         temps: { tank_top: 50, outdoor: freezeT + 0.1 },
-        mode: 'IDLE',
+        mode: 'idle',
         flags: { collectors_drained: true },
       });
 
@@ -262,7 +262,7 @@ describe('notifications', () => {
 
       notifications.evaluate({
         temps: { tank_top: overheatT - 2, outdoor: 10 },
-        mode: 'SOLAR_CHARGING',
+        mode: 'solar_charging',
         flags: { collectors_drained: true },
       });
 
@@ -271,7 +271,7 @@ describe('notifications', () => {
     });
 
     it('tracks energy during solar charging', () => {
-      notifications.evaluate({ temps: { tank_top: 50, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+      notifications.evaluate({ temps: { tank_top: 50, outdoor: 10 }, mode: 'solar_charging' });
       assert.strictEqual(notifications._getDailyEnergyWh(), 0);
     });
 
@@ -284,31 +284,31 @@ describe('notifications', () => {
       //   start: avg=20 °C  → ΔT=8  → 2.790 kWh
       //   end  : avg=40 °C  → ΔT=28 → 9.767 kWh
       //   gain : 6.977 kWh  → 6977 Wh
-      notifications.evaluate({ temps: { tank_top: 22, tank_bottom: 18, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+      notifications.evaluate({ temps: { tank_top: 22, tank_bottom: 18, outdoor: 10 }, mode: 'solar_charging' });
       assert.strictEqual(notifications._getDailyEnergyWh(), 0);
 
-      notifications.evaluate({ temps: { tank_top: 45, tank_bottom: 35, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+      notifications.evaluate({ temps: { tank_top: 45, tank_bottom: 35, outdoor: 10 }, mode: 'solar_charging' });
       const gained = notifications._getDailyEnergyWh();
       assert.ok(gained > 6900 && gained < 7100, 'expected ≈6977 Wh, got ' + gained);
     });
 
     it('ignores tank cooling (does not subtract from daily gathered)', () => {
-      notifications.evaluate({ temps: { tank_top: 60, tank_bottom: 50, outdoor: 10 }, mode: 'IDLE' });
+      notifications.evaluate({ temps: { tank_top: 60, tank_bottom: 50, outdoor: 10 }, mode: 'idle' });
       const before = notifications._getDailyEnergyWh();
 
-      notifications.evaluate({ temps: { tank_top: 45, tank_bottom: 35, outdoor: 10 }, mode: 'GREENHOUSE_HEATING' });
+      notifications.evaluate({ temps: { tank_top: 45, tank_bottom: 35, outdoor: 10 }, mode: 'greenhouse_heating' });
       assert.strictEqual(notifications._getDailyEnergyWh(), before,
         'cooling must not decrease dailyEnergyWh');
     });
 
     it('accumulates gain across multiple heating pulses', () => {
       // First pulse: 20 → 30 °C avg
-      notifications.evaluate({ temps: { tank_top: 22, tank_bottom: 18, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
-      notifications.evaluate({ temps: { tank_top: 34, tank_bottom: 26, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+      notifications.evaluate({ temps: { tank_top: 22, tank_bottom: 18, outdoor: 10 }, mode: 'solar_charging' });
+      notifications.evaluate({ temps: { tank_top: 34, tank_bottom: 26, outdoor: 10 }, mode: 'solar_charging' });
       // Tank cools overnight: 30 → 25 °C avg (no negative credit)
-      notifications.evaluate({ temps: { tank_top: 28, tank_bottom: 22, outdoor: 10 }, mode: 'IDLE' });
+      notifications.evaluate({ temps: { tank_top: 28, tank_bottom: 22, outdoor: 10 }, mode: 'idle' });
       // Next morning heats again: 25 → 40 °C avg
-      notifications.evaluate({ temps: { tank_top: 45, tank_bottom: 35, outdoor: 10 }, mode: 'SOLAR_CHARGING' });
+      notifications.evaluate({ temps: { tank_top: 45, tank_bottom: 35, outdoor: 10 }, mode: 'solar_charging' });
 
       // Total positive delta: (30-20) + (40-25) = 25 K of heating
       // Q = 300 × 4.186 × 25 / 3600 ≈ 8.721 kWh → 8721 Wh
@@ -317,15 +317,20 @@ describe('notifications', () => {
     });
 
     it('classifies tank drops by mode (heating vs leakage)', () => {
+      // payload.mode is lowercase — the device's buildStatePayload()
+      // does st.mode.toLowerCase() before publishing. Regression test:
+      // before 2026-04-27 the comparator used uppercase 'GREENHOUSE_HEATING',
+      // so heating drops were silently misclassified as leakage.
+
       // First eval seeds lastTankEnergyKwh; no delta yet.
-      notifications.evaluate({ temps: { tank_top: 55, tank_bottom: 45, outdoor: 5 }, mode: 'IDLE' });
-      // Tank cools 3 K while IDLE — 50 → 47 avg
+      notifications.evaluate({ temps: { tank_top: 55, tank_bottom: 45, outdoor: 5 }, mode: 'idle' });
+      // Tank cools 3 K while idle — 50 → 47 avg
       // Q(3K) = 300·4.186·3/3600 ≈ 1.047 kWh → ≈1046 Wh leakage
-      notifications.evaluate({ temps: { tank_top: 52, tank_bottom: 42, outdoor: 5 }, mode: 'IDLE' });
+      notifications.evaluate({ temps: { tank_top: 52, tank_bottom: 42, outdoor: 5 }, mode: 'idle' });
       // Heating turns on; tank drops 5 K — 47 → 42 avg → ≈1744 Wh heating
-      notifications.evaluate({ temps: { tank_top: 46, tank_bottom: 38, outdoor: 5 }, mode: 'GREENHOUSE_HEATING' });
+      notifications.evaluate({ temps: { tank_top: 46, tank_bottom: 38, outdoor: 5 }, mode: 'greenhouse_heating' });
       // Another 6 K drop still in GH mode → ≈2093 Wh heating
-      notifications.evaluate({ temps: { tank_top: 40, tank_bottom: 32, outdoor: 5 }, mode: 'GREENHOUSE_HEATING' });
+      notifications.evaluate({ temps: { tank_top: 40, tank_bottom: 32, outdoor: 5 }, mode: 'greenhouse_heating' });
 
       const leakage = notifications._getDailyLeakageLossWh();
       const heating = notifications._getDailyHeatingLossWh();
@@ -336,9 +341,9 @@ describe('notifications', () => {
       assert.strictEqual(notifications._getDailyEnergyWh(), 0);
     });
 
-    it('credits EMERGENCY_HEATING drops to heating bucket', () => {
-      notifications.evaluate({ temps: { tank_top: 50, tank_bottom: 40, outdoor: 5 }, mode: 'EMERGENCY_HEATING' });
-      notifications.evaluate({ temps: { tank_top: 45, tank_bottom: 35, outdoor: 5 }, mode: 'EMERGENCY_HEATING' });
+    it('credits emergency_heating drops to heating bucket', () => {
+      notifications.evaluate({ temps: { tank_top: 50, tank_bottom: 40, outdoor: 5 }, mode: 'emergency_heating' });
+      notifications.evaluate({ temps: { tank_top: 45, tank_bottom: 35, outdoor: 5 }, mode: 'emergency_heating' });
       assert.ok(notifications._getDailyHeatingLossWh() > 0);
       assert.strictEqual(notifications._getDailyLeakageLossWh(), 0);
     });
@@ -579,6 +584,141 @@ describe('notifications', () => {
         const body = notifications.buildNoonBody(0, 0, 20, false);
         assert.match(body, /No heating was needed overnight/);
         assert.match(body, /greenhouse stayed warm/);
+      });
+    });
+  });
+
+  describe('computeOvernightFromHistory (DB-backed noon report)', () => {
+    // Build a synthetic overnight: tank starts at 30°C avg, heating runs
+    // from 22:00 to 06:00, tank cools to 16°C avg. Then idle leakage
+    // until noon, dropping another 1°C. Sample density inside heating
+    // is dense enough that no single delta straddles the mode transition
+    // (matches production 30 s sampling).
+    function buildScenario(now) {
+      const HOUR = 3600 * 1000;
+      const heatingStart = now - 14 * HOUR;  // 22:00 yesterday
+      const heatingEnd = now - 6 * HOUR;     // 06:00 today
+      const events = [
+        { ts: now - 18 * HOUR, type: 'mode', to: 'idle' },
+        { ts: heatingStart, type: 'mode', to: 'greenhouse_heating' },
+        { ts: heatingEnd, type: 'mode', to: 'idle' },
+      ];
+      const points = [];
+      // Pre-window leading edge
+      points.push({ ts: now - 19 * HOUR, tank_top: 31, tank_bottom: 29 });
+      // Pre-heating, tank at 30 avg
+      points.push({ ts: now - 15 * HOUR, tank_top: 31, tank_bottom: 29 });
+      // Heating start, same temp
+      points.push({ ts: heatingStart, tank_top: 31, tank_bottom: 29 });
+      // Quarter-way: avg 25
+      points.push({ ts: now - 12 * HOUR, tank_top: 26, tank_bottom: 24 });
+      // Half-way: avg 23
+      points.push({ ts: now - 10 * HOUR, tank_top: 24, tank_bottom: 22 });
+      // Three-quarter: avg 20
+      points.push({ ts: now - 8 * HOUR, tank_top: 21, tank_bottom: 19 });
+      // Last sample fully inside heating: avg 16 (14 K total drop from 30)
+      points.push({ ts: heatingEnd - 60 * 1000, tank_top: 17, tank_bottom: 15 });
+      // Mode-transition sample, same temp (no delta credited to idle)
+      points.push({ ts: heatingEnd, tank_top: 17, tank_bottom: 15 });
+      // Idle leakage — drop 1 K to 15 avg
+      points.push({ ts: now - 3 * HOUR, tank_top: 16, tank_bottom: 14 });
+      points.push({ ts: now, tank_top: 16, tank_bottom: 14 });
+      return { points, events };
+    }
+
+    it('credits drops during greenhouse_heating to heating bucket and computes duration', () => {
+      const now = Date.now();
+      const { points, events } = buildScenario(now);
+
+      const stats = notifications.computeOvernightFromHistory(points, events, now);
+
+      // 8 hours of heating (22:00 → 06:00)
+      assert.strictEqual(stats.durationMinutes, 480, 'durationMinutes=' + stats.durationMinutes);
+
+      // Heating loss: tank drops 14 K (30 → 16 avg) during heating mode.
+      // Q = 300 × 4.186 × 14 / 3600 ≈ 4.884 kWh = 4884 Wh
+      assert.ok(
+        stats.heatingLossWh > 4700 && stats.heatingLossWh < 5000,
+        'heatingLossWh=' + stats.heatingLossWh
+      );
+      // Leakage loss: 1 K drop (16 → 15 avg) during idle.
+      // Q = 300 × 4.186 × 1 / 3600 ≈ 0.349 kWh = 349 Wh
+      assert.ok(
+        stats.leakageLossWh > 250 && stats.leakageLossWh < 450,
+        'leakageLossWh=' + stats.leakageLossWh
+      );
+    });
+
+    it('returns zero stats when no events and no points are in window', () => {
+      const now = Date.now();
+      const stats = notifications.computeOvernightFromHistory([], [], now);
+      assert.strictEqual(stats.durationMinutes, 0);
+      assert.strictEqual(stats.heatingLossWh, 0);
+      assert.strictEqual(stats.leakageLossWh, 0);
+    });
+
+    it('clips heating segment that started before window to windowStart', () => {
+      const now = Date.now();
+      const HOUR = 3600 * 1000;
+      // Heating started 25 h ago (before the 18 h window) and ended 4 h ago.
+      // Only the in-window slice should count: 18 h - 4 h = 14 h.
+      const events = [
+        { ts: now - 25 * HOUR, type: 'mode', to: 'greenhouse_heating' },
+        { ts: now - 4 * HOUR, type: 'mode', to: 'idle' },
+      ];
+      const stats = notifications.computeOvernightFromHistory([], events, now);
+      assert.strictEqual(stats.durationMinutes, 14 * 60, 'durationMinutes=' + stats.durationMinutes);
+    });
+
+    it('caps an open heating segment at "now"', () => {
+      const now = Date.now();
+      const HOUR = 3600 * 1000;
+      // Heating started 5 h ago and is still active.
+      const events = [
+        { ts: now - 5 * HOUR, type: 'mode', to: 'greenhouse_heating' },
+      ];
+      const stats = notifications.computeOvernightFromHistory([], events, now);
+      assert.strictEqual(stats.durationMinutes, 5 * 60, 'durationMinutes=' + stats.durationMinutes);
+    });
+
+    it('integration: checkNoonReport pulls from DB when available', () => {
+      const now = Date.now();
+      const { points, events } = buildScenario(now);
+
+      const sent = [];
+      const mockPush = {
+        sendNotification: function (type, payload) { sent.push({ type, payload }); },
+        iconFor: function (type) { return 'assets/notif-' + type + '.png'; },
+      };
+      const mockDb = {
+        getHistory: function (range, sensor, cb) { cb(null, points); },
+        getEvents: function (range, entityType, cb) { cb(null, events); },
+      };
+
+      // The integration goes through the async sendNoonReport path via
+      // computeOvernightStats. Drive it directly so we don't have to
+      // spoof getLocalHour().
+      notifications.init({ push: mockPush, deviceConfig: null, db: mockDb });
+      // Simulate the fully-wiped-on-restart scenario: live accumulators
+      // are 0, but DB shows a real heating night.
+      notifications._setNightHeatingMinutes(0);
+      notifications._setNightHeatingLossWh(0);
+      notifications._setNightLeakageLossWh(0);
+
+      return new Promise(function (resolve, reject) {
+        notifications.computeOvernightStats(mockDb, now, function (err, stats) {
+          if (err) { reject(err); return; }
+          try {
+            assert.ok(stats.durationMinutes > 400, 'durationMinutes=' + stats.durationMinutes);
+            assert.ok(stats.heatingLossWh > 4000, 'heatingLossWh=' + stats.heatingLossWh);
+            const body = notifications.buildNoonBody(
+              stats.durationMinutes, stats.heatingLossWh, stats.leakageLossWh, false
+            );
+            assert.match(body, /drew warmth for/);
+            assert.match(body, /kWh delivered/);
+            resolve();
+          } catch (e) { reject(e); }
+        });
       });
     });
   });
