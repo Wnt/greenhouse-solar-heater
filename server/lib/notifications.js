@@ -29,11 +29,15 @@ const log = createLogger('notifications');
 // overheatDrainTemp was already 95 while this file still said 85).
 const CONTROL_DEFAULTS = require('../../shelly/control-logic.js').DEFAULT_CONFIG;
 
-// Mode names arrive lowercased on greenhouse/state — the device's
-// buildStatePayload() in shelly/control-logic.js does st.mode.toLowerCase()
-// before publishing, and state_events store the lowercased values.
-// Match the same set the playground uses (energy-balance.js).
-const HEATING_MODES = { greenhouse_heating: 1, emergency_heating: 1 };
+// Energy bucketing for the noon and evening reports lives in its own
+// module — heavy enough to bloat this file past the 600-line cap, and
+// reusable by tests without dragging the whole notification engine in.
+const {
+  HEATING_MODES,
+  tankStoredEnergyKwh,
+  computeOvernightStats,
+  computeDailyStats,
+} = require('./energy-balance.js');
 
 let pushRef = null;
 let deviceConfigRef = null;
@@ -83,16 +87,6 @@ let lastTankEnergyKwh = null; // last observed stored-energy reading
 let nightHeatingMinutes = 0;
 let lastModeCheckTs = 0;
 let lastMode = null;
-
-// Tank energy helper — kept local so the CommonJS notifications module
-// doesn't depend on the ES-module physics.js. Must stay in sync with
-// tankStoredEnergyKwh() in playground/js/physics.js.
-function tankStoredEnergyKwh(avgTankC) {
-  if (typeof avgTankC !== 'number' || !isFinite(avgTankC)) return 0;
-  let dT = avgTankC - 12;
-  if (dT < 0) dT = 0;
-  return 300 * 4.186 * dT / 3600;
-}
 
 // Timezone offset for Finland (EET = UTC+2, EEST = UTC+3)
 // We use a simple approximation: UTC+2 in winter, UTC+3 in summer
@@ -389,77 +383,8 @@ function isHeatingDisabled() {
   return until > nowSec + 86400;
 }
 
-function fmtKwh(wh) { return (Math.round(wh) / 1000).toFixed(1); }
-
-// Threshold below which we treat an accumulator as "held steady" and don't
-// mention it. 50 Wh = 0.05 kWh, which rounds to 0.1 at display resolution.
-const KWH_NOISE_FLOOR_WH = 50;
-
-function buildEveningBody(gatheredWh, heatingLossWh, leakageLossWh) {
-  const gained = gatheredWh >= KWH_NOISE_FLOOR_WH;
-  const heating = heatingLossWh >= KWH_NOISE_FLOOR_WH;
-  const leakage = leakageLossWh >= KWH_NOISE_FLOOR_WH;
-  const netWh = gatheredWh - heatingLossWh - leakageLossWh;
-  const netSign = netWh >= 0 ? '+' : '−';
-  const netAbs = fmtKwh(Math.abs(netWh));
-
-  if (!gained) {
-    if (!heating && !leakage) return 'Tank energy held steady today.';
-    if (heating && leakage) {
-      return 'No solar gain today. The greenhouse drew ' + fmtKwh(heatingLossWh) +
-        ' kWh from the tank; another ' + fmtKwh(leakageLossWh) + ' kWh slipped to air.';
-    }
-    if (heating) {
-      return 'No solar gain today. The greenhouse drew ' + fmtKwh(heatingLossWh) +
-        ' kWh from the tank.';
-    }
-    return 'No solar gain today. The tank released ' + fmtKwh(leakageLossWh) + ' kWh to air.';
-  }
-
-  // We gathered something.
-  if (!heating && !leakage) {
-    return 'Today your collectors gathered ' + fmtKwh(gatheredWh) + ' kWh. The tank is holding steady.';
-  }
-  if (heating && leakage) {
-    return 'Today your collectors gathered ' + fmtKwh(gatheredWh) +
-      ' kWh. The greenhouse drew ' + fmtKwh(heatingLossWh) + ' kWh of warmth, ' +
-      fmtKwh(leakageLossWh) + ' kWh slipped to air (net ' + netSign + netAbs + ' kWh).';
-  }
-  if (heating) {
-    return 'Today your collectors gathered ' + fmtKwh(gatheredWh) +
-      ' kWh. The greenhouse drew ' + fmtKwh(heatingLossWh) +
-      ' kWh of warmth (net ' + netSign + netAbs + ' kWh).';
-  }
-  return 'Today your collectors gathered ' + fmtKwh(gatheredWh) +
-    ' kWh. ' + fmtKwh(leakageLossWh) + ' kWh slipped to air since peak (net ' +
-    netSign + netAbs + ' kWh).';
-}
-
-function buildNoonBody(minutes, heatingLossWh, leakageLossWh, heatingDisabled) {
-  const heating = heatingLossWh >= KWH_NOISE_FLOOR_WH;
-  const leakage = leakageLossWh >= KWH_NOISE_FLOOR_WH;
-
-  if (heatingDisabled) {
-    if (!leakage) return 'Greenhouse heating is resting. The tank held steady overnight.';
-    return 'Greenhouse heating is resting. Overnight the tank released ' +
-      fmtKwh(leakageLossWh) + ' kWh to air.';
-  }
-
-  if (minutes > 0) {
-    const hrs = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    const duration = hrs > 0 ? hrs + 'h ' + mins + 'min' : mins + ' minutes';
-    const tail = heating
-      ? ' — ' + fmtKwh(heatingLossWh) + ' kWh delivered' +
-        (leakage ? ', ' + fmtKwh(leakageLossWh) + ' kWh slipped to air' : '') + '.'
-      : '.';
-    return 'Overnight the greenhouse drew warmth for ' + duration + tail;
-  }
-
-  if (!leakage) return 'No heating was needed overnight. The greenhouse stayed warm.';
-  return 'No heating was needed overnight. The tank released ' +
-    fmtKwh(leakageLossWh) + ' kWh to air.';
-}
+// Body composers live in a sibling module (see notification-bodies.js).
+const { buildEveningBody, buildNoonBody } = require('./notification-bodies.js');
 
 function checkEveningReport() {
   if (!isDataFresh()) return;
@@ -577,154 +502,6 @@ function sendNoonReport(now) {
   }
 }
 
-// Compute overnight heating stats from durable history. Called from
-// checkNoonReport at noon to summarise the night that just ended,
-// independently of in-memory accumulators that get wiped on restart.
-//
-// Window: last 18 h. At 12:00 local that reaches back to ~18:00 the
-// previous evening, capturing the full night plus pre-sunset leakage.
-// We don't try to identify the precise sunset/sunrise transition —
-// any positive solar deltas in the window are not reported anyway
-// (only heating loss and leakage are).
-const OVERNIGHT_WINDOW_MS = 18 * 3600 * 1000;
-
-function computeOvernightStats(db, now, callback) {
-  if (!db || typeof db.getHistory !== 'function' || typeof db.getEvents !== 'function') {
-    callback(new Error('db_unavailable'));
-    return;
-  }
-  db.getHistory('24h', null, function (hErr, points) {
-    if (hErr) { callback(hErr); return; }
-    db.getEvents('24h', 'mode', function (eErr, events) {
-      if (eErr) { callback(eErr); return; }
-      try {
-        callback(null, computeOvernightFromHistory(points || [], events || [], now));
-      } catch (e) {
-        callback(e);
-      }
-    });
-  });
-}
-
-function computeOvernightFromHistory(points, events, now) {
-  const windowStart = now - OVERNIGHT_WINDOW_MS;
-  const modeEvents = sortModeEvents(events);
-
-  // Mode at windowStart — last event with ts <= windowStart.
-  let modeAtStart = 'idle';
-  let firstInWindow = 0;
-  for (let i = 0; i < modeEvents.length; i++) {
-    if (modeEvents[i].ts > windowStart) { firstInWindow = i; break; }
-    modeAtStart = modeEvents[i].to || modeAtStart;
-    firstInWindow = i + 1;
-  }
-
-  // Heating duration: sum (segment end - segment start) for each
-  // greenhouse_heating / emergency_heating run that overlaps the window.
-  let durationMs = 0;
-  let curMode = modeAtStart;
-  let segStart = HEATING_MODES[curMode] ? windowStart : null;
-  for (let i = firstInWindow; i < modeEvents.length; i++) {
-    const ev = modeEvents[i];
-    if (ev.ts >= now) break;
-    if (HEATING_MODES[curMode] && segStart !== null) {
-      durationMs += ev.ts - segStart;
-      segStart = null;
-    }
-    if (ev.to && HEATING_MODES[ev.to]) {
-      segStart = ev.ts;
-    }
-    curMode = ev.to || curMode;
-  }
-  if (HEATING_MODES[curMode] && segStart !== null) {
-    durationMs += now - segStart;
-  }
-
-  const buckets = bucketEnergyByMode(points, modeEvents, windowStart);
-
-  return {
-    durationMinutes: Math.round(durationMs / 60000),
-    heatingLossWh: buckets.heatingLossWh,
-    leakageLossWh: buckets.leakageLossWh,
-  };
-}
-
-function sortModeEvents(events) {
-  return (events || [])
-    .filter(function (e) { return e && e.type === 'mode' && typeof e.ts === 'number'; })
-    .slice()
-    .sort(function (a, b) { return a.ts - b.ts; });
-}
-
-// Walk points (which include a pre-window leading edge from getHistory's
-// UNION) and credit each tank-energy delta to the mode active at the
-// later sample. Positive deltas → gathered, negative → heating (during
-// heating modes) or leakage (otherwise). Same algorithm as
-// playground/js/energy-balance.js bucketRange().
-function bucketEnergyByMode(points, modeEvents, windowStart) {
-  let pMode = 'idle';
-  let evIdx = 0;
-  let gatheredWh = 0;
-  let heatingLossWh = 0;
-  let leakageLossWh = 0;
-  let prevEnergy = null;
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    while (evIdx < modeEvents.length && modeEvents[evIdx].ts <= p.ts) {
-      pMode = modeEvents[evIdx].to || pMode;
-      evIdx++;
-    }
-    if (typeof p.tank_top !== 'number' || typeof p.tank_bottom !== 'number') {
-      prevEnergy = null;
-      continue;
-    }
-    const e = tankStoredEnergyKwh((p.tank_top + p.tank_bottom) / 2);
-    if (prevEnergy !== null && p.ts >= windowStart) {
-      const d = e - prevEnergy;
-      if (d > 0) {
-        gatheredWh += d * 1000;
-      } else if (d < 0) {
-        const lossWh = -d * 1000;
-        if (HEATING_MODES[pMode]) heatingLossWh += lossWh;
-        else leakageLossWh += lossWh;
-      }
-    }
-    prevEnergy = e;
-  }
-  return { gatheredWh, heatingLossWh, leakageLossWh };
-}
-
-// Daily stats for the 20:00 evening report — same brittleness story as
-// computeOvernightStats: in-memory daily* accumulators reset on every
-// server restart, so a redeploy mid-afternoon would silently truncate
-// the report. Window = last 24 h, matching the cadence between evening
-// reports.
-const DAILY_WINDOW_MS = 24 * 3600 * 1000;
-
-function computeDailyStats(db, now, callback) {
-  if (!db || typeof db.getHistory !== 'function' || typeof db.getEvents !== 'function') {
-    callback(new Error('db_unavailable'));
-    return;
-  }
-  db.getHistory('24h', null, function (hErr, points) {
-    if (hErr) { callback(hErr); return; }
-    db.getEvents('24h', 'mode', function (eErr, events) {
-      if (eErr) { callback(eErr); return; }
-      try {
-        callback(null, computeDailyFromHistory(points || [], events || [], now));
-      } catch (e) {
-        callback(e);
-      }
-    });
-  });
-}
-
-function computeDailyFromHistory(points, events, now) {
-  const windowStart = now - DAILY_WINDOW_MS;
-  const modeEvents = sortModeEvents(events);
-  return bucketEnergyByMode(points, modeEvents, windowStart);
-}
-
 // ── Lifecycle ──
 
 function init(options) {
@@ -803,10 +580,6 @@ module.exports = {
   _getNightHeatingMinutes: function () { return nightHeatingMinutes; },
   buildEveningBody,
   buildNoonBody,
-  computeOvernightStats,
-  computeOvernightFromHistory,
-  computeDailyStats,
-  computeDailyFromHistory,
   _setLastEveningReport: function (v) { lastEveningReport = v; },
   _setLastNoonReport: function (v) { lastNoonReport = v; },
   _setLastEvaluateTs: function (v) { lastEvaluateTs = v; },
