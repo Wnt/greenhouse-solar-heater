@@ -32,6 +32,11 @@ const fs = require('fs');
 const os = require('os');
 const net = require('net');
 
+// Drop the per-render `history query failed` log lines that pg-mem's
+// rejection of the production UNION ALL/ORDER BY history query
+// produces. See ./silence-pgmem-noise.js for scope + rationale.
+require('./silence-pgmem-noise').install();
+
 // ── 1. pg-mem with TimescaleDB-compatible schema ──────────────
 
 const { newDb } = require('pg-mem');
