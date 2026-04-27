@@ -731,7 +731,17 @@ function scheduleStep() {
 
   runValveBatch(closePairs, function(okC) {
     if (!okC) { finalizeTransitionFail(); return; }
-    runOpens();
+    // Defer runOpens to a fresh Timer.set frame. Without this the chain
+    // {Shelly.call cb (last close) → setValve cb → onItem → done(okC) →
+    // cb1 → runOpens → runValveBatch(opens) → runBoundedPool → drain →
+    // dispatch → setValve → Shelly.call} synchronously stacks ~13-14
+    // frames before re-entering Shelly.call, blowing Espruino's tight
+    // stack budget on the Pro 4PM (2026-04-26 crash, ea=31, GH→AD
+    // forced-mode flip — neither the per-item drain re-entry guard
+    // (2026-04-20 #1) nor the skip-empty-batch fix (2026-04-20 #2)
+    // gates this cross-batch sync chain). Same trick scheduleResume()
+    // uses to re-enter on a fresh stack.
+    Timer.set(MIN_RESUME_MS, false, runOpens);
   });
 }
 
