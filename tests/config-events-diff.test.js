@@ -130,7 +130,47 @@ describe('config-events diff — mo (manual override)', () => {
   });
 });
 
-describe('config-events diff — combined wb + mo deltas', () => {
+describe('config-events diff — ea (enabled-actuator bitmask)', () => {
+  it('emits one row per flipped bit (off → on)', () => {
+    // ea=3 (valves|pump) → ea=7 (valves|pump|fan) — only fan flips.
+    const rows = diffConfig({ ea: 3 }, { ea: 7 }, 'api', 'alice');
+    assert.deepStrictEqual(rows, [
+      { kind: 'ea', key: 'fan', old_value: '0', new_value: '1', source: 'api', actor: 'alice' },
+    ]);
+  });
+
+  it('emits one row per flipped bit (on → off)', () => {
+    // ea=7 → ea=3 — fan disabled.
+    const rows = diffConfig({ ea: 7 }, { ea: 3 }, 'api', 'alice');
+    assert.deepStrictEqual(rows, [
+      { kind: 'ea', key: 'fan', old_value: '1', new_value: '0', source: 'api', actor: 'alice' },
+    ]);
+  });
+
+  it('emits multiple rows when several bits flip in one update', () => {
+    // ea=0 → ea=14 (pump|fan|space_heater): three bits flip.
+    const rows = diffConfig({ ea: 0 }, { ea: 14 }, 'api', 'alice');
+    rows.sort((a, b) => a.key.localeCompare(b.key));
+    assert.deepStrictEqual(rows, [
+      { kind: 'ea', key: 'fan',          old_value: '0', new_value: '1', source: 'api', actor: 'alice' },
+      { kind: 'ea', key: 'pump',         old_value: '0', new_value: '1', source: 'api', actor: 'alice' },
+      { kind: 'ea', key: 'space_heater', old_value: '0', new_value: '1', source: 'api', actor: 'alice' },
+    ]);
+  });
+
+  it('returns no rows when ea unchanged', () => {
+    assert.deepStrictEqual(diffConfig({ ea: 7 }, { ea: 7 }, 'api', 'alice'), []);
+  });
+
+  it('treats missing ea on either side as 0', () => {
+    const rows = diffConfig({}, { ea: 4 }, 'api', 'alice');
+    assert.deepStrictEqual(rows, [
+      { kind: 'ea', key: 'fan', old_value: '0', new_value: '1', source: 'api', actor: 'alice' },
+    ]);
+  });
+});
+
+describe('config-events diff — combined wb + mo + ea deltas', () => {
   it('emits rows for both fields when both change in one update', () => {
     const rows = diffConfig(
       { wb: {}, mo: null },
@@ -143,10 +183,21 @@ describe('config-events diff — combined wb + mo deltas', () => {
     assert.deepStrictEqual(kinds, ['mo', 'wb']);
   });
 
-  it('ignores changes to non-tracked fields (ce, ea, we, wz, v)', () => {
+  it('emits ea rows alongside wb / mo when all three change at once', () => {
+    const rows = diffConfig(
+      { ea: 3, wb: {}, mo: null },
+      { ea: 7, wb: { SC: 9999999999 }, mo: { a: true, ex: 1840000000, fm: 'SC' } },
+      'api',
+      'alice'
+    );
+    const kinds = rows.map(r => r.kind).sort();
+    assert.deepStrictEqual(kinds, ['ea', 'mo', 'wb']);
+  });
+
+  it('ignores changes to non-tracked fields (ce, we, wz, v)', () => {
     const rows = diffConfig(
       { ce: false, ea: 0, we: {}, wz: {}, wb: {}, mo: null, v: 1 },
-      { ce: true, ea: 31, we: { ggr: 1 }, wz: { ggr: 1840003600 }, wb: {}, mo: null, v: 2 },
+      { ce: true, ea: 0, we: { ggr: 1 }, wz: { ggr: 1840003600 }, wb: {}, mo: null, v: 2 },
       'api',
       'alice'
     );

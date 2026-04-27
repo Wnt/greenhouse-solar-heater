@@ -307,4 +307,35 @@ test.describe('System Logs card is backed by live state events', () => {
     await expect(items.nth(2)).toContainText('device view by alice');
     await expect(items.nth(3)).toContainText('Idle');
   });
+
+  test('ea bit-flip renders as "Enabled actuator: <name>"', async ({ page }) => {
+    // A user toggling Fan on via Controller settings should appear in
+    // the System Logs card as a config_events row with the friendly
+    // bit label, not as an opaque ea-bitmask number.
+    const now = Date.now();
+    const rows = [
+      {
+        ts: now - 30_000, type: 'config', kind: 'ea', key: 'fan',
+        from: '0', to: '1', source: 'api', actor: 'alice',
+      },
+      {
+        ts: now - 60_000, type: 'config', kind: 'ea', key: 'pump',
+        from: '1', to: '0', source: 'api', actor: 'alice',
+      },
+    ];
+
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, rows);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    const items = page.locator('#logs-list .log-item');
+    await expect(items).toHaveCount(2, { timeout: 3000 });
+
+    await expect(items.nth(0)).toContainText('Enabled actuator: Fan');
+    await expect(items.nth(0)).toContainText('mode-enablement UI by alice');
+    await expect(items.nth(1)).toContainText('Disabled actuator: Pump');
+  });
 });

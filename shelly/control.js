@@ -220,6 +220,16 @@ function setValves(pairs, idx, cb) {
       setPump(false);
       state.mode = MODES.IDLE;
       state.mode_start = Date.now();
+      // Mode just flipped to IDLE outside the staged-transition flow
+      // (no transitionTo() update). Refresh cause + reason in lock-step
+      // so the published snapshot can't carry a stale reason from the
+      // last successful transition. Without this guard, an idle row
+      // emitted right after a valve hiccup would inherit the prior
+      // entry's reason (e.g. "greenhouse_enter") and mislead operators
+      // into thinking the device decided to heat when it actually
+      // bailed on a hardware error.
+      state.lastTransitionCause = "failed";
+      state.lastTransitionReason = null;
       captureWatchdogBaseline();
       state.transitioning = false;
       if (cb) cb(false);
@@ -380,8 +390,12 @@ function publishWatchdogEvent(payload) {
 
 // Build an IDLE result for transitionTo() — used when a watchdog
 // fires the auto-shutdown path or the user-initiated shutdown via
-// config push.
-function buildIdleTransitionResult() {
+// config push. `reason` flows straight into result.reason and
+// becomes the published `reason` on the IDLE-state row, so the
+// System Logs UI can tell apart "greenhouse stalled" (`ggr_shutdown`)
+// from "no solar gain" (`sng_shutdown`) — without it every watchdog
+// trip would render as a bare `watchdog_auto` with no decision code.
+function buildIdleTransitionResult(reason) {
   return {
     nextMode: MODES.IDLE,
     valves: MODE_VALVES[MODES.IDLE],
@@ -394,15 +408,24 @@ function buildIdleTransitionResult() {
       solarChargePeakTankAvgAt: 0
     },
     suppressed: false,
-    safetyOverride: false
+    safetyOverride: false,
+    reason: reason || null
   };
 }
 
-// Forced-mode transitionTo-shaped result (bypasses evaluate()).
+// Forced-mode transitionTo-shaped result (bypasses evaluate()). The
+// reason is "forced_<code>" so the System Logs UI can show *which*
+// mode the user picked instead of the bare cause "forced".
 function makeModeResult(code) {
   var m = MODE_CODE[code];
   if (!m || !MODES[m]) return null;
-  return { nextMode: MODES[m], valves: MODE_VALVES[MODES[m]], actuators: MODE_ACTUATORS[MODES[m]], flags: {} };
+  return {
+    nextMode: MODES[m],
+    valves: MODE_VALVES[MODES[m]],
+    actuators: MODE_ACTUATORS[MODES[m]],
+    flags: {},
+    reason: "forced_" + code
+  };
 }
 
 // Auto-shutdown path: called from watchdogTick() after the 5-minute
@@ -431,9 +454,13 @@ function applyBanAndShutdown(id, how) {
   state.watchdogPending = null;
   // how is "shutdown_auto" from autoShutdown() or "shutdown_user" from
   // handleConfigDrivenResolution(). Matches the published "resolved"
-  // event so UI logs line up.
-  transitionTo(buildIdleTransitionResult(),
-    how === "shutdown_user" ? "user_shutdown" : "watchdog_auto");
+  // event so UI logs line up. Carry the watchdog id into the reason so
+  // the System Logs UI can show *which* watchdog tripped — operators
+  // need to tell "greenhouse not gaining heat" (ggr) from "tank not
+  // gaining heat during charging" (sng) at a glance.
+  var cause = (how === "shutdown_user") ? "user_shutdown" : "watchdog_auto";
+  var reason = id + "_shutdown";
+  transitionTo(buildIdleTransitionResult(reason), cause);
   publishWatchdogEvent({ t: "resolved", id: id, how: how, ts: nowSec });
 }
 
@@ -493,7 +520,7 @@ function handleConfigDrivenResolution(prevCfg, newCfg) {
     var oldWb = prevCfg && prevCfg.wb && prevCfg.wb[modeCode];
     if (newWb && newWb > nowSec && newWb !== oldWb) {
       state.watchdogPending = null;
-      transitionTo(buildIdleTransitionResult(), "user_shutdown");
+      transitionTo(buildIdleTransitionResult(pid + "_shutdown"), "user_shutdown");
       publishWatchdogEvent({
         t: "resolved", id: pid, how: "shutdown_user", ts: nowSec
       });
@@ -510,7 +537,7 @@ function handleForcedModeChange(prev, next) {
   var pFm = (pMo && pMo.fm) || null, nFm = (nMo && nMo.fm) || null;
   var t = null;
   if (nMo && nMo.a && nFm && nFm !== pFm) t = makeModeResult(nFm);
-  else if (pMo && pMo.a && (!nMo || !nMo.a)) t = buildIdleTransitionResult();
+  else if (pMo && pMo.a && (!nMo || !nMo.a)) t = buildIdleTransitionResult("override_cleared");
   if (t) Timer.set(1000, false, function() { transitionTo(t, "forced"); });
 }
 
