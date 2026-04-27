@@ -130,7 +130,11 @@ test.describe('drainage control card — live state interaction', () => {
   test.beforeEach(async ({ page }) => {
     await installMockWs(page);
     await page.goto('/playground/#device');
-    await page.waitForTimeout(200);
+    // Wait for app init AND for the page to have constructed the
+    // (mocked) WebSocket — the 50 ms setTimeout in installMockWs only
+    // fires after `new WebSocket(...)` runs during init.
+    await page.waitForFunction(() => window.__initComplete === true);
+    await page.waitForFunction(() => /** @type {any} */ (window).__mockWs?.onmessage);
   });
 
   test('badge shows FILLED + Drain enabled when collectors_drained=false', async ({ page }) => {
