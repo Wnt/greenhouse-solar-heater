@@ -29,8 +29,19 @@ const log = createLogger('notifications');
 // overheatDrainTemp was already 95 while this file still said 85).
 const CONTROL_DEFAULTS = require('../../shelly/control-logic.js').DEFAULT_CONFIG;
 
+// Energy bucketing for the noon and evening reports lives in its own
+// module — heavy enough to bloat this file past the 600-line cap, and
+// reusable by tests without dragging the whole notification engine in.
+const {
+  HEATING_MODES,
+  tankStoredEnergyKwh,
+  computeOvernightStats,
+  computeDailyStats,
+} = require('./energy-balance.js');
+
 let pushRef = null;
 let deviceConfigRef = null;
+let dbRef = null;
 
 // Temperature history buffers for trend prediction
 let tankTempHistory = [];    // { ts: ms, value: number }
@@ -76,16 +87,6 @@ let lastTankEnergyKwh = null; // last observed stored-energy reading
 let nightHeatingMinutes = 0;
 let lastModeCheckTs = 0;
 let lastMode = null;
-
-// Tank energy helper — kept local so the CommonJS notifications module
-// doesn't depend on the ES-module physics.js. Must stay in sync with
-// tankStoredEnergyKwh() in playground/js/physics.js.
-function tankStoredEnergyKwh(avgTankC) {
-  if (typeof avgTankC !== 'number' || !isFinite(avgTankC)) return 0;
-  let dT = avgTankC - 12;
-  if (dT < 0) dT = 0;
-  return 300 * 4.186 * dT / 3600;
-}
 
 // Timezone offset for Finland (EET = UTC+2, EEST = UTC+3)
 // We use a simple approximation: UTC+2 in winter, UTC+3 in summer
@@ -196,11 +197,12 @@ function evaluate(payload) {
     addSample(collectorTempHistory, now, temps.collector);
   }
 
-  // Track mode for reports
+  // Track mode for reports. payload.mode is lowercase (the device
+  // lowercases it in buildStatePayload before publishing).
   const mode = payload.mode || null;
   if (lastModeCheckTs > 0 && mode && lastMode) {
     const elapsed = (now - lastModeCheckTs) / 60000; // minutes
-    if (lastMode === 'GREENHOUSE_HEATING' || lastMode === 'EMERGENCY_HEATING') {
+    if (HEATING_MODES[lastMode]) {
       nightHeatingMinutes += elapsed;
     }
   }
@@ -221,7 +223,7 @@ function evaluate(payload) {
         dailyEnergyWh += delta * 1000;
       } else if (delta < 0) {
         const lossWh = -delta * 1000;
-        if (lastMode === 'GREENHOUSE_HEATING' || lastMode === 'EMERGENCY_HEATING') {
+        if (HEATING_MODES[lastMode]) {
           dailyHeatingLossWh += lossWh;
           nightHeatingLossWh += lossWh;
         } else {
@@ -381,77 +383,8 @@ function isHeatingDisabled() {
   return until > nowSec + 86400;
 }
 
-function fmtKwh(wh) { return (Math.round(wh) / 1000).toFixed(1); }
-
-// Threshold below which we treat an accumulator as "held steady" and don't
-// mention it. 50 Wh = 0.05 kWh, which rounds to 0.1 at display resolution.
-const KWH_NOISE_FLOOR_WH = 50;
-
-function buildEveningBody(gatheredWh, heatingLossWh, leakageLossWh) {
-  const gained = gatheredWh >= KWH_NOISE_FLOOR_WH;
-  const heating = heatingLossWh >= KWH_NOISE_FLOOR_WH;
-  const leakage = leakageLossWh >= KWH_NOISE_FLOOR_WH;
-  const netWh = gatheredWh - heatingLossWh - leakageLossWh;
-  const netSign = netWh >= 0 ? '+' : '−';
-  const netAbs = fmtKwh(Math.abs(netWh));
-
-  if (!gained) {
-    if (!heating && !leakage) return 'Tank energy held steady today.';
-    if (heating && leakage) {
-      return 'No solar gain today. The greenhouse drew ' + fmtKwh(heatingLossWh) +
-        ' kWh from the tank; another ' + fmtKwh(leakageLossWh) + ' kWh slipped to air.';
-    }
-    if (heating) {
-      return 'No solar gain today. The greenhouse drew ' + fmtKwh(heatingLossWh) +
-        ' kWh from the tank.';
-    }
-    return 'No solar gain today. The tank released ' + fmtKwh(leakageLossWh) + ' kWh to air.';
-  }
-
-  // We gathered something.
-  if (!heating && !leakage) {
-    return 'Today your collectors gathered ' + fmtKwh(gatheredWh) + ' kWh. The tank is holding steady.';
-  }
-  if (heating && leakage) {
-    return 'Today your collectors gathered ' + fmtKwh(gatheredWh) +
-      ' kWh. The greenhouse drew ' + fmtKwh(heatingLossWh) + ' kWh of warmth, ' +
-      fmtKwh(leakageLossWh) + ' kWh slipped to air (net ' + netSign + netAbs + ' kWh).';
-  }
-  if (heating) {
-    return 'Today your collectors gathered ' + fmtKwh(gatheredWh) +
-      ' kWh. The greenhouse drew ' + fmtKwh(heatingLossWh) +
-      ' kWh of warmth (net ' + netSign + netAbs + ' kWh).';
-  }
-  return 'Today your collectors gathered ' + fmtKwh(gatheredWh) +
-    ' kWh. ' + fmtKwh(leakageLossWh) + ' kWh slipped to air since peak (net ' +
-    netSign + netAbs + ' kWh).';
-}
-
-function buildNoonBody(minutes, heatingLossWh, leakageLossWh, heatingDisabled) {
-  const heating = heatingLossWh >= KWH_NOISE_FLOOR_WH;
-  const leakage = leakageLossWh >= KWH_NOISE_FLOOR_WH;
-
-  if (heatingDisabled) {
-    if (!leakage) return 'Greenhouse heating is resting. The tank held steady overnight.';
-    return 'Greenhouse heating is resting. Overnight the tank released ' +
-      fmtKwh(leakageLossWh) + ' kWh to air.';
-  }
-
-  if (minutes > 0) {
-    const hrs = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    const duration = hrs > 0 ? hrs + 'h ' + mins + 'min' : mins + ' minutes';
-    const tail = heating
-      ? ' — ' + fmtKwh(heatingLossWh) + ' kWh delivered' +
-        (leakage ? ', ' + fmtKwh(leakageLossWh) + ' kWh slipped to air' : '') + '.'
-      : '.';
-    return 'Overnight the greenhouse drew warmth for ' + duration + tail;
-  }
-
-  if (!leakage) return 'No heating was needed overnight. The greenhouse stayed warm.';
-  return 'No heating was needed overnight. The tank released ' +
-    fmtKwh(leakageLossWh) + ' kWh to air.';
-}
+// Body composers live in a sibling module (see notification-bodies.js).
+const { buildEveningBody, buildNoonBody } = require('./notification-bodies.js');
 
 function checkEveningReport() {
   if (!isDataFresh()) return;
@@ -464,19 +397,49 @@ function checkEveningReport() {
 
   lastEveningReport = day;
 
-  pushRef.sendNotification('evening_report', {
-    title: 'Daily Solar Report',
-    body: buildEveningBody(dailyEnergyWh, dailyHeatingLossWh, dailyLeakageLossWh),
-    tag: 'evening-report',
-    icon: pushRef.iconFor('evening_report'),
-    url: '/#status',
-  });
+  sendEveningReport(Date.now());
+}
 
-  // Reset daily counters. Keep lastTankEnergyKwh so the next sample
-  // doesn't treat the reset as a huge "gain" on re-accumulation.
-  dailyEnergyWh = 0;
-  dailyHeatingLossWh = 0;
-  dailyLeakageLossWh = 0;
+function sendEveningReport(now) {
+  function dispatch(stats) {
+    pushRef.sendNotification('evening_report', {
+      title: 'Daily Solar Report',
+      body: buildEveningBody(stats.gatheredWh, stats.heatingLossWh, stats.leakageLossWh),
+      tag: 'evening-report',
+      icon: pushRef.iconFor('evening_report'),
+      url: '/#status',
+    });
+
+    // Reset daily counters. Keep lastTankEnergyKwh so the next sample
+    // doesn't treat the reset as a huge "gain" on re-accumulation.
+    dailyEnergyWh = 0;
+    dailyHeatingLossWh = 0;
+    dailyLeakageLossWh = 0;
+  }
+
+  // Same DB-first strategy as the noon report. The in-memory daily*
+  // accumulators are still maintained as a fallback when the database
+  // is unreachable.
+  if (dbRef) {
+    computeDailyStats(dbRef, now, function (err, stats) {
+      if (err) {
+        log.warn('evening report: DB query failed, falling back to live accumulators', { error: err.message });
+        dispatch({
+          gatheredWh: dailyEnergyWh,
+          heatingLossWh: dailyHeatingLossWh,
+          leakageLossWh: dailyLeakageLossWh,
+        });
+      } else {
+        dispatch(stats);
+      }
+    });
+  } else {
+    dispatch({
+      gatheredWh: dailyEnergyWh,
+      heatingLossWh: dailyHeatingLossWh,
+      leakageLossWh: dailyLeakageLossWh,
+    });
+  }
 }
 
 function checkNoonReport() {
@@ -489,20 +452,54 @@ function checkNoonReport() {
   if (hour !== 12 || day === lastNoonReport) return;
 
   lastNoonReport = day;
-  const minutes = Math.round(nightHeatingMinutes);
 
-  pushRef.sendNotification('noon_report', {
-    title: 'Overnight Heating Report',
-    body: buildNoonBody(minutes, nightHeatingLossWh, nightLeakageLossWh, isHeatingDisabled()),
-    tag: 'noon-report',
-    icon: pushRef.iconFor('noon_report'),
-    url: '/#status',
-  });
+  sendNoonReport(Date.now());
+}
 
-  // Reset night counters
-  nightHeatingMinutes = 0;
-  nightHeatingLossWh = 0;
-  nightLeakageLossWh = 0;
+function sendNoonReport(now) {
+  function dispatch(stats) {
+    pushRef.sendNotification('noon_report', {
+      title: 'Overnight Heating Report',
+      body: buildNoonBody(stats.durationMinutes, stats.heatingLossWh, stats.leakageLossWh, isHeatingDisabled()),
+      tag: 'noon-report',
+      icon: pushRef.iconFor('noon_report'),
+      url: '/#status',
+    });
+
+    // Reset live accumulators (they are no longer the report's source
+    // of truth, but we keep them to avoid a one-off jump on the next
+    // evening report).
+    nightHeatingMinutes = 0;
+    nightHeatingLossWh = 0;
+    nightLeakageLossWh = 0;
+  }
+
+  // Prefer the durable database history. The in-memory accumulators
+  // are wiped on every server restart, which produced "no heating
+  // needed" notifications even after a long heating night when the
+  // server happened to redeploy that morning. The database survives
+  // restarts and is the same source the in-app balance card draws
+  // from, so the notification now matches the UI.
+  if (dbRef) {
+    computeOvernightStats(dbRef, now, function (err, stats) {
+      if (err) {
+        log.warn('noon report: DB query failed, falling back to live accumulators', { error: err.message });
+        dispatch({
+          durationMinutes: Math.round(nightHeatingMinutes),
+          heatingLossWh: nightHeatingLossWh,
+          leakageLossWh: nightLeakageLossWh,
+        });
+      } else {
+        dispatch(stats);
+      }
+    });
+  } else {
+    dispatch({
+      durationMinutes: Math.round(nightHeatingMinutes),
+      heatingLossWh: nightHeatingLossWh,
+      leakageLossWh: nightLeakageLossWh,
+    });
+  }
 }
 
 // ── Lifecycle ──
@@ -510,6 +507,7 @@ function checkNoonReport() {
 function init(options) {
   pushRef = options.push || null;
   deviceConfigRef = options.deviceConfig || null;
+  dbRef = options.db || null;
   // Start periodic tick for offline/online detection.
   // .unref() prevents the timer from keeping the event loop alive when
   // the process is otherwise idle (e.g. in tests that don't call stop()).
@@ -529,6 +527,7 @@ function _reset() {
   stop();
   pushRef = null;
   deviceConfigRef = null;
+  dbRef = null;
   tankTempHistory = [];
   outdoorTempHistory = [];
   collectorTempHistory = [];

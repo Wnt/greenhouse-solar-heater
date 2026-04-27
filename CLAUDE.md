@@ -167,17 +167,20 @@ A threshold change in `control-logic.js` without a regenerated snapshot fails CI
 
 ## Pre-Push Checklist
 
-**Before pushing any non-trivial change, run the full local CI gate suite.** These are the exact checks `.github/workflows/ci.yml` runs; running them locally is a 30–60 s feedback loop vs. a 3–5 min round-trip through GitHub Actions, so always do it locally first:
+**Before pushing any non-trivial change, run the full local CI gate suite.** These are the exact checks `.github/workflows/ci.yml` runs; running them locally is a ~80 s feedback loop (~5 s static + ~75 s unit+Playwright in parallel) vs. a 3–5 min round-trip through GitHub Actions, so always do it locally first:
 
 ```bash
 npm run lint                             # ESLint — 0 errors
 npm run knip                             # dead-code / unresolved imports — exit 0
 npm run check:file-size -- --strict      # file-size budget — 0 over hard cap
 npm run check:assets -- --strict         # unused playground assets — exit 0
-timeout 30 npm run test:unit             # 808 unit tests in ~10 s
-# Playwright (if touching UI or server):
-timeout 120 npm test                     # unit + frontend + e2e — full suite
+timeout 30 npm run test:unit             # full unit suite in ~5–10 s
+timeout 180 npx playwright test          # frontend + e2e — ~55 s warm cache
 ```
+
+**Read each step's exit code, not its prose.** `check:file-size --strict` in particular prints both `~` (soft-cap warning, OK) and `✗` (hard-cap error, must fix) and ends with a single summary line — the count of `over hard cap` is the only number that matters for `--strict`. Past mistake (PR #86): the agent saw `~` warnings on unrelated files, dismissed the strict failure as pre-existing, and shipped red CI. **If a step exits non-zero, fix it before pushing — don't reinterpret.**
+
+The `.claude/hooks/pre-push-gate.sh` hook (wired via `.claude/settings.json` as a `PreToolUse` hook on `Bash`) runs this same suite automatically before any `git push` issued from a Claude Code session, blocking the push on failure. Unit and Playwright run in parallel (mirroring CI). The hook only fires for Claude (gated by `CLAUDECODE=1`), so human contributors are unaffected. On Playwright "Executable doesn't exist" errors the hook auto-detects the cached Chromium revision under `$PLAYWRIGHT_BROWSERS_PATH` and prints the version-probe + `npm install --no-save` recipe (see "Test Setup Gotchas" below). Escape hatch: `SKIP_PUSH_GATE=1 git push …` (use sparingly; the hook is the safety net).
 
 If any of these fail on the PR but passed locally, that's a signal something is environment-dependent — investigate rather than re-pushing.
 
