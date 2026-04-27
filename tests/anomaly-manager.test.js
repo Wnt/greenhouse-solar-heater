@@ -313,4 +313,28 @@ describe('anomaly-manager setEnabled / getState / getHistory', () => {
     assert.strictEqual(state.recent.length, 1);
     assert.ok(Array.isArray(state.watchdogs));
   });
+
+  it('updateSnapshot mirrors the full deviceConfig (ce, ea, mo, v) so log export can render it', async () => {
+    const mocks = makeMocks();
+    mocks.history.list = () => Promise.resolve([]);
+    anomalyManager.init(mocks);
+    anomalyManager.updateSnapshot({
+      ce: true,
+      ea: 31,
+      mo: { a: true, ex: 1840000000, fm: 'I' },
+      we: { ggr: 1, sng: 1, scs: 1 },
+      wz: { ggr: 1840003600 },
+      wb: { GH: 1840014400 },
+      v: 42,
+    });
+
+    const state = await anomalyManager.getState();
+    assert.strictEqual(state.snapshot.ce, true);
+    assert.strictEqual(state.snapshot.ea, 31);
+    assert.deepStrictEqual(state.snapshot.mo, { a: true, ex: 1840000000, fm: 'I' });
+    assert.strictEqual(state.snapshot.v, 42);
+    assert.deepStrictEqual(state.snapshot.we, { ggr: 1, sng: 1, scs: 1 });
+    assert.deepStrictEqual(state.snapshot.wz, { ggr: 1840003600 });
+    assert.deepStrictEqual(state.snapshot.wb, { GH: 1840014400 });
+  });
 });

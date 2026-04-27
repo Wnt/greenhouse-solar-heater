@@ -16,7 +16,14 @@ const {
 // Module-scoped state — set by init()
 let _deps = null;         // { deviceConfig, mqttBridge, push, wsBroadcast, history, log }
 let _pending = null;      // { id, firedAt, mode, triggerReason, dbEventId } | null
-let _lastSnapshot = {};   // { we, wz, wb } cached from latest device config
+// Mirror of deviceConfig fields that the playground needs to render
+// the watchdog UI and the System Logs export. Broadcast over WS as
+// `watchdog-state.snapshot`. Updated whenever a config push completes.
+// Keep this in sync with DEFAULT_CONFIG in server/lib/device-config.js
+// — every field the evaluator reads on the device should be visible
+// here, otherwise debugging "why did the controller pick mode X?" has
+// to fall back to direct device inspection.
+let _lastSnapshot = {};
 
 function init(deps) {
   _deps = deps;
@@ -93,9 +100,13 @@ function getPending() {
 
 function updateSnapshot(cfg) {
   _lastSnapshot = {
+    ce: !!cfg.ce,
+    ea: typeof cfg.ea === 'number' ? cfg.ea : 0,
+    mo: cfg.mo || null,
     we: cfg.we || {},
     wz: cfg.wz || {},
-    wb: cfg.wb || {}
+    wb: cfg.wb || {},
+    v: typeof cfg.v === 'number' ? cfg.v : null,
   };
 }
 

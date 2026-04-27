@@ -230,6 +230,23 @@ async function mockHistoryApi(page, points, events) {
   }));
 }
 
+async function mockWatchdogStateApi(page, snapshot) {
+  await page.route('**/api/watchdog/state', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      pending: null,
+      watchdogs: [
+        { id: 'sng', label: 'Stalled — no gain' },
+        { id: 'scs', label: 'Stalled — collector cooling' },
+        { id: 'ggr', label: 'Greenhouse not heating' },
+      ],
+      snapshot: snapshot || { ce: true, ea: 31, mo: null, we: {}, wz: {}, wb: {}, v: 1 },
+      recent: [],
+    }),
+  }));
+}
+
 test.describe('Copy System Logs — live mode', () => {
   test('clipboard text contains live mode header and sensor readings', async ({ page }) => {
     const now = Date.now();
@@ -289,6 +306,82 @@ test.describe('Copy System Logs — live mode', () => {
     const text = await getClipboardText(page);
     expect(text).not.toContain('(no history data available)');
     expect(text).toContain('idle');
+  });
+
+  test('controller state section reflects deviceConfig mirror (ce/ea/mo/wb/we)', async ({ page }) => {
+    // Reproduces the diagnostic case that motivated the section: idle
+    // mode with collectors flagged as drained and a GH watchdog cool-off
+    // ban active. Without this section, the user has to cross-reference
+    // the watchdog UI to see why mode transitions are gated.
+    const nowSec = Math.floor(Date.now() / 1000);
+    const banUntil = nowSec + 4 * 3600; // 4 h GH ban
+
+    await installMockWs(page, {
+      mode: 'idle',
+      flags: { collectors_drained: true, emergency_heating_active: false },
+    });
+    await mockHistoryApi(page);
+    await mockEventsApi(page, []);
+    await mockWatchdogStateApi(page, {
+      ce: true,
+      ea: 31,
+      mo: null,
+      we: { sng: 1, scs: 1, ggr: 1 },
+      wz: {},
+      wb: { GH: banUntil },
+      v: 42,
+    });
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+
+    expect(text).toContain('--- Controller State ---');
+    expect(text).toContain('Mode:               idle');
+    expect(text).toContain('Collectors drained: yes');
+    expect(text).toContain('Emergency heating:  off');
+    expect(text).toContain('Controls enabled:   yes');
+    expect(text).toContain('Enabled actuators:  valves, pump, fan, space_heater, immersion_heater (ea=31)');
+    expect(text).toContain('Manual override:    off');
+    expect(text).toContain('Watchdogs enabled:  sng, scs, ggr');
+    expect(text).toContain('Watchdogs snoozed:  none');
+    expect(text).toMatch(/Mode bans \(wb\): {5}GH=[34]h\d{2}m/);
+    expect(text).toContain('Config version:     42');
+  });
+
+  test('controller state shows manual-override forced mode + permanent SC ban', async ({ page }) => {
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    await installMockWs(page, {
+      mode: 'idle',
+      flags: { collectors_drained: false, emergency_heating_active: false },
+    });
+    await mockHistoryApi(page);
+    await mockEventsApi(page, []);
+    await mockWatchdogStateApi(page, {
+      ce: false,
+      ea: 0,
+      mo: { a: true, ex: nowSec + 1800, fm: 'I' },
+      we: { ggr: 1 },
+      wz: { ggr: nowSec + 600 },
+      wb: { SC: 9999999999 },
+      v: 7,
+    });
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+
+    expect(text).toContain('Controls enabled:   no');
+    expect(text).toContain('Enabled actuators:  none (ea=0)');
+    expect(text).toMatch(/Manual override: {4}I \(until /);
+    expect(text).toContain('Watchdogs enabled:  ggr');
+    expect(text).toMatch(/Watchdogs snoozed: {2}ggr=\d+m/);
+    expect(text).toContain('Mode bans (wb):     SC=disabled');
   });
 });
 
