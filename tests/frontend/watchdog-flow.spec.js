@@ -138,7 +138,7 @@ test.describe('watchdog flow', () => {
     const calls = await setupWatchdogRoutes(page);
 
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#mode-toggle')).toBeVisible();
+    await page.waitForFunction(() => window.__initComplete === true);
 
     // The banner should be hidden initially (no pending)
     await expect(page.locator('#watchdog-banner')).toBeHidden();
@@ -191,7 +191,7 @@ test.describe('watchdog flow', () => {
     const calls = await setupWatchdogRoutes(page);
 
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#mode-toggle')).toBeVisible();
+    await page.waitForFunction(() => window.__initComplete === true);
 
     await page.evaluate(({ watchdogs }) => {
       window.__wdInject({
@@ -260,7 +260,7 @@ test.describe('watchdog flow', () => {
     }));
 
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#mode-toggle')).toBeVisible();
+    await page.waitForFunction(() => window.__initComplete === true);
 
     // GET is still pending — inject a WS broadcast that should set the banner
     await page.evaluate(({ watchdogs }) => {

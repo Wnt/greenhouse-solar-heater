@@ -106,8 +106,8 @@ async function setupDeviceView(page, initialConfig) {
   }));
 
   await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
-  // Wait for live mode to activate (localhost is live-capable)
-  await expect(page.locator('#mode-toggle')).toBeVisible();
+  // Wait for init to wire click handlers + reveal mode-toggle.
+  await page.waitForFunction(() => window.__initComplete === true);
 
   // Navigate to Device view
   const deviceNav = page.locator('.sidebar-nav [data-view="device"]');
@@ -187,7 +187,8 @@ async function setupRelayView(page, stateOverrides) {
   }));
 
   await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#mode-toggle')).toBeVisible();
+  // Init wires the click handlers and reveals #mode-toggle.
+  await page.waitForFunction(() => window.__initComplete === true);
   // Wait for live connection to be established (state data received)
   await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
   await page.locator('.sidebar-nav [data-view="device"]').click();
@@ -695,7 +696,7 @@ test.describe('Device config UI', () => {
     }));
 
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#mode-toggle')).toBeVisible();
+    await page.waitForFunction(() => window.__initComplete === true);
 
     // In live mode (default on localhost), Device nav is visible
     const deviceNav = page.locator('.sidebar-nav [data-view="device"]');
