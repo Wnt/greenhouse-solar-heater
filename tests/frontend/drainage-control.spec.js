@@ -217,7 +217,8 @@ test.describe('drainage control card — live state interaction', () => {
     await expect(page.locator('#drainage-progress')).toBeHidden();
   });
 
-  test('refill auto-exits override once controller reports !drained && solar_charging', async ({ page }) => {
+  test('refill holds pump for 3 minutes before auto-exiting, even if controller reports !drained earlier', async ({ page }) => {
+    await page.clock.install();
     // 1. Initial drained state
     await pushState(page, buildFrame({ flags: { collectors_drained: true, emergency_heating_active: false } }));
     await expect(page.locator('#drainage-refill-btn')).toBeEnabled({ timeout: 3000 });
@@ -234,17 +235,32 @@ test.describe('drainage control card — live state interaction', () => {
     }));
     await expect(page.locator('#drainage-progress-title')).toHaveText('Refilling collectors…', { timeout: 3000 });
 
-    // 4. Controller clears the drained flag once the SC transition completes
+    // 4. Controller clears the drained flag a few seconds in — pump must keep
+    //    running for the full 3-minute hold so collectors actually fill.
+    await page.clock.fastForward(10_000);
     await pushState(page, buildFrame({
       mode: 'solar_charging',
       flags: { collectors_drained: false, emergency_heating_active: false },
       manual_override: { active: true, expiresAt: exp, forcedMode: 'SC' },
     }));
 
-    // 5. Card should auto-send override-exit
+    // 5. Verify NO auto-exit yet — we are still inside the 3-minute hold.
+    await page.waitForTimeout(200);
+    const sent = await page.evaluate(() => /** @type {any} */ (window).__sentCommands);
+    expect(sent.some((c) => c.type === 'override-exit')).toBe(false);
+
+    // 6. Fast-forward past the 3-minute minimum and push another frame.
+    await page.clock.fastForward(3 * 60_000);
+    await pushState(page, buildFrame({
+      mode: 'solar_charging',
+      flags: { collectors_drained: false, emergency_heating_active: false },
+      manual_override: { active: true, expiresAt: exp, forcedMode: 'SC' },
+    }));
+
+    // 7. Now the card should auto-send override-exit.
     await expect.poll(async () => {
-      const sent = await page.evaluate(() => /** @type {any} */ (window).__sentCommands);
-      return sent.some((c) => c.type === 'override-exit');
+      const cmds = await page.evaluate(() => /** @type {any} */ (window).__sentCommands);
+      return cmds.some((c) => c.type === 'override-exit');
     }, { timeout: 3000 }).toBe(true);
   });
 

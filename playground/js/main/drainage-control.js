@@ -27,6 +27,7 @@ import { store } from '../app-state.js';
 let _getLiveSource = () => null;
 let pendingOp = null;        // null | 'drain' | 'refill'
 let pendingStartedAt = 0;    // ms timestamp — for ack-timeout detection
+let refillSCStartedAt = 0;   // ms — when SOLAR_CHARGING was first observed for our refill op
 let lastResult = null;       // most recent state frame (for button-disable logic)
 let ackTimer = null;
 let msgFadeTimer = null;
@@ -34,6 +35,11 @@ let msgFadeTimer = null;
 const DRAIN_TTL_S = 600;      // 10 min — drain takes ~5 min plus exit handling
 const REFILL_TTL_S = 1800;    // 30 min — leave room for fill + a charging window
 const ACK_TIMEOUT_MS = 5000;
+// Minimum pump runtime once SOLAR_CHARGING starts during a manual refill.
+// drained=false flips early (as soon as flow begins) but the collectors are
+// not actually full yet — hold the override so the pump keeps pushing water
+// up the loop long enough to displace trapped air.
+const MIN_REFILL_PUMP_MS = 3 * 60 * 1000;
 
 export function initDrainageControl({ getLiveSource } = {}) {
   if (typeof getLiveSource === 'function') _getLiveSource = getLiveSource;
@@ -120,6 +126,7 @@ function abortPending() {
   const wasOp = pendingOp;
   pendingOp = null;
   pendingStartedAt = 0;
+  refillSCStartedAt = 0;
   hideProgress();
   liveSource.sendCommand({ type: 'override-exit' });
   showMsg(wasOp === 'drain' ? 'Drain aborted.' : 'Refill aborted.', 'var(--on-surface-variant)');
@@ -166,7 +173,12 @@ export function updateDrainageControl(result) {
     return;
   }
   if (pendingOp === 'refill' && overrideActive && overrideFm === 'SC'
-      && !drained && mode === 'solar_charging') {
+      && mode === 'solar_charging' && !refillSCStartedAt) {
+    refillSCStartedAt = Date.now();
+  }
+  if (pendingOp === 'refill' && overrideActive && overrideFm === 'SC'
+      && !drained && mode === 'solar_charging'
+      && refillSCStartedAt && Date.now() - refillSCStartedAt >= MIN_REFILL_PUMP_MS) {
     completeOp('refill', 'Refill complete — automation resumed.');
     return;
   }
@@ -196,6 +208,7 @@ export function updateDrainageControl(result) {
     // tab, or controller dropped offline) — clear our pending flag.
     pendingOp = null;
     pendingStartedAt = 0;
+    refillSCStartedAt = 0;
     hideProgress();
     setActionsDisabled(false);
     showMsg('Override ended before completion.', 'var(--on-surface-variant)');
@@ -218,6 +231,7 @@ export function updateDrainageControl(result) {
 function completeOp(op, msg) {
   pendingOp = null;
   pendingStartedAt = 0;
+  refillSCStartedAt = 0;
   if (ackTimer) { clearTimeout(ackTimer); ackTimer = null; }
   hideProgress();
   setActionsDisabled(false);
