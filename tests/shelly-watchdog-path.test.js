@@ -173,4 +173,19 @@ describe('Shelly watchdog: scs fire → auto-shutdown', () => {
     assert.strictEqual(lastMode, 'idle',
       'expected final mode idle after auto-shutdown; got ' + lastMode);
   });
+
+  it('published IDLE state carries cause=watchdog_auto and reason=scs_shutdown', () => {
+    // Without this propagation the System Logs UI sees a bare
+    // "watchdog_auto" cause with no decision code — operators can't
+    // tell which watchdog tripped. The reason must identify *which*
+    // watchdog (scs/sng/ggr) so the friendly label in REASON_LABELS
+    // tells the right story.
+    const idleEvents = stateEvents.filter(e => e.mode === 'idle');
+    assert.ok(idleEvents.length >= 1, 'expected at least one idle state event');
+    const post = idleEvents[idleEvents.length - 1];
+    assert.strictEqual(post.cause, 'watchdog_auto',
+      'expected cause=watchdog_auto on post-shutdown idle row; got ' + post.cause);
+    assert.strictEqual(post.reason, 'scs_shutdown',
+      'expected reason=scs_shutdown on post-shutdown idle row; got ' + post.reason);
+  });
 });

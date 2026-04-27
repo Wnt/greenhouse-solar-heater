@@ -87,6 +87,22 @@ const REASON_LABELS = {
   emergency_enter: 'greenhouse critical — emergency heat',
   sensor_stale: 'sensor reading stale',
   watchdog_ban: 'mode blocked by watchdog',
+  // Watchdog auto-shutdown reasons. The id (sng / scs / ggr) is
+  // appended by buildIdleTransitionResult() in shelly/control.js so
+  // the log row distinguishes which watchdog tripped, instead of a
+  // bare "watchdog_auto" cause with no decision detail.
+  sng_shutdown: 'tank not gaining heat — auto-shutdown',
+  scs_shutdown: 'collector cooling during charging — auto-shutdown',
+  ggr_shutdown: 'greenhouse not gaining heat — auto-shutdown',
+  // Forced-mode transitions originating from the playground "Force
+  // mode" UI carry the picked mode in the reason so the log row
+  // shows the user's intent, not just the bare cause "forced".
+  forced_I: 'user forced Idle',
+  forced_SC: 'user forced Solar Charging',
+  forced_GH: 'user forced Greenhouse Heating',
+  forced_AD: 'user forced Active Drain',
+  forced_EH: 'user forced Emergency Heating',
+  override_cleared: 'manual override cleared',
   min_duration: 'holding minimum run time',
   idle: 'no trigger active',
 };
