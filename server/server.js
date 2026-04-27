@@ -21,6 +21,7 @@ const sensorDiscovery = require('./lib/sensor-discovery');
 const push = require('./lib/push');
 const anomalyManager = require('./lib/anomaly-manager');
 const { createScriptMonitor } = require('./lib/script-monitor');
+const { createScriptCrashNotifier } = require('./lib/script-crash-notifier');
 const { handleWsCommand, setDb: setWsCommandHandlersDb } = require('./lib/ws-command-handlers');
 const { createHandlers, readBody, jsonResponse } = require('./lib/http-handlers');
 const { getNetworkAddress, printBanner } = require('./lib/banner');
@@ -90,7 +91,6 @@ function serveFile(filePath, urlPath, res) {
   });
 }
 
-
 // ── Auth middleware ──
 
 let authMiddleware = null;
@@ -104,7 +104,6 @@ let scriptMonitor = null;
 let handlers = null;
 
 // ── HTTP route detection (for OTel span naming) ──
-
 function resolveRoute(urlPath, method) {
   if (urlPath === '/health') return '/health';
   if (urlPath === '/version') return '/version';
@@ -455,7 +454,6 @@ function initWebSocket() {
 
 // ── Startup ──
 
-
 function initServices(callback) {
   // Resolve DATABASE_URL from env or S3
   const dbModule = require('./lib/db');
@@ -509,13 +507,14 @@ function startMqttBridge() {
 
   const ws = initWebSocket();
 
-  // Script monitor is started alongside the MQTT bridge so its snapshot
-  // buffer is fed by the same stream the bridge handles. The monitor
-  // pushes "script-status" WS messages on every transition — the
-  // playground listens for these to show the crash banner.
+  // Script monitor runs alongside the MQTT bridge so its snapshot buffer
+  // is fed by the same stream. Status changes broadcast "script-status"
+  // (drives the in-app banner) and feed the push notifier.
   scriptMonitor = createScriptMonitor({ db });
-  scriptMonitor.onStatusChange(function (status) {
-    broadcastToWebSockets({ type: 'script-status', data: status });
+  const crashNotifier = createScriptCrashNotifier(push);
+  scriptMonitor.onStatusChange(function (s) {
+    broadcastToWebSockets({ type: 'script-status', data: s });
+    crashNotifier(s);
   });
 
   mqttBridge.start({

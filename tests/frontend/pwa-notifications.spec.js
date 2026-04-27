@@ -121,26 +121,30 @@ test.describe('Settings view — desktop', () => {
     await expect(page.locator('#notif-categories')).toBeHidden();
   });
 
-  test('all five notification category checkboxes exist', async ({ page }) => {
+  test('all notification category checkboxes exist', async ({ page }) => {
     const ids = [
       'notif-cat-evening_report',
       'notif-cat-noon_report',
       'notif-cat-overheat_warning',
       'notif-cat-freeze_warning',
       'notif-cat-offline_warning',
+      'notif-cat-watchdog_fired',
+      'notif-cat-script_crash',
     ];
     for (const id of ids) {
       await expect(page.locator('#' + id)).toHaveCount(1);
     }
   });
 
-  test('a test button exists for each of the five categories', async ({ page }) => {
+  test('a test button exists for each category', async ({ page }) => {
     const cats = [
       'evening_report',
       'noon_report',
       'overheat_warning',
       'freeze_warning',
       'offline_warning',
+      'watchdog_fired',
+      'script_crash',
     ];
     for (const cat of cats) {
       const btn = page.locator('[data-test-category="' + cat + '"]');
@@ -300,6 +304,21 @@ test.describe('PWA installability criteria', () => {
     const res = await page.request.get('/playground/sw.js');
     const body = await res.text();
     expect(body).toMatch(/data\.icon/);
+  });
+
+  test('service worker routes the script_crash restart action to /api/script/restart', async ({ page }) => {
+    // Regression guard: the script-crash push notification carries a
+    // "Restart script" button. Tapping it must POST to /api/script/restart
+    // (matching the in-app banner) and must short-circuit on test
+    // notifications so previewing in Settings doesn't restart the live
+    // script.
+    const res = await page.request.get('/playground/sw.js');
+    const body = await res.text();
+    expect(body).toMatch(/data\.kind\s*===\s*['"]script_crash['"]/);
+    expect(body).toMatch(/\/api\/script\/restart/);
+    // The test-mode short-circuit must reference data.test so the SW
+    // skips the real fetch when previewing.
+    expect(body).toMatch(/data\.test/);
   });
 
   test('index.html links to the manifest', async ({ page }) => {

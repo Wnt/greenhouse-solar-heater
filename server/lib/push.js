@@ -29,7 +29,7 @@ let lastSentAt = {};
 
 const RATE_LIMIT_MS = 3600000; // 1 hour
 
-const VALID_CATEGORIES = ['evening_report', 'noon_report', 'overheat_warning', 'freeze_warning', 'offline_warning', 'watchdog_fired'];
+const VALID_CATEGORIES = ['evening_report', 'noon_report', 'overheat_warning', 'freeze_warning', 'offline_warning', 'watchdog_fired', 'script_crash'];
 
 const S3_KEY = 'push-config.json';
 const LOCAL_PATH = process.env.PUSH_CONFIG_PATH || path.join(__dirname, '..', 'push-config.json');
@@ -275,6 +275,7 @@ const CATEGORY_ICONS = {
   freeze_warning:   'assets/notif-freeze.png',
   offline_warning:  'assets/notif-offline.png',
   watchdog_fired:   'assets/notif-watchdog.png',
+  script_crash:     'assets/notif-script-crash.png',
 };
 
 function iconFor(category) {
@@ -338,6 +339,27 @@ function buildMockPayload(category) {
       tag: 'test-offline-warning',
       icon: iconFor(category),
       url: '/#status',
+    };
+  }
+  if (category === 'script_crash') {
+    // Control-script crash notification. The "Restart script" button is
+    // the same one-tap action exposed by the in-app banner — both POST
+    // to /api/script/restart. `data.test: true` makes the SW handle the
+    // action client-side so previewing the notification doesn't actually
+    // restart the live script.
+    return {
+      title: '[Test] Control script crashed',
+      body: 'Uncaught Error: Too much recursion. The control loop is stopped.',
+      tag: 'test-script-crash',
+      icon: iconFor(category),
+      badge: 'assets/badge-72.png',
+      url: '/#status',
+      requireInteraction: true,
+      renotify: true,
+      actions: [
+        { action: 'restart', type: 'button', title: 'Restart script' },
+      ],
+      data: { kind: 'script_crash', test: true, url: '/#status' },
     };
   }
   if (category === 'watchdog_fired') {
@@ -422,6 +444,13 @@ function isRateLimited(type) {
     return true;
   }
   return false;
+}
+
+// Reset the per-type rate-limit slot. Used by the script-crash notifier
+// on recovery: a crash → recovery → crash sequence within the 1 h window
+// must still fire a fresh notification on the second crash.
+function clearRateLimit(type) {
+  delete lastSentAt[type];
 }
 
 function sendNotification(type, payload) {
@@ -543,6 +572,7 @@ module.exports = {
   getSubscription,
   getSubscriptionCount,
   isRateLimited,
+  clearRateLimit,
   sendNotification,
   buildMockPayload,
   sendTestToEndpoint,

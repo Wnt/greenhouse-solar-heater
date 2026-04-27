@@ -139,10 +139,27 @@ describe('push', () => {
   });
 
   describe('VALID_CATEGORIES', () => {
-    it('contains all six categories', () => {
+    it('contains all seven categories', () => {
       assert.deepStrictEqual(push.VALID_CATEGORIES, [
-        'evening_report', 'noon_report', 'overheat_warning', 'freeze_warning', 'offline_warning', 'watchdog_fired'
+        'evening_report', 'noon_report', 'overheat_warning', 'freeze_warning', 'offline_warning', 'watchdog_fired', 'script_crash'
       ]);
+    });
+  });
+
+  describe('clearRateLimit', () => {
+    it('removes the rate-limit slot for the given type', () => {
+      push._setLastSentAt({ script_crash: Date.now(), evening_report: Date.now() });
+      assert.strictEqual(push.isRateLimited('script_crash'), true);
+      push.clearRateLimit('script_crash');
+      assert.strictEqual(push.isRateLimited('script_crash'), false);
+      // Other types are untouched.
+      assert.strictEqual(push.isRateLimited('evening_report'), true);
+    });
+
+    it('is a no-op for an unset type', () => {
+      push._setLastSentAt({});
+      push.clearRateLimit('script_crash');
+      assert.deepStrictEqual(push._getLastSentAt(), {});
     });
   });
 
@@ -178,6 +195,19 @@ describe('push', () => {
         assert.ok(payload.icon, `expected icon for ${cat}`);
         assert.match(payload.icon, /^assets\/notif-.*\.png$/, `icon path for ${cat} must be assets/notif-*.png (got ${payload.icon})`);
       });
+    });
+
+    it('script_crash mock includes a Restart action and is gated as a test', () => {
+      const payload = push.buildMockPayload('script_crash');
+      assert.ok(Array.isArray(payload.actions), 'expected actions array');
+      assert.strictEqual(payload.actions.length, 1);
+      assert.strictEqual(payload.actions[0].action, 'restart');
+      assert.strictEqual(payload.actions[0].type, 'button');
+      assert.strictEqual(payload.requireInteraction, true);
+      assert.ok(payload.data, 'expected data object on script_crash mock');
+      assert.strictEqual(payload.data.kind, 'script_crash');
+      // Critical: SW must NOT POST to /api/script/restart on test taps.
+      assert.strictEqual(payload.data.test, true);
     });
 
     it('watchdog_fired mock includes inline-reply action so the test exercises real shape', () => {
