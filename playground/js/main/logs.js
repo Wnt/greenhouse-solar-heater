@@ -11,6 +11,8 @@ import {
   formatReasonLabel, formatSensorsLine, escapeHtml, formatTimeOfDay,
 } from './time-format.js';
 import { model, params, MODE_INFO, timeSeriesStore, transitionLog } from './state.js';
+import { getLastFrame } from './display-update.js';
+import { getWatchdogSnapshot } from './watchdog-ui.js';
 
 export { transitionLog };
 
@@ -219,6 +221,15 @@ function buildLogsClipboardText() {
   lines.push('Exported: ' + formatFullTimeHelsinki(Date.now()));
   lines.push('');
 
+  // Controller-state snapshot — captures the evaluator-visible flags
+  // that gate mode transitions but are otherwise invisible from the
+  // sensor table alone (controls_enabled, manual override, collector
+  // drain flag, watchdog cool-offs). Live mode only — the simulator
+  // does not maintain these.
+  if (isLive) {
+    appendControllerState(lines);
+  }
+
   if (isLive) {
     // Live: include 24h sensor readings at 20-min resolution from timeSeriesStore
     lines.push('--- Sensor Readings (24h, 20-min resolution) ---');
@@ -315,6 +326,52 @@ function buildLogsClipboardText() {
   }
 
   return lines.join('\n');
+}
+
+function appendControllerState(lines) {
+  const frame = getLastFrame();
+  const result = (frame && frame.result) || null;
+  const wb = (getWatchdogSnapshot() || {}).wb || {};
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  lines.push('--- Controller State ---');
+  if (!result) {
+    lines.push('(no live snapshot received yet)');
+    lines.push('');
+    return;
+  }
+
+  lines.push('Mode:               ' + (result.mode || 'idle'));
+  lines.push('Controls enabled:   ' + (result.controls_enabled ? 'yes' : 'no'));
+
+  const flags = result.flags || {};
+  lines.push('Collectors drained: ' + (flags.collectors_drained ? 'yes' : 'no'));
+  lines.push('Emergency heating:  ' + (flags.emergency_heating_active ? 'on' : 'off'));
+
+  const mo = result.manual_override;
+  if (mo && mo.active) {
+    const exp = mo.expiresAt ? formatFullTimeHelsinki(mo.expiresAt * 1000) : '—';
+    lines.push('Manual override:    ' + (mo.forcedMode || 'active') + ' (until ' + exp + ')');
+  } else {
+    lines.push('Manual override:    off');
+  }
+
+  const PERMANENT = 9999999999;
+  const banned = [];
+  Object.keys(wb).forEach(code => {
+    const until = wb[code];
+    if (typeof until !== 'number' || until <= nowSec) return;
+    if (until === PERMANENT) {
+      banned.push(code + '=disabled');
+    } else {
+      const rem = until - nowSec;
+      const h = Math.floor(rem / 3600);
+      const m = Math.floor((rem % 3600) / 60);
+      banned.push(code + '=' + h + 'h' + (m < 10 ? '0' : '') + m + 'm');
+    }
+  });
+  lines.push('Mode bans (wb):     ' + (banned.length ? banned.join(' ') : 'none'));
+  lines.push('');
 }
 
 // Format a temperature value as a right-aligned string for the clipboard table.
