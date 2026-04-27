@@ -68,6 +68,38 @@ self.addEventListener('notificationclick', function (event) {
   const data = event.notification.data || {};
   event.notification.close();
 
+  // Script-crash notifications carry one inline action: "restart"
+  // (button) → POST /api/script/restart. Same credentials:include
+  // pattern as watchdog so the session cookie rides along.
+  if (data.kind === 'script_crash') {
+    if (data.test) {
+      // Test notifications must NOT actually restart the live script.
+      // Mirror the real flow client-side with a confirmation toast.
+      if (event.action === 'restart') {
+        event.waitUntil(self.registration.showNotification(
+          '[Test] Restart requested',
+          {
+            body: 'Would call /api/script/restart on the live server.',
+            icon: 'assets/notif-script-crash.png',
+            badge: 'assets/badge-72.png',
+            tag: 'test-script-crash',
+            data: { kind: 'script_crash_ack_test', test: true, url: '/#status' },
+          }
+        ));
+      }
+      return;
+    }
+    if (event.action === 'restart') {
+      event.waitUntil(fetch('/api/script/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+      }).catch(function () { /* swallow — banner will reconcile */ }));
+      return;
+    }
+    // Main click (no action) falls through to the open-window logic.
+  }
+
   // Watchdog fired notifications have two inline actions beyond the
   // main click: "shutdownnow" (button) and "snooze" (text input).
   // Both POST to the watchdog HTTP endpoints; credentials:include so

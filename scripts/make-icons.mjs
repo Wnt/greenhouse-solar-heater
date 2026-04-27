@@ -47,12 +47,14 @@ const APP_GLYPH = 'solar_power';
 //   overheat_warning→ local_fire_department (coral — tank hot)
 //   freeze_warning  → ac_unit     (sky — outdoor cold)
 //   offline_warning → cloud_off   (coral — controller unreachable)
+//   script-crash    → bug_report  (coral — control script stopped)
 const NOTIF_ICONS = [
-  { slug: 'evening',  glyph: 'wb_sunny',              color: GOLD  },
-  { slug: 'noon',     glyph: 'bedtime',               color: TEAL  },
-  { slug: 'overheat', glyph: 'local_fire_department', color: CORAL },
-  { slug: 'freeze',   glyph: 'ac_unit',               color: SKY   },
-  { slug: 'offline',  glyph: 'cloud_off',             color: CORAL },
+  { slug: 'evening',      glyph: 'wb_sunny',              color: GOLD  },
+  { slug: 'noon',         glyph: 'bedtime',               color: TEAL  },
+  { slug: 'overheat',     glyph: 'local_fire_department', color: CORAL },
+  { slug: 'freeze',       glyph: 'ac_unit',               color: SKY   },
+  { slug: 'offline',      glyph: 'cloud_off',             color: CORAL },
+  { slug: 'script-crash', glyph: 'bug_report',            color: CORAL },
 ];
 
 function renderHtml(config) {
