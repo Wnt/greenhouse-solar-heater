@@ -171,6 +171,11 @@ async function init() {
 
   // Start polling for JS source updates
   startVersionCheck();
+
+  // Test hook — frontend specs poll this to know that init() has
+  // wired everything (initConnection + initModeToggle, in
+  // particular). Same pattern as window.__getHistoryPointCount.
+  window.__initComplete = true;
 }
 
 function buildFallbackConfig() {

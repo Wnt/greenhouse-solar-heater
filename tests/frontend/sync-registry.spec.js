@@ -35,8 +35,12 @@ test.describe('sync registry + coordinator contract', () => {
   test.beforeEach(async ({ page }) => {
     await mockApis(page);
     await page.goto('/playground/');
-    // Wait for module-loaded test hook
-    await page.waitForFunction(() => typeof window.__sync === 'object');
+    // Wait for init() to FULLY complete (window.__initComplete set
+    // at the last line of main.js init). Without this, production
+    // sources registered inside initConnection sneak into the
+    // registry mid-test and get fetched alongside the fake source,
+    // blowing source-count assertions.
+    await page.waitForFunction(() => window.__initComplete === true);
     // Clean slate: drop production-registered sources for the
     // duration of this test, and abort anything in flight.
     await page.evaluate(() => {

@@ -9,6 +9,18 @@
 
 import { test, expect } from './fixtures.js';
 
+// Wait for init() to have wired up the sync framework end-to-end.
+// `window.__sync` exists at module-load time (registry attaches its
+// bridge eagerly), so polling for it isn't strong enough — under CI
+// parallelism the test can race past it before initConnection has
+// registered the production sources or initSyncCoordinator has
+// captured the onResyncStart hook. We wait on `window.__initComplete`,
+// set at the very last line of main.js init(), which guarantees every
+// subsequent wiring step has already run.
+async function waitForSyncReady(page) {
+  await page.waitForFunction(() => window.__initComplete === true);
+}
+
 test.describe('visibility resync', () => {
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/events**', route => route.fulfill({
@@ -27,7 +39,7 @@ test.describe('visibility resync', () => {
       });
     });
     await page.goto('/playground/');
-    await page.waitForFunction(() => typeof window.__sync === 'object');
+    await waitForSyncReady(page);
     // Wait for the initial live-mode fetch (1h, 6h, …) to land
     // before counting subsequent ones — it varies by range +
     // balance card so we just snapshot the count and look for
@@ -67,16 +79,7 @@ test.describe('visibility resync', () => {
       });
     });
     await page.goto('/playground/');
-    await page.waitForFunction(() => typeof window.__sync === 'object');
-
-    // Wait for init() to complete so the connection.js syncing
-    // subscribe is wired before we flip the flag. The signal is
-    // phase === 'live' (set by initModeToggle, which runs after
-    // initConnection registers the subscribe).
-    await page.waitForFunction(async () => {
-      const mod = await import('/playground/js/app-state.js');
-      return mod.store.get('phase') === 'live';
-    });
+    await waitForSyncReady(page);
 
     // Trigger a resync directly (production path is the visibility
     // listener; we use the coordinator API to keep the test focused
@@ -124,7 +127,7 @@ test.describe('visibility resync', () => {
       });
     });
     await page.goto('/playground/');
-    await page.waitForFunction(() => typeof window.__sync === 'object');
+    await waitForSyncReady(page);
 
     // Pretend a live frame has already arrived so we have something
     // to observe getting reset. setLiveFrameSeen lives in
