@@ -160,6 +160,13 @@ var DEFAULT_CONFIG = {
   watchdogBanSeconds: 14400
 };
 
+// Sentinel value stored in wb[mode] when the user has permanently
+// disabled a mode via the device-config UI. Distinct from the 4-hour
+// cool-off written by applyBanAndShutdown() (a unix timestamp ~now+4h).
+// Mirrored from server/lib/device-config.js — keep them in sync if
+// you ever change the magic number.
+var WB_PERMANENT_SENTINEL = 9999999999;
+
 function applyDefaults(config) {
   var result = {};
   var key;
@@ -519,13 +526,20 @@ function evaluate(state, config, deviceConfig) {
   }
 
   // ── Combine pump mode + emergency overlay ──
-  if (flags.emergencyHeatingActive && pumpMode === MODES.IDLE) {
-    // Emergency heating is also subject to wb
+  // EH ban gates the overlay. Two ban shapes share `wb.EH`:
+  //   - permanent sentinel (user disabled emergency heating in the UI), or
+  //   - 4-hour cool-off (watchdog auto-shutdown).
+  // Either way, suppress the overlay AND fall through — do not return
+  // IDLE with reason "watchdog_ban", which would clobber the natural
+  // pumpMode reason (e.g. "greenhouse_tank_depleted") and falsely tell
+  // the user a watchdog tripped when they had simply disabled emergency
+  // heating. See 2026-04-28 04:54 field log for the original symptom.
+  if (flags.emergencyHeatingActive) {
     if (dc && dc.wb && dc.wb.EH && dc.wb.EH > state.now) {
       flags.emergencyHeatingActive = false;
-      return makeResult(MODES.IDLE, flags, dc, false, "watchdog_ban");
+    } else if (pumpMode === MODES.IDLE) {
+      return makeResult(MODES.EMERGENCY_HEATING, flags, dc, false, "emergency_enter");
     }
-    return makeResult(MODES.EMERGENCY_HEATING, flags, dc, false, "emergency_enter");
   }
 
   var result = makeResult(pumpMode, flags, dc, false, reason);
@@ -535,13 +549,17 @@ function evaluate(state, config, deviceConfig) {
 
   // ── Natural-mode ban check (post-evaluation) ──
   // Blocks the mode that the physics evaluation chose if its wb entry
-  // is still active. Returns IDLE instead.
+  // is still active. Distinguishes a user-set permanent disable
+  // (sentinel → "mode_disabled") from a watchdog cool-off
+  // ("watchdog_ban") so the System Logs UI tells the operator which
+  // one they are looking at.
   if (dc && dc.wb && result.nextMode !== MODES.IDLE) {
     var natCode = shortCodeOf(result.nextMode);
     if (natCode && dc.wb[natCode] && dc.wb[natCode] > state.now) {
       flags.solarChargePeakTankAvg = null;
       flags.solarChargePeakTankAvgAt = 0;
-      return makeResult(MODES.IDLE, flags, dc, false, "watchdog_ban");
+      var banReason = (dc.wb[natCode] >= WB_PERMANENT_SENTINEL) ? "mode_disabled" : "watchdog_ban";
+      return makeResult(MODES.IDLE, flags, dc, false, banReason);
     }
   }
 

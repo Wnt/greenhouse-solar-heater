@@ -916,13 +916,60 @@ describe('evaluate() emits a decision reason for each path', () => {
     assert.strictEqual(r.reason, 'drain_running');
   });
 
-  it('watchdog_ban when evaluator chose a mode that is banned', () => {
+  it('mode_disabled when evaluator chose a mode the user has permanently banned', () => {
+    // Sentinel 9999999999 — set by the user via the device-config UI to
+    // permanently disable a mode. Distinct from a watchdog cool-off.
     const dc = { ce: true, wb: { SC: 9999999999 } };
     const r = evaluate(makeState({
       temps: { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 }
     }), null, dc);
     assert.strictEqual(r.nextMode, MODES.IDLE);
+    assert.strictEqual(r.reason, 'mode_disabled');
+  });
+
+  it('watchdog_ban when evaluator chose a mode under a watchdog cool-off', () => {
+    // wb entry that is not the permanent sentinel — the 4-hour cool-off
+    // applied after a watchdog firing.
+    const dc = { ce: true, wb: { SC: 1000000 + 3600 } };
+    const r = evaluate(makeState({
+      temps: { collector: 50, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      now: 1000000
+    }), null, dc);
+    assert.strictEqual(r.nextMode, MODES.IDLE);
     assert.strictEqual(r.reason, 'watchdog_ban');
+  });
+
+  it('emergency-disabled with depleted tank reports the natural reason, not watchdog_ban', () => {
+    // Reproduces the 2026-04-28 04:54 field log: in GH, greenhouse drops
+    // below the emergency-enter threshold (so emergencyHeatingActive
+    // would flip on), tank is too cool to heat the greenhouse, and EH
+    // is permanently disabled by the user. The transition to IDLE is
+    // correct — but the reason must surface the actual cause
+    // (greenhouse_tank_depleted), not "mode blocked by watchdog".
+    const dc = { ce: true, wb: { EH: 9999999999 } };
+    const r = evaluate(makeState({
+      temps: { collector: -3.9, tank_top: 10.2, tank_bottom: 9.5, greenhouse: 8.3, outdoor: 0.8 },
+      currentMode: MODES.GREENHOUSE_HEATING,
+      modeEnteredAt: 0,
+      now: 100000,
+      collectorsDrained: true
+    }), null, dc);
+    assert.strictEqual(r.nextMode, MODES.IDLE);
+    assert.strictEqual(r.reason, 'greenhouse_tank_depleted');
+  });
+
+  it('emergency-disabled with no other trigger falls through to idle reason', () => {
+    // Greenhouse cold (would activate emergency) but tank can't heat it
+    // and we are not currently in GH. Without the EH disable the
+    // evaluator would return EMERGENCY_HEATING. With it, the natural
+    // result is IDLE with reason "idle" — not "watchdog_ban".
+    const dc = { ce: true, wb: { EH: 9999999999 } };
+    const r = evaluate(makeState({
+      temps: { collector: 5, tank_top: 10, tank_bottom: 9, greenhouse: 8, outdoor: 5 },
+      collectorsDrained: true
+    }), null, dc);
+    assert.strictEqual(r.nextMode, MODES.IDLE);
+    assert.strictEqual(r.reason, 'idle');
   });
 
   it('idle when no trigger is active', () => {
