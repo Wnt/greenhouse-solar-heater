@@ -228,6 +228,12 @@ test.describe('System Logs card is backed by live state events', () => {
 
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+    // Wait for the initial /api/events fetch to settle before injecting
+    // the WS state. fetchLiveEvents(reset=true) clears transitionLog when
+    // its response arrives, so any in-memory entry added by
+    // detectLiveTransition() before the response comes back gets
+    // clobbered. Waiting for the seed row to render eliminates that race.
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(1, { timeout: 3000 });
 
     // Fire a new state with explicit cause+temps — simulates a device
     // that reports a forced-mode transition to GREENHOUSE_HEATING.
