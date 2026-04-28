@@ -518,6 +518,12 @@ export function rerenderWithHistoryFallback() {
     actuators: { pump: false, fan: false, space_heater: false },
     valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
     transition: null,
+    // Marker so detectLiveTransition skips this. The mode here comes
+    // from the freshest history point, not a live state push, so it
+    // has no cause/reason/temps — feeding it through the change
+    // detector produced log rows with empty reason/sensors lines that
+    // only a manual reload could fix.
+    synthetic: true,
   };
   updateDisplay(synth, idleResult);
 }

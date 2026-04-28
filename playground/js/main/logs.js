@@ -160,6 +160,13 @@ function renderConfigEntry(t, timeLabel) {
 // so a subsequent refresh will replay the same transitions.
 export function detectLiveTransition(result) {
   if (store.get('phase') !== 'live') return;
+  // Synthetic renders from rerenderWithHistoryFallback carry a mode
+  // taken from the latest history point, not a live state push, and
+  // lack cause/reason/temps. Skip them entirely (don't even update
+  // lastLiveMode) so the next real WS frame can detect the transition
+  // with full metadata. Without this guard the resync path was
+  // prepending a partial row that only a manual reload could repair.
+  if (result && result.synthetic) return;
   const mode = result && result.mode;
   if (!mode) return;
   if (lastLiveMode === null) {
