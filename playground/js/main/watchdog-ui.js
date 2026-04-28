@@ -9,6 +9,7 @@
 // state is fetched from GET /api/watchdog/state on load.
 
 import { store } from '../app-state.js';
+import { postJson, putJson } from './fetch-helpers.js';
 
 const WATCHDOG_PERMANENT_SENTINEL = 9999999999;
 const WATCHDOG_ALL_MODES = [
@@ -55,15 +56,10 @@ export function initWatchdogUI({ getLiveSource } = {}) {
     snoozeBtn.addEventListener('click', () => {
       if (!_watchdogPending) return;
       const reason = (replyInput && replyInput.value.trim()) || '(no reason provided)';
-      fetch('/api/watchdog/ack', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          id: _watchdogPending.id,
-          eventId: _watchdogPending.dbEventId,
-          reason
-        })
+      postJson('/api/watchdog/ack', {
+        id: _watchdogPending.id,
+        eventId: _watchdogPending.dbEventId,
+        reason
       }).catch(err => console.error('watchdog ack failed', err));
     });
   }
@@ -71,14 +67,9 @@ export function initWatchdogUI({ getLiveSource } = {}) {
   if (shutdownBtn) {
     shutdownBtn.addEventListener('click', () => {
       if (!_watchdogPending) return;
-      fetch('/api/watchdog/shutdownnow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          id: _watchdogPending.id,
-          eventId: _watchdogPending.dbEventId
-        })
+      postJson('/api/watchdog/shutdownnow', {
+        id: _watchdogPending.id,
+        eventId: _watchdogPending.dbEventId
       }).catch(err => console.error('watchdog shutdownnow failed', err));
     });
   }
@@ -254,25 +245,13 @@ export function renderModeEnablement(wb, userRole) {
 }
 
 function _watchdogDisableMode(modeCode) {
-  const body = { wb: {} };
-  body.wb[modeCode] = WATCHDOG_PERMANENT_SENTINEL;
-  fetch('/api/device-config', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(body)
-  }).catch(err => console.error('disable mode failed', err));
+  putJson('/api/device-config', { wb: { [modeCode]: WATCHDOG_PERMANENT_SENTINEL } })
+    .catch(err => console.error('disable mode failed', err));
 }
 
 function _watchdogClearBan(modeCode) {
-  const body = { wb: {} };
-  body.wb[modeCode] = 0;
-  fetch('/api/device-config', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(body)
-  }).catch(err => console.error('clear ban failed', err));
+  putJson('/api/device-config', { wb: { [modeCode]: 0 } })
+    .catch(err => console.error('clear ban failed', err));
 }
 
 function renderWatchdogsCard(snapshot, watchdogs, userRole) {
@@ -302,12 +281,8 @@ function renderWatchdogsCard(snapshot, watchdogs, userRole) {
     checkbox.checked = !!enabled;
     checkbox.disabled = !isAdmin;
     checkbox.addEventListener('change', () => {
-      fetch('/api/watchdog/enabled', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ id: w.id, enabled: checkbox.checked })
-      }).catch(err => console.error('toggle watchdog failed', err));
+      putJson('/api/watchdog/enabled', { id: w.id, enabled: checkbox.checked })
+        .catch(err => console.error('toggle watchdog failed', err));
     });
     label.appendChild(checkbox);
 
@@ -330,14 +305,8 @@ function renderWatchdogsCard(snapshot, watchdogs, userRole) {
         clearBtn.type = 'button';
         clearBtn.textContent = 'Clear snooze';
         clearBtn.addEventListener('click', () => {
-          const body = { wz: {} };
-          body.wz[w.id] = 0;
-          fetch('/api/device-config', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify(body)
-          }).catch(err => console.error('clear snooze failed', err));
+          putJson('/api/device-config', { wz: { [w.id]: 0 } })
+            .catch(err => console.error('clear snooze failed', err));
         });
         row.appendChild(clearBtn);
       }

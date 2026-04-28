@@ -1,8 +1,5 @@
-/**
- * MQTT-to-WebSocket bridge.
- * Subscribes to greenhouse/state, decomposes into sensor_readings + state_events,
- * and broadcasts live state to WebSocket clients.
- */
+// MQTT → WebSocket bridge. Subscribes to greenhouse/state, decomposes
+// it into sensor_readings + state_events, and broadcasts to WS clients.
 
 const createLogger = require('./logger');
 const log = createLogger('mqtt-bridge');
@@ -159,18 +156,12 @@ function handleStateMessage(payload) {
 function detectStateChanges(ts, prev, curr, _db) {
   const d = _db || db;
   if (!d) return;
-  // Mode changes — record cause (why the transition happened) and a
-  // snapshot of the sensor temps at transition time so operators
-  // browsing the log can tell "automation fired SOLAR_CHARGING at
-  // collector=62 °C" vs "user forced IDLE manually". Both fields are
-  // nullable: pre-2026-04-20 payloads don't carry cause; firmware
-  // without sensor polling yields null temps.
+  // cause / reason / sensors carry transition context for the log view
+  // ("automation fired SOLAR_CHARGING at collector=62 °C"). All
+  // nullable for back-compat with older payloads.
   if (prev.mode !== curr.mode) {
     const modeOpts = {
       cause: (typeof curr.cause === 'string' && curr.cause) || null,
-      // reason is the evaluator's decision code (e.g. "solar_stall").
-      // Only meaningful when cause is "automation" or "safety_override";
-      // older payloads without the field store null.
       reason: (typeof curr.reason === 'string' && curr.reason) || null,
       sensors: (curr.temps && typeof curr.temps === 'object') ? curr.temps : null,
     };
@@ -210,8 +201,7 @@ function detectStateChanges(ts, prev, curr, _db) {
   }
 }
 
-// Enrich a raw greenhouse/state payload with the manual_override session
-// from device config. Pure — safe to call from broadcasts and replays.
+// Adds manual_override (from device config) to a greenhouse/state payload.
 function enrichState(payload) {
   if (!deviceConfigRef) return payload;
   const cfg = deviceConfigRef.getConfig();
@@ -227,9 +217,9 @@ function enrichState(payload) {
   return Object.assign({}, payload, { manual_override: null });
 }
 
-// Returns the most recent enriched state payload, or null if none received yet.
-// Used by the WebSocket upgrade handler to give new clients an immediate
-// snapshot instead of waiting up to ~30s for the next Shelly publish.
+// Latest enriched state (or null) — sent on WebSocket upgrade so new
+// clients see something immediately instead of waiting ~30 s for the
+// next Shelly publish.
 function getLastState() {
   if (!previousState) return null;
   return enrichState(previousState);
@@ -271,11 +261,10 @@ function publishConfig(config) {
   return true;
 }
 
-// Re-publish the current device config on every MQTT (re)connect so the
-// retained `greenhouse/config` message survives broker restarts. Mosquitto
-// in our deploy is a sidecar without persistence — without this, the Shelly
-// would never see the latest config until someone manually clicked
-// "Save & Push to Device" in the UI.
+// Re-publish on every MQTT (re)connect — Mosquitto runs as a sidecar
+// without persistence, so a broker restart drops the retained
+// greenhouse/config and greenhouse/sensor-config and we'd otherwise
+// only push them again on the next manual config edit.
 function republishDeviceConfig() {
   if (!deviceConfigRef) return;
   const cfg = deviceConfigRef.getConfig();
@@ -283,12 +272,8 @@ function republishDeviceConfig() {
   publishConfig(cfg);
 }
 
-// Sibling of republishDeviceConfig — the Mosquitto sidecar has no persistence,
-// so a broker restart drops the retained greenhouse/sensor-config and the
-// Shelly controller would otherwise keep polling whatever role→cid mapping
-// its KVS still holds, diverging from the server-side config that the
-// sensors tab reads via per-hub scans. Empty-assignments configs are skipped
-// — publishing them would tell the controller to stop polling every sensor.
+// Empty-assignments configs are skipped — publishing one would tell
+// the controller to stop polling every sensor.
 function republishSensorConfig() {
   if (!sensorConfigRef || typeof sensorConfigRef.getConfig !== 'function') return;
   const cfg = sensorConfigRef.getConfig();

@@ -1,9 +1,7 @@
 // System Logs UI — live-events pagination, transition detection,
-// render + clipboard export. Extracted from main.js.
-//
-// transitionLog lives in state.js (shared array, many writers).
-// Re-exported from here for back-compat with existing importers in
-// main.js — they can keep importing `transitionLog` from logs.js.
+// render + clipboard export. transitionLog lives in state.js (shared
+// array, many writers); re-exported here so existing importers don't
+// have to change.
 
 import { store } from '../app-state.js';
 import {
@@ -17,11 +15,8 @@ import { getWatchdogSnapshot } from './watchdog-ui.js';
 export { transitionLog };
 
 const EVENTS_PAGE_SIZE = 10;
-// Two parallel cursors so config and mode events scroll independently.
-// The transitionLog merges them by ts; "Load more" fetches another page
-// of each, taking only the half that still has older rows on the
-// server. Without separate cursors, a long quiet stretch on one feed
-// would prematurely block scrolling for the other.
+// Parallel cursors so config and mode pages scroll independently —
+// a long quiet stretch on one feed shouldn't block the other.
 let modeCursor = null;
 let modeHasMore = false;
 let configCursor = null;
@@ -29,8 +24,7 @@ let configHasMore = false;
 let eventsLoading = false; // in-flight guard for either side
 let lastLiveMode = null;   // last observed live mode (change detector)
 
-// Drop pagination + mode-change state. Called when the mode-switch UI
-// clears the live display; fetchLiveEvents(null) will repopulate.
+// Drop pagination + mode-change state. fetchLiveEvents(null) repopulates.
 export function resetEventsState() {
   modeCursor = null;
   modeHasMore = false;
@@ -55,10 +49,6 @@ function modeRowToLogEntry(e) {
     mode: e.to,
     from: e.from,
     text: formatLiveTransitionText(e.from, e.to),
-    // cause/sensors may be null for pre-2026-04-20 rows or for
-    // firmware that doesn't yet carry the transition cause.
-    // reason (added 2026-04-21) is the evaluator's decision code;
-    // null when the transition did not come from evaluate().
     cause: e.cause || null,
     reason: e.reason || null,
     sensors: e.sensors || null,
@@ -70,11 +60,11 @@ function configRowToLogEntry(e) {
     kind: 'live',
     eventType: 'config',
     ts: e.ts,
-    configKind: e.kind,    // 'wb' | 'mo'
-    configKey: e.key,      // mode short code for wb; null for mo
+    configKind: e.kind,
+    configKey: e.key,
     from: e.from,
     to: e.to,
-    source: e.source,      // 'api' | 'ws_override' | 'watchdog_auto'
+    source: e.source,
     actor: e.actor,
   };
 }

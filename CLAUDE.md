@@ -209,7 +209,7 @@ If any of these fail on the PR but passed locally, that's a signal something is 
   ```
 
   Revert by re-running `npm ci` before committing. **In-repo, always track the latest production-ready `@playwright/test` release** — CI installs the matching Chromium via `npx playwright install --with-deps chromium`, with `~/.cache/ms-playwright` cached by `actions/cache` keyed on the package version, so a bump invalidates the cache automatically and pulls a fresh browser on the next run.
-- **Use plain `serve`, NOT `serve -s`.** SPA mode rewrites `/schematic-tester.html` → `/schematic-tester` → `index.html`, so standalone pages (schematic-tester, liquid-glass-test) become unreachable. Playwright config auto-starts plain `serve` on port 3210.
+- **Use plain `serve`, NOT `serve -s`.** SPA mode rewrites `/flow-tester.html` → `/flow-tester` → `index.html`, so standalone pages (flow-tester, liquid-glass-test) become unreachable. Playwright config auto-starts plain `serve` on port 3210.
 
 ## Cloud Deployment
 

@@ -1,16 +1,6 @@
-// Status / Components / Device view render pipeline. Extracted from
-// main.js. updateDisplay is the single entry called by:
-//  - simLoop (after each step)
-//  - ensureLiveSource onUpdate (each WS frame)
-//  - resetSim (idle seed)
-//  - loadBootstrapSnapshotAndAutoStart (idle seed)
-//  - rerenderWithHistoryFallback (after live history fetch, from
-//    live-history.js)
-//
-// Owns: yesterdayHigh / confirmedYesterdayHigh / lastDay, the last
-// (state, result) pair, the schematic handle, and the liveFrameSeen
-// flag. Those used to live in main.js but only this module
-// legitimately reads/writes them.
+// Status / Components / Device render pipeline. updateDisplay is the
+// single entry from simLoop, WS frames, resetSim, the bootstrap
+// snapshot, and rerenderWithHistoryFallback.
 
 import { store } from '../app-state.js';
 import { tankStoredEnergyKwh } from '../physics.js';
@@ -19,9 +9,7 @@ import { detectLiveTransition, renderLogsList } from './logs.js';
 import { drawHistoryGraph, toSchematicState } from './history-graph.js';
 import { appendBalanceLivePoint, getLiveYesterdayHigh } from './balance-card.js';
 
-// Null-tolerant helpers for live data: the Shelly publishes `null`
-// for any sensor whose role is not assigned. Display "—" instead of
-// crashing.
+// Live data may have null sensors when a role is unassigned — show "—".
 const TEMP_PLACEHOLDER = '—';
 function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
 function fmtTemp(v, digits) {
@@ -29,17 +17,12 @@ function fmtTemp(v, digits) {
   return isNum(v) ? v.toFixed(digits) : TEMP_PLACEHOLDER;
 }
 
-// ── Temperature trend helpers ──
-// 15-minute rolling window, 1 °C/hr threshold → anything moving
-// faster than 0.25 °C per 15 min counts as rising/falling, otherwise
-// stable. Long enough that trends are already computable from the
-// first page load (live-history fetch and simulation bootstrap
-// snapshot both pre-populate the store); short enough that real
-// changes in weather or charging state surface within a minute or
-// two. Reused by the gauge status label, Components-view sensor
-// table, and Status-view greenhouse chip.
+// 15-minute rolling window, 1 °C/hr threshold → ≥0.25 °C per 15 min
+// counts as rising/falling. Window is long enough to populate from
+// the first page-load history fetch, short enough that weather +
+// charging-state changes surface within a minute.
 const TREND_WINDOW_S = 900;
-const TREND_THRESHOLD = 0.25;  // °C per 15 min (== 1 °C/hr)
+const TREND_THRESHOLD = 0.25;
 
 function trendFor(resolver) {
   if (timeSeriesStore.times.length < 2) return null;
@@ -68,9 +51,8 @@ function avgTank(entry) {
   return (entry.t_tank_top + entry.t_tank_bottom) / 2;
 }
 
-// Small inline arrow next to a reading. Empty string when trend
-// can't be computed yet (< 2 samples) so the UI doesn't lie with a
-// fake "stable" on startup.
+// Empty string until enough samples — avoids a fake "stable" arrow
+// on startup before the trend is meaningful.
 function renderTrendIcon(trend) {
   if (!trend) return '';
   const icon = trend === 'rising' ? 'trending_up'

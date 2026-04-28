@@ -47,6 +47,18 @@ function jsonResponse(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
+// Parse a JSON request body and call onSuccess(parsed) — or write a 400
+// and stop. Returns true on success so callers can early-return on parse
+// failure without an extra flag.
+function parseJsonOrFail(res, body) {
+  try {
+    return JSON.parse(body);
+  } catch (e) {
+    jsonResponse(res, 400, { error: 'Invalid JSON' });
+    return undefined;
+  }
+}
+
 function createHandlers(deps) {
   const db = deps.db;
   const authMiddleware = deps.authMiddleware;
@@ -187,18 +199,12 @@ function createHandlers(deps) {
   }
 
   function handleSensorDiscovery(req, res, body) {
-    let parsed;
-    try { parsed = JSON.parse(body); } catch (e) {
-      jsonResponse(res, 400, { error: 'Invalid JSON body' });
-      return;
-    }
+    const parsed = parseJsonOrFail(res, body);
+    if (parsed === undefined) return;
     if (!parsed.hosts || !Array.isArray(parsed.hosts)) {
       jsonResponse(res, 400, { error: 'Missing hosts array' });
       return;
     }
-    // Direct HTTP scan of each hub in parallel. Bypasses the Pro 4PM + MQTT
-    // path because it was slow and produced opaque timeouts on a single hub
-    // failure. See server/lib/sensor-discovery.js.
     const options = {};
     if (parsed.skipTemp) options.skipTemp = true;
     sensorDiscovery.discoverSensors(parsed.hosts, options).then(function (result) {
@@ -209,11 +215,8 @@ function createHandlers(deps) {
   }
 
   function handlePushSubscribe(req, res, body) {
-    let parsed;
-    try { parsed = JSON.parse(body); } catch (e) {
-      jsonResponse(res, 400, { error: 'Invalid JSON' });
-      return;
-    }
+    const parsed = parseJsonOrFail(res, body);
+    if (parsed === undefined) return;
     if (!parsed.subscription || !parsed.subscription.endpoint || !parsed.subscription.keys) {
       jsonResponse(res, 400, { error: 'Missing subscription object (endpoint + keys)' });
       return;
@@ -229,11 +232,8 @@ function createHandlers(deps) {
   }
 
   function handlePushUnsubscribe(req, res, body) {
-    let parsed;
-    try { parsed = JSON.parse(body); } catch (e) {
-      jsonResponse(res, 400, { error: 'Invalid JSON' });
-      return;
-    }
+    const parsed = parseJsonOrFail(res, body);
+    if (parsed === undefined) return;
     if (!parsed.endpoint) {
       jsonResponse(res, 400, { error: 'Missing endpoint' });
       return;
@@ -248,11 +248,8 @@ function createHandlers(deps) {
   }
 
   function handlePushGetSubscription(req, res, body) {
-    let parsed;
-    try { parsed = JSON.parse(body); } catch (e) {
-      jsonResponse(res, 400, { error: 'Invalid JSON' });
-      return;
-    }
+    const parsed = parseJsonOrFail(res, body);
+    if (parsed === undefined) return;
     if (!parsed.endpoint) {
       jsonResponse(res, 400, { error: 'Missing endpoint' });
       return;
@@ -267,13 +264,10 @@ function createHandlers(deps) {
 
   // Send a mock notification of the given category to the caller's
   // subscription. Bypasses rate limiting and category filtering so the
-  // user can preview how each notification type renders on their device.
+  // user can preview how each type renders on their device.
   function handlePushTest(req, res, body) {
-    let parsed;
-    try { parsed = JSON.parse(body); } catch (e) {
-      jsonResponse(res, 400, { error: 'Invalid JSON' });
-      return;
-    }
+    const parsed = parseJsonOrFail(res, body);
+    if (parsed === undefined) return;
     if (!parsed.endpoint || !parsed.category) {
       jsonResponse(res, 400, { error: 'Missing endpoint or category' });
       return;
@@ -311,4 +305,5 @@ module.exports = {
   createHandlers,
   readBody,
   jsonResponse,
+  parseJsonOrFail,
 };

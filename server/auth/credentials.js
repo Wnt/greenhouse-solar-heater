@@ -1,11 +1,6 @@
-/**
- * JSON file credential store for WebAuthn passkeys.
- * Supports multiple users with role-based access (admin / readonly).
- *
- * Backwards compatible with the previous single-user format: when an old
- * `user` object is loaded, it is migrated to `users[0]` with the `admin`
- * role and all existing credentials/sessions are linked to it.
- */
+// JSON-file credential store for WebAuthn passkeys. Multi-user with
+// admin / readonly roles. Reads of the legacy single-user shape are
+// migrated transparently — see migrate() below.
 
 const crypto = require('crypto');
 const createLogger = require('../lib/logger');
@@ -56,21 +51,19 @@ function normalizeSession(sess) {
   return sess;
 }
 
-// Migrate the legacy single-user shape ({user: {...}}) to the new
-// multi-user shape ({users: [...]}). Existing credentials and sessions
-// are linked to the migrated admin user.
+// Migrate legacy {user: {...}} → {users: [...]}; new shape passes
+// through with field-level normalization.
 function migrate(data) {
   if (!data) return data;
   if (Array.isArray(data.users)) {
-    // Already in the new shape, but normalize defaults on each user.
     data.users.forEach(function (u) {
       if (!u.role) u.role = ROLES.ADMIN;
       if (!u.createdAt) u.createdAt = new Date().toISOString();
     });
     (data.credentials || []).forEach(normalizeCredential);
     (data.sessions || []).forEach(normalizeSession);
-    // Ensure every credential and session has a userId (legacy stores
-    // that were never migrated may have them undefined).
+    // Ensure every credential and session has a userId — older stores
+    // may have them undefined.
     if (data.users.length > 0) {
       let firstAdmin = null;
       for (let i = 0; i < data.users.length; i++) {

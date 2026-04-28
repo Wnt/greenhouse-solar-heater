@@ -4,6 +4,7 @@
 
 import { store } from '../app-state.js';
 import { renderModeEnablement } from './watchdog-ui.js';
+import { putJson } from './fetch-helpers.js';
 
 let deviceConfigData = null;
 
@@ -91,13 +92,7 @@ function saveDeviceConfig() {
   // (Disable / Re-enable / Clear cool-off), which calls PUT
   // /api/device-config with a partial wb payload. No am field is
   // computed or sent from this form.
-  const body = { ce, ea };
-
-  fetch('/api/device-config', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  putJson('/api/device-config', { ce, ea })
     .then(r => {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();

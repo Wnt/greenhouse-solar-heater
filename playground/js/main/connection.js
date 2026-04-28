@@ -1,16 +1,4 @@
-// Connection management, mode switching (live/simulation), staleness
-// + overlay rendering. Extracted from main.js.
-//
-// External API:
-//   initConnection({ setRunning }) — one-time wiring at boot; takes a
-//     setter for the main.js `running` flag so switchToLive can pause
-//     the simulation without main.js needing to re-export a writer.
-//   initModeToggle() — wires the header mode-toggle switch + kicks
-//     off the initial live/sim decision.
-//   getLiveSource() — returns the current LiveSource (or null).
-//
-// Everything else (switchToLive/Simulation, update*UI, staleness
-// timer, overlay rendering) is module-internal.
+// Connection state, live/sim mode switching, staleness + overlay rendering.
 
 import { LiveSource, SimulationSource } from '../data-source.js';
 import { store } from '../app-state.js';
@@ -37,30 +25,21 @@ import {
   registerLiveHistorySource,
 } from './live-history.js';
 
-// Detect deployment context: GitHub Pages = simulation only, deployed app = live capable
-// `window.__simulateGitHubPagesDeploy` is a test-only hatch (set via
-// Playwright's addInitScript) — it lets the e2e suite exercise the
-// pages-mode auto-bootstrap path without needing a real github.io URL.
+// __simulateGitHubPagesDeploy is a Playwright test hatch — lets the
+// e2e suite exercise pages-mode auto-bootstrap without a github.io URL.
 const isGitHubPages = window.__simulateGitHubPagesDeploy === true
   || location.hostname.endsWith('.github.io');
 const isLiveCapable = !isGitHubPages;
-const urlModePreference = new URLSearchParams(location.search).get('mode'); // 'sim' | 'live' | null
+const urlModePreference = new URLSearchParams(location.search).get('mode');
 store.set('isLiveCapable', isLiveCapable);
 
-// activeSource is eliminated — use store.get('phase') instead
 let liveSource = null;
-// simSource is constructed at module load so main.js init can pass
-// a stable handle into SimulationSource-based components.
 const simSource = new SimulationSource();
 
-// Connection status tracking
 let connectionStatus = 'disconnected';
 let lastDataTime = 0;
 let stalenessTimer = null;
 
-// Injected by initConnection. Allows this module to pause the
-// simulation when switching to live without having a writable
-// binding to main.js's `running` flag.
 let _setRunning = () => {};
 
 export function getLiveSource() { return liveSource; }
@@ -68,33 +47,25 @@ export function getLiveSource() { return liveSource; }
 export function initConnection({ setRunning } = {}) {
   if (typeof setRunning === 'function') _setRunning = setRunning;
 
-  // Register the live-mode data sources with the sync registry. Both
-  // sources are gated on phase === 'live' so they're inert in
-  // simulation mode without anything having to deregister them.
+  // Both sources gate on phase==='live' so they're inert in sim mode
+  // without an explicit deregister.
   registerLiveHistorySource(() => graphRange);
   registerBalanceHistorySource();
 
-  // Repaint connection indicator + overlays the moment store.syncing
-  // flips. This is what collapses the old "blur clears, then banner
-  // clears" two-step into a single transition: the syncing → active
-  // edge fires one repaint, both elements update together.
+  // Single repaint on the syncing edge collapses the old two-step
+  // ("blur clears, then banner clears") into one transition.
   store.subscribe('syncing', function () {
     if (store.get('phase') !== 'live') return;
     refreshConnectionIndicator();
     updateConnectionOverlays();
     updateSidebarSubtitle();
-    // Drop the staleness banner immediately on syncing=true; the
-    // unified overlay takes over.
     const banner = document.getElementById('staleness-banner');
     if (banner && store.get('syncing')) banner.classList.remove('visible');
   });
 
-  // Wire visibility / pageshow / online listeners. On every resume,
-  // reset the live-frame flag so the UI falls back to the fresh
-  // history snapshot until a new WS frame lands (otherwise the
-  // pre-background `lastState` would feed stale temperatures + wrong
-  // trend arrows). On completion, re-render to pick up the freshly
-  // applied data even if no WS frame has arrived yet.
+  // Reset live-frame flag on resume so stale lastState doesn't feed
+  // wrong trend arrows until a new WS frame arrives. Re-render on
+  // completion in case no WS frame has landed yet.
   initSyncCoordinator({
     onResyncStart: function () {
       if (store.get('phase') !== 'live') return;

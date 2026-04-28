@@ -1,37 +1,14 @@
-/**
- * Notification engine — evaluates incoming state for alert/report conditions
- * and triggers push notifications via the push module.
- *
- * Alert types:
- *   overheat_warning  — tank temp trending toward overheat drain threshold
- *   freeze_warning    — outdoor temp trending toward freeze drain threshold
- *   evening_report    — daily solar energy summary (sent ~20:00 local time)
- *   noon_report       — overnight heating operations summary (sent ~12:00 local time)
- *   offline_warning   — controller offline for 15+ min / back online for 15+ min
- *
- * Temperature prediction: linear extrapolation from last N readings to
- * estimate whether a threshold will be crossed within 15 minutes.
- *
- * Data freshness: all temperature/report notifications are suppressed when
- * the controller is offline (no state messages received for >2 min).
- * Only offline_warning notifications are sent during an outage.
- *
- * Rate limiting is enforced by the push module (1 per type per hour).
- */
+// Notification engine. Evaluates state for overheat/freeze trends,
+// daily/overnight reports, and offline transitions, then dispatches
+// through the push module (which rate-limits to 1/type/hour).
 
 const createLogger = require('./logger');
 const log = createLogger('notifications');
 
-// Source freeze/overheat thresholds from the Shelly control-logic defaults
-// so the notification body never drifts from the device's actual drain
-// trigger. Previously these were copied as literals here and went stale
-// when the control-logic defaults moved (freezeDrainTemp 2->4 on 2026-04-22,
-// overheatDrainTemp was already 95 while this file still said 85).
+// Pull thresholds from control-logic so the notification body always
+// matches what the device actually does (freeze 4°C, overheat 95°C).
 const CONTROL_DEFAULTS = require('../../shelly/control-logic.js').DEFAULT_CONFIG;
 
-// Energy bucketing for the noon and evening reports lives in its own
-// module — heavy enough to bloat this file past the 600-line cap, and
-// reusable by tests without dragging the whole notification engine in.
 const {
   HEATING_MODES,
   tankStoredEnergyKwh,
@@ -43,58 +20,45 @@ let pushRef = null;
 let deviceConfigRef = null;
 let dbRef = null;
 
-// Temperature history buffers for trend prediction
-let tankTempHistory = [];    // { ts: ms, value: number }
+let tankTempHistory = [];
 let outdoorTempHistory = [];
 let collectorTempHistory = [];
-const HISTORY_WINDOW_MS = 10 * 60 * 1000; // 10 minutes of samples
-const PREDICTION_HORIZON_MS = 15 * 60 * 1000; // 15 minutes ahead
+const HISTORY_WINDOW_MS = 10 * 60 * 1000;
+const PREDICTION_HORIZON_MS = 15 * 60 * 1000;
 
-// Data freshness: suppress notifications when data is stale
-const DATA_STALE_MS = 2 * 60 * 1000; // 2 minutes without data = stale
+const DATA_STALE_MS = 2 * 60 * 1000;
 let lastEvaluateTs = 0;
 
-// Offline/online detection
-const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
-let offlineSince = 0;      // timestamp when we first detected staleness (0 = not offline)
-let offlineNotified = false; // whether we sent the offline notification
-let onlineSince = 0;        // timestamp when data resumed after offline (0 = not recovering)
-let onlineNotified = false;  // whether we sent the recovery notification
+const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000;
+let offlineSince = 0;
+let offlineNotified = false;
+let onlineSince = 0;
+let onlineNotified = false;
 let tickTimer = null;
 
-// Report scheduling state
-let lastEveningReport = 0;  // day-of-year when last sent
+// Day-of-year of last send so we don't double-fire in the same window.
+let lastEveningReport = 0;
 let lastNoonReport = 0;
-// Daily tank-energy accounting. Accumulators reset after each evening report.
-// Classification is by the mode that was active during each delta (credited
-// to lastMode, since the drop happened between the last eval and now):
-//   gathered         — all positive deltas
-//   heating loss     — negative deltas while mode was GREENHOUSE_HEATING or
-//                      EMERGENCY_HEATING (tank water actively drawn for heat)
-//   leakage loss     — negative deltas while mode was anything else (IDLE /
-//                      SOLAR_CHARGING / ACTIVE_DRAIN) — heat quietly leaving
-//                      the tank to the surrounding air.
-// All three use the same Status-view formula (300 L · 4.186 kJ/kg·K ·
-// max(0, avgTank − 12 °C) / 3600).
+// Daily accumulators reset after each evening report. Negative tank-
+// energy deltas while mode is GREENHOUSE_HEATING or EMERGENCY_HEATING
+// count as heating losses; otherwise leakage. Positive deltas count as
+// gathered. Same Status-view formula:
+// 300 L · 4.186 kJ/kg·K · max(0, avgTank − 12 °C) / 3600.
 let dailyEnergyWh = 0;
 let dailyHeatingLossWh = 0;
 let dailyLeakageLossWh = 0;
-// Noon report covers the night just past — separate overnight accumulators
-// reset after each noon report.
 let nightHeatingLossWh = 0;
 let nightLeakageLossWh = 0;
-let lastTankEnergyKwh = null; // last observed stored-energy reading
+let lastTankEnergyKwh = null;
 let nightHeatingMinutes = 0;
 let lastModeCheckTs = 0;
 let lastMode = null;
 
-// Timezone offset for Finland (EET = UTC+2, EEST = UTC+3)
-// We use a simple approximation: UTC+2 in winter, UTC+3 in summer
+// Approximate Finland local hour: UTC+2 winter, UTC+3 summer (Mar-Oct).
 function getLocalHour() {
   const now = new Date();
-  // Finland DST: last Sunday in March to last Sunday in October
-  const month = now.getUTCMonth(); // 0-11
-  const isDST = month >= 2 && month <= 9; // approximate Mar-Oct
+  const month = now.getUTCMonth();
+  const isDST = month >= 2 && month <= 9;
   const offset = isDST ? 3 : 2;
   return (now.getUTCHours() + offset) % 24;
 }
@@ -106,30 +70,26 @@ function getDayOfYear() {
   return Math.floor(diff / 86400000);
 }
 
-// ── Temperature trend prediction ──
-
 function addSample(history, ts, value) {
   history.push({ ts, value });
-  // Trim old samples
   const cutoff = ts - HISTORY_WINDOW_MS;
   while (history.length > 0 && history[0].ts < cutoff) {
     history.shift();
   }
 }
 
-// Linear regression to predict value at `horizonMs` in the future.
-// Returns null if insufficient data (need at least 2 samples spanning 60s+).
+// Linear regression to predict value at horizonMs ahead. Returns null
+// if fewer than 2 samples or span < 60s.
 function predictValue(history, horizonMs) {
   if (history.length < 2) return null;
   const span = history[history.length - 1].ts - history[0].ts;
-  if (span < 60000) return null; // need at least 60s of data
+  if (span < 60000) return null;
 
-  // Simple linear regression: y = a + b*t
   const n = history.length;
   let sumT = 0, sumV = 0, sumTV = 0, sumTT = 0;
   const t0 = history[0].ts;
   for (let i = 0; i < n; i++) {
-    const t = (history[i].ts - t0) / 1000; // seconds
+    const t = (history[i].ts - t0) / 1000;
     const v = history[i].value;
     sumT += t;
     sumV += v;
@@ -137,7 +97,7 @@ function predictValue(history, horizonMs) {
     sumTT += t * t;
   }
   const denom = n * sumTT - sumT * sumT;
-  if (Math.abs(denom) < 0.001) return null; // flat or singular
+  if (Math.abs(denom) < 0.001) return null;
 
   const b = (n * sumTV - sumT * sumV) / denom;
   const a = (sumV - b * sumT) / n;
@@ -146,33 +106,24 @@ function predictValue(history, horizonMs) {
 }
 
 function getThresholds() {
-  // Read live from control-logic's DEFAULT_CONFIG on every call so a
-  // future threshold change is picked up without redeploying the server
-  // (require cache holds the object reference; updates flow through).
   return {
     overheat: CONTROL_DEFAULTS.overheatDrainTemp,
     freeze: CONTROL_DEFAULTS.freezeDrainTemp,
   };
 }
 
-// ── Data freshness ──
-
 function isDataFresh() {
   if (lastEvaluateTs === 0) return false;
   return (Date.now() - lastEvaluateTs) < DATA_STALE_MS;
 }
 
-// ── State evaluation ──
 // Called by mqtt-bridge on each greenhouse/state message.
-
 function evaluate(payload) {
   if (!pushRef) return;
 
   const now = Date.now();
   lastEvaluateTs = now;
 
-  // ── Online recovery tracking ──
-  // If we were offline and data is now arriving, start the recovery timer.
   if (offlineSince > 0 && offlineNotified) {
     if (onlineSince === 0) {
       onlineSince = now;
@@ -180,13 +131,12 @@ function evaluate(payload) {
       log.info('controller data resumed, tracking recovery');
     }
   } else if (offlineSince > 0 && !offlineNotified) {
-    // Data arrived before the 15-min offline threshold — cancel the offline state
+    // Data arrived before the 15-min threshold — cancel the offline state.
     offlineSince = 0;
   }
 
   const temps = payload.temps || {};
 
-  // Update temperature histories
   if (typeof temps.tank_top === 'number') {
     addSample(tankTempHistory, now, temps.tank_top);
   }
@@ -197,11 +147,9 @@ function evaluate(payload) {
     addSample(collectorTempHistory, now, temps.collector);
   }
 
-  // Track mode for reports. payload.mode is lowercase (the device
-  // lowercases it in buildStatePayload before publishing).
   const mode = payload.mode || null;
   if (lastModeCheckTs > 0 && mode && lastMode) {
-    const elapsed = (now - lastModeCheckTs) / 60000; // minutes
+    const elapsed = (now - lastModeCheckTs) / 60000;
     if (HEATING_MODES[lastMode]) {
       nightHeatingMinutes += elapsed;
     }
@@ -209,11 +157,6 @@ function evaluate(payload) {
   lastMode = mode;
   lastModeCheckTs = now;
 
-  // Tank-energy deltas: positive → gathered, negative → bucketed by the
-  // mode that was active during the drop (heating vs. quiet leakage).
-  // The drop is credited to the current sample's mode; state frames
-  // arrive every few seconds so a single delta straddling a mode change
-  // biases at most ~1 frame's worth of energy the wrong way.
   if (typeof temps.tank_top === 'number' && typeof temps.tank_bottom === 'number') {
     const avgTankC = (temps.tank_top + temps.tank_bottom) / 2;
     const currentKwh = tankStoredEnergyKwh(avgTankC);
@@ -235,40 +178,31 @@ function evaluate(payload) {
     lastTankEnergyKwh = currentKwh;
   }
 
-  // ── Pre-emergency alerts (only with fresh data) ──
-  // Drained collectors hold no water, so neither the freeze drain nor
-  // the overheat drain (which both circulate fluid through the
-  // collector loop) can fire. Suppressing the predictive warnings
-  // avoids cluttering the operator with alerts that reference a
-  // physically-impossible action.
+  // Predictive warnings are pointless when the collectors are drained —
+  // there's no water to circulate, so neither the freeze nor the
+  // overheat drain can fire.
   const collectorsDrained = !!(payload.flags && payload.flags.collectors_drained);
   checkOverheatWarning(temps, collectorsDrained);
   checkFreezeWarning(temps, collectorsDrained);
 
-  // ── Scheduled reports (only with fresh data) ──
   checkEveningReport();
   checkNoonReport();
 }
 
-// ── Periodic tick ──
-// Called every 60s to detect offline/online transitions that can't be
-// detected inside evaluate() (because evaluate() isn't called when offline).
-
+// Runs every 60s to detect offline/online transitions that evaluate()
+// can't see (it isn't called while offline).
 function tick() {
   if (!pushRef) return;
 
   const now = Date.now();
 
-  // ── Offline detection ──
   if (lastEvaluateTs > 0 && (now - lastEvaluateTs) >= DATA_STALE_MS) {
-    // Data is stale — controller may be offline
     if (offlineSince === 0) {
-      offlineSince = lastEvaluateTs; // mark the start of the outage
+      offlineSince = lastEvaluateTs;
       onlineSince = 0;
       onlineNotified = false;
     }
 
-    // Send offline notification after 15 minutes of no data
     if (!offlineNotified && (now - offlineSince) >= OFFLINE_THRESHOLD_MS) {
       offlineNotified = true;
       const offlineMin = Math.round((now - offlineSince) / 60000);
@@ -283,9 +217,7 @@ function tick() {
     }
   }
 
-  // ── Online recovery ──
-  // If data resumed after we sent an offline notification, and it's been
-  // flowing steadily for 15 minutes, send a recovery notification.
+  // Recovery: 15 min of steady data after an offline notification.
   if (onlineSince > 0 && !onlineNotified && isDataFresh()) {
     if ((now - onlineSince) >= OFFLINE_THRESHOLD_MS) {
       onlineNotified = true;
@@ -298,7 +230,6 @@ function tick() {
         url: '/#status',
       });
       log.info('sent online recovery notification', { offlineMinutes: offlineDuration });
-      // Reset offline tracking
       offlineSince = 0;
       offlineNotified = false;
       onlineSince = 0;
@@ -312,7 +243,7 @@ function checkOverheatWarning(temps, collectorsDrained) {
   const thresholds = getThresholds();
   const current = temps.tank_top;
 
-  // Already past threshold — control logic handles it, no need for warning
+  // Past the threshold — control-logic is already draining; warning is moot.
   if (current >= thresholds.overheat) return;
 
   const predicted = predictValue(tankTempHistory, PREDICTION_HORIZON_MS);
@@ -332,10 +263,9 @@ function checkOverheatWarning(temps, collectorsDrained) {
 
 function checkFreezeWarning(temps, collectorsDrained) {
   if (collectorsDrained) return;
-  // Match control-logic's trigger: whichever of outdoor/collector is
-  // colder drives the drain. On clear nights the sky-facing collector
-  // reads several K below sheltered ambient, so warning on outdoor
-  // alone is too late.
+  // Trigger on whichever of outdoor/collector is colder — same as
+  // control-logic. On clear nights the sky-facing collector reads
+  // several K below sheltered ambient, so outdoor alone is too late.
   const thresholds = getThresholds();
   const outdoor = typeof temps.outdoor === 'number' ? temps.outdoor : null;
   const collector = typeof temps.collector === 'number' ? temps.collector : null;
@@ -368,11 +298,8 @@ function checkFreezeWarning(temps, collectorsDrained) {
   }
 }
 
-// True if the operator has permanently banned GREENHOUSE_HEATING via the
-// device config — i.e. greenhouse heating is intentionally off. The short
-// code for GH is 'GH' and `wb` uses WB_PERMANENT_SENTINEL (9999999999) for
-// indefinite bans; any timestamp >1 day in the future counts as disabled
-// from the notification's point of view.
+// True if GREENHOUSE_HEATING is banned for >1 day — operator has
+// intentionally turned it off via the device config.
 function isHeatingDisabled() {
   if (!deviceConfigRef || typeof deviceConfigRef.getConfig !== 'function') return false;
   const cfg = deviceConfigRef.getConfig();
@@ -383,7 +310,6 @@ function isHeatingDisabled() {
   return until > nowSec + 86400;
 }
 
-// Body composers live in a sibling module (see notification-bodies.js).
 const { buildEveningBody, buildNoonBody } = require('./notification-bodies.js');
 
 function checkEveningReport() {
@@ -392,11 +318,9 @@ function checkEveningReport() {
   const hour = getLocalHour();
   const day = getDayOfYear();
 
-  // Send between 20:00 and 20:59 local time, once per day
   if (hour !== 20 || day === lastEveningReport) return;
 
   lastEveningReport = day;
-
   sendEveningReport(Date.now());
 }
 
@@ -410,16 +334,13 @@ function sendEveningReport(now) {
       url: '/#status',
     });
 
-    // Reset daily counters. Keep lastTankEnergyKwh so the next sample
-    // doesn't treat the reset as a huge "gain" on re-accumulation.
+    // Keep lastTankEnergyKwh so the next sample doesn't read the reset
+    // as a huge gain on re-accumulation.
     dailyEnergyWh = 0;
     dailyHeatingLossWh = 0;
     dailyLeakageLossWh = 0;
   }
 
-  // Same DB-first strategy as the noon report. The in-memory daily*
-  // accumulators are still maintained as a fallback when the database
-  // is unreachable.
   if (dbRef) {
     computeDailyStats(dbRef, now, function (err, stats) {
       if (err) {
@@ -448,11 +369,9 @@ function checkNoonReport() {
   const hour = getLocalHour();
   const day = getDayOfYear();
 
-  // Send between 12:00 and 12:59 local time, once per day
   if (hour !== 12 || day === lastNoonReport) return;
 
   lastNoonReport = day;
-
   sendNoonReport(Date.now());
 }
 
@@ -466,20 +385,14 @@ function sendNoonReport(now) {
       url: '/#status',
     });
 
-    // Reset live accumulators (they are no longer the report's source
-    // of truth, but we keep them to avoid a one-off jump on the next
-    // evening report).
     nightHeatingMinutes = 0;
     nightHeatingLossWh = 0;
     nightLeakageLossWh = 0;
   }
 
-  // Prefer the durable database history. The in-memory accumulators
-  // are wiped on every server restart, which produced "no heating
-  // needed" notifications even after a long heating night when the
-  // server happened to redeploy that morning. The database survives
-  // restarts and is the same source the in-app balance card draws
-  // from, so the notification now matches the UI.
+  // DB-first: in-memory accumulators are wiped on every server restart,
+  // which used to produce "no heating needed" notifications even after
+  // a long heating night when the morning included a redeploy.
   if (dbRef) {
     computeOvernightStats(dbRef, now, function (err, stats) {
       if (err) {
@@ -502,15 +415,12 @@ function sendNoonReport(now) {
   }
 }
 
-// ── Lifecycle ──
-
 function init(options) {
   pushRef = options.push || null;
   deviceConfigRef = options.deviceConfig || null;
   dbRef = options.db || null;
-  // Start periodic tick for offline/online detection.
-  // .unref() prevents the timer from keeping the event loop alive when
-  // the process is otherwise idle (e.g. in tests that don't call stop()).
+  // unref() so the tick timer doesn't keep the event loop alive in
+  // tests that don't call stop().
   if (tickTimer) clearInterval(tickTimer);
   tickTimer = setInterval(tick, 60000);
   if (tickTimer.unref) tickTimer.unref();

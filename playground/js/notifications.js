@@ -4,6 +4,8 @@
  * category preference UI, and PWA install prompt.
  */
 
+import { postJson } from './main/fetch-helpers.js';
+
 let swRegistration = null;
 let currentSubscription = null;
 let vapidPublicKey = null;
@@ -235,11 +237,7 @@ function showNotificationsUnavailable(reason) {
 async function syncCategories() {
   if (!currentSubscription) return;
   try {
-    const res = await fetch('/api/push/subscription', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint: currentSubscription.endpoint }),
-    });
+    const res = await postJson('/api/push/subscription', { endpoint: currentSubscription.endpoint });
     if (res.ok) {
       const data = await res.json();
       if (data.subscribed) {
@@ -278,19 +276,9 @@ export async function subscribePush(categories) {
       applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
     });
 
-    const res = await fetch('/api/push/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        subscription: {
-          endpoint: currentSubscription.endpoint,
-          keys: {
-            p256dh: encodeKey(currentSubscription.getKey('p256dh')),
-            auth: encodeKey(currentSubscription.getKey('auth')),
-          },
-        },
-        categories,
-      }),
+    const res = await postJson('/api/push/subscribe', {
+      subscription: subscriptionPayload(),
+      categories,
     });
 
     if (!res.ok) {
@@ -306,25 +294,24 @@ export async function subscribePush(categories) {
   }
 }
 
+function subscriptionPayload() {
+  return {
+    endpoint: currentSubscription.endpoint,
+    keys: {
+      p256dh: encodeKey(currentSubscription.getKey('p256dh')),
+      auth: encodeKey(currentSubscription.getKey('auth')),
+    },
+  };
+}
+
 export async function updateCategories(categories) {
   if (!currentSubscription) return false;
 
   try {
-    const res = await fetch('/api/push/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        subscription: {
-          endpoint: currentSubscription.endpoint,
-          keys: {
-            p256dh: encodeKey(currentSubscription.getKey('p256dh')),
-            auth: encodeKey(currentSubscription.getKey('auth')),
-          },
-        },
-        categories,
-      }),
+    const res = await postJson('/api/push/subscribe', {
+      subscription: subscriptionPayload(),
+      categories,
     });
-
     return res.ok;
   } catch (err) {
     console.error('[notifications] updateCategories error:', err);
@@ -332,20 +319,14 @@ export async function updateCategories(categories) {
   }
 }
 
-// Send a one-off test notification of the given category to the current
-// subscription. Used by the Settings view's per-category test buttons so
-// users can preview how each notification renders without waiting for a
-// real trigger. Bypasses rate limiting on the server side.
+// Settings → per-category preview button. Bypasses server-side rate
+// limiting so users can preview each notification on demand.
 export async function sendTest(category) {
   if (!currentSubscription) return false;
   try {
-    const res = await fetch('/api/push/test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        endpoint: currentSubscription.endpoint,
-        category,
-      }),
+    const res = await postJson('/api/push/test', {
+      endpoint: currentSubscription.endpoint,
+      category,
     });
     return res.ok;
   } catch (err) {
@@ -366,11 +347,7 @@ export async function unsubscribePush() {
   currentSubscription = null;
 
   try {
-    await fetch('/api/push/unsubscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint }),
-    });
+    await postJson('/api/push/unsubscribe', { endpoint });
   } catch (err) {
     // Best-effort cleanup
   }

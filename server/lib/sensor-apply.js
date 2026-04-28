@@ -1,24 +1,13 @@
-/**
- * Apply sensor configuration to Shelly hubs over direct HTTP.
- *
- * The Shelly Add-on has two quirks we learned the hard way:
- *
- *   1. After RemovePeripheral, the freed 1-Wire address stays in an
- *      internal "reserved" cache. A subsequent AddPeripheral for the
- *      same addr — even at a different cid — fails with -106 "Resource
- *      'address:…' already exists!". Only a reboot clears the cache.
- *
- *   2. AddPeripheral creates the peripheral but does NOT register the
- *      Temperature.GetStatus handler for the new component id until
- *      the hub reboots. Polling the cid in the meantime returns
- *      -105 "Argument 'id', value N not found!".
- *
- * So the reliable flow is: remove-all → reboot → wait → add-all → reboot.
- * That's far easier in Node on the server than in ES5 on the controller,
- * and the hubs are reachable over the VPN — so apply now goes direct
- * HTTP, same pattern as sensor-discovery. Control/state/relay commands
- * still flow through MQTT.
- */
+// Apply sensor configuration to Shelly hubs over direct HTTP.
+//
+// The Add-on has two quirks that force the remove-all → reboot →
+// add-all → reboot sequence:
+//   1. RemovePeripheral leaves the 1-Wire addr in a "reserved" cache;
+//      a subsequent AddPeripheral fails with -106 until reboot clears it.
+//   2. AddPeripheral doesn't register Temperature.GetStatus for the new
+//      cid until reboot — polling returns -105 in the meantime.
+// Driving that async dance from the controller's ES5 runtime is rough,
+// so we go direct HTTP from Node like sensor-discovery does.
 
 const http = require('http');
 const createLogger = require('./logger');

@@ -1,14 +1,10 @@
 // WebSocket command handlers — manual override + relay commands.
-// Extracted from server.js.
-//
-// Exports:
-//   handleWsCommand(ws, data)  — top-level dispatch (validates role).
-//   clearOverrideTtlTimer()    — server-side TTL cleanup, called from
-//                                shutdown/hot-reload paths.
+// Exports handleWsCommand (dispatch + role check) and setDb.
 
 const mqttBridge = require('./mqtt-bridge');
 const deviceConfig = require('./device-config');
 const { emitConfigEvents } = require('./config-events');
+const { VALID_MODES } = require('./mode-constants');
 const createLogger = require('./logger');
 
 const log = createLogger('ws-command');
@@ -16,15 +12,31 @@ const log = createLogger('ws-command');
 const VALID_RELAYS = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air', 'pump', 'fan'];
 let overrideTtlTimer = null;
 
-// Database handle for config_events audit writes. Injected after db
-// init from server.js so we don't carry a circular require. Optional —
-// when null (e.g. tests that don't init the DB), audit writes are
-// silently skipped.
+// db is injected after init from server.js to avoid a circular require.
+// Null in tests that skip db init — audit writes are then no-ops.
 let _db = null;
 function setDb(db) { _db = db; }
 
 function wsSend(ws, msg) {
   if (ws.readyState === 1) ws.send(JSON.stringify(msg));
+}
+
+// Schedule the secondary server-side TTL cleanup. If the override is
+// still active when the timer fires, clear it and emit an audit event
+// with actor='ttl_expiry'. Replaces any pending timer.
+function scheduleOverrideTtl(ttl) {
+  clearOverrideTtlTimer();
+  overrideTtlTimer = setTimeout(function () {
+    overrideTtlTimer = null;
+    const current = deviceConfig.getConfig();
+    if (current.mo && current.mo.a) {
+      deviceConfig.updateConfig({ mo: null }, function (err, cleared, prevTtl) {
+        if (err) return;
+        mqttBridge.publishConfig(cleared);
+        emitConfigEvents(_db, log, prevTtl, cleared, 'ws_override', 'ttl_expiry');
+      });
+    }
+  }, ttl * 1000);
 }
 
 function handleWsCommand(ws, data) {
@@ -62,11 +74,8 @@ function handleOverrideEnter(ws, msg) {
     return;
   }
 
-  // `fm` is REQUIRED when entering override (2026-04-21 hard-override
-  // semantics): automation is fully suspended for the duration, so the
-  // user must pick a concrete mode. The old "Automatic" state (fm=null
-  // while mo.a=true) is gone.
-  const VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
+  // fm is REQUIRED — hard-override (2026-04-21): automation fully
+  // suspended while active, so the user must pick a concrete mode.
   const fm = msg.forcedMode;
   if (typeof fm !== 'string' || VALID_MODES.indexOf(fm) === -1) {
     wsSend(ws, { type: 'override-error', message: 'forcedMode required: one of I,SC,GH,AD,EH' });
@@ -84,20 +93,7 @@ function handleOverrideEnter(ws, msg) {
     mqttBridge.publishConfig(updated);
     wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, forcedMode: fm });
     emitConfigEvents(_db, log, prev, updated, 'ws_override', ws._userName || 'admin');
-
-    // Secondary server-side TTL tracking
-    clearOverrideTtlTimer();
-    overrideTtlTimer = setTimeout(function () {
-      overrideTtlTimer = null;
-      const current = deviceConfig.getConfig();
-      if (current.mo && current.mo.a) {
-        deviceConfig.updateConfig({ mo: null }, function (err2, cleared, prevTtl) {
-          if (err2) return;
-          mqttBridge.publishConfig(cleared);
-          emitConfigEvents(_db, log, prevTtl, cleared, 'ws_override', 'ttl_expiry');
-        });
-      }
-    }, ttl * 1000);
+    scheduleOverrideTtl(ttl);
   });
 }
 
@@ -133,20 +129,7 @@ function handleOverrideUpdate(ws, msg) {
     mqttBridge.publishConfig(updated);
     wsSend(ws, { type: 'override-ack', active: true, expiresAt: ex, forcedMode: (updated.mo && updated.mo.fm) || null });
     emitConfigEvents(_db, log, prev, updated, 'ws_override', ws._userName || 'admin');
-
-    // Reset secondary TTL timer
-    clearOverrideTtlTimer();
-    overrideTtlTimer = setTimeout(function () {
-      overrideTtlTimer = null;
-      const current = deviceConfig.getConfig();
-      if (current.mo && current.mo.a) {
-        deviceConfig.updateConfig({ mo: null }, function (err2, cleared, prevTtl) {
-          if (err2) return;
-          mqttBridge.publishConfig(cleared);
-          emitConfigEvents(_db, log, prevTtl, cleared, 'ws_override', 'ttl_expiry');
-        });
-      }
-    }, ttl * 1000);
+    scheduleOverrideTtl(ttl);
   });
 }
 
@@ -158,10 +141,6 @@ function handleOverrideSetMode(ws, msg) {
   }
 
   const mode = msg.mode;
-  const VALID_MODES = ['I', 'SC', 'GH', 'AD', 'EH'];
-  // With hard override, `fm` is required while active. Null/omit is no
-  // longer a legal state — server rejects it. If the user wants
-  // automation back, they must exit override.
   if (typeof mode !== 'string' || VALID_MODES.indexOf(mode) === -1) {
     wsSend(ws, { type: 'override-error', message: 'mode required: one of I,SC,GH,AD,EH' });
     return;

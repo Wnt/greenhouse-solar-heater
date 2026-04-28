@@ -1,29 +1,12 @@
-/**
- * Config-events diff helper. Pure: given (prev, next) deviceConfig
- * snapshots plus a source tag and actor, returns the array of
- * config_events rows that should be inserted to capture the wb (mode
- * bans), mo (manual override), and ea (enabled-actuator bitmask)
- * deltas. Used by every code path that mutates deviceConfig so the
- * System Logs view sees a consistent audit trail.
- *
- * ea is emitted per-bit: a single PUT that flips two bits produces
- * two rows, mirroring how wb emits one row per mode. Each row's `key`
- * is the bit name (valves / pump / fan / space_heater / immersion_heater)
- * and old_value/new_value are '0' / '1'. This is what makes a Fan-only
- * toggle by the user show up as a single "Enabled actuator: Fan" entry
- * instead of an opaque "ea: 3 → 7".
- *
- * Unhandled fields (ce, we, wz, v) are intentionally ignored —
- * watchdog config has its own UI surface (we, wz), and ce / v are
- * coarse-grained toggles / bookkeeping. If/when one of those needs an
- * audit row, add it here.
- */
+// Diff (prev, next) deviceConfig snapshots into config_events rows
+// covering wb (mode bans), mo (manual override session), and ea
+// (enabled-actuator bitmask). ea is emitted one row per flipped bit so
+// "fan toggled" shows up as a single audit entry, not "ea: 3 → 7".
+// ce / we / wz / v deltas are intentionally not audited — they have
+// their own UI or are coarse bookkeeping.
 
-const WB_KEYS = ['I', 'SC', 'GH', 'AD', 'EH'];
+const { VALID_MODES } = require('./mode-constants');
 
-// Mirrors device-config.js: ea = valves|pump|fan|space_heater|immersion_heater
-// at bits 1, 2, 4, 8, 16. Order is bit order so multi-bit diffs come
-// out in a stable sequence.
 const EA_BITS = [
   { bit: 1,  name: 'valves' },
   { bit: 2,  name: 'pump' },
@@ -41,8 +24,6 @@ function getMo(cfg) {
 }
 
 function moEqual(a, b) {
-  // mo is either null or { a, ex, fm? }. Compare by JSON since the
-  // shape is small and field set is fixed.
   const sa = a ? JSON.stringify(a) : null;
   const sb = b ? JSON.stringify(b) : null;
   return sa === sb;
@@ -58,8 +39,8 @@ function diffConfig(prev, next, source, actor) {
   const wbPrev = getWb(prev);
   const wbNext = getWb(next);
 
-  for (let i = 0; i < WB_KEYS.length; i++) {
-    const k = WB_KEYS[i];
+  for (let i = 0; i < VALID_MODES.length; i++) {
+    const k = VALID_MODES[i];
     const pv = wbPrev[k];
     const nv = wbNext[k];
     if (pv === nv) continue;
@@ -108,11 +89,8 @@ function diffConfig(prev, next, source, actor) {
   return out;
 }
 
-// Higher-level convenience: diff prev/next, write each row through
-// the supplied db.insertConfigEvent. Failure of one insert doesn't
-// short-circuit subsequent inserts — they're independent rows and
-// dropping one is preferable to dropping all. Errors are logged via
-// the supplied logger so the caller can rely on best-effort writes.
+// Best-effort: a failed insert is logged and skipped, but doesn't
+// short-circuit the remaining rows.
 function emitConfigEvents(db, log, prev, next, source, actor) {
   if (!db || typeof db.insertConfigEvent !== 'function') return;
   const rows = diffConfig(prev, next, source, actor);

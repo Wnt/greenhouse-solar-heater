@@ -1,20 +1,15 @@
-/**
- * Sensor configuration store.
- * Manages sensor-to-role assignments and sensor host metadata.
- * S3/local persistence following the same adapter pattern as device-config.
- * Provides GET/PUT/POST HTTP handlers for sensor config.
- */
+// Sensor configuration store: role→address assignments + host
+// metadata. Same S3/local persistence shape as device-config.
 
 const fs = require('fs');
 const path = require('path');
 const createLogger = require('./logger');
+const s3Helper = require('./s3-config-helper');
 const log = createLogger('sensor-config');
 
-let s3Client = null;
-let s3Config = null;
+const S3_KEY = 'sensor-config.json';
 let currentConfig = null;
 
-// Sensor roles derived from system.yaml
 const SENSOR_ROLES = [
   { name: 'collector', label: 'Collector Outlet', location: 'collector outlet, ~280cm', optional: false },
   { name: 'tank_top', label: 'Tank Top', location: 'tank upper region, ~180cm', optional: false },
@@ -37,40 +32,6 @@ function buildDefaultConfig() {
   };
 }
 
-function getS3Config() {
-  if (s3Config) return s3Config;
-  const endpoint = process.env.S3_ENDPOINT;
-  const bucket = process.env.S3_BUCKET;
-  const accessKeyId = process.env.S3_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
-  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return null;
-  s3Config = {
-    endpoint,
-    bucket,
-    region: process.env.S3_REGION || 'europe-1',
-    credentials: { accessKeyId, secretAccessKey },
-    key: 'sensor-config.json',
-  };
-  return s3Config;
-}
-
-function isS3Enabled() {
-  return getS3Config() !== null;
-}
-
-function getS3Client() {
-  if (s3Client) return s3Client;
-  const config = getS3Config();
-  const S3Client = require('./s3-client').S3Client;
-  s3Client = new S3Client({
-    endpoint: config.endpoint,
-    region: config.region,
-    credentials: config.credentials,
-    forcePathStyle: true,
-  });
-  return s3Client;
-}
-
 function getLocalPath() {
   return process.env.SENSOR_CONFIG_PATH || path.join(__dirname, '..', 'sensor-config.json');
 }
@@ -84,33 +45,31 @@ function reconcileHosts(config) {
 }
 
 function load(callback) {
-  if (isS3Enabled()) {
-    const config = getS3Config();
-    const GetObjectCommand = require('./s3-client').GetObjectCommand;
-    const client = getS3Client();
-    const cmd = new GetObjectCommand({ Bucket: config.bucket, Key: config.key });
-    client.send(cmd).then(function (response) {
-      return response.Body.transformToString();
-    }).then(function (bodyStr) {
-      try {
-        currentConfig = reconcileHosts(JSON.parse(bodyStr));
-        callback(null, currentConfig);
-      } catch (e) {
-        callback(new Error('Failed to parse sensor config JSON'));
-      }
-    }).catch(function (err) {
-      if (err.name === 'NoSuchKey' || (err.$metadata && err.$metadata.httpStatusCode === 404)) {
-        currentConfig = buildDefaultConfig();
-        callback(null, currentConfig);
-      } else {
-        callback(err);
-      }
-    });
+  if (s3Helper.isS3Enabled()) {
+    const s3 = s3Helper.getS3CredsConfig();
+    const { GetObjectCommand } = require('./s3-client');
+    s3Helper.getS3Client().send(new GetObjectCommand({ Bucket: s3.bucket, Key: S3_KEY }))
+      .then(function (response) { return response.Body.transformToString(); })
+      .then(function (bodyStr) {
+        try {
+          currentConfig = reconcileHosts(JSON.parse(bodyStr));
+          callback(null, currentConfig);
+        } catch (e) {
+          callback(new Error('Failed to parse sensor config JSON'));
+        }
+      })
+      .catch(function (err) {
+        if (err.name === 'NoSuchKey' || (err.$metadata && err.$metadata.httpStatusCode === 404)) {
+          currentConfig = buildDefaultConfig();
+          callback(null, currentConfig);
+        } else {
+          callback(err);
+        }
+      });
   } else {
     const filePath = getLocalPath();
     try {
-      const data = fs.readFileSync(filePath, 'utf8');
-      currentConfig = reconcileHosts(JSON.parse(data));
+      currentConfig = reconcileHosts(JSON.parse(fs.readFileSync(filePath, 'utf8')));
       callback(null, currentConfig);
     } catch (err) {
       if (err.code === 'ENOENT') {
@@ -125,27 +84,21 @@ function load(callback) {
 
 function save(config, callback) {
   currentConfig = config;
-  if (isS3Enabled()) {
-    const s3Cfg = getS3Config();
-    const PutObjectCommand = require('./s3-client').PutObjectCommand;
-    const client = getS3Client();
-    const cmd = new PutObjectCommand({
-      Bucket: s3Cfg.bucket,
-      Key: s3Cfg.key,
+  if (s3Helper.isS3Enabled()) {
+    const s3 = s3Helper.getS3CredsConfig();
+    const { PutObjectCommand } = require('./s3-client');
+    s3Helper.getS3Client().send(new PutObjectCommand({
+      Bucket: s3.bucket,
+      Key: S3_KEY,
       Body: JSON.stringify(config, null, 2),
       ContentType: 'application/json',
-    });
-    client.send(cmd).then(function () {
-      callback(null);
-    }).catch(function (err) {
-      callback(err);
-    });
+    }))
+      .then(function () { callback(null); })
+      .catch(callback);
   } else {
     const filePath = getLocalPath();
     const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     try {
       const tmpPath = filePath + '.tmp';
       fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2));
@@ -184,28 +137,19 @@ function validateAssignments(assignments, hosts) {
   for (const role in assignments) {
     const a = assignments[role];
     if (!a || !a.addr) continue;
-
     if (!isValidOneWireAddr(a.addr)) {
       return 'Invalid 1-Wire address format for ' + role + ': ' + a.addr;
     }
-
-    // Validate component ID range
     if (typeof a.componentId !== 'number' || a.componentId < 100 || a.componentId > 199) {
       return 'Component ID must be 100-199 for ' + role + ': ' + a.componentId;
     }
-
-    // Validate host index
     if (typeof a.hostIndex !== 'number' || a.hostIndex < 0 || a.hostIndex >= hosts.length) {
       return 'Invalid host index for ' + role + ': ' + a.hostIndex;
     }
-
-    // Check duplicate addresses
     if (addrs[a.addr]) {
       return 'Duplicate sensor address ' + a.addr + ' assigned to both ' + addrs[a.addr] + ' and ' + role;
     }
     addrs[a.addr] = role;
-
-    // Check duplicate component IDs within same host
     const compKey = a.hostIndex + ':' + a.componentId;
     if (components[compKey]) {
       return 'Duplicate component ID ' + a.componentId + ' on host ' + a.hostIndex + ' for both ' + components[compKey] + ' and ' + role;
@@ -251,33 +195,17 @@ function toCompactFormat(config) {
   for (const role in config.assignments) {
     const a = config.assignments[role];
     if (a && a.addr) {
-      // Only h (hostIndex) and i (componentId) are included — control.js
-      // polls by cid on the hub, which already has the probe address bound
-      // via sensor-apply.js's direct HTTP AddPeripheral call. Including the
-      // 1-Wire address here would push the serialized compact past Shelly
-      // KVS's 256-byte per-value cap with 7 sensors, causing
-      // `Shelly.call("KVS.Set", ...)` in telemetry.js saveSensorConfig to
-      // fail silently (no callback → swallowed error) and the controller to
-      // keep the stale routing after reboot.
+      // Only h (hostIndex) and i (componentId) — including the 1-Wire
+      // address would blow the 256-byte Shelly KVS cap with 7 sensors.
+      // The hub already has the probe bound by cid via sensor-apply.
       compact.s[role] = { h: a.hostIndex, i: a.componentId };
     }
   }
   return compact;
 }
 
-// ── Apply to sensor hosts directly over HTTP ──
-//
-// The Shelly Add-on needs a remove→reboot→add→reboot dance (see
-// server/lib/sensor-apply.js comments). That async orchestration is far
-// easier in Node than in the Shelly's ES5 runtime, so apply bypasses the
-// MQTT-via-controller route and talks to each hub directly. The sensor
-// *routing* (which cid each role polls) still goes through MQTT so the
-// controller can drive its polling loop.
-
 const sensorApply = require('./sensor-apply');
 
-// Role → human-readable label map, used by sensor-apply to name each
-// Temperature component in the Shelly app when roles are applied.
 function buildRoleLabels() {
   const labels = {};
   for (let i = 0; i < SENSOR_ROLES.length; i++) {
@@ -309,9 +237,9 @@ function applyConfig(mqttBridge, callback) {
       const f = formatHostResult(config, result.results[i]);
       results[f.id] = f.result;
     }
-    // Publish the sensor routing to MQTT so the controller knows which
-    // cid to poll for each role. Not fatal if the bridge is down — the
-    // hub bindings we just applied are still the durable source of truth.
+    // Routing tells the controller which cid to poll per role. Not
+    // fatal if the bridge is down — the hub bindings just applied are
+    // the durable source of truth.
     if (mqttBridge) {
       try {
         const ok = mqttBridge.publishSensorConfig(compact);
@@ -438,8 +366,7 @@ function handleApplyTarget(req, res, targetId, mqttBridge) {
 }
 
 function _reset() {
-  s3Client = null;
-  s3Config = null;
+  s3Helper._reset();
   currentConfig = null;
 }
 
