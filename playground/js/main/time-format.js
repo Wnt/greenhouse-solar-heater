@@ -104,6 +104,7 @@ const REASON_LABELS = {
   forced_AD: 'user forced Active Drain',
   forced_EH: 'user forced Emergency Heating',
   override_cleared: 'manual override cleared',
+  override_expired: 'manual override timed out',
   min_duration: 'holding minimum run time',
   idle: 'no trigger active',
 };

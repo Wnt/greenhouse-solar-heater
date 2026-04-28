@@ -420,6 +420,60 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
     });
   });
 
+  it('TTL expiry tags the published state with cause=forced reason=override_expired', function(t, done) {
+    // Regression for the audit finding adjacent to the wb.EH bug fix:
+    // isManualOverrideActive() previously called transitionTo(buildIdleTransitionResult())
+    // with no cause/reason args. The IDLE row in the System Logs then
+    // inherited the prior transition's lastTransitionCause (whatever
+    // ran before the override — typically "automation") and a null
+    // reason, falsely suggesting the device autonomously decided to
+    // idle. The fix passes an explicit cause "forced" + reason
+    // "override_expired" so operators can tell the row apart from
+    // user-cleared override (cause "forced", reason "override_cleared")
+    // and from any unrelated automation tick.
+    const rt = createOrderingRuntime();
+    bootScript(rt, function() {
+      // Capture greenhouse/state publishes after boot.
+      const stateMsgs = [];
+      rt.globals.MQTT.publish = function(topic, payload) {
+        if (topic === 'greenhouse/state') {
+          try { stateMsgs.push(JSON.parse(payload)); } catch (e) {}
+        }
+      };
+      const sysUnix = rt.globals.Shelly.getComponentStatus('sys').unixtime;
+      const shortTtl = sysUnix + 5;
+      // Override forcing IDLE with a 5-s TTL.
+      rt.setConfig(Object.assign({}, BASE_CONFIG, {
+        mo: { a: true, ex: shortTtl, fm: 'I' }
+      }));
+      // Walk past the expiry, then drive the control loop so
+      // isManualOverrideActive() detects now >= mo.ex.
+      rt.advance(6000, function() {
+        stateMsgs.length = 0;
+        rt.tick(function() {
+          // Let the staged IDLE transition run to completion.
+          rt.advance(35000, function() {
+            // Walk the publishes for the dedicated TTL-expiry tag.
+            // Several idle broadcasts can come through during the
+            // controlLoop tick + staged transition; the override-
+            // expired transition is the one we care about.
+            const expiredMsg = stateMsgs.find(function(m) {
+              return m.mode === 'idle' && m.reason === 'override_expired';
+            });
+            assert.ok(expiredMsg,
+              'expected a mode=idle publish with reason=override_expired; got: ' +
+              JSON.stringify(stateMsgs.map(function(m) {
+                return { mode: m.mode, cause: m.cause, reason: m.reason };
+              })));
+            assert.strictEqual(expiredMsg.cause, 'forced',
+              'TTL expiry must tag cause=forced (matches user-clear path)');
+            done();
+          });
+        });
+      });
+    });
+  });
+
   it('triggers IDLE transition on TTL expiry without a user command', function(t, done) {
     // TTL-expiry path: isManualOverrideActive() detects now >= mo.ex, clears
     // mo, and (our new code) calls transitionTo(buildIdleTransitionResult()).
