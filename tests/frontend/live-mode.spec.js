@@ -235,7 +235,12 @@ test.describe('Manual override gating with unbound sensors', () => {
   test('Enter Manual Override becomes enabled when controls_enabled=true even if all sensors are null', async ({ page }) => {
     await installMockWs(page);
     await page.goto('/playground/#device');
-    await page.waitForTimeout(300);
+    // Wait for app init AND for the (mocked) WebSocket to be wired up.
+    // Fixed waitForTimeout(300) here raced under workers=8 contention
+    // and tripped the "mock ws not initialized" guard below. Mirrors
+    // the pattern already used in drainage-control.spec.js.
+    await page.waitForFunction(() => window.__initComplete === true);
+    await page.waitForFunction(() => /** @type {any} */ (window).__mockWs?.onmessage);
 
     // Push a Shelly-shaped state with all sensors unbound (null) and controls enabled
     await page.evaluate(() => {
@@ -273,7 +278,8 @@ test.describe('Manual override gating with unbound sensors', () => {
     page.on('pageerror', (err) => errors.push(String(err)));
 
     await page.goto('/playground/#device');
-    await page.waitForTimeout(300);
+    await page.waitForFunction(() => window.__initComplete === true);
+    await page.waitForFunction(() => /** @type {any} */ (window).__mockWs?.onmessage);
 
     await page.evaluate(() => {
       // @ts-ignore
@@ -339,7 +345,8 @@ test.describe('Manual override gating with unbound sensors', () => {
   test('temperature display shows placeholder for null sensors instead of crashing', async ({ page }) => {
     await installMockWs(page);
     await page.goto('/playground/#components');
-    await page.waitForTimeout(300);
+    await page.waitForFunction(() => window.__initComplete === true);
+    await page.waitForFunction(() => /** @type {any} */ (window).__mockWs?.onmessage);
 
     await page.evaluate(() => {
       // @ts-ignore
