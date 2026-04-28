@@ -338,4 +338,100 @@ test.describe('System Logs card is backed by live state events', () => {
     await expect(items.nth(0)).toContainText('mode-enablement UI by alice');
     await expect(items.nth(1)).toContainText('Disabled actuator: Pump');
   });
+
+  // Regression: on Android resume the live-history fetch lands before
+  // the next WS frame, and rerenderWithHistoryFallback synthesises an
+  // idleResult with the freshest history mode but no cause/reason/temps.
+  // That synthetic result was being fed through detectLiveTransition,
+  // which prepended a partial log entry (title + from→to only, no
+  // reason line, no sensors line) and advanced lastLiveMode so the next
+  // real WS frame found nothing to detect — leaving the partial row
+  // visible until the user manually reloaded.
+  test('post-resync history fallback does not pollute the log with a partial entry', async ({ page }) => {
+    const now = Date.now();
+    // Initial state: log already has the entry into solar_charging.
+    await mockEventsApi(page, [
+      {
+        ts: now - 120_000, type: 'mode', id: 'mode',
+        from: 'idle', to: 'solar_charging',
+        cause: 'automation', reason: 'solar_enter',
+        sensors: { collector: 60, tank_top: 40, tank_bottom: 30, greenhouse: 12, outdoor: 8 },
+      },
+    ]);
+    // First /api/history call: only solar_charging in the window.
+    // After a resync we'll swap the route to one that also includes
+    // an idle event newer than the WS frame's mode, mirroring the
+    // device having transitioned while the tab was backgrounded.
+    let historyCallCount = 0;
+    await page.route('**/api/history**', route => {
+      historyCallCount += 1;
+      const body = historyCallCount === 1
+        ? { range: '24h', points: [{ ts: now - 120_000, tank_top: 40, tank_bottom: 30, collector: 60, greenhouse: 12, outdoor: 8 }], events: [] }
+        : {
+            range: '24h',
+            points: [
+              { ts: now - 120_000, tank_top: 40, tank_bottom: 30, collector: 60, greenhouse: 12, outdoor: 8 },
+              { ts: now - 30_000,  tank_top: 41, tank_bottom: 31, collector: 25, greenhouse: 13, outdoor: 9 },
+            ],
+            events: [
+              { ts: now - 120_000, type: 'mode', from: 'idle', to: 'solar_charging' },
+              { ts: now - 30_000,  type: 'mode', from: 'solar_charging', to: 'idle' },
+            ],
+          };
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+    await installMockWs(page, {
+      mode: 'solar_charging',
+      cause: 'automation', reason: 'solar_enter',
+      temps: { collector: 60, tank_top: 40, tank_bottom: 30, greenhouse: 12, outdoor: 8 },
+    });
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(1, { timeout: 3000 });
+
+    // Trigger a resync — the live-history source will now refetch and
+    // see the idle event, so timeSeriesStore's last-mode flips to idle.
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForFunction(async () => {
+      const mod = await import('/playground/js/app-state.js');
+      return mod.store.get('syncing') === false;
+    }, undefined, { timeout: 5000 });
+
+    // Bug repro: after the resync there should still be exactly one
+    // entry — the original solar_charging row — because the device has
+    // not yet pushed a fresh WS frame for the idle transition. The
+    // synthesised history fallback must not invent a partial row.
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(1, { timeout: 1000 });
+
+    // Now the real WS frame for the idle transition lands, carrying
+    // cause / reason / temps. detectLiveTransition must produce a
+    // *complete* row — title + cause chip + reason line + sensors line.
+    await page.evaluate(() => {
+      // @ts-ignore
+      const ws = window.__mockWs;
+      ws.onmessage({
+        data: JSON.stringify({
+          type: 'state',
+          data: {
+            mode: 'idle',
+            cause: 'automation', reason: 'solar_stall',
+            temps: { collector: 25, tank_top: 41, tank_bottom: 31, greenhouse: 13, outdoor: 9 },
+            valves: {}, actuators: { pump: false, fan: false, space_heater: false },
+            controls_enabled: true, manual_override: null,
+          },
+        }),
+      });
+    });
+
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(2, { timeout: 3000 });
+    const first = page.locator('#logs-list .log-item').first();
+    await expect(first).toContainText('Idle');
+    await expect(first.locator('.log-cause')).toHaveText('Automation');
+    await expect(first.locator('.log-reason')).toHaveText('tank stopped gaining heat');
+    await expect(first.locator('.log-sensors')).toContainText('coll 25.0°');
+  });
 });
