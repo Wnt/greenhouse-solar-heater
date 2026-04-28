@@ -228,6 +228,13 @@ test.describe('System Logs card is backed by live state events', () => {
 
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+    // Wait for the historical /api/events row to render before we
+    // inject the live mode change. fetchLiveEvents(reset=true) does
+    // `transitionLog.length = 0` on completion, so a live entry that
+    // landed first would be wiped under load when the historical fetch
+    // resolves late. Same gating pattern as the "prepends a new log
+    // entry" test above.
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(1, { timeout: 3000 });
 
     // Fire a new state with explicit cause+temps — simulates a device
     // that reports a forced-mode transition to GREENHOUSE_HEATING.
@@ -248,7 +255,9 @@ test.describe('System Logs card is backed by live state events', () => {
       });
     }, now + 600_000);
 
-    const first = page.locator('#logs-list .log-item').first();
+    const items = page.locator('#logs-list .log-item');
+    await expect(items).toHaveCount(2, { timeout: 3000 });
+    const first = items.first();
     await expect(first).toContainText('Heating Greenhouse');
     await expect(first.locator('.log-cause')).toHaveText('Forced mode');
     await expect(first.locator('.log-sensors')).toContainText('gh 7.0°');

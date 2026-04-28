@@ -40,11 +40,12 @@ test.describe('visibility resync', () => {
     });
     await page.goto('/playground/');
     await waitForSyncReady(page);
-    // Wait for the initial live-mode fetch (1h, 6h, …) to land
-    // before counting subsequent ones — it varies by range +
-    // balance card so we just snapshot the count and look for
-    // increases.
-    await page.waitForTimeout(200);
+    // Wait deterministically for both initial /api/history fetches
+    // (live-history range + balance-history 48h) to land before
+    // snapshotting the baseline. A fixed 200 ms timeout was racy
+    // under heavy parallel load — see PR-history "active.length was
+    // 0" failure mode for the prior incarnation of this race.
+    await expect.poll(() => historyHits, { timeout: 5000 }).toBeGreaterThanOrEqual(2);
     const baseline = historyHits;
 
     // Simulate Android resume: visibility goes hidden then visible.
@@ -57,13 +58,16 @@ test.describe('visibility resync', () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
 
-    // The coordinator's resync is async — wait for the syncing flag
-    // to flip back to false, then assert hits increased.
-    await page.waitForFunction(async () => {
-      const mod = await import('/playground/js/app-state.js');
-      return mod.store.get('syncing') === false;
-    }, undefined, { timeout: 5000 });
-    expect(historyHits).toBeGreaterThan(baseline);
+    // Poll for the resync's re-fetches to actually hit the route
+    // handler. Plain `expect(historyHits).toBeGreaterThan(baseline)`
+    // run once was racy: under load the assertion could fire in the
+    // tick after the resync triggered triggerResync but before the
+    // first source's fetch had settled (or after a previous
+    // currentController.abort() had cancelled the in-flight signal,
+    // forcing the source to re-issue on a later resync). Polling
+    // tolerates either ordering — the increment will arrive whenever
+    // the route handler runs.
+    await expect.poll(() => historyHits, { timeout: 5000 }).toBeGreaterThan(baseline);
   });
 
   test('syncing overlay uses light variant, not full blur', async ({ page }) => {
