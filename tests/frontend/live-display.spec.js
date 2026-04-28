@@ -127,16 +127,19 @@ test.describe('Status history graph uses live data', () => {
     // Wait until the live connection is up
     await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
 
-    // The graph should have ingested the history points.  This is tested
-    // via a debug hook exposed by the page on window.
-    const count = await page.evaluate(() => {
+    // The graph should have ingested the history points. Read via the
+    // debug hook exposed on window. Poll rather than asserting once —
+    // the connection-dot transition only signals WS-open, not that the
+    // /api/history fetch has resolved and applyLiveHistory has run. Under
+    // heavy parallel load the assertion could fire after the live state
+    // frame's recordLiveHistoryPoint added a single point but before the
+    // history fetch loaded the 3 mocked points (count=1 instead of 3).
+    await expect.poll(() => page.evaluate(() => {
       // @ts-ignore
       return typeof window.__getHistoryPointCount === 'function'
         ? window.__getHistoryPointCount()
         : null;
-    });
-    expect(count).not.toBeNull();
-    expect(count).toBeGreaterThanOrEqual(3);
+    }), { timeout: 5000 }).toBeGreaterThanOrEqual(3);
   });
 
   test('graph does not stay empty after switching from simulation to live', async ({ page }) => {
