@@ -908,9 +908,18 @@ function isManualOverrideActive() {
     // TTL expired: clear mo, persist, force IDLE inside the KVS.Set cb
     // so HTTP.GETs don't overlap with the KVS.Set (stays under cap).
     // AD→IDLE auto-uses valves-first via state.transitionFromMode.
+    //
+    // Pass cause "forced" (matches handleForcedModeChange's user-clear
+    // path) plus a dedicated reason "override_expired" so the System
+    // Logs row can distinguish a TTL self-clear from a user-issued
+    // exit. Without an explicit reason, transitionTo() would set
+    // lastTransitionReason=null and lastTransitionCause would inherit
+    // whatever the prior transition set (e.g. "automation" from the
+    // pre-override mode), making the row look unrelated to the
+    // override.
     deviceConfig.mo = null;
     Shelly.call("KVS.Set", {key: "config", value: JSON.stringify(deviceConfig)}, function() {
-      if (!state.transitioning) transitionTo(buildIdleTransitionResult());
+      if (!state.transitioning) transitionTo(buildIdleTransitionResult("override_expired"), "forced");
     });
     return false;
   }
