@@ -152,6 +152,30 @@ jobs:
             deployment/app-preview-pr-${{ needs.preflight.outputs.pr_number }} \
             --timeout=3m
 
+      # cert-manager creates the Certificate resource asynchronously
+      # from the Ingress's tls: section, so it may not exist the moment
+      # apply returns. We poll for its existence first, then block on
+      # Ready. Without this, the PR comment can post the URL before
+      # cert-manager has finished HTTP-01 — and prod's HSTS
+      # includeSubDomains makes the unverified-cert page un-bypassable
+      # in the browser.
+      - name: Wait for TLS certificate to be Ready
+        env:
+          CERT_NAME: app-preview-pr-${{ needs.preflight.outputs.pr_number }}-tls
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if kubectl get certificate "$CERT_NAME" >/dev/null 2>&1; then
+              echo "Certificate $CERT_NAME exists — waiting for Ready"
+              break
+            fi
+            echo "Certificate $CERT_NAME not yet created (attempt $i/30)"
+            sleep 2
+          done
+          kubectl wait --for=condition=Ready \
+            "certificate/$CERT_NAME" \
+            --timeout=180s
+
       - name: Comment on PR with preview URL
         if: github.event_name == 'pull_request'
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v8.0.0
