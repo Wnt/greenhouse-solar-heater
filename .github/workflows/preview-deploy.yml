@@ -28,6 +28,7 @@ permissions:
   contents: read
   packages: write
   pull-requests: write
+  deployments: write
 
 jobs:
   # Gate: only run on labeled PRs (or manual dispatch). The
@@ -125,6 +126,49 @@ jobs:
           echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
 
+      # Register a GitHub Deployment so the PR's "Deployments" sidebar
+      # links to the preview (with a "View deployment" button that opens
+      # in a new tab — Markdown comments cannot force new-tab links).
+      # Marked transient + non-production so GitHub renders the right
+      # badge and lets us mark it inactive on teardown.
+      - name: Create GitHub Deployment
+        if: github.event_name == 'pull_request'
+        id: gh-deployment
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v8.0.0
+        with:
+          script: |
+            const pr = ${{ needs.preflight.outputs.pr_number }};
+            const sha = '${{ needs.preflight.outputs.sha }}';
+            const result = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: sha,
+              environment: `preview-pr-${pr}`,
+              description: `Preview for PR #${pr}`,
+              auto_merge: false,
+              required_contexts: [],
+              transient_environment: true,
+              production_environment: false,
+            });
+            // 201: deployment created. 202: API returned merge info /
+            // status checks instead — shouldn't happen with our flags
+            // (auto_merge=false, required_contexts=[]) but fail loudly.
+            if (Array.isArray(result.data) || !result.data.id) {
+              throw new Error('createDeployment did not return a deployment: ' + JSON.stringify(result.data));
+            }
+            const deploymentId = result.data.id;
+            core.setOutput('deployment_id', String(deploymentId));
+
+            // Initial in_progress status so the sidebar shows "Deploying".
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deploymentId,
+              state: 'in_progress',
+              description: 'Building and applying manifests',
+              log_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
       - name: Render preview manifests
         env:
           PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
@@ -177,6 +221,27 @@ jobs:
             "certificate/$CERT_NAME" \
             --timeout=180s
 
+      # Flip the GitHub Deployment to success with environment_url so
+      # the sidebar's "View deployment" button opens the live URL in
+      # a new tab. auto_inactive marks any older deployments for the
+      # same environment as inactive automatically.
+      - name: Mark GitHub Deployment success
+        if: github.event_name == 'pull_request' && steps.gh-deployment.outputs.deployment_id
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v8.0.0
+        with:
+          script: |
+            const pr = ${{ needs.preflight.outputs.pr_number }};
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: ${{ steps.gh-deployment.outputs.deployment_id }},
+              state: 'success',
+              environment_url: `https://pr-${pr}.greenhouse.madekivi.fi`,
+              log_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              auto_inactive: true,
+              description: 'Preview live',
+            });
+
       - name: Comment on PR with preview URL
         if: github.event_name == 'pull_request'
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v8.0.0
@@ -215,3 +280,19 @@ jobs:
                 issue_number: pr, body,
               });
             }
+
+      # If any prior step in this job failed, flip the GH Deployment to
+      # failure so the sidebar doesn't show "Deploying" forever.
+      - name: Mark GitHub Deployment failure
+        if: failure() && steps.gh-deployment.outputs.deployment_id
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v8.0.0
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: ${{ steps.gh-deployment.outputs.deployment_id }},
+              state: 'failure',
+              log_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: 'Preview deploy failed — see action logs',
+            });

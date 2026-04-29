@@ -21,6 +21,7 @@ env:
 permissions:
   contents: read
   pull-requests: write
+  deployments: write
 
 jobs:
   preflight:
@@ -113,3 +114,29 @@ jobs:
                 comment_id: existing.id, body,
               });
             }
+
+      # Mark all deployments for this preview environment inactive so
+      # the PR's "Deployments" sidebar reflects the torn-down state
+      # rather than still pointing at a now-404 URL.
+      - name: Mark GitHub Deployments inactive
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v8.0.0
+        with:
+          script: |
+            const pr = ${{ needs.preflight.outputs.pr_number }};
+            const env = `preview-pr-${pr}`;
+            const { data: deployments } = await github.rest.repos.listDeployments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              environment: env,
+              per_page: 100,
+            });
+            for (const d of deployments) {
+              await github.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: d.id,
+                state: 'inactive',
+                description: 'Preview torn down',
+              });
+            }
+            console.log(`Marked ${deployments.length} deployment(s) inactive for ${env}`);
