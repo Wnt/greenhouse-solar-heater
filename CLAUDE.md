@@ -184,6 +184,17 @@ The `.claude/hooks/pre-push-gate.sh` hook (wired via `.claude/settings.json` as 
 
 If any of these fail on the PR but passed locally, that's a signal something is environment-dependent — investigate rather than re-pushing.
 
+## Mobile Dev Workflow
+
+When the user is iterating from a phone, they can't see the terminal — the PR is the only handle they have on the work. After every successful `git push` from a Claude session, including small fix-on-CI re-pushes:
+
+1. `mcp__github__list_pull_requests({ state: 'open', head: 'Wnt:<branch>' })`. If none, `mcp__github__create_pull_request({ head: '<branch>', base: 'main', ... })` with a real title + body (Summary + Test plan, mirroring `.github`'s convention). Don't skip on "trivial" pushes.
+2. `mcp__github__subscribe_pr_activity({ pullNumber })` so review comments and CI failures arrive inline as `<github-webhook-activity>` events in the active session.
+
+On a CI-failure event, **loop until green**: read the failing job (`pull_request_read({ method: 'get_check_runs' })`, then the workflow run log), reproduce locally, fix, push. **Cap at 3 consecutive auto-fix attempts** for a single PR. After three, stop and report what you tried + what you can't pin down — don't keep churning.
+
+The cap exists because runaway CI loops mask design-level problems (flaky test, environment drift, hidden coupling). Escalate immediately on contract-shape failures (test asserts a deliberate API change you didn't anticipate, schema drift, type-system shifts) — those are the user's call. Loop freely on lint nitpicks, type errors, file-size cap breaches (compress, don't bypass), and coverage regressions on files you touched.
+
 ## Test Setup Gotchas
 
 - **Run `npm ci` first if `node_modules/` is missing.** With deps installed, the full unit suite (`npm run test:unit`, 788 tests) completes in **~20 s** locally; individual files are sub-second to a few seconds. If a run is taking materially longer, something is wrong — don't "wait it out." Common causes: missing deps (several tests hang indefinitely on missing transitive requires rather than erroring; `sensor-apply` and `sensor-discovery` are the usual offenders because they build local HTTP servers that wait on a peer module that never loads), or stale `node` processes from a previous killed run (check `ps -C node` and `pkill -9 node`).
