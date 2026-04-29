@@ -9,7 +9,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { pinchZoomWindow } from '../playground/js/main/chart-pinch-zoom.js';
+import { pinchZoomWindow, panZoomWindow } from '../playground/js/main/chart-pinch-zoom.js';
 
 const HOUR = 3600;
 
@@ -83,5 +83,41 @@ describe('pinchZoomWindow', () => {
     });
     assert.ok(r !== null, 'expected a window, got null');
     assert.equal(r.tMax - r.tMin, 4 * HOUR);
+  });
+});
+
+describe('panZoomWindow', () => {
+  const BOUND = { tMin: 0, tMax: 24 * HOUR };
+
+  it('shifts the window by dt when fully inside the bound', () => {
+    const r = panZoomWindow({ tMin: 6 * HOUR, tMax: 12 * HOUR }, 1 * HOUR, BOUND);
+    assert.equal(r.tMin, 7 * HOUR);
+    assert.equal(r.tMax, 13 * HOUR);
+  });
+
+  it('clamps to the left bound and preserves window width', () => {
+    // Wanted [-2, 4]; clamped to [0, 6].
+    const r = panZoomWindow({ tMin: 1 * HOUR, tMax: 7 * HOUR }, -3 * HOUR, BOUND);
+    assert.equal(r.tMin, 0);
+    assert.equal(r.tMax, 6 * HOUR);
+  });
+
+  it('clamps to the right bound and preserves window width', () => {
+    // Wanted [23, 27]; clamped to [20, 24].
+    const r = panZoomWindow({ tMin: 18 * HOUR, tMax: 22 * HOUR }, 5 * HOUR, BOUND);
+    assert.equal(r.tMin, 20 * HOUR);
+    assert.equal(r.tMax, 24 * HOUR);
+  });
+
+  it('clamps a far-overshooting pan against either bound', () => {
+    const r = panZoomWindow({ tMin: 5 * HOUR, tMax: 10 * HOUR }, -100 * HOUR, BOUND);
+    assert.equal(r.tMin, 0);
+    assert.equal(r.tMax, 5 * HOUR);
+  });
+
+  it('returns the same window when dt is zero', () => {
+    const r = panZoomWindow({ tMin: 5 * HOUR, tMax: 9 * HOUR }, 0, BOUND);
+    assert.equal(r.tMin, 5 * HOUR);
+    assert.equal(r.tMax, 9 * HOUR);
   });
 });
