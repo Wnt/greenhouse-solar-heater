@@ -29,6 +29,32 @@ test.describe('visibility resync', () => {
     }));
   });
 
+  test('hide → show triggers a /api/events re-fetch (logs source)', async ({ page }) => {
+    let eventsHits = 0;
+    await page.route('**/api/events**', route => {
+      eventsHits++;
+      route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ events: [], hasMore: false }),
+      });
+    });
+    await page.goto('/playground/');
+    await waitForSyncReady(page);
+    // Initial fetchLiveEvents(null) at phase=live hits /api/events
+    // twice (mode + config feed). Wait for that baseline.
+    await expect.poll(() => eventsHits, { timeout: 5000 }).toBeGreaterThanOrEqual(2);
+    const baseline = eventsHits;
+
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    // The logs source must re-fetch on resume. Two requests (mode +
+    // config) — assert at least one increment beyond baseline.
+    await expect.poll(() => eventsHits, { timeout: 5000 }).toBeGreaterThan(baseline);
+  });
+
   test('hide → show triggers a /api/history re-fetch', async ({ page }) => {
     let historyHits = 0;
     await page.route('**/api/history**', route => {
