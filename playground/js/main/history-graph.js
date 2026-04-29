@@ -12,6 +12,38 @@ import { coverageInBucket } from './mode-events.js';
 
 function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
 
+const DAY_SEC = 86400;
+
+// Pure: pick a centered moving-average window for the temperature lines.
+// Below 7 days the server already serves raw or 30-second data and the
+// lines look fine as-is. Larger spans switch on a 5-min / 30-min / 2-hour
+// server bucket — this adds a *small* additional moving-average so the
+// lines read as curves instead of stair-stepped bucket means. Zooming in
+// (smaller visibleRange) shrinks the window so detail re-emerges.
+export function lineSmoothingWindow(visibleRange) {
+  if (visibleRange < 7 * DAY_SEC) return 1;
+  if (visibleRange <= 14 * DAY_SEC) return 3;
+  if (visibleRange <= 30 * DAY_SEC) return 5;
+  if (visibleRange <= 90 * DAY_SEC) return 7;
+  return 9;
+}
+
+// Pure: centered moving-average over y (length-preserving). Edge points
+// shrink the window naturally so the line still reaches both edges.
+export function smoothPoints(pts, windowSize) {
+  if (windowSize <= 1 || pts.length < 2) return pts;
+  const half = Math.floor(windowSize / 2);
+  const out = new Array(pts.length);
+  for (let i = 0; i < pts.length; i++) {
+    const lo = Math.max(0, i - half);
+    const hi = Math.min(pts.length - 1, i + half);
+    let sum = 0;
+    for (let j = lo; j <= hi; j++) sum += pts[j].y;
+    out[i] = { x: pts[i].x, y: sum / (hi - lo + 1) };
+  }
+  return out;
+}
+
 // Pure: list duty-cycle buckets that overlap the [firstSampleT, lastSampleT]
 // data span and the [tMin, tMax) visible window. Each entry exposes the bucket
 // boundaries (hrStart/hrEnd) for placement and the data-clamped segment
@@ -182,7 +214,11 @@ export function drawHistoryGraph() {
   // collectSeriesPts carries a pre-window sample forward as an
   // interpolated point at tMin so the line meets the chart's left edge
   // even when a real sensor-reading gap straddles the boundary.
-  const pts = collectSeriesPts(timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, tankAvgOf);
+  const smoothW = lineSmoothingWindow(visibleRange);
+  const pts = smoothPoints(
+    collectSeriesPts(timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, tankAvgOf),
+    smoothW,
+  );
 
   if (pts.length >= 2) {
     // Area fill gradient under the line
@@ -279,7 +315,10 @@ function collectSeriesPts(timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph
 }
 
 function drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, key, color, lineWidth) {
-  const pts = collectSeriesPts(timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, key);
+  const pts = smoothPoints(
+    collectSeriesPts(timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, key),
+    lineSmoothingWindow(visibleRange),
+  );
   if (pts.length < 2) return;
   ctx.beginPath();
   ctx.strokeStyle = color;
