@@ -196,6 +196,11 @@ test.describe('Account actions (logout + Add Device)', () => {
     await page.goto('/playground/');
     await gotoSettings(page);
     await page.locator('#invite-btn').click();
+    // Wait for the modal to actually open before interacting with its
+    // inputs. Without this the fill() can race the modal-open under load
+    // (full-suite parallel runs) and time out with "element is not visible".
+    await expect(page.locator('#invite-modal')).toBeVisible();
+    await expect(page.locator('#invite-form')).toBeVisible();
     await page.locator('#invite-name-input').fill('eve');
     await page.locator('#invite-create-btn').click();
 
