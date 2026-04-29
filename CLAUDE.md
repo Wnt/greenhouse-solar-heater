@@ -221,6 +221,23 @@ If any of these fail on the PR but passed locally, that's a signal something is 
 - **Config delivery**: `kubernetes_secret/app-secrets` (DATABASE_URL, SESSION_SECRET, S3 creds, NEW_RELIC_LICENSE_KEY) + `kubernetes_config_map/app-config` (PORT, AUTH_ENABLED, RPID, ORIGIN, DOMAIN, MQTT_HOST, OTEL_*). Managed by Terraform — read the .tf files for the full list.
 - **CD**: push to main → GitHub Actions → GHCR (app + openvpn images) → `kubectl set image` rolling update → `kubectl exec` runs `shelly/deploy.sh`. The Shelly deploy step is non-fatal. Requires `KUBE_CONFIG_DATA` GitHub secret (scoped deployer ServiceAccount — can only patch the `app` Deployment and exec into pods).
 
+## PR Preview Deploys
+
+Add the `preview` label to a PR → `.github/workflows/preview-deploy.yml` builds the branch, pushes a `preview-<sha>` image to GHCR, and applies `deploy/k8s/preview/` (templated via `envsubst`) into the `default` namespace. URL: `https://pr-<n>.greenhouse.madekivi.fi`. Requires the wildcard `*.greenhouse.madekivi.fi` CNAME (already set up). Each push refreshes the preview; removing the label or closing the PR triggers `preview-teardown.yml`.
+
+Preview pod = app container only (no `openvpn`, no `mosquitto` sidecars), `replicas: 1`. Critical environment overrides set by the manifest:
+
+- `PREVIEW_MODE=true` — see below.
+- `MQTT_HOST=mosquitto.default.svc.cluster.local` — preview subscribes to the prod broker (new `mosquitto` Service in `services.yaml`); never publishes (gated by `PREVIEW_MODE`).
+- `RPID=greenhouse.madekivi.fi`, `ORIGIN=https://pr-<n>.greenhouse.madekivi.fi` — existing prod passkeys validate on the subdomain because the RPID is a registrable parent of the preview origin's effective domain (WebAuthn rule).
+- `DATABASE_URL` inherited from `app-secrets` — same prod TimescaleDB. **Schema init and maintenance are skipped** in `PREVIEW_MODE` so a branch with `SCHEMA_SQL` changes cannot apply them to prod.
+
+`PREVIEW_MODE=true` makes the server a passive observer: it subscribes to MQTT and broadcasts to its own WebSocket clients, but never `db.insertSensorReadings` / `insertStateEvent`, never publishes (`greenhouse/config`, `greenhouse/sensor-config`, `greenhouse/relay-command`, `mqttRequest` all no-op), never evaluates push notifications, never routes watchdog/event to the anomaly manager, never writes script-crash rows. Search `PREVIEW_MODE` in `server/lib/mqtt-bridge.js` and `server/server.js` for every gate.
+
+Previews carry an `preview.greenhouse/expires-at` annotation (deploy-time + 4 h, refreshed on every push). `deploy/k8s/preview-gc-cronjob.yaml` runs every 15 min and deletes any preview whose annotation is in the past — safety net behind the workflow-driven teardown. The `preview-gc` ServiceAccount has its own RBAC scoped to the `default` namespace.
+
+Important: preview pods deliberately omit the `app=greenhouse` label so the prod `app` and `mosquitto` Services never select them as backends.
+
 ## Observability (New Relic)
 
 Optional OpenTelemetry → New Relic. Disabled by default (zero overhead). `server/lib/tracing.js` is loaded via `--require` before `server.js` and no-ops when `NEW_RELIC_LICENSE_KEY` is unset.

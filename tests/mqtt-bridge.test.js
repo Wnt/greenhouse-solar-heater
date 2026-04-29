@@ -511,4 +511,115 @@ describe('mqtt-bridge', () => {
         'no point in publishing an empty sensor config — Shelly would just keep all temps null');
     });
   });
+
+  describe('PREVIEW_MODE', () => {
+    let prevEnv;
+
+    beforeEach(() => {
+      prevEnv = process.env.PREVIEW_MODE;
+      process.env.PREVIEW_MODE = 'true';
+      delete require.cache[require.resolve('../server/lib/mqtt-bridge.js')];
+      bridge = require('../server/lib/mqtt-bridge.js');
+      bridge._reset();
+    });
+
+    afterEach(() => {
+      if (prevEnv === undefined) delete process.env.PREVIEW_MODE;
+      else process.env.PREVIEW_MODE = prevEnv;
+      bridge._reset();
+    });
+
+    it('handleStateMessage does not write sensor readings or state events to db', () => {
+      const writes = [];
+      bridge._setDbForTest({
+        insertSensorReadings: function () { writes.push('readings'); },
+        insertStateEvent: function () { writes.push('event'); },
+      });
+
+      bridge.handleStateMessage({
+        ts: 1, mode: 'idle', temps: { collector: 25 }, valves: {}, actuators: {},
+      });
+      bridge.handleStateMessage({
+        ts: 2, mode: 'solar_charging', temps: { collector: 60 }, valves: {}, actuators: {},
+      });
+
+      assert.deepStrictEqual(writes, [], 'preview must not persist state-derived rows');
+    });
+
+    it('handleStateMessage still broadcasts to WebSocket clients (live updates)', () => {
+      const sent = [];
+      bridge._setWsServerForTest({
+        clients: [{ readyState: 1, send: (msg) => sent.push(JSON.parse(msg)) }],
+      });
+
+      bridge.handleStateMessage({
+        ts: 1, mode: 'solar_charging', temps: { collector: 60 }, valves: {}, actuators: {},
+      });
+
+      assert.strictEqual(sent.length, 1);
+      assert.strictEqual(sent[0].type, 'state');
+      assert.strictEqual(sent[0].data.mode, 'solar_charging');
+    });
+
+    it('handleStateMessage does not call notifications.evaluate (no double-fire push)', () => {
+      const notifications = require('../server/lib/notifications');
+      const original = notifications.evaluate;
+      let called = false;
+      notifications.evaluate = function () { called = true; };
+      bridge._setPushRefForTest({ sendByCategory: function () { return Promise.resolve(); } });
+
+      try {
+        bridge.handleStateMessage({
+          ts: 1, mode: 'idle', temps: {}, valves: {}, actuators: {},
+        });
+        assert.strictEqual(called, false, 'preview must not evaluate notifications — prod already does');
+      } finally {
+        notifications.evaluate = original;
+      }
+    });
+
+    it('publishConfig is a no-op (returns false) even when MQTT is connected', () => {
+      const publishCalls = [];
+      bridge._setMqttClientForTest({
+        connected: true,
+        publish: function (topic, msg) { publishCalls.push({ topic, msg }); },
+      });
+
+      const result = bridge.publishConfig({ ce: true, ea: 31, v: 1 });
+      assert.strictEqual(result, false);
+      assert.strictEqual(publishCalls.length, 0, 'preview must never publish to greenhouse/config');
+    });
+
+    it('publishSensorConfig is a no-op (returns false) even when MQTT is connected', () => {
+      const publishCalls = [];
+      bridge._setMqttClientForTest({
+        connected: true,
+        publish: function (topic, msg) { publishCalls.push({ topic, msg }); },
+      });
+
+      const result = bridge.publishSensorConfig({ s: {}, h: [], v: 1 });
+      assert.strictEqual(result, false);
+      assert.strictEqual(publishCalls.length, 0);
+    });
+
+    it('publishRelayCommand is a no-op (returns false) even when MQTT is connected', () => {
+      const publishCalls = [];
+      bridge._setMqttClientForTest({
+        connected: true,
+        publish: function (topic, msg) { publishCalls.push({ topic, msg }); },
+      });
+
+      const result = bridge.publishRelayCommand('pump', true);
+      assert.strictEqual(result, false);
+      assert.strictEqual(publishCalls.length, 0, 'preview must never actuate real relays');
+    });
+
+    it('publishSensorConfigApply rejects with PREVIEW_MODE error', async () => {
+      bridge._setMqttClientForTest({ connected: true, publish: function () {} });
+      await assert.rejects(
+        () => bridge.publishSensorConfigApply({ id: 'x', target: null, config: {} }),
+        /PREVIEW_MODE/
+      );
+    });
+  });
 });

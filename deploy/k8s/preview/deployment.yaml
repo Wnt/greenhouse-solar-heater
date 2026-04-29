@@ -1,0 +1,103 @@
+# Preview/branch deploy. App container only — NO openvpn, NO mosquitto.
+# Sharing the prod app-secrets (DB + push + S3 creds) and shadowing
+# selected app-config keys via PREVIEW_MODE-aware overrides.
+#
+# Why no sidecars:
+#   - openvpn uses hostPort 1194/UDP, which is a node singleton already
+#     owned by the prod pod. A second openvpn would fail to schedule.
+#     Without it the preview pod has zero network path to real Shelly LAN
+#     hardware, which is also the safety property we want.
+#   - mosquitto-as-sidecar isn't needed: previews connect to the prod
+#     mosquitto via the in-cluster Service (see env below) so they
+#     observe live MQTT traffic without spinning up an isolated broker.
+#
+# Substituted at deploy time: ${PR_NUMBER}, ${IMAGE_TAG}, ${EXPIRES_AT}.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-preview-pr-${PR_NUMBER}
+  labels:
+    preview-pr: "${PR_NUMBER}"
+    purpose: preview
+  annotations:
+    preview.greenhouse/expires-at: "${EXPIRES_AT}"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      preview-pr: "${PR_NUMBER}"
+  template:
+    metadata:
+      # Intentionally NOT carrying app=greenhouse — that's the prod
+      # Service's selector and a stray match would route prod traffic
+      # to a preview pod.
+      labels:
+        preview-pr: "${PR_NUMBER}"
+        purpose: preview
+    spec:
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: app
+          image: ghcr.io/wnt/greenhouse-solar-heater:${IMAGE_TAG}
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secrets
+          # PREVIEW-specific overrides (these win over keys from app-config
+          # because they're listed last; envFrom + env merge with later
+          # entries overriding earlier).
+          env:
+            - name: PREVIEW_MODE
+              value: "true"
+            - name: ORIGIN
+              value: "https://pr-${PR_NUMBER}.greenhouse.madekivi.fi"
+            - name: DOMAIN
+              value: "pr-${PR_NUMBER}.greenhouse.madekivi.fi"
+            # Connect to the prod mosquitto sidecar via Service.
+            # Subscribes only — see PREVIEW_MODE in mqtt-bridge.js.
+            - name: MQTT_HOST
+              value: "mosquitto.default.svc.cluster.local"
+            # RPID stays as the parent so existing prod passkeys validate
+            # on the preview subdomain (RPID is a registrable parent of
+            # the preview origin's effective domain — WebAuthn allows it).
+            - name: RPID
+              value: "greenhouse.madekivi.fi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 300m
+              memory: 384Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 3
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

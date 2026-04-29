@@ -8,3 +8,4 @@ resources:
   - app-deployment.yaml
   - services.yaml
   - ingress.yaml
+  - preview-gc-cronjob.yaml

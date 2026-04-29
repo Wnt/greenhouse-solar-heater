@@ -19,6 +19,15 @@ let stateSnapshotListener = null;
 let previousState = null;
 let connectionStatus = 'disconnected';
 
+// PREVIEW_MODE: this server is a preview/branch deploy that shares the
+// production DB and MQTT broker but is NOT the persistence owner. It
+// subscribes (so the frontend gets live updates) and broadcasts to its
+// own WebSocket clients, but never publishes to MQTT and never writes
+// state-derived rows or notifications — those belong to prod.
+function isPreviewMode() {
+  return process.env.PREVIEW_MODE === 'true';
+}
+
 function start(options) {
   const mqtt = require('mqtt');
   db = options.db || null;
@@ -91,7 +100,10 @@ function start(options) {
         log.warn('invalid JSON on watchdog/event', { error: e.message });
         return;
       }
-      if (anomalyManagerRef && typeof anomalyManagerRef.handleDeviceEvent === 'function') {
+      // PREVIEW_MODE: anomaly manager writes a watchdog row to history and
+      // dispatches a push — both belong to prod. The preview's WS clients
+      // still see the watchdog state via the next greenhouse/state payload.
+      if (!isPreviewMode() && anomalyManagerRef && typeof anomalyManagerRef.handleDeviceEvent === 'function') {
         Promise.resolve(anomalyManagerRef.handleDeviceEvent(wdMsg)).catch(function (err) {
           log.error('anomaly handleDeviceEvent failed', { error: err.message });
         });
@@ -119,16 +131,17 @@ function start(options) {
 
 function handleStateMessage(payload) {
   const ts = payload.ts ? new Date(payload.ts) : new Date();
+  const preview = isPreviewMode();
 
-  // Persist sensor readings
-  if (db && payload.temps) {
+  // Persist sensor readings (skipped in PREVIEW_MODE — prod owns this)
+  if (db && payload.temps && !preview) {
     db.insertSensorReadings(ts, payload.temps, function (err) {
       if (err) log.error('db insert readings failed', { error: err.message });
     });
   }
 
-  // Detect state changes and persist events
-  if (db && previousState) {
+  // Detect state changes and persist events (skipped in PREVIEW_MODE)
+  if (db && previousState && !preview) {
     detectStateChanges(ts, previousState, payload);
   }
 
@@ -142,14 +155,17 @@ function handleStateMessage(payload) {
     }
   }
 
-  // Evaluate notification conditions (pre-emergency alerts, scheduled reports)
-  if (pushRef) {
+  // Evaluate notification conditions (skipped in PREVIEW_MODE — prod
+  // already evaluates and dispatches; running this in parallel would
+  // double-fire push notifications to subscribers).
+  if (pushRef && !preview) {
     try { notifications.evaluate(payload); } catch (e) {
       log.error('notification evaluate failed', { error: e.message });
     }
   }
 
-  // Broadcast to WebSocket clients
+  // Broadcast to WebSocket clients (always — this is what makes preview
+  // dashboards tick in real time).
   broadcastState(payload);
 }
 
@@ -251,6 +267,10 @@ function getConnectionStatus() {
 }
 
 function publishConfig(config) {
+  if (isPreviewMode()) {
+    log.warn('skipping publish (PREVIEW_MODE)', { topic: 'greenhouse/config' });
+    return false;
+  }
   if (!mqttClient || !mqttClient.connected) {
     log.warn('cannot publish config: MQTT not connected');
     return false;
@@ -286,6 +306,10 @@ function republishSensorConfig() {
 }
 
 function publishSensorConfig(config) {
+  if (isPreviewMode()) {
+    log.warn('skipping publish (PREVIEW_MODE)', { topic: 'greenhouse/sensor-config' });
+    return false;
+  }
   if (!mqttClient || !mqttClient.connected) {
     log.warn('cannot publish sensor config: MQTT not connected');
     return false;
@@ -297,6 +321,10 @@ function publishSensorConfig(config) {
 }
 
 function publishRelayCommand(relay, on) {
+  if (isPreviewMode()) {
+    log.warn('skipping publish (PREVIEW_MODE)', { topic: 'greenhouse/relay-command' });
+    return false;
+  }
   if (!mqttClient || !mqttClient.connected) {
     log.warn('cannot publish relay command: MQTT not connected');
     return false;
@@ -343,6 +371,10 @@ function subscribeResponseTopics() {
 }
 
 function mqttRequest(requestTopic, responseTopic, payload, timeoutMs) {
+  if (isPreviewMode()) {
+    log.warn('skipping request (PREVIEW_MODE)', { topic: requestTopic });
+    return Promise.reject(new Error('PREVIEW_MODE: request blocked'));
+  }
   if (!mqttClient || !mqttClient.connected) {
     return Promise.reject(new Error('MQTT not connected'));
   }
@@ -406,6 +438,10 @@ module.exports = {
   handleStateMessage,
   detectStateChanges,
   _setDeviceConfigRefForTest: function (ref) { deviceConfigRef = ref; },
+  _setDbForTest: function (val) { db = val; },
+  _setWsServerForTest: function (val) { wsServer = val; },
+  _setPushRefForTest: function (val) { pushRef = val; },
+  _setMqttClientForTest: function (val) { mqttClient = val; },
   _reset: function () {
     mqttClient = null;
     wsServer = null;
