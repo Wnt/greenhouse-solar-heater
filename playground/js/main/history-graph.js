@@ -7,10 +7,87 @@
 import { store } from '../app-state.js';
 import { pickTickStep, formatTick, pickBucketSize } from '../ui.js';
 import { SIM_START_HOUR } from '../sim-bootstrap.js';
-import { timeSeriesStore, graphRange, showAllSensors } from './state.js';
+import { timeSeriesStore, graphRange, showAllSensors, chartZoom } from './state.js';
 import { coverageInBucket } from './mode-events.js';
 
 function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
+
+const DAY_SEC = 86400;
+
+// Pure: pick a centered moving-average window for the temperature lines.
+// Below 7 days the server already serves raw or 30-second data and the
+// lines look fine as-is. Larger spans switch on a 5-min / 10-min /
+// 30-min / 1-h / 2-h server bucket — short collector spikes still come
+// through as 60-90°C peaks even after bucket averaging, so this layer
+// has to be wide enough to actually round them off. Zooming in
+// (smaller visibleRange) drops the window so detail re-emerges.
+//
+// Window × bucket size translates to wall time: e.g. 11 × 5 min ≈ 55 min
+// at 7d, 17 × 30 min ≈ 8.5 h at 30d.
+export function lineSmoothingWindow(visibleRange) {
+  if (visibleRange < 7 * DAY_SEC) return 1;
+  if (visibleRange <= 14 * DAY_SEC) return 11;
+  if (visibleRange <= 30 * DAY_SEC) return 13;
+  if (visibleRange <= 90 * DAY_SEC) return 17;
+  return 21;
+}
+
+// Pure: centered moving-average over y (length-preserving). Edge points
+// shrink the window naturally so the line still reaches both edges.
+export function smoothPoints(pts, windowSize) {
+  if (windowSize <= 1 || pts.length < 2) return pts;
+  const half = Math.floor(windowSize / 2);
+  const out = new Array(pts.length);
+  for (let i = 0; i < pts.length; i++) {
+    const lo = Math.max(0, i - half);
+    const hi = Math.min(pts.length - 1, i + half);
+    let sum = 0;
+    for (let j = lo; j <= hi; j++) sum += pts[j].y;
+    out[i] = { x: pts[i].x, y: sum / (hi - lo + 1) };
+  }
+  return out;
+}
+
+// Pure: list duty-cycle buckets that overlap the [firstSampleT, lastSampleT]
+// data span and the [tMin, tMax) visible window. Each entry exposes the bucket
+// boundaries (hrStart/hrEnd) for placement and the data-clamped segment
+// (segStart/segEnd) the coverage query should run on. Buckets entirely outside
+// the data span are dropped — without the right-edge clamp, modeAt() would
+// happily extrapolate the latest known mode across hours that haven't been
+// observed yet, painting full-height bars for empty future buckets.
+export function dutyBucketsIn({ tMin, tMax, bucketSec, firstSampleT, lastSampleT }) {
+  const out = [];
+  if (lastSampleT <= firstSampleT) return out;
+  const firstBucket = Math.floor(tMin / bucketSec);
+  const lastBucket = Math.ceil(tMax / bucketSec);
+  for (let bi = firstBucket; bi < lastBucket; bi++) {
+    const hrStart = bi * bucketSec;
+    const hrEnd = (bi + 1) * bucketSec;
+    if (hrEnd <= tMin || hrStart >= tMax) continue;
+    if (hrEnd <= firstSampleT) continue;
+    if (hrStart >= lastSampleT) continue;
+    const segStart = Math.max(hrStart, firstSampleT);
+    const segEnd = Math.min(hrEnd, lastSampleT);
+    if (segEnd <= segStart) continue;
+    out.push({ hrStart, hrEnd, segStart, segEnd });
+  }
+  return out;
+}
+
+// Resolve the visible time window to render. Pinch zoom (chartZoom) takes
+// precedence; otherwise the chart slides so the right edge sits at the
+// latest sample (sim) or wall-clock now (live), with width = graphRange.
+// Shared with graph-inspector so its crosshair math stays aligned with
+// what's drawn — without this, zooming would desync the two.
+export function getChartWindow() {
+  if (chartZoom) return { tMin: chartZoom.tMin, tMax: chartZoom.tMax };
+  const isLivePhase = store.get('phase') === 'live';
+  const latestTime = timeSeriesStore.times.length > 0
+    ? timeSeriesStore.times[timeSeriesStore.times.length - 1]
+    : 0;
+  const tMax = isLivePhase ? Math.floor(Date.now() / 1000) : Math.max(graphRange, latestTime);
+  return { tMin: tMax - graphRange, tMax };
+}
 
 // Tank value extractor shared by the graph, inspector, and yesterday-
 // high calculation. Returns the top/bottom average when both sensors
@@ -39,13 +116,10 @@ export function drawHistoryGraph() {
   const pw = dw - pad.left - pad.right;
   const ph = dh - pad.top - pad.bottom;
 
-  // Sliding window: right edge = latest sim time (or graphRange if sim
-  // hasn't run that long). In live mode the time base is Unix epoch
-  // seconds, so the sliding window always trails real wall-clock time.
+  // Visible window — sliding by default, or a pinch-zoom span when set.
   const isLivePhase = store.get('phase') === 'live';
-  const latestTime = timeSeriesStore.times.length > 0 ? timeSeriesStore.times[timeSeriesStore.times.length - 1] : 0;
-  const tMax = isLivePhase ? Math.floor(Date.now() / 1000) : Math.max(graphRange, latestTime);
-  const tMin = tMax - graphRange;
+  const { tMin, tMax } = getChartWindow();
+  const visibleRange = tMax - tMin;
 
   // Y range for temperature
   const yMin = 0, yMax = 100;
@@ -68,11 +142,11 @@ export function drawHistoryGraph() {
   ctx.font = '10px Manrope, sans-serif';
   ctx.textAlign = 'center';
 
-  const stepSeconds = pickTickStep(graphRange, pw);
+  const stepSeconds = pickTickStep(visibleRange, pw);
   const firstTick = Math.ceil(tMin / stepSeconds) * stepSeconds;
   const hourSeconds = 3600;
   for (let t = firstTick; t <= tMax; t += stepSeconds) {
-    const frac = (t - tMin) / graphRange;
+    const frac = (t - tMin) / visibleRange;
     if (frac < -0.01 || frac > 1.01) continue;
     const x = pad.left + frac * pw;
     let label;
@@ -97,32 +171,21 @@ export function drawHistoryGraph() {
   // 1-hour bucket regardless of range.
   const barAreaH = ph * 0.3;
   const barY0 = pad.top + ph;
-  const bucketSec = pickBucketSize(graphRange);
-
-  const firstBucket = Math.floor(tMin / bucketSec);
-  const lastBucket = Math.ceil(tMax / bucketSec);
+  const bucketSec = pickBucketSize(visibleRange);
 
   let hasEmergency = false;
-  // The first sample in the store fixes the left edge of the time
-  // series; coverage before it has no observed temperature backing and
-  // would draw bars over a blank chart segment.
   const firstSampleT = timeSeriesStore.times.length > 0 ? timeSeriesStore.times[0] : tMax;
-  for (let bi = firstBucket; bi < lastBucket; bi++) {
-    const hrStart = bi * bucketSec;
-    const hrEnd = (bi + 1) * bucketSec;
-
-    // Skip if entirely outside visible range or entirely before the first sample
-    if (hrEnd <= tMin || hrStart >= tMax) continue;
-    if (hrEnd <= firstSampleT) continue;
-
-    const segStart = Math.max(hrStart, firstSampleT);
-    const cov = coverageInBucket(segStart, hrEnd);
+  const lastSampleT = timeSeriesStore.times.length > 0 ? timeSeriesStore.times[timeSeriesStore.times.length - 1] : tMin;
+  const buckets = dutyBucketsIn({ tMin, tMax, bucketSec, firstSampleT, lastSampleT });
+  for (let i = 0; i < buckets.length; i++) {
+    const { hrStart, segStart, segEnd } = buckets[i];
+    const cov = coverageInBucket(segStart, segEnd);
     const chargingFrac = cov.charging / bucketSec;
     const heatingFrac = cov.heating / bucketSec;
     const emergencyFrac = cov.emergency / bucketSec;
 
-    const barX = pad.left + ((hrStart - tMin) / graphRange) * pw;
-    const barW = Math.max(1, (bucketSec / graphRange) * pw - 2);
+    const barX = pad.left + ((hrStart - tMin) / visibleRange) * pw;
+    const barW = Math.max(1, (bucketSec / visibleRange) * pw - 2);
 
     let stackH = 0;
 
@@ -155,7 +218,11 @@ export function drawHistoryGraph() {
   // collectSeriesPts carries a pre-window sample forward as an
   // interpolated point at tMin so the line meets the chart's left edge
   // even when a real sensor-reading gap straddles the boundary.
-  const pts = collectSeriesPts(timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, tankAvgOf);
+  const smoothW = lineSmoothingWindow(visibleRange);
+  const pts = smoothPoints(
+    collectSeriesPts(timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, tankAvgOf),
+    smoothW,
+  );
 
   if (pts.length >= 2) {
     // Area fill gradient under the line
@@ -182,35 +249,43 @@ export function drawHistoryGraph() {
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // Current point dot (glowing)
-    const last = pts[pts.length - 1];
-    ctx.beginPath();
-    ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
-    ctx.fillStyle = '#e9c349';
-    ctx.fill();
+    // Current-point dot. Drawn only when the most recent sample is
+    // inside the window — when zoomed/panned to a slice that ends
+    // before the latest data, the dot at pts[last] would lie on some
+    // earlier point and read as "now" to the eye.
+    const latestSampleT = timeSeriesStore.times.length > 0
+      ? timeSeriesStore.times[timeSeriesStore.times.length - 1]
+      : null;
+    if (latestSampleT !== null && latestSampleT <= tMax) {
+      const last = pts[pts.length - 1];
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#e9c349';
+      ctx.fill();
+    }
   }
 
   // ── Tank sub-sensor lines (only with the "All sensors" toggle) ──
   if (showAllSensors) {
-    drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_tank_top', '#ff9f43', 1);
-    drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_tank_bottom', '#b088d6', 1);
+    drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_tank_top', '#ff9f43', 1);
+    drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_tank_bottom', '#b088d6', 1);
   }
 
   // ── Collector line (red) ──
-  drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_collector', '#ef5350', 1.5);
+  drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_collector', '#ef5350', 1.5);
 
   // ── Greenhouse line (green) ──
-  drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_greenhouse', '#69d0c5', 1);
+  drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_greenhouse', '#69d0c5', 1);
 
   // ── Outside line (blue) ──
-  drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, 't_outdoor', '#42a5f5', 1);
+  drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_outdoor', '#42a5f5', 1);
 }
 
 // Collect visible plot points for a single series, carrying a leading-edge
 // sample (the last point before tMin) forward as a linearly-interpolated
 // value at tMin so the line starts at the chart's left edge even when the
 // first in-window sample is several minutes late.
-function collectSeriesPts(timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, key) {
+function collectSeriesPts(timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, key) {
   const extract = typeof key === 'function'
     ? key
     : function (row) { return row[key]; };
@@ -236,15 +311,18 @@ function collectSeriesPts(timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, 
       const yAtTMin = pad.top + ph - ((vAtTMin - yMin) / (yMax - yMin)) * ph;
       pts.push({ x: pad.left, y: yAtTMin });
     }
-    const x = pad.left + ((t - tMin) / graphRange) * pw;
+    const x = pad.left + ((t - tMin) / visibleRange) * pw;
     const y = pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph;
     pts.push({ x, y });
   }
   return pts;
 }
 
-function drawTempLine(ctx, timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, key, color, lineWidth) {
-  const pts = collectSeriesPts(timeSeriesStore, tMin, tMax, graphRange, pad, pw, ph, yMin, yMax, key);
+function drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, key, color, lineWidth) {
+  const pts = smoothPoints(
+    collectSeriesPts(timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, key),
+    lineSmoothingWindow(visibleRange),
+  );
   if (pts.length < 2) return;
   ctx.beginPath();
   ctx.strokeStyle = color;

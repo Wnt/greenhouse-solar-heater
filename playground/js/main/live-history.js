@@ -22,7 +22,9 @@ import { populateModeEvents } from './mode-events.js';
 
 const RANGE_MAP = {
   3600: '1h', 21600: '6h', 43200: '12h', 86400: '24h',
-  259200: '3d', 604800: '7d', 10368000: '4mo',
+  259200: '3d', 604800: '7d',
+  1209600: '14d', 2592000: '1mo', 5184000: '2mo',
+  10368000: '4mo',
 };
 
 // No-op kept for the connection.js call site that resets between
