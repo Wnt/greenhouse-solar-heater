@@ -78,9 +78,13 @@ jobs:
           kubectl delete deploy,svc,ingress \
             -l "preview-pr=$PR_NUMBER" \
             --ignore-not-found
-          # cert-manager cleans the TLS Secret automatically when its
-          # owning Ingress is deleted (ownerReference). No explicit
-          # delete needed.
+          # The TLS Secret (app-preview-pr-<n>-tls) is intentionally
+          # left behind. cert-manager preserves it when the owning
+          # Certificate is deleted (to avoid accidental cert loss); it
+          # has no ownerReferences so nothing GCs it automatically.
+          # The leak is small (~5 KB per closed PR) and inert (cert
+          # expires in 90 days). Sweep manually if it ever bothers you:
+          # kubectl get secret -o name | grep app-preview-pr- | xargs kubectl delete
 
       - name: Update PR comment
         if: github.event_name == 'pull_request'
