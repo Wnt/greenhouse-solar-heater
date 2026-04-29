@@ -258,6 +258,25 @@ function handleInviteUrlParam() {
   }
 }
 
+// PR-preview rebrand. Mirrors the playground's connection.js fetch:
+// `Solar sanctuary` → `Preview · #42 · branch/name` so reviewers
+// know which deploy they hit before they even sign in.
+async function applyPreviewBranding() {
+  try {
+    const res = await fetch('/api/runtime');
+    if (!res.ok) return;
+    const data = await res.json();
+    const preview = data && data.preview;
+    if (!preview) return;
+    const tagline = document.getElementById('login-tagline');
+    if (!tagline) return;
+    const parts = ['Preview'];
+    if (preview.pr != null) parts.push('#' + preview.pr);
+    if (preview.branch) parts.push(preview.branch);
+    tagline.textContent = parts.join(' · ');
+  } catch (e) { /* silent — falls back to the prod copy */ }
+}
+
 // ── Init ──
 
 if (!browserSupportsWebAuthn()) {
@@ -270,6 +289,7 @@ if (!browserSupportsWebAuthn()) {
   elInviteCodeInput.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') doInviteRegister();
   });
+  applyPreviewBranding();
   checkStatus().then(function () {
     handleInviteUrlParam();
   });

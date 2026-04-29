@@ -47,6 +47,23 @@ export function getLiveSource() { return liveSource; }
 export function initConnection({ setRunning } = {}) {
   if (typeof setRunning === 'function') _setRunning = setRunning;
 
+  // Pre-auth runtime metadata. PR previews carry { pr, branch }; prod /
+  // local dev carry null. Stash into the store so the toggle label and
+  // sidebar subtitle render their preview branding on the first paint
+  // after the fetch lands. Best-effort — a network failure leaves the
+  // UI in its prod default (which is the safe fallback).
+  fetch('/api/runtime', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      const preview = data && data.preview ? data.preview : null;
+      store.set('runtimePreview', preview);
+      if (preview) {
+        updateModeToggleUI(store.get('phase') === 'live');
+        updateSidebarSubtitle();
+      }
+    })
+    .catch(function () { /* silent; prod default applies */ });
+
   // Both sources gate on phase==='live' so they're inert in sim mode
   // without an explicit deregister.
   registerLiveHistorySource(() => graphRange);
@@ -300,7 +317,13 @@ function updateModeToggleUI(isLive) {
   const label = document.getElementById('mode-toggle-label');
   if (isLive) {
     if (sw) sw.classList.add('active');
-    if (label) { label.textContent = 'Live'; label.classList.add('active'); }
+    if (label) {
+      // Preview deploys rebrand the live side as "Preview" so reviewers
+      // know they're not staring at the prod controller.
+      const preview = store.get('runtimePreview');
+      label.textContent = preview ? 'Preview' : 'Live';
+      label.classList.add('active');
+    }
   } else {
     if (sw) sw.classList.remove('active');
     if (label) { label.textContent = 'Simulation'; label.classList.remove('active'); }
@@ -460,11 +483,17 @@ export function updateSidebarSubtitle() {
     return;
   }
 
-  // Live mode: reflect connection state
+  // Live mode: reflect connection state. PR previews rebrand the
+  // active state as "Preview #<n>"; the other states (syncing,
+  // offline, stale) stay generic — they describe network conditions,
+  // not the deploy's identity.
   const displayState = getConnectionDisplayState();
+  const preview = store.get('runtimePreview');
   switch (displayState) {
     case 'active':
-      el.textContent = 'Live';
+      el.textContent = preview && preview.pr != null
+        ? 'Preview #' + preview.pr
+        : 'Live';
       el.className = 'subtitle-live';
       break;
     case 'syncing':

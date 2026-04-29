@@ -12,6 +12,12 @@ export const store = createStore({
   phase: 'init',             // 'init' | 'simulation' | 'live'
   isLiveCapable: false,
 
+  // Runtime metadata from /api/runtime. null on prod / local dev;
+  // { pr, branch } on PR previews — drives the sidebar / toggle / login
+  // rebrand. Preview deploys share the prod database, so this is the
+  // only signal the frontend has that it's a preview.
+  runtimePreview: null,
+
   // Auth
   userRole: 'admin',         // 'admin' | 'readonly'
 
