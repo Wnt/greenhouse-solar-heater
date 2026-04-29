@@ -87,7 +87,7 @@ function createFuzzRuntime(opts) {
   const kvs = {};
   let configVersion = 100;
   const eventHandlers = [];
-  const httpResponder = opts.httpResponder || function(url) {
+  const httpResponder = opts.httpResponder || function(_url) {
     return { ok: true, body: '' };
   };
   const componentStatus = function() { return { apower: 50, output: true }; };

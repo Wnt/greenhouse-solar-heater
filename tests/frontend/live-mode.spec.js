@@ -90,7 +90,7 @@ test.describe('Connection state overlays', () => {
     await page.addInitScript(() => {
       const OrigWS = window.WebSocket;
       // @ts-ignore
-      window.WebSocket = function(url) {
+      window.WebSocket = function(_url) {
         const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
           close() { this.readyState = 3; },
           send() {},
@@ -122,7 +122,7 @@ test.describe('Connection state overlays', () => {
     await page.addInitScript(() => {
       const OrigWS = window.WebSocket;
       // @ts-ignore
-      window.WebSocket = function(url) {
+      window.WebSocket = function(_url) {
         const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
           close() { this.readyState = 3; },
           send() {},
@@ -147,11 +147,10 @@ test.describe('Connection state overlays', () => {
   });
 
   test('device_offline: overlay clears when state data arrives', async ({ page }) => {
-    let sendMessage;
     await page.addInitScript(() => {
       const OrigWS = window.WebSocket;
       // @ts-ignore
-      window.WebSocket = function(url) {
+      window.WebSocket = function(_url) {
         const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
           close() { this.readyState = 3; },
           send() {},
@@ -210,7 +209,7 @@ test.describe('Manual override gating with unbound sensors', () => {
     await page.addInitScript(() => {
       const OrigWS = window.WebSocket;
       // @ts-ignore
-      window.WebSocket = function (url) {
+      window.WebSocket = function (_url) {
         const fake = {
           readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
           close() { this.readyState = 3; },
@@ -308,7 +307,7 @@ test.describe('Manual override gating with unbound sensors', () => {
     await page.addInitScript(() => {
       const OrigWS = window.WebSocket;
       // @ts-ignore
-      window.WebSocket = function (url) {
+      window.WebSocket = function (_url) {
         const fake = {
           readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
           close() { this.readyState = 3; },
@@ -427,7 +426,7 @@ test.describe('Sidebar subtitle', () => {
     await page.addInitScript(() => {
       const OrigWS = window.WebSocket;
       // @ts-ignore
-      window.WebSocket = function(url) {
+      window.WebSocket = function(_url) {
         const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
           close() { this.readyState = 3; },
           send() {},
@@ -454,7 +453,7 @@ test.describe('Sidebar subtitle', () => {
     await page.addInitScript(() => {
       const OrigWS = window.WebSocket;
       // @ts-ignore
-      window.WebSocket = function(url) {
+      window.WebSocket = function(_url) {
         const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
           close() { this.readyState = 3; },
           send() {},
@@ -481,7 +480,7 @@ test.describe('Sidebar subtitle', () => {
     await page.addInitScript(() => {
       const OrigWS = window.WebSocket;
       // @ts-ignore
-      window.WebSocket = function(url) {
+      window.WebSocket = function(_url) {
         const fake = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
           close() { this.readyState = 3; },
           send() {},

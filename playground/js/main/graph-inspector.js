@@ -10,8 +10,6 @@ import { tankAvgOf } from './history-graph.js';
 import { formatClockTime } from './time-format.js';
 import { coverageInBucket } from './mode-events.js';
 
-let inspectorX = null; // null = hidden, otherwise CSS pixel x relative to canvas
-
 function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
 const TEMP_PLACEHOLDER = '—';
 
@@ -27,7 +25,6 @@ export function setupInspector() {
   }
 
   function showInspector(x) {
-    inspectorX = x;
     crosshair.style.display = 'block';
     crosshair.style.left = x + 'px';
     tooltip.style.display = 'block';
@@ -44,7 +41,6 @@ export function setupInspector() {
   }
 
   function hideInspector() {
-    inspectorX = null;
     tooltip.style.display = 'none';
     crosshair.style.display = 'none';
   }
@@ -126,7 +122,6 @@ export function setupInspector() {
     if (e.touches.length !== 1) return;
     const touch = e.touches[0];
     const startX = touch.clientX;
-    const startY = touch.clientY;
     longPressTimer = setTimeout(function() {
       longPressActive = true;
       showInspector(getCanvasX(startX));

@@ -147,11 +147,6 @@ function createInstrumentedRuntime(opts) {
   // `state.valveOpening[v] <= now` check never fires (real wall-clock
   // hasn't advanced 20 s during the sub-second test run) and the
   // transition hangs forever in "valves_opening".
-  const syntheticDate = {
-    now: () => opts.now(),
-    // Pass-throughs for any other Date usage (e.g. new Date().toISOString).
-    prototype: Date.prototype,
-  };
   // Make new SyntheticDate() work if anyone uses it.
   function SyntheticDate() { return new Date(opts.now()); }
   SyntheticDate.now = () => opts.now();

@@ -58,7 +58,7 @@ function rpc(host, method, params, timeoutMs) {
 }
 
 function getTemperature(host, componentId, timeoutMs) {
-  return new Promise(function (resolve, reject) {
+  return new Promise(function (resolve, _reject) {
     const req = http.get({
       host,
       port: 80,

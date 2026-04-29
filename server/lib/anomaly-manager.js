@@ -359,7 +359,7 @@ async function shutdownNow(id, user) {
   await _updateConfigAndPublish(patch);
 }
 
-function setEnabled(id, enabled, user) {
+function setEnabled(id, enabled, _user) {
   return new Promise((resolve, reject) => {
     if (WATCHDOG_IDS.indexOf(id) === -1) {
       return reject(new Error('unknown watchdog id: ' + id));

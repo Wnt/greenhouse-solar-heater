@@ -402,7 +402,7 @@ describe('Shelly merged-control MQTT stability', function() {
     const rt = createShellyRuntime({ mqttConnected: true });
     const publishes = [];
     const realPublish = rt.globals.MQTT.publish;
-    rt.globals.MQTT.publish = function(topic, payload, qos, retain) {
+    rt.globals.MQTT.publish = function(topic, _payload, _qos, _retain) {
       publishes.push({ topic });
       return realPublish.apply(null, arguments);
     };

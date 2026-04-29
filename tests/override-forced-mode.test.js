@@ -48,7 +48,7 @@ function createOrderingRuntime(opts) {
   const kvs = {};
   let configVersion = 100; // bumped by setConfig() — must exceed the BASE_CONFIG v seeded into KVS
   const eventHandlers = [];
-  let httpResponder = opts.httpResponder || function(url) {
+  let httpResponder = opts.httpResponder || function(_url) {
     return { ok: true, body: '' };
   };
   let componentStatus = opts.componentStatus || function() {

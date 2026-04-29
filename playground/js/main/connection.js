@@ -1,6 +1,6 @@
 // Connection state, live/sim mode switching, staleness + overlay rendering.
 
-import { LiveSource, SimulationSource } from '../data-source.js';
+import { LiveSource } from '../data-source.js';
 import { store } from '../app-state.js';
 import { initSyncCoordinator } from '../sync/coordinator.js';
 import { attachScriptStatusWebSocket } from '../actions/script-monitor.js';
@@ -34,7 +34,6 @@ const urlModePreference = new URLSearchParams(location.search).get('mode');
 store.set('isLiveCapable', isLiveCapable);
 
 let liveSource = null;
-const simSource = new SimulationSource();
 
 let connectionStatus = 'disconnected';
 let lastDataTime = 0;

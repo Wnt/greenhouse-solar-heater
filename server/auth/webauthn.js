@@ -79,23 +79,6 @@ function buildCredentialMetadata(req) {
   };
 }
 
-function serializeCredential(cred, currentCredentialId) {
-  return {
-    id: cred.id,
-    userId: cred.userId,
-    label: cred.label || '',
-    createdAt: cred.createdAt || null,
-    lastUsedAt: cred.lastUsedAt || null,
-    lastIp: cred.lastIp || null,
-    browser: cred.device && cred.device.browser || null,
-    os: cred.device && cred.device.os || null,
-    deviceType: cred.device && cred.device.deviceType || null,
-    deviceName: cred.device && cred.device.deviceName || null,
-    deviceSummary: cred.device && cred.device.summary || 'Unknown device',
-    isCurrent: cred.id === currentCredentialId,
-  };
-}
-
 // Resolve the current authenticated user for a request, or null.
 function getCurrentUser(req) {
   const sess = session.validateRequest(req);

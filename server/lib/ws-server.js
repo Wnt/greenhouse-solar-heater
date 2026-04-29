@@ -32,7 +32,6 @@ const OP_CLOSE = 0x8;
 const OP_PING = 0x9;
 const OP_PONG = 0xa;
 
-const STATE_CONNECTING = 0;
 const STATE_OPEN = 1;
 const STATE_CLOSING = 2;
 const STATE_CLOSED = 3;

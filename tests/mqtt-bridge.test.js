@@ -269,7 +269,9 @@ describe('mqtt-bridge', () => {
   describe('sole state source (no valve-poller)', () => {
     it('handleStateMessage broadcasts state via WebSocket', () => {
       const sent = [];
-      const mockWs = {
+      // _mockWs documents the shape of the wsServer the bridge expects;
+      // the actual wiring happens via freshBridge below.
+      const _mockWs = {
         clients: [{ readyState: 1, send: (msg) => sent.push(JSON.parse(msg)) }],
       };
       bridge._reset();

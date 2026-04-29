@@ -183,8 +183,6 @@ describe('Shelly platform-limit 24 h simulation', () => {
     const SAMPLES = 24 * 60 * 60 * 1000 / TICK_MS; // 2880
     let cfgVersion = 1;
     for (let tick = 0; tick < SAMPLES; tick++) {
-      const simHour = (tick * TICK_MS) / 3600000;
-
       // Every ~45 min push a new device-config via MQTT (v++).
       if (tick > 0 && tick % 90 === 0) {
         try {

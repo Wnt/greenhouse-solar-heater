@@ -9,7 +9,6 @@ import {
   editorialNightSentence,
   DAY_GAP_MS,
 } from '../playground/js/energy-balance.js';
-import { tankStoredEnergyKwh } from '../playground/js/physics.js';
 
 // Helpers to build synthetic history
 const MIN = 60 * 1000;

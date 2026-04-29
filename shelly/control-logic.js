@@ -210,11 +210,6 @@ var MODE_CODE = {
   AD: "ACTIVE_DRAIN", EH: "EMERGENCY_HEATING"
 };
 
-function expandModeCode(code) {
-  if (!code) return null;
-  return MODE_CODE[code] || code.toUpperCase();
-}
-
 // Map a full mode name back to its short code for wb ban lookup.
 function shortCodeOf(mode) {
   if (mode === "IDLE") return "I";
@@ -716,8 +711,10 @@ function planValveTransition(target, current, openSince, opening, now, cfg) {
   // True iff every action list is empty AND no opening windows are live
   // AND no deferred closes remain. Covers contract §5, checklist case 9,
   // INV6.
+  // The `_dk` rebinding silences the lint's no-unused-vars rule (var
+  // declarations match `^_`); we only care about presence, not the key.
   var hasDeferred = false;
-  for (var dk in plan.deferredCloses) { hasDeferred = true; break; }
+  for (var _dk in plan.deferredCloses) { hasDeferred = true; break; }
   if (
     plan.startOpening.length === 0 &&
     plan.closeNow.length === 0 &&

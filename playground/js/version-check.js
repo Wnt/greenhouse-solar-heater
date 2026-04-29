@@ -7,7 +7,6 @@ const POLL_INTERVAL = 30000; // 30 seconds
 
 let baselineHash = null;
 let isDismissed = false;
-let pollTimer = null;
 let toastEl = null;
 
 function createToast() {
@@ -77,8 +76,9 @@ async function pollVersion() {
 export function startVersionCheck() {
   // Initial check to capture baseline
   checkVersion();
-  // Poll every 30 seconds
-  pollTimer = setInterval(pollVersion, POLL_INTERVAL);
+  // Poll every 30 seconds. Timer handle is unused — the page-lifetime
+  // poll runs until the tab closes, so we don't need to clearInterval.
+  setInterval(pollVersion, POLL_INTERVAL);
 }
 
 // Exposed for e2e testing — triggers a poll cycle immediately

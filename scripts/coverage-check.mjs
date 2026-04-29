@@ -56,12 +56,10 @@ for (const [key, data] of Object.entries(summary)) {
 // v8-to-istanbul but then filtered out of the summary, we can't read
 // its % here. coverage-report.mjs does filter excluded files out of
 // the summary entirely. To detect stale exclusions, re-parse the
-// full coverage-final.json (unfiltered) if present — skip otherwise.
-const FULL_PATH = path.join(ROOT, 'coverage/lcov.info');
+// unfiltered summary at coverage-summary-with-excluded.json (lcov is
+// line-level — easier to read a separate JSON). The report script
+// emits this file when exclusions are present.
 const staleExclusions = [];
-// lcov is line-level; easier to read a separate unfiltered JSON. We
-// emit coverage/coverage-summary-with-excluded.json from the report
-// script when exclusions are present.
 const FULL_SUMMARY_PATH = path.join(ROOT, 'coverage/coverage-summary-with-excluded.json');
 if (existsSync(FULL_SUMMARY_PATH)) {
   const full = JSON.parse(readFileSync(FULL_SUMMARY_PATH, 'utf8'));

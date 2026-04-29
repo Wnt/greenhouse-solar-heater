@@ -5,7 +5,6 @@ const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
-const crypto = require('node:crypto');
 
 // ── Session module tests ──
 

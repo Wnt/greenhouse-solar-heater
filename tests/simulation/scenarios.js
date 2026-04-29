@@ -61,14 +61,6 @@ function findMode(trace, mode) {
   return trace.filter(s => s.mode === mode);
 }
 
-function maxTemp(trace, sensor) {
-  return Math.max(...trace.map(s => s.temps[sensor]));
-}
-
-function minTemp(trace, sensor) {
-  return Math.min(...trace.map(s => s.temps[sensor]));
-}
-
 // --- Scenarios ---
 
 const scenarios = [

@@ -1,8 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { evaluate, MODES, DEFAULT_CONFIG, MODE_VALVES,
-        VALVE_TIMING, planValveTransition,
-        buildSnapshotFromState, runBoundedPool } = require('../shelly/control-logic.js');
+const { evaluate, MODES, DEFAULT_CONFIG, MODE_VALVES } = require('../shelly/control-logic.js');
 
 function makeState(overrides) {
   const base = {

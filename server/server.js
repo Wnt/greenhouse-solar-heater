@@ -6,10 +6,8 @@
  */
 
 const http = require('http');
-const net = require('net');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const createLogger = require('./lib/logger');
 const mqttBridge = require('./lib/mqtt-bridge');
 const deviceConfig = require('./lib/device-config');
@@ -17,7 +15,6 @@ const deviceConfig = require('./lib/device-config');
 const otelApi = require('@opentelemetry/api');
 
 const sensorConfig = require('./lib/sensor-config');
-const sensorDiscovery = require('./lib/sensor-discovery');
 const push = require('./lib/push');
 const anomalyManager = require('./lib/anomaly-manager');
 const { createScriptMonitor } = require('./lib/script-monitor');
@@ -30,7 +27,6 @@ const log = createLogger('server');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
 const PLAYGROUND_DIR = path.join(__dirname, '..', 'playground');
 const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
-const VPN_CHECK_HOST = process.env.VPN_CHECK_HOST || '';
 const MQTT_HOST = process.env.MQTT_HOST || '';
 const PREVIEW_MODE = process.env.PREVIEW_MODE === 'true';
 
@@ -105,7 +101,7 @@ let scriptMonitor = null;
 let handlers = null;
 
 // ── HTTP route detection (for OTel span naming) ──
-function resolveRoute(urlPath, method) {
+function resolveRoute(urlPath, _method) {
   if (urlPath === '/health') return '/health';
   if (urlPath === '/version') return '/version';
   if (urlPath.startsWith('/auth/users/')) return '/auth/users/*';
