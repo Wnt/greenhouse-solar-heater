@@ -15,6 +15,7 @@ import { drawHistoryGraph } from './history-graph.js';
 import { resetChartZoom } from './chart-pinch-zoom.js';
 import {
   transitionLog, fetchLiveEvents, resetEventsState,
+  registerLogsEventsSource,
 } from './logs.js';
 import {
   fetchBalanceHistory, renderBalanceCard,
@@ -64,10 +65,11 @@ export function initConnection({ setRunning } = {}) {
     })
     .catch(function () { /* silent; prod default applies */ });
 
-  // Both sources gate on phase==='live' so they're inert in sim mode
-  // without an explicit deregister.
+  // All three sources gate on phase==='live' so they're inert in sim
+  // mode without an explicit deregister.
   registerLiveHistorySource(() => graphRange);
   registerBalanceHistorySource();
+  registerLogsEventsSource();
 
   // Single repaint on the syncing edge collapses the old two-step
   // ("blur clears, then banner clears") into one transition.

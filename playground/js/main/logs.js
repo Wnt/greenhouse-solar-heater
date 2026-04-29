@@ -12,6 +12,7 @@ import {
 import { model, params, MODE_INFO, timeSeriesStore, transitionLog, lastLiveFrame } from './state.js';
 import { getWatchdogSnapshot } from './watchdog-ui.js';
 import { modeAt, appendModeEvent } from './mode-events.js';
+import { registerDataSource } from '../sync/registry.js';
 
 export { transitionLog };
 
@@ -34,12 +35,18 @@ export function resetEventsState() {
   lastLiveMode = null;
 }
 
-function fetchEventPage(type, before) {
+function fetchEventPage(type, before, signal) {
   let url = '/api/events?type=' + type + '&limit=' + EVENTS_PAGE_SIZE;
   if (before !== null && before !== undefined) url += '&before=' + before;
-  return fetch(url)
+  return fetch(url, { signal })
     .then(r => r.ok ? r.json() : { events: [], hasMore: false })
-    .catch(() => ({ events: [], hasMore: false }));
+    .catch((e) => {
+      // Re-throw aborts so the sync coordinator drops the result; swallow
+      // everything else (network blips, etc.) so the existing scroll-loader
+      // keeps quietly retrying on the next page.
+      if (e && e.name === 'AbortError') throw e;
+      return { events: [], hasMore: false };
+    });
 }
 
 function modeRowToLogEntry(e) {
@@ -70,6 +77,37 @@ function configRowToLogEntry(e) {
   };
 }
 
+// Apply a paged fetch result into transitionLog + cursor state. Pulled
+// out of fetchLiveEvents so the sync-coordinator data source can reuse
+// the exact same write path on Android resume.
+function applyEventPages(modeData, configData, isReset) {
+  if (store.get('phase') !== 'live') return;
+  const modeEvents = (modeData && Array.isArray(modeData.events)) ? modeData.events : [];
+  const configEvents = (configData && Array.isArray(configData.events)) ? configData.events : [];
+
+  if (isReset) transitionLog.length = 0;
+
+  for (let i = 0; i < modeEvents.length; i++) {
+    transitionLog.push(modeRowToLogEntry(modeEvents[i]));
+  }
+  for (let i = 0; i < configEvents.length; i++) {
+    transitionLog.push(configRowToLogEntry(configEvents[i]));
+  }
+  // Re-sort the merged list newest-first. Stable enough for our N (~20).
+  transitionLog.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+  if (!modeData._skipped) {
+    if (modeEvents.length > 0) modeCursor = modeEvents[modeEvents.length - 1].ts;
+    modeHasMore = !!(modeData && modeData.hasMore);
+  }
+  if (!configData._skipped) {
+    if (configEvents.length > 0) configCursor = configEvents[configEvents.length - 1].ts;
+    configHasMore = !!(configData && configData.hasMore);
+  }
+
+  renderLogsList();
+}
+
 // Fetch the next page of events. `reset` true clears the log and
 // fetches both feeds afresh; otherwise advances each feed's cursor
 // independently and appends to the existing list. Sorting by ts DESC
@@ -93,36 +131,26 @@ export function fetchLiveEvents(reset) {
     : Promise.resolve({ events: [], hasMore: false, _skipped: true });
 
   Promise.all([modePromise, configPromise])
-    .then(function ([modeData, configData]) {
-      // Only apply to the current phase — the user may have switched back
-      // to simulation while the requests were in flight.
-      if (store.get('phase') !== 'live') return;
-      const modeEvents = (modeData && Array.isArray(modeData.events)) ? modeData.events : [];
-      const configEvents = (configData && Array.isArray(configData.events)) ? configData.events : [];
-
-      if (isReset) transitionLog.length = 0;
-
-      for (let i = 0; i < modeEvents.length; i++) {
-        transitionLog.push(modeRowToLogEntry(modeEvents[i]));
-      }
-      for (let i = 0; i < configEvents.length; i++) {
-        transitionLog.push(configRowToLogEntry(configEvents[i]));
-      }
-      // Re-sort the merged list newest-first. Stable enough for our N (~20).
-      transitionLog.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-
-      if (!modeData._skipped) {
-        if (modeEvents.length > 0) modeCursor = modeEvents[modeEvents.length - 1].ts;
-        modeHasMore = !!(modeData && modeData.hasMore);
-      }
-      if (!configData._skipped) {
-        if (configEvents.length > 0) configCursor = configEvents[configEvents.length - 1].ts;
-        configHasMore = !!(configData && configData.hasMore);
-      }
-
-      renderLogsList();
-    })
+    .then(([modeData, configData]) => applyEventPages(modeData, configData, isReset))
     .then(() => { eventsLoading = false; });
+}
+
+// Wires the System Logs feed into the sync coordinator so visibility /
+// pageshow / online events re-fetch the latest page of mode + config
+// transitions. Without this the on-screen list froze at whatever was
+// loaded when the user first opened the page — transitions that
+// happened while the tab was backgrounded landed in the DB but the
+// open page never asked for them. Same shape as registerLiveHistorySource.
+export function registerLogsEventsSource() {
+  return registerDataSource({
+    id: 'logs-events',
+    isActive: () => store.get('phase') === 'live',
+    fetch: (signal) => Promise.all([
+      fetchEventPage('mode', null, signal),
+      fetchEventPage('config', null, signal),
+    ]).then(([modeData, configData]) => ({ modeData, configData })),
+    applyToStore: ({ modeData, configData }) => applyEventPages(modeData, configData, true),
+  });
 }
 
 function formatLiveTransitionText(from, to) {

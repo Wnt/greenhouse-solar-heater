@@ -115,6 +115,43 @@ test.describe('visibility resync', () => {
     await expect(overlay).not.toHaveClass(/connection-overlay--syncing/);
   });
 
+  test('hide → show triggers a /api/events re-fetch so the System Logs list refreshes', async ({ page }) => {
+    // Regression: on Android resume the System Logs list stayed frozen
+    // at whatever was fetched when the page was first opened. Mode
+    // transitions that happened during the background interval landed
+    // in the DB but the open page never asked for them. This asserts
+    // the events feed is registered with the sync coordinator so it
+    // re-fetches on visibility/pageshow/online like /api/history does.
+    let eventsHits = 0;
+    await page.route('**/api/history**', route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ points: [], events: [] }),
+    }));
+    await page.unroute('**/api/events**');
+    await page.route('**/api/events**', route => {
+      eventsHits++;
+      route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ events: [], hasMore: false }),
+      });
+    });
+    await page.goto('/playground/');
+    await waitForSyncReady(page);
+
+    // Initial load fires one fetch per feed (mode + config).
+    await expect.poll(() => eventsHits, { timeout: 5000 }).toBeGreaterThanOrEqual(2);
+    const baseline = eventsHits;
+
+    // Simulate Android resume.
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    // The resync must hit /api/events again (one per feed).
+    await expect.poll(() => eventsHits, { timeout: 5000 }).toBeGreaterThanOrEqual(baseline + 2);
+  });
+
   test('liveFrameSeen is reset on resync start so trends fall back to fresh history', async ({ page }) => {
     // Background: the original Android bug had `liveFrameSeen` stay
     // true across the backgrounding, so on resume the UI used the
