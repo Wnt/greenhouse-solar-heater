@@ -70,7 +70,7 @@ function handleCreateUser(req, res, body) {
   const caller = requireAdmin(req, res);
   if (!caller) return;
 
-  let parsed = {};
+  let parsed;
   try {
     parsed = body ? JSON.parse(body) : {};
   } catch (e) {
@@ -185,7 +185,7 @@ function handleUpdatePasskey(req, res, urlPath, body) {
     return;
   }
 
-  let parsed = {};
+  let parsed;
   try {
     parsed = body ? JSON.parse(body) : {};
   } catch (e) {

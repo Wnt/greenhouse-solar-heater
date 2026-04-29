@@ -122,8 +122,7 @@ describe('data-source contract', () => {
       for (const cb of callbacks) cb(status);
     }
 
-    // WS connects
-    mqttStatus = 'unknown';
+    // WS connects (mqttStatus stays 'unknown' until server sends an update)
     connectedAt = Date.now();
     emitConnectionChange('connected');
     assert.strictEqual(connected, true);
@@ -277,6 +276,7 @@ describe('data-source contract', () => {
 
   it('MQTT status resets to unknown on WS close', () => {
     let mqttStatus = 'connected';
+    assert.strictEqual(mqttStatus, 'connected');
     // Simulate ws.onclose behavior
     mqttStatus = 'unknown';
     assert.strictEqual(mqttStatus, 'unknown');
@@ -289,7 +289,7 @@ describe('data-source contract', () => {
     assert.strictEqual(getConnectionDisplayState({
       connectionStatus: 'disconnected',
       hasReceivedData: false,
-      wsEverFailed: false,
+      wsEverFailed,
     }), 'connecting');
 
     // Simulate ws.onclose — marks failure
@@ -309,6 +309,10 @@ describe('data-source contract', () => {
     let mqttStatus = 'connected';
     let connectedAt = Date.now();
     let hasReceivedData = true;
+    // Pre-conditions
+    assert.strictEqual(mqttStatus, 'connected');
+    assert.ok(connectedAt > 0);
+    assert.strictEqual(hasReceivedData, true);
     // Simulate stop() behavior
     hasReceivedData = false;
     mqttStatus = 'unknown';

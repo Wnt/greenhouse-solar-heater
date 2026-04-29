@@ -144,8 +144,8 @@ export function computeEnergyBalance(points, events, nowMs) {
   }
 
   // Night bounds.
-  let nightStartIdx = -1;
-  let nightEndIdx = -1;
+  let nightStartIdx;
+  let nightEndIdx;
 
   if (!latestDay) {
     // No day in the window → everything is an ongoing night.
