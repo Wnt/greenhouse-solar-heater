@@ -6,15 +6,15 @@ Solar thermal heating system for a greenhouse in Southwest Finland.
 
 ## What This Is
 
-An open (unpressurized) solar thermal system that:
-- Heats water in a 300L Jäspi tank using 2× flat plate solar collectors (4m²)
-- Distributes stored heat to the greenhouse via a car radiator and fan
+A green house heating solar thermal system that:
+- Heats water in an instulated tank using solar collectors
+- Distributes stored heat to the greenhouse with a water-to-air heat exchanger
 - Uses active pump-driven drainback for freeze protection (spring/autumn nightly drain cycles)
-- Controlled by Shelly devices with DS18B20 temperature sensors
+- Controlled by Shelly devices with temperature sensors
 
 ## Interactive Playground
 
-**[Try it live →](https://wnt.github.io/greenhouse-solar-heater/playground/)**
+**[Try it live →](https://wnt.github.io/greenhouse-solar-heater/)**
 
 A hash-routed SPA/PWA deployed via GitHub Pages. In simulator mode it runs entirely client-side, loading `system.yaml` as configuration and re-using the on-device control logic verbatim.
 
