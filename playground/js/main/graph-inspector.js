@@ -9,6 +9,7 @@ import { timeSeriesStore, showAllSensors } from './state.js';
 import { tankAvgOf, getChartWindow } from './history-graph.js';
 import { formatClockTime } from './time-format.js';
 import { coverageInBucket } from './mode-events.js';
+import { pickBucketSize } from '../ui.js';
 
 function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
 const TEMP_PLACEHOLDER = '—';
@@ -93,15 +94,18 @@ export function setupInspector() {
     document.getElementById('inspector-gh').textContent = fmtInspTemp(v.t_greenhouse);
     document.getElementById('inspector-out').textContent = fmtInspTemp(v.t_outdoor);
 
-    // Duty cycle for the hour containing this point
-    const hourSeconds = 3600;
-    const hr = Math.floor(t / hourSeconds);
-    const hrStart = hr * hourSeconds;
-    const hrEnd = (hr + 1) * hourSeconds;
-    const cov = coverageInBucket(hrStart, hrEnd);
-    const chPct = Math.round(100 * cov.charging / hourSeconds);
-    const htPct = Math.round(100 * cov.heating / hourSeconds);
-    const emPct = Math.round(100 * cov.emergency / hourSeconds);
+    // Duty cycle for the bucket containing this point. Bucket size matches
+    // the bar chart (pickBucketSize): 1H view → 15-min, 6H → 30-min,
+    // 12-48H → 1h, multi-day → 1d. Reading the same span the bar above
+    // covers, so the percentage matches the bar height under the cursor.
+    const bucketSec = pickBucketSize(visibleRange);
+    const bi = Math.floor(t / bucketSec);
+    const bStart = bi * bucketSec;
+    const bEnd = (bi + 1) * bucketSec;
+    const cov = coverageInBucket(bStart, bEnd);
+    const chPct = Math.round(100 * cov.charging / bucketSec);
+    const htPct = Math.round(100 * cov.heating / bucketSec);
+    const emPct = Math.round(100 * cov.emergency / bucketSec);
     document.getElementById('inspector-charging').textContent = chPct + '%';
     document.getElementById('inspector-heating').textContent = htPct + '%';
     document.getElementById('inspector-emergency').textContent = emPct + '%';
