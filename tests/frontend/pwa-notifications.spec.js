@@ -154,6 +154,65 @@ test.describe('Settings view — desktop', () => {
   });
 });
 
+test.describe('Install button wiring race', () => {
+  // Regression: wireNotificationUI() used to run inside
+  // initNotifications().then(), so __initComplete flipped true while
+  // the install button click handler was still un-attached (~25ms
+  // after, until the SW-registration microtask drained). Under
+  // parallel load this raced ~1/5 runs and the fallback modal stayed
+  // hidden. Contract under test: the button listener is attached by
+  // the time the page reports __initComplete = true.
+
+  test('install button listener is attached before __initComplete = true', async ({ page }) => {
+    await page.route('**/api/push/vapid-key', route => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          publicKey: 'BIlDax-DYNzPJfB4LHkOfn_nnpU1i_-27xp9UHUZS-axEePU-xIB94H4vblRxEJxjR-k-SK70o-mpQoMy2QcZUA',
+        }),
+      });
+    });
+
+    await page.addInitScript(() => {
+      window.__btnClickWiredAt = null;
+      window.__initCompleteAt = null;
+      const origAdd = HTMLElement.prototype.addEventListener;
+      HTMLElement.prototype.addEventListener = function (type, ...args) {
+        if (this.id === 'pwa-install-btn' && type === 'click' && window.__btnClickWiredAt === null) {
+          window.__btnClickWiredAt = performance.now();
+        }
+        return origAdd.call(this, type, ...args);
+      };
+      // Trap the moment main.js sets __initComplete = true.
+      let initCompleteValue = false;
+      Object.defineProperty(window, '__initComplete', {
+        configurable: true,
+        get() { return initCompleteValue; },
+        set(v) {
+          if (v === true && window.__initCompleteAt === null) {
+            window.__initCompleteAt = performance.now();
+          }
+          initCompleteValue = v;
+        },
+      });
+    });
+
+    await page.goto('/playground/?mode=sim');
+    await page.waitForFunction(() => window.__initComplete === true);
+
+    const timing = await page.evaluate(() => ({
+      initCompleteAt: window.__initCompleteAt,
+      btnClickWiredAt: window.__btnClickWiredAt,
+    }));
+    expect(timing.btnClickWiredAt, 'install button click handler must be attached by __initComplete time').not.toBeNull();
+    expect(
+      timing.btnClickWiredAt,
+      `install button must be wired before __initComplete (wired=${timing.btnClickWiredAt}, initComplete=${timing.initCompleteAt})`
+    ).toBeLessThanOrEqual(timing.initCompleteAt);
+  });
+});
+
 test.describe('Install card state when running standalone', () => {
   // When the PWA is launched from the home screen Chrome reports
   // display-mode: standalone. The Install card should swap to an

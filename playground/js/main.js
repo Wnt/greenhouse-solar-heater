@@ -143,10 +143,10 @@ async function init() {
   // PWA install prompt capture (must be early, before beforeinstallprompt fires)
   captureInstallPrompt();
 
-  // Initialize push notifications (service worker, VAPID key, existing subscription)
-  initNotifications().then(function () {
-    wireNotificationUI();
-  });
+  // Wire DOM listeners synchronously — must run before __initComplete so
+  // tests (and slow real-network users) don't race against initNotifications().
+  wireNotificationUI();
+  initNotifications();
 
   // Start polling for JS source updates
   startVersionCheck();
