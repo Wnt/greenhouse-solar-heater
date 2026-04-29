@@ -59,8 +59,8 @@
   <rect x="290" y="72" width="140" height="55"
         fill="#42a5f520" stroke="#42a5f5" stroke-width="2.5" rx="5"/>
   <text x="360" y="92" fill="#64b5f6" text-anchor="middle" font-size="12" font-weight="bold">Reservoir</text>
-  <text x="360" y="107" fill="#64b5f6" text-anchor="middle" font-size="9">filling — air escapes from open top</text>
-  <text x="360" y="66" fill="#90caf9" text-anchor="middle" font-size="9">open / vented (~200cm)</text>
+  <text x="360" y="107" fill="#64b5f6" text-anchor="middle" font-size="9">filling — air escapes via loose cap</text>
+  <text x="360" y="66" fill="#90caf9" text-anchor="middle" font-size="9">25L canister, loose cap (~200cm)</text>
 
   <!-- Air escaping from reservoir -->
   <text x="440" y="68" fill="#90caf960" font-size="12">↑ air out</text>

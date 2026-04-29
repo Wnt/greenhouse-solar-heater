@@ -49,10 +49,10 @@ A hash-routed SPA/PWA deployed via GitHub Pages. In simulator mode it runs entir
 
 ## Key Design Decisions
 
-- **Unpressurized system** — Jäspi tank sealed but vented via an open reservoir on the dip-tube port
+- **Unpressurized system** — Jäspi tank sealed but vented via a 25 L plastic canister (loose cap, 3× 22 mm PEX bottom fittings) on the dip-tube port
 - **On/off valve manifold** — 7 motorized on/off DN15 valves (3 input, 3 output, plus V_air) around a single pump
 - **Active drainback** — pump empties collectors; air enters via V_air at collector top
 - **Pump power monitoring** — fixed-duration drain run; no physical flow sensor
-- **Open reservoir** — primary air separator; trapped air from collector loop and tank vents here
+- **Canister reservoir** — primary air separator; trapped air from collector loop and tank vents through the loose cap
 - **Manual service valves** — SV-drain and SV-fill for system maintenance
 - **Shelly control** — Pro 4PM (main) + Pro 2PM × valves + Shelly 1 Gen3 with Add-on (sensors)

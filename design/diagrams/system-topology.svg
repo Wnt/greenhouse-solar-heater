@@ -156,20 +156,20 @@
         fill="#42a5f515" stroke="#42a5f5" stroke-width="2.5" rx="5"
         data-component="reservoir" data-role="air separator"/>
 
-  <!-- Open top indicator -->
-  <line x1="578" y1="178" x2="578" y2="166" stroke="#90caf9" stroke-width="1"/>
-  <line x1="662" y1="178" x2="662" y2="166" stroke="#90caf9" stroke-width="1"/>
-  <text x="620" y="164" fill="#90caf9" text-anchor="middle" font-size="8">open / vented ↑</text>
+  <!-- Loose cap indicator -->
+  <line x1="578" y1="178" x2="662" y2="178" stroke="#90caf9" stroke-width="1.5"/>
+  <line x1="586" y1="176" x2="654" y2="176" stroke="#90caf9" stroke-width="0.6" stroke-dasharray="2,2"/>
+  <text x="620" y="164" fill="#90caf9" text-anchor="middle" font-size="8">loose cap ↑</text>
 
-  <!-- Gas space at reservoir top (vented to atmosphere) -->
+  <!-- Gas space at canister top (vents through loose cap) -->
   <rect x="578" y="181" width="84" height="10" fill="#90caf908" rx="2"/>
-  <text x="620" y="188" fill="#90caf940" text-anchor="middle" font-size="6">air (vents)</text>
+  <text x="620" y="188" fill="#90caf940" text-anchor="middle" font-size="6">air (vents via cap)</text>
 
-  <!-- Water level in reservoir — matches tank water level at ~197cm -->
+  <!-- Water level in canister — matches tank water level at ~197cm -->
   <line x1="578" y1="201" x2="662" y2="201" stroke="#42a5f5" stroke-width="1.5"/>
 
-  <text x="620" y="212" fill="#64b5f6" text-anchor="middle" font-size="11" font-weight="bold">Reservoir</text>
-  <text x="620" y="224" fill="#64b5f6" text-anchor="middle" font-size="8">air separator</text>
+  <text x="620" y="212" fill="#64b5f6" text-anchor="middle" font-size="11" font-weight="bold">25L canister</text>
+  <text x="620" y="224" fill="#64b5f6" text-anchor="middle" font-size="8">air separator (loose cap)</text>
 
   <!-- ====== WATER LEVEL ALIGNMENT LINE ====== -->
   <!-- Dashed line showing water level is the same in both (communicating vessels) -->
@@ -177,13 +177,13 @@
   <text x="672" y="198" fill="#42a5f5" font-size="7">← water level ~197cm</text>
   <text x="672" y="208" fill="#42a5f5" font-size="7">(communicating vessels)</text>
 
-  <!-- ====== PIPE: dip tube port (0cm) → UP to reservoir ====== -->
+  <!-- ====== PIPE: dip tube port (0cm) → UP to canister bottom fitting ====== -->
   <path d="M 480 658 L 480 720 L 665 720 L 665 200" fill="none" stroke="#ef5350" stroke-width="1.5" stroke-dasharray="5,3"/>
-  <text x="675" y="440" fill="#ef9a9a50" font-size="7" transform="rotate(-90 675 440)">pipe: dip tube port → reservoir</text>
+  <text x="675" y="440" fill="#ef9a9a50" font-size="7" transform="rotate(-90 675 440)">pipe: dip tube port → canister btm</text>
 
-  <!-- ====== PIPE: Reservoir bottom → VI-top (pump input for heating) ====== -->
+  <!-- ====== PIPE: canister bottom fitting → VI-top (pump input for heating) ====== -->
   <path d="M 585 218 L 585 515 L 310 515 L 310 629 L 190 629" fill="none" stroke="#ef9a9a" stroke-width="1.5" stroke-dasharray="4,3"/>
-  <text x="445" y="510" fill="#ef9a9a60" font-size="7">reservoir bottom → VI-top (de-aired water)</text>
+  <text x="445" y="510" fill="#ef9a9a60" font-size="7">canister btm → VI-top (de-aired water)</text>
 
   <!-- ============================================================ -->
   <!-- INPUT MANIFOLD (lower left area) -->

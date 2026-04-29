@@ -57,46 +57,55 @@ components:
       use: optional backup
 
   reservoir:
-    type: open vented container (acts as air separator)
+    type: 25L plastic canister (kanisteri) with loose cap — acts as air separator
     position: on top of Jäspi tank
     height: 200–220cm
-    volume: 20–50L (TBD)
+    volume: 25L
+    insulation: none (bare plastic walls)
     connections:
-      top_mid_inlet_1:
-        pipe_from: dip tube port (0cm) — pipe runs UP from tank to reservoir
+      note: >
+        All three pipe penetrations are 22mm PEX fittings on the BOTTOM
+        of the canister. Because every fitting is below the water line,
+        the collector-T return pipe is automatically submerged — no
+        air can be drawn in via that branch under sub-atmospheric
+        pressure at the collector top. Gas separation still works:
+        bubbles entrained in incoming water rise through the canister
+        water column to the air space under the loose cap and vent
+        to atmosphere through the cap's loose seal.
+      bottom_fitting_1:
+        pipe_from: dip tube port (0cm) — pipe runs UP from tank to canister bottom
         purpose: >
-          Hot water from tank top exits via dip tube, travels up to reservoir.
-          Any trapped gas from the tank separates here and vents to atmosphere.
-      top_mid_inlet_2:
-        pipe_from: collector-top T joint (below water line)
+          Hot water from tank top exits via dip tube, travels up to the
+          canister. Trapped gas from the tank separates here and vents
+          through the loose cap.
+      bottom_fitting_2:
+        pipe_from: collector-top T joint
         purpose: >
-          Permanent connection carrying collector return water from the T
-          joint into the reservoir. The pipe MUST terminate below the
-          reservoir water line so the siphon cannot ingest air when the
-          pump creates sub-atmospheric pressure at the collector top
-          (~80 cm head difference between the collector top at 280 cm and
-          the reservoir water line at ~200 cm).
-      bottom_outlet:
+          Permanent connection carrying collector return water from the
+          T joint into the canister. Entering at the bottom of the canister
+          puts the pipe end below the water line by construction, so the
+          siphon cannot ingest air even with sub-atmospheric pressure at
+          the collector top (~80 cm head difference between the collector
+          top at 280 cm and the canister water line at ~200 cm).
+      bottom_fitting_3:
         pipe_to: VI-top valve → pump input manifold
         purpose: >
           Clean, de-aired water feeds the pump by gravity (~200cm head).
-          Pump always draws gas-free water from the reservoir bottom.
-      open_top:
-        purpose: gas vents to atmosphere
+          Pump always draws gas-free water from the canister bottom.
+      loose_cap:
+        purpose: gas vents to atmosphere through the loose seal (not a fully open top — evaporation and convective loss are suppressed compared to an open container)
     connection_to_tank: >
-      Pipe runs from dip tube port (0cm, bottom of tank) UP to reservoir
-      top/mid level (~200cm). This is the REVERSE of the old bottom-port
-      routing. Water from the tank top (via internal dip tube) flows up to
-      the reservoir, where gas separates and vents. During solar charging,
-      hot return water enters the reservoir from the collector-top T joint
-      (permanent below-water-line connection) and flows down through the
-      dip tube pipe into the tank top (~185cm inside) — excellent
-      stratification.
+      Pipe runs from dip tube port (0cm, bottom of tank) UP to a bottom
+      fitting on the canister (~200cm). Water from the tank top (via
+      internal dip tube) flows up to the canister, where gas separates
+      and vents through the loose cap. During solar charging, hot return
+      water enters the canister from the collector-top T joint (also a
+      bottom fitting) and flows down through the dip tube pipe into the
+      tank top (~185cm inside) — excellent stratification.
     purpose:
       - air separator (gas from tank top vents here before reaching pump)
       - drainback buffer (collector water volume during drain)
       - expansion volume
-      - fill point
       - gravity feed to pump (ensures pump never loses prime)
 
   pump:
@@ -126,8 +135,8 @@ components:
   # 80cm water column falling to reservoir) would draw air IN, not vent it out.
   # Confirmed by testing with manual valve at collector top. Trapped air in the
   # collector loop is carried by water flow through the passive T joint (at
-  # the collector top) down to the open reservoir, where it vents to
-  # atmosphere. No dedicated air vent needed.
+  # the collector top) down to the reservoir canister, where it vents to
+  # atmosphere through the canister's loose cap. No dedicated air vent needed.
 
 # =============================================================================
 # VALVE MANIFOLD (on/off topology)
@@ -156,7 +165,7 @@ valves:
       type: motorized on/off ball valve
       size: DN15
       actuator: 9-24V DC (A83 2-wire, auto-return close)
-      source: reservoir bottom outlet (fed by tank dip tube)
+      source: canister bottom fitting (fed by tank dip tube via the canister)
       purpose: draw de-aired hot water for greenhouse heating (pump always primed)
 
     vi_coll:
@@ -204,13 +213,15 @@ valves:
   collector_top:
     description: >
       One motorized valve (V_air) plus a passive T joint permanently
-      connecting the collector-top pipe to the reservoir. The T joint has
-      three branches: (1) the collector-top pipe itself (water-filled in
-      all non-drain modes); (2) a permanent pipe down to the reservoir
-      that terminates BELOW the reservoir water line so air cannot be
-      drawn in (the siphon carries return water from collectors to
-      reservoir during solar charging); (3) the V_air branch, opened only
-      during drain modes to admit atmospheric air and break the siphon.
+      connecting the collector-top pipe to the reservoir canister. The
+      T joint has three branches: (1) the collector-top pipe itself
+      (water-filled in all non-drain modes); (2) a permanent pipe down
+      to a bottom fitting on the canister — entering at the bottom puts
+      the pipe end below the water line by construction, so air cannot
+      be drawn in (the siphon carries return water from collectors to
+      canister during solar charging); (3) the V_air branch, opened
+      only during drain modes to admit atmospheric air and break the
+      siphon.
     location: collector top, height ~280cm
 
     v_air:
@@ -221,9 +232,9 @@ valves:
       fail_safe: >
         Power loss closes V_air (normally-closed wiring), so there is no
         automatic siphon break on power loss. The passive T joint still
-        connects the collector top to the reservoir through water, so the
+        connects the collector top to the canister through water, so the
         collector-side column remains in hydrostatic equilibrium with the
-        reservoir water level. Freeze-protection drain is driven actively
+        canister water level. Freeze-protection drain is driven actively
         by the pump in active_drain mode; it is NOT triggered by power
         loss.
       path: collector top T joint → open air
@@ -243,7 +254,7 @@ valves:
     sv_fill:
       location: input manifold or reservoir area
       fitting: hose barb (garden hose compatible)
-      purpose: fill system with water (air escapes through open reservoir)
+      purpose: fill system with water (air escapes through the canister's loose cap)
 
   total_motorized: 7  # 8 when wood burner added (VO-wood)
   total_manual: 2
@@ -259,7 +270,7 @@ piping:
   insulation: "yes — all outdoor pipes insulated"
   typical_flow: 4–10 L/min
   radiator_return: pipe to tank bottom port (direct)
-  reservoir_to_tank: pipe from reservoir top/mid (200cm) DOWN to dip tube port (0cm) — then UP through internal dip tube to ~185cm
+  reservoir_to_tank: pipe from canister bottom fitting (~200cm) DOWN to dip tube port (0cm) — then UP through internal dip tube to ~185cm
 
 # =============================================================================
 # SENSORS
@@ -444,17 +455,20 @@ control:
       No auto air vent at collector top — sub-atmospheric pressure there
       (80cm falling water column to reservoir) would draw air in rather
       than vent it. Trapped air in the collector loop is carried by water
-      flow through the passive T joint to the open reservoir, where it
-      separates and vents. The T-joint-to-reservoir pipe terminates below
-      the reservoir water line so no air can re-enter from the reservoir
+      flow through the passive T joint to the reservoir canister, where
+      it separates and vents through the loose cap. The T-joint pipe
+      enters the canister at a bottom fitting (always below the water
+      line by construction), so no air can re-enter from the canister
       side even under sub-atmospheric pressure at the collector top.
     tank_gas_venting: >
-      Reservoir acts as primary air separator. Water from the tank top
-      (via dip tube) enters the reservoir at top/mid level. Trapped gas
-      from the tank separates here and vents to atmosphere through the
-      open reservoir. Clean, de-aired water exits the reservoir bottom
-      to the pump. The pump ALWAYS draws from the reservoir bottom,
-      never directly from the dip tube — so it never encounters trapped gas.
+      Reservoir canister acts as primary air separator. Water from the
+      tank top (via dip tube) enters the canister through one of the
+      three bottom fittings. Trapped gas from the tank rises through
+      the canister water column to the air space under the loose cap
+      and vents to atmosphere. Clean, de-aired water exits another
+      bottom fitting to the pump. The pump ALWAYS draws from the
+      canister, never directly from the dip tube — so it never
+      encounters trapped gas.
     radiator_gas_clearing: >
       Pump pushes pressurized water through the radiator (Option A topology).
       Positive pressure clears gas from the radiator's small parallel channels
@@ -510,7 +524,7 @@ modes:
       fan: OFF
     flow_path:
       supply: tank bottom port (0cm) → VI-btm → pump → VO-coll → collector bottom → up through panels
-      return: collector top → T joint → reservoir (below water line) → dip tube pipe down to 0cm → up through internal dip tube → exits at ~185cm inside tank (enters at TOP = excellent stratification)
+      return: collector top → T joint → canister bottom fitting (below water line by construction) → dip tube pipe down to 0cm → up through internal dip tube → exits at ~185cm inside tank (enters at TOP = excellent stratification)
 
   greenhouse_heating:
     description: Use stored heat to warm greenhouse
@@ -528,7 +542,7 @@ modes:
       pump: ON
       fan: ON
     flow_path:
-      supply: tank top water → dip tube → exits at 0cm → pipe UP to reservoir top (~200cm) → gas separates and vents → reservoir bottom → VI-top → pump → VO-rad → radiator
+      supply: tank top water → dip tube → exits at 0cm → pipe UP to canister bottom fitting (~200cm) → gas rises and vents through loose cap → another canister bottom fitting → VI-top → pump → VO-rad → radiator
       return: radiator → tank bottom port (0cm) → enters tank at bottom
 
   active_drain:
@@ -637,11 +651,11 @@ modes:
       - step: 1
         action: Ensure all motorized valves are CLOSED
       - step: 2
-        action: Open SV-fill, connect garden hose, fill via reservoir
+        action: Open SV-fill, connect garden hose, fill from the bottom
       - step: 3
-        action: "Water fills reservoir → overflows down dip tube pipe → fills tank"
+        action: "Water fills tank and rises through dip tube pipe into canister (communicating vessels via the bottom fitting)"
       - step: 4
-        action: Continue filling until reservoir water level stabilizes (~200cm, communicating vessels)
+        action: Continue filling until canister water level stabilizes (~200cm, communicating vessels). Air escapes through the loose cap.
       - step: 5
         action: Close SV-fill
       - step: 6
@@ -653,11 +667,12 @@ modes:
       - step: 9
         action: Add corrosion inhibitor (e.g. Sentinel X100) per manufacturer dosing
     notes: >
-      Air escapes through the open reservoir during fill. Running each
-      flow loop with the pump pushes remaining trapped air through the
-      system to the reservoir where it vents. Residual air in the
-      collector loop is carried by flow through the T joint (collector
-      top → reservoir, permanent below-water-line connection).
+      Air escapes through the loose cap on the canister during fill.
+      Running each flow loop with the pump pushes remaining trapped air
+      through the system to the canister where it vents. Residual air in
+      the collector loop is carried by flow through the T joint (collector
+      top → canister, permanent connection entering the canister at a
+      bottom fitting — automatically below the water line).
 
   autumn_shutdown:
     description: Seasonal shutdown — drain entire outdoor system

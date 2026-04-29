@@ -73,9 +73,9 @@
         fill="#42a5f515" stroke="#42a5f5" stroke-width="2.5" rx="5"/>
   <text x="400" y="92" fill="#64b5f6" text-anchor="middle" font-size="12" font-weight="bold">Reservoir</text>
   <text x="400" y="107" fill="#64b5f6" text-anchor="middle" font-size="10">air separator</text>
-  <text x="400" y="66" fill="#90caf9" text-anchor="middle" font-size="9">open / vented (~200cm)</text>
+  <text x="400" y="66" fill="#90caf9" text-anchor="middle" font-size="9">25L canister, loose cap (~200cm)</text>
 
-  <!-- Gas venting from reservoir -->
+  <!-- Gas venting from canister via loose cap -->
   <text x="470" y="68" fill="#90caf960" font-size="12">↑ gas vents</text>
 
   <!-- Water level in reservoir -->
