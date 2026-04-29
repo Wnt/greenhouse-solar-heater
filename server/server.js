@@ -199,10 +199,9 @@ const server = http.createServer(function (req, res) {
   }
 
   // Auth gate for all other routes
-  let authedSession = null;
   let currentUser = null;
   if (AUTH_ENABLED) {
-    authedSession = authMiddleware.validateRequest(req);
+    const authedSession = authMiddleware.validateRequest(req);
     if (!authedSession) {
       if (urlPath.startsWith('/api/')) {
         jsonResponse(res, 401, { error: 'Not authenticated' });

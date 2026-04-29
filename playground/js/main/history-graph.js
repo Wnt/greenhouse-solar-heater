@@ -146,7 +146,6 @@ export function drawHistoryGraph() {
       const emBh = emergencyFrac * barAreaH;
       ctx.fillStyle = 'rgba(255, 112, 67, 0.7)';
       ctx.fillRect(barX, barY0 - stackH - emBh, barW, emBh);
-      stackH += emBh;
     }
   }
   document.getElementById('legend-emergency').style.display = hasEmergency ? 'flex' : 'none';

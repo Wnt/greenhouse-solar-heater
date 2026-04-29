@@ -270,7 +270,6 @@ function getHistory(range, sensor, callback) {
     if (sensor) {
       aggWhereSensor = (aggWhereTime ? ' AND' : ' WHERE') + ' sensor_id = $' + paramIdx;
       params.push(sensor);
-      paramIdx++;
     }
     const coarse = COARSE_BUCKETS[range];
     if (coarse) {
@@ -292,7 +291,6 @@ function getHistory(range, sensor, callback) {
       paramIdx++;
       rawSensorClause = ' AND sensor_id = $' + paramIdx;
       params.push(sensor);
-      paramIdx++;
     }
     const rawSql = "SELECT ts, sensor_id, value FROM sensor_readings WHERE ts > NOW() - INTERVAL '6 hours'" +
       rawSensorClause;
@@ -321,7 +319,6 @@ function getHistory(range, sensor, callback) {
         : '';
       if (sensor) {
         params.push(sensor);
-        paramIdx++;
       }
       const leadingSql = "SELECT DISTINCT ON (sensor_id) ts, sensor_id, value" +
         " FROM sensor_readings" +

@@ -323,7 +323,7 @@ function setupTimeRangeSlider() {
     const stepEls = visibleSteps();
     const current = stepEls.findIndex(el => parseInt(el.dataset.range, 10) === graphRange);
     const cur = current < 0 ? 0 : current;
-    let next = cur;
+    let next;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = cur - 1;
     else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = cur + 1;
     else if (e.key === 'Home') next = 0;

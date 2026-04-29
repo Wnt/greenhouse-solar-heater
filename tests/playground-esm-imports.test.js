@@ -65,7 +65,7 @@ function collectExports(filePath, visited = new Set()) {
 
   let ast;
   try { ast = parse(filePath); }
-  catch (err) { throw new Error(`Failed to parse ${filePath}: ${err.message}`); }
+  catch (err) { throw new Error(`Failed to parse ${filePath}: ${err.message}`, { cause: err }); }
 
   const named = new Set();
   let hasDefault = false;
@@ -122,7 +122,7 @@ function collectExports(filePath, visited = new Set()) {
 function collectImports(filePath) {
   let ast;
   try { ast = parse(filePath); }
-  catch (err) { throw new Error(`Failed to parse ${filePath}: ${err.message}`); }
+  catch (err) { throw new Error(`Failed to parse ${filePath}: ${err.message}`, { cause: err }); }
 
   const imports = [];
   for (const node of ast.body) {
