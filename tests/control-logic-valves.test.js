@@ -1,9 +1,9 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { evaluate, MODES, DEFAULT_CONFIG, MODE_VALVES,
-        VALVE_TIMING, planValveTransition,
-        buildSnapshotFromState, runBoundedPool,
-        formatDuration, formatTemp, buildDisplayLabels } = require('../shelly/control-logic.js');
+const { evaluate, MODES, VALVE_TIMING, planValveTransition,
+        buildSnapshotFromState, runBoundedPool } = require('../shelly/control-logic.js');
+
+const VALVE_NAMES = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
 
 function makeState(overrides) {
   const base = {
@@ -17,20 +17,6 @@ function makeState(overrides) {
     sensorAge: { collector: 0, tank_top: 0, tank_bottom: 0, greenhouse: 0, outdoor: 0 }
   };
   return Object.assign({}, base, overrides);
-}
-
-const VALVE_NAMES = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
-
-function allClosed() {
-  const m = {};
-  for (const n of VALVE_NAMES) m[n] = false;
-  return m;
-}
-
-function allOpenSinceZero() {
-  const m = {};
-  for (const n of VALVE_NAMES) m[n] = 0;
-  return m;
 }
 
 function assertInvariants(plan, input) {
@@ -644,7 +630,7 @@ describe('runBoundedPool — bounded parallelism (T050b)', () => {
   it('synchronous completion: limit=1 acts like sequential execution', (t, done) => {
     const order = [];
     const dispatch = (item, cb) => { order.push(item); cb(true); };
-    runBoundedPool([1, 2, 3, 4, 5], 1, dispatch, (ok) => {
+    runBoundedPool([1, 2, 3, 4, 5], 1, dispatch, (_ok) => {
       assert.deepStrictEqual(order, [1, 2, 3, 4, 5]);
       done();
     });

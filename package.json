@@ -19,7 +19,7 @@
     "topology-drawio-playground": "node design/diagrams/generate-topology.js --theme playground --output playground/assets/system-topology.drawio",
     "bootstrap-history": "node scripts/generate-bootstrap-history.mjs",
     "knip": "knip",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "check:file-size": "node scripts/check-file-size.mjs",
     "check:assets": "node scripts/check-unused-assets.mjs",

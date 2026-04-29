@@ -9,11 +9,9 @@
  * The endpoint is public — it's reached pre-auth so login.html can
  * fetch it. No PII; only the deploy's PR number + git ref.
  */
-const { describe, it, before, after } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-
-const { createHandlers } = require('../server/lib/http-handlers');
 
 function startTestServer(envOverrides) {
   const prevEnv = {};

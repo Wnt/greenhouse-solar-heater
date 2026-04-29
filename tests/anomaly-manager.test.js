@@ -46,7 +46,7 @@ function makeMocks() {
       calls.history.push(Object.assign({ _update: id }, patch));
       return Promise.resolve();
     },
-    list: (limit) => Promise.resolve([])
+    list: (_limit) => Promise.resolve([])
   };
   const push = {
     sendByCategory: (category, payload) => {
@@ -372,7 +372,7 @@ describe('anomaly-manager setEnabled / getState / getHistory', () => {
 
   it('getState returns pending + snapshot + recent', async () => {
     const mocks = makeMocks();
-    mocks.history.list = (limit) => Promise.resolve([
+    mocks.history.list = (_limit) => Promise.resolve([
       { id: 1, watchdog_id: 'ggr', trigger_reason: 'test', fired_at: new Date() }
     ]);
     anomalyManager.init(mocks);

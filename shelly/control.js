@@ -867,7 +867,7 @@ function startDrainMonitor() {
   });
 }
 
-function stopDrain(reason) {
+function stopDrain(_reason) {
   if (state.drain_timer !== null) {
     Timer.clear(state.drain_timer);
     state.drain_timer = null;

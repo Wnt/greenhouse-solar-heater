@@ -1,7 +1,9 @@
 /**
- * Data source abstraction for the playground.
- * Provides SimulationSource (local physics model) and LiveSource (WebSocket).
- * Both produce the same data shape consumed by updateDisplay(state, result).
+ * Data source abstraction for the playground. Currently the only
+ * concrete subclass is LiveSource (WebSocket); simulation runs inline
+ * via simLoop() in main/simulation.js. The abstract base is kept so
+ * future sources (replay, recorded fixtures, etc.) plug in without
+ * reshaping LiveSource's callbacks.
  */
 
 // ── Base interface ──
@@ -218,28 +220,6 @@ export class LiveSource extends DataSource {
       flags: data.flags || {},
     };
 
-    this._emitUpdate(state, result);
-  }
-}
-
-// ── SimulationSource: wraps existing ThermalModel + ControlStateMachine ──
-
-export class SimulationSource extends DataSource {
-  constructor() {
-    super();
-    this.connected = true; // simulation is always "connected"
-  }
-
-  start() {
-    this._emitConnectionChange('connected');
-  }
-
-  stop() {
-    // Simulation lifecycle managed externally by the existing simLoop
-  }
-
-  // Called by the existing simLoop to push updates through the data source
-  pushUpdate(state, result) {
     this._emitUpdate(state, result);
   }
 }

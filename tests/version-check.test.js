@@ -2,25 +2,9 @@
  * Unit tests for the /version endpoint — verifies it returns
  * the GIT_COMMIT environment variable as the version hash.
  */
-const { describe, it, before, after } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const http = require('http');
 const { execSync } = require('child_process');
-const path = require('path');
-
-const SERVER_PATH = path.join(__dirname, '..', 'server', 'server.js');
-
-function request(port, urlPath) {
-  return new Promise(function (resolve, reject) {
-    http.get('http://127.0.0.1:' + port + urlPath, function (res) {
-      let body = '';
-      res.on('data', function (chunk) { body += chunk; });
-      res.on('end', function () {
-        resolve({ status: res.statusCode, headers: res.headers, body });
-      });
-    }).on('error', reject);
-  });
-}
 
 describe('/version endpoint', function () {
   it('returns GIT_COMMIT value as hash', function () {

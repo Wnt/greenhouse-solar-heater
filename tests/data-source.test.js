@@ -113,7 +113,6 @@ describe('data-source contract', () => {
     // Simulate LiveSource tracking MQTT status without conflating with WS
     let connected = false;
     let mqttStatus = 'unknown';
-    let connectedAt = 0;
     const statuses = [];
     const callbacks = [(s) => statuses.push(s)];
 
@@ -123,7 +122,6 @@ describe('data-source contract', () => {
     }
 
     // WS connects (mqttStatus stays 'unknown' until server sends an update)
-    connectedAt = Date.now();
     emitConnectionChange('connected');
     assert.strictEqual(connected, true);
     assert.strictEqual(mqttStatus, 'unknown');

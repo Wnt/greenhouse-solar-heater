@@ -332,7 +332,8 @@ describe('db module architectural constraints', () => {
 
     // Match patterns like: " column = '" + variable + "'"
     // These indicate SQL string interpolation of a variable into a query.
-    const interpolationPattern = /["']\s*\+\s*\w+\s*\+\s*["']/g;
+    // (Pattern is documented for review; the actual scan uses the
+    // narrower regex inside the loop below.)
     const lines = source.split('\n');
     const violations = [];
 

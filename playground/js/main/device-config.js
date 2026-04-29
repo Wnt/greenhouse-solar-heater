@@ -6,8 +6,6 @@ import { store } from '../app-state.js';
 import { renderModeEnablement } from './watchdog-ui.js';
 import { putJson } from './fetch-helpers.js';
 
-let deviceConfigData = null;
-
 export function initDeviceConfig() {
   // Toggle buttons (exclude relay override toggles — they have their own handlers)
   document.querySelectorAll('.device-toggle:not(#override-suppress-safety)').forEach(el => {
@@ -39,7 +37,6 @@ function loadDeviceConfig() {
   fetch('/api/device-config')
     .then(r => r.json())
     .then(cfg => {
-      deviceConfigData = cfg;
       populateDeviceForm(cfg);
       loading.style.display = 'none';
       form.style.display = '';
@@ -98,7 +95,6 @@ function saveDeviceConfig() {
       return r.json();
     })
     .then(cfg => {
-      deviceConfigData = cfg;
       document.getElementById('dc-version').textContent = cfg.v;
       document.getElementById('dc-size').textContent = JSON.stringify(cfg).length;
       status.textContent = 'Saved (v' + cfg.v + ')';

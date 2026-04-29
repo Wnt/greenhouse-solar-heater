@@ -25,8 +25,11 @@ export function drawHistoryGraph() {
   const canvas = document.getElementById('chart');
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
-  const w = canvas.width = canvas.offsetWidth * dpr;
-  const h = canvas.height = canvas.offsetHeight * dpr;
+  // Set the backing-store size from the CSS size + DPR. The assignments
+  // happen for their side effect; the resulting pixel dimensions are
+  // not read back here.
+  canvas.width = canvas.offsetWidth * dpr;
+  canvas.height = canvas.offsetHeight * dpr;
   ctx.scale(dpr, dpr);
   const dw = canvas.offsetWidth;
   const dh = canvas.offsetHeight;

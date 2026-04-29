@@ -25,9 +25,10 @@ const RANGE_MAP = {
   259200: '3d', 604800: '7d', 10368000: '4mo',
 };
 
-let liveHistoryData = null;
-
-export function clearLiveHistoryData() { liveHistoryData = null; }
+// No-op kept for the connection.js call site that resets between
+// live ↔ sim flips. Previously cached the latest /api/history payload
+// for a feature that never landed; the cache had no readers.
+export function clearLiveHistoryData() { /* no-op */ }
 
 function rangeKeyFor(rangeSeconds) {
   return RANGE_MAP[rangeSeconds] || '6h';
@@ -47,7 +48,6 @@ function applyLiveHistory(data) {
   // fetch was in flight, in which case dumping live data into the
   // store would clobber the simulation history.
   if (store.get('phase') !== 'live') return;
-  liveHistoryData = data;
   loadLiveHistoryIntoStore(data);
   drawHistoryGraph();
   // The history fetch is async; the first WebSocket state frame may
@@ -62,7 +62,7 @@ export function fetchLiveHistory(rangeSeconds) {
   if (store.get('phase') !== 'live') return;
   liveHistoryFetch(rangeSeconds)
     .then(applyLiveHistory)
-    .catch(() => { liveHistoryData = null; });
+    .catch(() => { /* swallow; next sync cycle retries */ });
 }
 
 // Wires this module into the sync coordinator so visibilitychange /

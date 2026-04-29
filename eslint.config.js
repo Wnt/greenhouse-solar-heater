@@ -19,11 +19,11 @@ const commonRules = {
   eqeqeq: ['error', 'always', { null: 'ignore' }],
   'no-var': 'error',
   'prefer-const': ['error', { destructuring: 'all' }],
-  // `warn` (not `error`) because the codebase currently carries a couple
-  // of dozen dead imports left over from refactors — surfacing them is
-  // useful, but gating CI on them would block every unrelated PR until a
-  // cleanup sweep lands. Promote to `error` once the existing backlog is
-  // drained.
+  // `warn` keeps the editor squiggle yellow rather than red so authors
+  // can see in-progress identifiers without the editor screaming at
+  // them, but the npm script runs with --max-warnings=0 so CI fails on
+  // any survivor. Use a leading underscore (`_foo`) when an arg is
+  // intentionally unused.
   'no-unused-vars': [
     'warn',
     {

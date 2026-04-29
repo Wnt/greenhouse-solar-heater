@@ -35,7 +35,7 @@ function jsonBody(res) {
 }
 
 // Mock req that carries a session cookie so session.validateRequest works.
-function reqWithSession(method, urlPath, sessionToken, body) {
+function reqWithSession(method, urlPath, sessionToken, _body) {
   const session = require('../server/auth/session');
   const headers = { cookie: 'session=' + encodeURIComponent(session.sign(sessionToken)) };
   return {

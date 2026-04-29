@@ -8,7 +8,7 @@
 //   --strict   exit 1 if any asset has zero references. Default: warn mode.
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { basename, join, posix, relative } from 'node:path';
+import { basename, join, relative } from 'node:path';
 
 const STRICT = process.argv.includes('--strict');
 

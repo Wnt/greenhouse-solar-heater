@@ -26,7 +26,7 @@ function createOrderingRuntime(opts) {
   let timerIdCounter = 0;
   const kvs = {};
   const eventHandlers = [];
-  let httpResponder = opts.httpResponder || function(url) {
+  let httpResponder = opts.httpResponder || function(_url) {
     return { ok: true, body: '' };
   };
   let componentStatus = opts.componentStatus || function() {
@@ -184,35 +184,6 @@ function loadScript(runtime, files) {
 }
 
 describe('shelly/control.js :: transitionTo() ordering', function() {
-  // Helper: boot the script into a known mode by pre-seeding KVS before load,
-  // then waiting for boot's delayed (VALVE_SETTLE_MS+5000ms) startup chain to
-  // resolve. Config has all-modes-allowed and actuators enabled.
-  function bootScriptInMode(runtime, mode, collectorsDrained, done) {
-    runtime.kvs.config = JSON.stringify({
-      ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1
-    });
-    runtime.kvs.drained = collectorsDrained ? '1' : '0';
-    runtime.kvs.sensor_config = JSON.stringify({
-      s: {}, h: {}, version: 1
-    });
-    loadScript(runtime, ['control-logic.js', 'control.js']);
-    // Boot fires closeAllValves then a 5 s delay before the control loop
-    // starts. Advance 10 s to clear all boot timers.
-    runtime.advance(10000, function() {
-      // Force the mode via Shelly.emitEvent of a synthetic ... not possible
-      // without script cooperation. Instead, we drive the script's mode via
-      // the config_changed path: push a safety_critical config that triggers
-      // an immediate control loop run, with a controlled sensor-set pushed
-      // into the script's telemetry via direct KVS replay.
-      //
-      // For these tests we do not need the script to actually BE in `mode` —
-      // we stub state via the exported __test_setMode hook installed by
-      // Task 3 / Task 4 changes. Until those exist, the tests use the
-      // script's natural entry path. See task-specific notes.
-      done();
-    });
-  }
-
   it('non-drain exit: stops pump before issuing any valve HTTP command', function(t, done) {
     // Natural-entry approach: drive the script into GREENHOUSE_HEATING via
     // sensor values, wait for mode to settle, then push sensor values that
@@ -345,7 +316,7 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
 
   it('drain exit: valve HTTP failure → pump stops immediately, no 20 s wait', function(t, done) {
     const rt = createOrderingRuntime({
-      httpResponder: function(url) {
+      httpResponder: function(_url) {
         // Fail every HTTP.GET (valve command) on both primary AND retry.
         return { ok: false, err: 'http fail' };
       }

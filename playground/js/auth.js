@@ -12,7 +12,6 @@ import {
 } from './auth/invite-flow.js';
 
 let currentRole = null;
-let currentName = null;
 let usersCache = [];
 let editingUserId = null;
 let editingPasskeyId = null;
@@ -24,10 +23,9 @@ function $(id) {
   return document.getElementById(id);
 }
 
-function setRole(role, name) {
+function setRole(role, _name) {
   const changed = currentRole !== role;
   currentRole = role;
-  currentName = name || null;
   if (changed) {
     document.body.dataset.role = role || '';
     // Push the role into the app store so derived.availableViews and any

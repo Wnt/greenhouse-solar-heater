@@ -27,7 +27,7 @@ async function installMockWs(page) {
     // @ts-ignore
     window.__sentCommands = [];
     // @ts-ignore
-    window.WebSocket = function (url) {
+    window.WebSocket = function (_url) {
       const fake = {
         readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
         close() { this.readyState = 3; },
