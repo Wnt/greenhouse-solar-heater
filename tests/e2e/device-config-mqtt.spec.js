@@ -44,6 +44,8 @@ test.describe('device-config PUT → MQTT publish', () => {
     await expect.poll(() => messages.find(matchOurs) ?? null,
       { timeout: 3000 }).not.toBeNull();
     const msg = messages.find(matchOurs);
-    expect(msg.wb).toEqual({ I: banUntil });
+    // Partial match — sibling workers may have written other wb keys
+    // (GH, SC, …) into the same config; we only own wb.I here.
+    expect(msg.wb.I).toBe(banUntil);
   });
 });
