@@ -270,11 +270,11 @@ V_air branch:     ½" tee branch → [½" nipple] → V_air valve (½" female) �
 | 5 | VO-rad → radiator pipe |
 | 6 | VO-tank → tank return pipe |
 | 7 | Collector top pipe → ½" tee |
-| 8 | T joint branch → reservoir return pipe (below water line) |
+| 8 | T joint branch → canister bottom fitting (always below water line) |
 
 - Manifold inlets (¾") connect to the pump's ¾" ports.
 - Collector bottom pipe connects to BOTH VI-coll and VO-coll via a 22mm PEX tee.
-- Wood burner return pipe goes directly to the reservoir (open top, no valve needed).
+- Wood burner return pipe goes directly to the reservoir canister (loose cap on top, no valve needed).
 
 ### Operating modes vs manifold ports
 

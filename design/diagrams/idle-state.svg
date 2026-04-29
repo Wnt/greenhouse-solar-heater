@@ -46,7 +46,7 @@
   <rect x="290" y="155" width="120" height="45"
         fill="#42a5f510" stroke="#42a5f540" stroke-width="1.5" rx="4"/>
   <text x="350" y="175" fill="#42a5f560" text-anchor="middle" font-size="11">Reservoir</text>
-  <text x="350" y="190" fill="#42a5f540" text-anchor="middle" font-size="9">open / vented (200cm)</text>
+  <text x="350" y="190" fill="#42a5f540" text-anchor="middle" font-size="9">25L canister, loose cap (200cm)</text>
 
   <!-- ====== JÄSPI TANK ====== -->
   <rect x="290" y="260" width="120" height="340"

@@ -153,7 +153,7 @@ text_labels:
     geometry: {x: 50, y: 14, width: 90, height: 15}
     style: "text;html=1;align=left;fontSize=9;fontColor=#aaaaaa;"
   reservoir_vent:
-    value: "open / vented ↑"
+    value: "loose cap ↑"
     geometry: {x: 450, y: 30, width: 150, height: 16}
     style: "text;html=1;align=center;fontSize=9;fontColor=#90caf9;"
 
@@ -197,22 +197,25 @@ components:
       rad_return: {x: 0.881, y: 1.0}    # bottom-right entry point (pipe_rad_return, radiator return)
 
   reservoir:
-    label: "Reservoir\nair separator"
+    label: "25L canister\nloose cap, air separator"
     style: reservoir
-    # Sits on top of the tank — communicating vessels means the water level
-    # in the reservoir equals the water level inside the tank's dip tube.
+    # 25L plastic canister (kanisteri) with loose cap. Sits on top of the
+    # tank — communicating vessels means the water level in the canister
+    # equals the water level inside the tank's dip tube.
     geometry: {x: 450, y: 48, width: 150, height: 60}
-    # Three dedicated left-side ports, top-to-bottom: collector-top inlet,
-    # tank dip-tube inlet (at the water line where gas separates), and the
-    # submerged outlet that feeds VI-top.
+    # Three dedicated left-side ports represent the three 22mm PEX fittings
+    # on the canister's bottom (collector-top inlet, tank dip-tube inlet,
+    # and the outlet that feeds VI-top). They are visually spread vertically
+    # so pipes don't overlap, but on the real canister all three penetrate
+    # the bottom face — automatically below the water line.
     ports:
       left:             {x: 0,   y: 0.5}
       right:            {x: 1,   y: 0.5}
       bottom:           {x: 0.5, y: 1}
       top:              {x: 0.5, y: 0}
-      left_upper:       {x: 0,   y: 0.25} # pipe_coll_top_reservoir inlet (above water line)
-      left_dip:         {x: 0,   y: 0.5}  # pipe_dip_reservoir inlet (at the water line)
-      left_submerged:   {x: 0,   y: 0.75} # pipe_reservoir_vitop outlet (below water line)
+      left_upper:       {x: 0,   y: 0.25} # pipe_coll_top_reservoir inlet (visual; physically a bottom fitting)
+      left_dip:         {x: 0,   y: 0.5}  # pipe_dip_reservoir inlet (visual; physically a bottom fitting)
+      left_submerged:   {x: 0,   y: 0.75} # pipe_reservoir_vitop outlet (visual; physically a bottom fitting)
 
   pump:
     label: "PUMP"
@@ -416,7 +419,7 @@ pipes:
     from: {component: tank, port: gas_out}
     to:   {component: reservoir, port: left_dip}
     style: pipe_hot_plain
-    label: "dip tube port → reservoir"
+    label: "dip tube port → canister"
     waypoints:
       - {x: 480, y: 470}
       - {x: 400, y: 470}
@@ -429,7 +432,7 @@ pipes:
     from: {component: reservoir, port: left_submerged}
     to:   {valve: vi_top, port: left}
     style: pipe_reservoir_return
-    label: "reservoir bottom → VI-top"
+    label: "canister btm → VI-top"
     waypoints:
       - {x: 340, y: 93}
       - {x: 340, y: 470}

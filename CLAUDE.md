@@ -43,9 +43,9 @@ File-level details are discoverable by reading the file. Don't re-document here.
 
 Physical facts about the hardware that are NOT discoverable from code:
 
-- **Unpressurized system.** The Jäspi tank is sealed but vented via an open reservoir connected to the dip tube port. The reservoir acts as an air separator — gas vents to atmosphere through its open top.
-- **Communicating vessels.** Water level in the reservoir equals water level at the dip tube opening inside the tank (~197 cm). Gas is trapped above this level in the sealed tank.
-- **Valve manifold.** 7 motorized on/off DN15 valves around a single pump: 3 input (VI-btm, VI-top, VI-coll), 3 output (VO-coll, VO-rad, VO-tank), plus V_air at the collector top with a passive T joint permanently connecting the collector-top pipe to the reservoir (terminated below the water line so the siphon cannot ingest air).
+- **Unpressurized system.** The Jäspi tank is sealed but vented via a 25 L plastic canister (the "reservoir") connected to the dip tube port. The canister has a loose cap and three 22 mm PEX fittings on its bottom — it acts as an air separator, and gas vents to atmosphere through the loose cap.
+- **Communicating vessels.** Water level in the canister equals water level at the dip tube opening inside the tank (~197 cm). Gas is trapped above this level in the sealed tank.
+- **Valve manifold.** 7 motorized on/off DN15 valves around a single pump: 3 input (VI-btm, VI-top, VI-coll), 3 output (VO-coll, VO-rad, VO-tank), plus V_air at the collector top with a passive T joint permanently connecting the collector-top pipe to the canister (entering at a bottom fitting, automatically below the water line so the siphon cannot ingest air).
 - **Operating modes** (plus `idle`): `solar_charging`, `greenhouse_heating`, `active_drain`. Each opens a specific subset of valves — see the `modes` section in `system.yaml`.
 - **Hardware**: Shelly Pro 4PM main controller, 3× Pro 2PM for valves, Plus 1 with Add-on for sensors.
 

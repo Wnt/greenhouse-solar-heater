@@ -119,20 +119,20 @@
   <rect x="295" y="168" width="70" height="37" fill="#42a5f515" stroke="#42a5f5" stroke-width="2.5" rx="4"
         data-component="reservoir" data-role="air separator"/>
 
-  <!-- Open top indicator -->
-  <line x1="298" y1="168" x2="298" y2="158" stroke="#90caf9" stroke-width="1"/>
-  <line x1="362" y1="168" x2="362" y2="158" stroke="#90caf9" stroke-width="1"/>
-  <text x="330" y="162" fill="#90caf9" text-anchor="middle" font-size="8">open / vented ↑</text>
+  <!-- Loose cap indicator -->
+  <line x1="298" y1="168" x2="362" y2="168" stroke="#90caf9" stroke-width="1.5"/>
+  <line x1="304" y1="166" x2="356" y2="166" stroke="#90caf9" stroke-width="0.6" stroke-dasharray="2,2"/>
+  <text x="330" y="162" fill="#90caf9" text-anchor="middle" font-size="8">loose cap ↑</text>
 
-  <!-- Gas space at reservoir top (vented to atmosphere) -->
+  <!-- Gas space at canister top (vents through loose cap) -->
   <rect x="298" y="171" width="64" height="12" fill="#90caf908" rx="2"/>
-  <text x="330" y="180" fill="#90caf940" text-anchor="middle" font-size="6">air (vents)</text>
+  <text x="330" y="180" fill="#90caf940" text-anchor="middle" font-size="6">air (vents via cap)</text>
 
   <!-- Water level in reservoir — matches tank water level at ~197cm -->
   <line x1="298" y1="200" x2="362" y2="200" stroke="#42a5f5" stroke-width="1.5"/>
   <rect x="298" y="200" width="64" height="5" fill="#42a5f515" rx="1"/>
 
-  <text x="330" y="196" fill="#64b5f6" text-anchor="middle" font-size="9" font-weight="bold">Reservoir</text>
+  <text x="330" y="196" fill="#64b5f6" text-anchor="middle" font-size="9" font-weight="bold">25L canister</text>
 
   <!-- ====== WATER LEVEL ALIGNMENT LINE ====== -->
   <!-- Dashed line showing water level is the same in both -->
@@ -140,13 +140,13 @@
   <text x="375" y="198" fill="#42a5f5" font-size="7">← water level ~197cm</text>
   <text x="375" y="208" fill="#42a5f5" font-size="7">(communicating vessels)</text>
 
-  <!-- ====== PIPE: dip tube port (0cm) → UP to reservoir ====== -->
+  <!-- ====== PIPE: dip tube port (0cm) → UP to canister bottom fitting ====== -->
   <path d="M 250 490 L 250 520 L 330 520 L 330 205" fill="none" stroke="#ef5350" stroke-width="1.5" stroke-dasharray="5,3"/>
-  <text x="340" y="400" fill="#ef9a9a50" font-size="7" transform="rotate(-90 340 400)">pipe: dip tube port → reservoir</text>
+  <text x="340" y="400" fill="#ef9a9a50" font-size="7" transform="rotate(-90 340 400)">pipe: dip tube port → canister btm</text>
 
-  <!-- ====== PIPE: reservoir bottom → to pump (VI-top) ====== -->
+  <!-- ====== PIPE: canister bottom fitting → to pump (VI-top) ====== -->
   <path d="M 320 205 L 320 460 L 370 460" fill="none" stroke="#ef5350" stroke-width="1.5"/>
-  <text x="310" y="310" fill="#ef9a9a40" font-size="6" transform="rotate(-90 310 310)">reservoir btm → pump</text>
+  <text x="310" y="310" fill="#ef9a9a40" font-size="6" transform="rotate(-90 310 310)">canister btm → pump</text>
 
   <!-- ====== PUMP ====== -->
   <circle cx="400" cy="462" r="22" fill="#00695c20" stroke="#4fc3f7" stroke-width="2.5"
@@ -192,5 +192,5 @@
   <text x="590" y="119" fill="#aaa" font-size="10">DS18B20 sensor</text>
   <rect x="570" y="128" width="20" height="10" fill="#e040fb33" stroke="#e040fb" stroke-width="1" rx="2"/>
   <text x="598" y="137" fill="#aaa" font-size="10">Motorized valve</text>
-  <text x="570" y="155" fill="#666" font-size="8">Reservoir open top → gas vents to atmosphere</text>
+  <text x="570" y="155" fill="#666" font-size="8">Canister loose cap → gas vents to atmosphere</text>
 </svg>

@@ -18,7 +18,7 @@ All component specifications are defined in `system.yaml` (source of truth).
 |-----------|-----------|----------|
 | Solar collectors | 2× flat plate, 2m×1m | 4m² total, mounted 30–280cm height |
 | Storage tank | Jäspi VLM 300L | Ferritic stainless steel, used unpressurized, ALL connections at bottom (0cm) |
-| Open reservoir | Vented container, 20–50L | On top of tank (~200cm), air separator, connected to dip tube |
+| Reservoir canister | 25L plastic canister (kanisteri) with loose cap | On top of tank (~200cm), air separator, 3× 22mm PEX fittings on bottom, connected to dip tube |
 | Circulation pump | Wilo Star Z20/4 | 34/51/71W, 230V, near ground |
 | Radiator | Car radiator + 230V fan | Inside greenhouse, heat distribution |
 | Space heater | 2kW fan heater | Emergency/backup |
@@ -32,7 +32,7 @@ The system uses 8 motorized on/off ball valves (DN15, A83 9-24V DC 2-wire actuat
 | Valve | Source | Used In |
 |-------|--------|---------|
 | VI-btm | Tank bottom (cool water) | Solar charging |
-| VI-top | Reservoir bottom (de-aired hot water) | Greenhouse heating |
+| VI-top | Canister bottom fitting (de-aired hot water) | Greenhouse heating |
 | VI-coll | Collector bottom pipe | Active drain |
 
 **Output manifold** (pump outlet):
@@ -47,7 +47,7 @@ The system uses 8 motorized on/off ball valves (DN15, A83 9-24V DC 2-wire actuat
 
 | Component | Path | Used In |
 |-----------|------|---------|
-| T joint (passive) | Collector top → reservoir (below water line) | Solar charging (return path), permanent connection |
+| T joint (passive) | Collector top → canister bottom fitting (always below water line) | Solar charging (return path), permanent connection |
 | V_air | Collector top → open air | Active drain (air intake) |
 
 **Service valves:**
@@ -62,17 +62,17 @@ The system uses 8 motorized on/off ball valves (DN15, A83 9-24V DC 2-wire actuat
 All physical pipe connections on the Jäspi tank are at the **bottom** (0cm):
 
 - **Tank bottom port:** direct connection to the bottom of the tank. Used for drawing cool water (solar charging), receiving radiator return water, and receiving drained collector water.
-- **Tank top port (dip tube):** has an internal dip tube reaching the top of the water column (~185cm). Pipe runs **UP** from dip tube port (0cm) to the reservoir at ~200cm. This is the primary path for water and gas to move between the tank top and the reservoir.
+- **Tank top port (dip tube):** has an internal dip tube reaching the top of the water column (~185cm). Pipe runs **UP** from dip tube port (0cm) to a bottom fitting on the canister at ~200cm. This is the primary path for water and gas to move between the tank top and the canister.
 
 ### Reservoir as Air Separator
 
-The reservoir sits on top of the Jäspi (~200cm) and serves as the system's **primary air separator**. It has three connections:
+The reservoir is a **25 L plastic canister (kanisteri) with a loose cap**, sitting on top of the Jäspi (~200cm). It serves as the system's **primary air separator**. The canister has three 22 mm PEX fittings, **all on the bottom**:
 
-1. **Top/mid inlet — dip tube pipe:** from dip tube port (0cm) up to reservoir. Hot water from the tank top exits here; trapped gas separates and vents to atmosphere.
-2. **Submerged inlet — T joint return pipe:** collector return water enters here during solar charging via the passive T joint at the collector top. The pipe terminates *below* the water line so the siphon cannot ingest air under sub-atmospheric pressure at the collector top.
-3. **Bottom outlet:** clean, de-aired water feeds VI-top → pump. Gravity head (~200cm) ensures the pump never loses prime.
+1. **Bottom fitting — dip tube pipe:** from dip tube port (0cm) up to the canister. Hot water from the tank top exits here; trapped gas rises through the canister water column to the air space under the loose cap and vents to atmosphere.
+2. **Bottom fitting — T joint return pipe:** collector return water enters here during solar charging via the passive T joint at the collector top. Because the fitting is at the bottom of the canister, the pipe end is automatically *below* the water line, so the siphon cannot ingest air under sub-atmospheric pressure at the collector top.
+3. **Bottom fitting — pump feed:** clean, de-aired water feeds VI-top → pump. Gravity head (~200cm) ensures the pump never loses prime.
 
-The Jäspi tank has no vent at the top — gas trapped above the dip tube opening (~185cm) cannot exit downward. By routing all water through the open reservoir, gas is separated before reaching the pump. The pump always pushes water through the radiator (positive pressure clears trapped gas from the radiator's small parallel channels).
+The Jäspi tank has no vent at the top — gas trapped above the dip tube opening (~185cm) cannot exit downward. By routing all water through the canister, gas is separated before reaching the pump. The pump always pushes water through the radiator (positive pressure clears trapped gas from the radiator's small parallel channels).
 
 ### Piping
 
@@ -81,7 +81,7 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 - Collector pipes slope 2–3 cm/m toward drain point
 - Typical flow: 4–10 L/min
 - Radiator return connects to tank bottom port (direct)
-- Reservoir-to-tank pipe runs from reservoir top/mid (200cm) DOWN to dip tube port (0cm), then UP through internal dip tube to ~185cm inside tank
+- Canister-to-tank pipe runs from a canister bottom fitting (~200cm) DOWN to dip tube port (0cm), then UP through internal dip tube to ~185cm inside tank
 
 ### Sensors (DS18B20 via Shelly Plus Add-on)
 
@@ -128,15 +128,15 @@ The Jäspi tank has no vent at the top — gas trapped above the dip tube openin
 
 ### Air Management
 
-**Collector loop:** No auto air vent at the collector top — sub-atmospheric pressure there (80cm water column falling to reservoir at 200cm) would draw air in, not vent it out. Confirmed by testing. Trapped air in the collector loop is carried by water flow through the passive T joint to the open reservoir, where it separates and vents to atmosphere. The T-joint-to-reservoir pipe terminates below the reservoir water line so no air can re-enter from the reservoir side.
+**Collector loop:** No auto air vent at the collector top — sub-atmospheric pressure there (80cm water column falling to reservoir at 200cm) would draw air in, not vent it out. Confirmed by testing. Trapped air in the collector loop is carried by water flow through the passive T joint to the reservoir canister, where it separates and vents to atmosphere through the loose cap. The T-joint pipe enters the canister at a bottom fitting (always below the water line by construction), so no air can re-enter from the canister side.
 
-**Tank gas venting:** The Jäspi has no top vent — gas trapped above the dip tube (~185cm) cannot escape downward. The reservoir solves this by acting as the primary air separator:
-- Water from the tank top exits via dip tube → enters reservoir at top/mid level
-- Gas separates in the reservoir and vents to atmosphere (open top)
-- Clean, de-aired water exits the reservoir bottom to the pump
-- The pump **never** draws directly from the dip tube — it always draws from the reservoir bottom
+**Tank gas venting:** The Jäspi has no top vent — gas trapped above the dip tube (~185cm) cannot escape downward. The reservoir canister solves this by acting as the primary air separator:
+- Water from the tank top exits via dip tube → enters the canister through one of the bottom fittings
+- Gas rises through the canister water column to the air space under the loose cap and vents to atmosphere
+- Clean, de-aired water exits another bottom fitting to the pump
+- The pump **never** draws directly from the dip tube — it always draws from a canister bottom fitting
 
-**Radiator gas clearing:** The pump pushes pressurized water through the radiator (not suction). Positive pressure clears gas from the car radiator's small parallel channels more effectively. Gas returns to the tank and eventually reaches the reservoir via the dip tube.
+**Radiator gas clearing:** The pump pushes pressurized water through the radiator (not suction). Positive pressure clears gas from the car radiator's small parallel channels more effectively. Gas returns to the tank and eventually reaches the canister via the dip tube.
 
 ## Operating Modes
 
@@ -234,16 +234,16 @@ T_collector reads air temperature when collectors are empty, so it can't reliabl
 **Trigger:** manual (one-time procedure)
 
 1. Ensure all motorized valves are closed
-2. Open SV-fill, connect garden hose, fill via reservoir
-3. Water fills reservoir → overflows down dip tube pipe → fills tank
-4. Continue until reservoir water level stabilizes (~200cm, communicating vessels)
+2. Open SV-fill, connect garden hose, fill from the bottom
+3. Water fills tank and rises through the dip tube pipe into the canister (communicating vessels via the bottom fitting)
+4. Continue until canister water level stabilizes (~200cm, communicating vessels). Air escapes through the loose cap.
 5. Close SV-fill
 6. Run solar charging mode briefly — purges air from collector loop
 7. Run greenhouse heating mode briefly — purges air from radiator loop
 8. Check for leaks at all fittings
 9. Add corrosion inhibitor (e.g. Sentinel X100) per manufacturer dosing
 
-Air escapes through the open reservoir during fill. Residual air in the collector loop is carried by flow through the passive T joint (collector top) to the reservoir.
+Air escapes through the loose cap on the canister during fill. Residual air in the collector loop is carried by flow through the passive T joint (collector top) to the canister.
 
 ### Mode 8: Autumn Shutdown
 
@@ -308,9 +308,9 @@ Full shutdown for deep winter — no active heating from tank:
 
 **Materials in contact with water:** ferritic stainless steel (tank), PEX (piping), brass (valves), bronze/stainless (pump), copper (solar collectors).
 
-**Biological growth:** The open reservoir is the main risk area — cover it with an opaque lid (keep it vented). Darkness prevents algae. The solar loop regularly exceeds 60°C, which suppresses growth elsewhere in the system. If needed, periodic food-grade hydrogen peroxide (30–50 ppm) can be added — it decomposes cleanly.
+**Biological growth:** The reservoir canister is the main risk area — the loose cap already keeps light out (opaque plastic), which suppresses algae. The solar loop regularly exceeds 60°C, which suppresses growth elsewhere in the system. If needed, periodic food-grade hydrogen peroxide (30–50 ppm) can be added — it decomposes cleanly.
 
-**Corrosion:** Low-moderate risk. Stainless tank and PEX are highly resistant. The main concern is copper collectors + brass valves in oxygenated water (the open reservoir continuously dissolves O₂). Use a combined corrosion inhibitor / biocide for open mixed-metal systems (e.g. Sentinel X100 or Fernox Protector F1). These contain oxygen scavengers, mixed-metal inhibitors, and biocide. Check inhibitor concentration annually.
+**Corrosion:** Low-moderate risk. Stainless tank and PEX are highly resistant. The main concern is copper collectors + brass valves in oxygenated water (the loose-capped canister still admits ambient O₂ slowly via the loose seal). Use a combined corrosion inhibitor / biocide for open mixed-metal systems (e.g. Sentinel X100 or Fernox Protector F1). These contain oxygen scavengers, mixed-metal inhibitors, and biocide. Check inhibitor concentration annually.
 
 ## Safety Rules
 
@@ -320,7 +320,7 @@ Full shutdown for deep winter — no active heating from tank:
 4. **Drain before freezing** — trigger at 2°C gives safety margin before 0°C
 5. **Slope collector pipes** — 2–3 cm/m toward drain to ensure complete drainage
 6. **Union fittings** — on all valves for easy replacement
-7. **Freeze protection depends on power** — collectors cannot gravity-drain (below reservoir); active drain requires the pump. The 2°C trigger provides margin before actual freezing.
+7. **Freeze protection depends on power** — collectors cannot gravity-drain (below canister); active drain requires the pump. The 2°C trigger provides margin before actual freezing.
 
 ## Budget Estimate
 
@@ -337,7 +337,7 @@ Prices EUR incl. VAT, March 2026. Structural materials budgeted separately. Full
 
 ## Open Design Questions
 
-1. **Reservoir sizing:** 20–50L range — exact size depends on collector loop water volume. Must have 3 pipe penetrations (2× top/mid, 1× bottom).
+1. **Reservoir sizing:** Resolved — 25 L plastic canister with loose cap, 3× 22 mm PEX fittings on the bottom.
 2. **Collector seasonal adjustment:** Fixed angle or seasonally adjustable?
 3. **Wind anchoring:** Required for collector frame?
 4. **Jäspi internal heater:** Use as backup boost, or leave disconnected?
