@@ -21,6 +21,15 @@ let containerEl = null;
 let tooltipEl = null;
 let crosshairEl = null;
 
+// Last bucket index the inspector was anchored to. Used for the
+// haptic tick when the user drags across a bar boundary while the
+// tooltip is visible — null once the tooltip is hidden so the next
+// open doesn't fire on its first paint.
+let lastInspectorBi = null;
+function hapticBucketTick() {
+  try { if (navigator.vibrate) navigator.vibrate(8); } catch (_) { /* noop */ }
+}
+
 export function showInspector(x) {
   if (!canvasEl) return;
   crosshairEl.style.display = 'block';
@@ -41,6 +50,7 @@ export function hideInspector() {
   if (!tooltipEl) return;
   tooltipEl.style.display = 'none';
   crosshairEl.style.display = 'none';
+  lastInspectorBi = null;
 }
 
 function updateInspectorData(x) {
@@ -94,6 +104,8 @@ function updateInspectorData(x) {
   // covers, so the percentage matches the bar height under the cursor.
   const bucketSec = pickBucketSize(visibleRange);
   const bi = Math.floor(t / bucketSec);
+  if (lastInspectorBi !== null && lastInspectorBi !== bi) hapticBucketTick();
+  lastInspectorBi = bi;
   const bStart = bi * bucketSec;
   const bEnd = (bi + 1) * bucketSec;
   const cov = coverageInBucket(bStart, bEnd);

@@ -209,12 +209,20 @@ export function drawHistoryGraph() {
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // Current point dot (glowing)
-    const last = pts[pts.length - 1];
-    ctx.beginPath();
-    ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
-    ctx.fillStyle = '#e9c349';
-    ctx.fill();
+    // Current-point dot. Drawn only when the most recent sample is
+    // inside the window — when zoomed/panned to a slice that ends
+    // before the latest data, the dot at pts[last] would lie on some
+    // earlier point and read as "now" to the eye.
+    const latestSampleT = timeSeriesStore.times.length > 0
+      ? timeSeriesStore.times[timeSeriesStore.times.length - 1]
+      : null;
+    if (latestSampleT !== null && latestSampleT <= tMax) {
+      const last = pts[pts.length - 1];
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#e9c349';
+      ctx.fill();
+    }
   }
 
   // ── Tank sub-sensor lines (only with the "All sensors" toggle) ──
