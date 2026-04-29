@@ -5,8 +5,8 @@
 
 import { store } from '../app-state.js';
 import { SIM_START_HOUR } from '../sim-bootstrap.js';
-import { timeSeriesStore, graphRange, showAllSensors } from './state.js';
-import { tankAvgOf } from './history-graph.js';
+import { timeSeriesStore, showAllSensors } from './state.js';
+import { tankAvgOf, getChartWindow } from './history-graph.js';
 import { formatClockTime } from './time-format.js';
 import { coverageInBucket } from './mode-events.js';
 
@@ -51,14 +51,13 @@ export function setupInspector() {
     const pad = { top: 16, right: 16, bottom: 24, left: 8 };
     const pw = dw - pad.left - pad.right;
 
-    const latestTime = timeSeriesStore.times[timeSeriesStore.times.length - 1];
-    const tMax = Math.max(graphRange, latestTime);
-    const tMin = tMax - graphRange;
+    const win = getChartWindow();
+    const visibleRange = win.tMax - win.tMin;
 
     // Convert pixel x to simulation time
     const frac = (x - pad.left) / pw;
     if (frac < 0 || frac > 1) { hideInspector(); return; }
-    const simTime = tMin + frac * graphRange;
+    const simTime = win.tMin + frac * visibleRange;
 
     // Find nearest data point
     let bestIdx = 0, bestDist = Infinity;

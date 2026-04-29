@@ -33,6 +33,14 @@ export function setSimSpeed(v) { simSpeed = v; }
 export let graphRange = 86400; // 24 h default
 export function setGraphRange(v) { graphRange = v; }
 
+// Custom zoom window for the history graph, set by two-finger pinch on
+// the canvas. null = use the default sliding window of width graphRange
+// anchored to the most recent data; { tMin, tMax } = render that exact
+// span instead. Always narrower than graphRange — a pinch that would
+// zoom out beyond it snaps back to null.
+export let chartZoom = null;
+export function setChartZoom(v) { chartZoom = v; }
+
 // When true the graph draws the Tank Top and Tank Bottom lines
 // alongside the tank average. Off by default.
 export let showAllSensors = false;

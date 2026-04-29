@@ -12,6 +12,7 @@ import {
   updateDisplay, setLiveFrameSeen, rerenderWithHistoryFallback,
 } from './display-update.js';
 import { drawHistoryGraph } from './history-graph.js';
+import { resetChartZoom } from './chart-pinch-zoom.js';
 import {
   transitionLog, fetchLiveEvents, resetEventsState,
 } from './logs.js';
@@ -415,6 +416,7 @@ function clearLiveDisplay() {
   compEls.forEach(function(el) { el.textContent = '--'; });
   // Clear simulation graph data and redraw empty canvas
   timeSeriesStore.reset();
+  resetChartZoom();
   drawHistoryGraph();
   // Clear the transition log — fetchLiveEvents() will repopulate it from the DB
   transitionLog.length = 0;

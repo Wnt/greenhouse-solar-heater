@@ -24,6 +24,7 @@ import {
 } from './main/logs.js';
 import { initBalanceCard } from './main/balance-card.js';
 import { setupInspector } from './main/graph-inspector.js';
+import { setupChartPinchZoom, resetChartZoom } from './main/chart-pinch-zoom.js';
 import { fetchLiveHistory } from './main/live-history.js';
 import {
   updateDisplay, rerenderWithHistoryFallback,
@@ -112,6 +113,7 @@ async function init() {
     }
   })();
   setupInspector();
+  setupChartPinchZoom();
   setupLogsScrollLoader();
   setupCopyLogsButton();
   initBalanceCard({ onRerender: rerenderWithHistoryFallback });
@@ -230,6 +232,9 @@ function setupTimeRangeSlider() {
     setGraphRange(seconds);
     updateThumb(stepEls, idx);
     if (changed) {
+      // Picking a new timeframe is the explicit "show me this span" action,
+      // so any pinch zoom inside the previous span goes away.
+      resetChartZoom();
       if (fromUser) hapticTick();
       if (store.get('phase') === 'live') {
         fetchLiveHistory(graphRange);
@@ -466,6 +471,7 @@ function resetSim() {
   controller.reset();
   timeSeriesStore.reset();
   transitionLog.length = 0;
+  resetChartZoom();
   resetYesterdayTracking();
   setRunning(false);
   resetSimulationTime();
