@@ -4,6 +4,7 @@
 // have to change.
 
 import { store } from '../app-state.js';
+import { registerDataSource } from '../sync/registry.js';
 import {
   formatClockTime, formatFullTimeHelsinki, formatCauseLabel,
   formatReasonLabel, formatSensorsLine, escapeHtml, formatTimeOfDay,
@@ -34,10 +35,11 @@ export function resetEventsState() {
   lastLiveMode = null;
 }
 
-function fetchEventPage(type, before) {
+function fetchEventPage(type, before, signal) {
   let url = '/api/events?type=' + type + '&limit=' + EVENTS_PAGE_SIZE;
   if (before !== null && before !== undefined) url += '&before=' + before;
-  return fetch(url)
+  const opts = signal ? { signal } : undefined;
+  return fetch(url, opts)
     .then(r => r.ok ? r.json() : { events: [], hasMore: false })
     .catch(() => ({ events: [], hasMore: false }));
 }
@@ -254,6 +256,38 @@ export function renderLogsList() {
   }
 
   container.innerHTML = html;
+}
+
+// Wires the System Logs panel into the sync coordinator so Android
+// resume / network recovery / focus events refresh the events feed.
+// Without this, fetchLiveEvents() only fires on phase switch and the
+// log freezes while the tab is backgrounded. Note: applyToStore must
+// NOT touch lastLiveMode — that tracks live WS state frames; clearing
+// it would make the next frame silently seed instead of appending.
+export function registerLogsSource() {
+  return registerDataSource({
+    id: 'logs',
+    isActive: () => store.get('phase') === 'live',
+    fetch: (signal) => Promise.all([
+      fetchEventPage('mode', null, signal),
+      fetchEventPage('config', null, signal),
+    ]).then(([modeData, configData]) => ({ modeData, configData })),
+    applyToStore: ({ modeData, configData }) => {
+      modeCursor = null; modeHasMore = false;
+      configCursor = null; configHasMore = false;
+      transitionLog.length = 0;
+      const modeEvents = (modeData && Array.isArray(modeData.events)) ? modeData.events : [];
+      const configEvents = (configData && Array.isArray(configData.events)) ? configData.events : [];
+      for (let i = 0; i < modeEvents.length; i++) transitionLog.push(modeRowToLogEntry(modeEvents[i]));
+      for (let i = 0; i < configEvents.length; i++) transitionLog.push(configRowToLogEntry(configEvents[i]));
+      transitionLog.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+      if (modeEvents.length > 0) modeCursor = modeEvents[modeEvents.length - 1].ts;
+      modeHasMore = !!(modeData && modeData.hasMore);
+      if (configEvents.length > 0) configCursor = configEvents[configEvents.length - 1].ts;
+      configHasMore = !!(configData && configData.hasMore);
+      renderLogsList();
+    },
+  });
 }
 
 // Attach a one-time scroll listener that lazy-loads older events when the
