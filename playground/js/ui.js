@@ -143,14 +143,6 @@ function formatSliderValue(v, unit, steps) {
   return display + (unit || '');
 }
 
-/** Format seconds as HH:MM:SS */
-export function formatTime(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
-
 // ── History-chart x-axis ticks ──
 // The previous drawHistoryGraph hard-coded a 1–4 h step, so 7d / 30d / 1y
 // ranges produced hundreds of "HH:00" labels packed into an illegible bar.

@@ -1,48 +1,33 @@
 import { loadSystemYaml } from './yaml-loader.js';
-import { ThermalModel, tankStoredEnergyKwh } from './physics.js';
+import { ThermalModel } from './physics.js';
 import { ControlStateMachine, initControlLogic } from './control.js';
-import { load as loadControlLogic } from './control-logic-loader.js';
-import { createSlider, formatTime, pickTickStep, formatTick, pickBucketSize } from './ui.js';
-import { LiveSource, SimulationSource } from './data-source.js';
+import { createSlider } from './ui.js';
 import { startVersionCheck, triggerVersionCheck } from './version-check.js';
 import { initSensorsView, destroySensorsView } from './sensors.js';
-import { store, derived } from './app-state.js';
+import { store } from './app-state.js';
 import { initSubscriptions, setViewLifecycle } from './subscriptions.js';
 import { initNavigation } from './actions/navigation.js';
-import { attachScriptStatusWebSocket, renderScriptCrashBanner } from './actions/script-monitor.js';
 import { mountCrashesView } from './crashes-view.js';
 import { initAuth } from './auth.js';
 import { captureInstallPrompt, initNotifications } from './notifications.js';
 import { buildSchematic as buildSchematicFromSvg } from './schematic.js';
 import { setupFAB, togglePlay, updateFABIcon, resetSimulationTime } from './main/simulation.js';
 import { resetModeEvents, appendModeEvent } from './main/mode-events.js';
-import {
-  formatClockTime, formatCauseLabel, formatReasonLabel,
-  formatSensorsLine, formatFullTimeHelsinki, escapeHtml,
-} from './main/time-format.js';
-import {
-  initWatchdogUI, attachWatchdogWebSocket,
-  renderModeEnablement, getWatchdogSnapshot,
-} from './main/watchdog-ui.js';
-import { initRelayBoard, updateRelayBoard } from './main/relay-board.js';
+import { initWatchdogUI } from './main/watchdog-ui.js';
+import { initRelayBoard } from './main/relay-board.js';
 import { initDrainageControl } from './main/drainage-control.js';
 import { initDeviceConfig } from './main/device-config.js';
 import { wireNotificationUI } from './main/notifications-ui.js';
-import { drawHistoryGraph, tankAvgOf, toSchematicState } from './main/history-graph.js';
+import { drawHistoryGraph, toSchematicState } from './main/history-graph.js';
 import {
-  transitionLog, fetchLiveEvents, detectLiveTransition, renderLogsList,
-  setupLogsScrollLoader, setupCopyLogsButton, resetEventsState,
+  transitionLog, setupLogsScrollLoader, setupCopyLogsButton,
 } from './main/logs.js';
-import {
-  initBalanceCard, fetchBalanceHistory, appendBalanceLivePoint,
-  renderBalanceCard, getLiveYesterdayHigh, resetLiveYesterdayHigh,
-} from './main/balance-card.js';
+import { initBalanceCard } from './main/balance-card.js';
 import { setupInspector } from './main/graph-inspector.js';
-import { fetchLiveHistory, clearLiveHistoryData } from './main/live-history.js';
+import { fetchLiveHistory } from './main/live-history.js';
 import {
   updateDisplay, rerenderWithHistoryFallback,
-  setSchematicHandle, getLastFrame,
-  setLiveFrameSeen, resetYesterdayTracking,
+  setSchematicHandle, getLastFrame, resetYesterdayTracking,
 } from './main/display-update.js';
 import {
   initConnection, initModeToggle, updateSidebarSubtitle, getLiveSource,
@@ -52,14 +37,13 @@ window.__triggerVersionCheck = triggerVersionCheck;
 // Shared mutable state lives in ./main/state.js as a leaf module so
 // siblings don't have to import back from main.js (which would cycle).
 import {
-  model, controller, running, simSpeed, graphRange, showAllSensors,
-  params, timeSeriesStore, MODE_INFO,
+  model, controller, running, graphRange, showAllSensors,
+  params, timeSeriesStore,
   setModel, setController, setRunning,
   setSimSpeed, setGraphRange, setShowAllSensors,
 } from './main/state.js';
 
 let config = null;
-const DT = 1;
 
 const PRESETS = {
   spring_fall:   { label: 'Spring / Fall',      t_outdoor: 10,   irradiance: 500, t_tank_top: 12, t_tank_bottom: 9,  t_greenhouse: 11, gh_thermal_mass: 250000, gh_heat_loss: 100 },
@@ -87,7 +71,7 @@ async function init() {
   // when currentView === 'device'.
   setViewLifecycle({
     device: {
-      mount: (container, s) => {
+      mount: () => {
         initSensorsView();
         return () => destroySensorsView();
       }

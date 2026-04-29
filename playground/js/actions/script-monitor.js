@@ -40,7 +40,7 @@ function wireRestartButton() {
   });
 }
 
-export function renderScriptCrashBanner() {
+function renderScriptCrashBanner() {
   const banner = document.getElementById('script-crash-banner');
   if (!banner) return;
   const status = store.get('scriptStatus');
