@@ -75,26 +75,53 @@ describe('pickTickStep — x-axis tick spacing', () => {
 });
 
 describe('pickBucketSize — duty-cycle bar windowing', () => {
-  it('uses 15-minute buckets on the 1h range so modes show as 4 segments', () => {
-    assert.strictEqual(pickBucketSize(1 * HOUR), 15 * 60, 'expected 900s (15 min) bucket for 1h range');
-  });
+  // Contract: chart should always show ~12-24 bars across the visible
+  // window. The previous "≤48h → 1h, >48h → 1d" rule produced 3 bars at
+  // 3d and 7 bars at 7d — readable in 24h view, useless in the larger
+  // ranges. The function is now derived from rangeSec rather than a
+  // hand-tabulated band, and these tests pin the band, not the buckets.
 
-  it('uses 30-minute buckets on the 6h range (keeps ~12 bars across the window)', () => {
-    // 6 hours ÷ 30 min = 12 buckets — readable, matches the 60-second sample
-    // cadence of the raw sensor_readings table.
-    assert.strictEqual(pickBucketSize(6 * HOUR), 30 * 60);
-  });
-
-  it('keeps the existing 1-hour buckets for 12h / 24h / 48h', () => {
-    for (const rangeSec of [12 * HOUR, 24 * HOUR, 48 * HOUR]) {
-      assert.strictEqual(pickBucketSize(rangeSec), HOUR, `range ${rangeSec}s should use 1h buckets`);
+  it('produces 12+ bars at every range from 1h through 4mo', () => {
+    const ranges = [
+      1 * HOUR, 6 * HOUR, 12 * HOUR, 24 * HOUR, 48 * HOUR,
+      3 * DAY, 7 * DAY, 14 * DAY, 30 * DAY, 60 * DAY, 120 * DAY,
+    ];
+    for (const r of ranges) {
+      const s = pickBucketSize(r);
+      const bars = r / s;
+      assert.ok(
+        bars >= 12,
+        `range ${r}s with bucket ${s}s gives only ${bars.toFixed(1)} bars (want ≥ 12)`,
+      );
     }
   });
 
-  it('switches to daily buckets for multi-day ranges', () => {
-    assert.strictEqual(pickBucketSize(7 * DAY), DAY, '7d range should use 1-day buckets');
-    assert.strictEqual(pickBucketSize(30 * DAY), DAY);
-    assert.strictEqual(pickBucketSize(365 * DAY), DAY);
+  it('keeps the bar count below ~28 (no stripes of dozens of micro-buckets)', () => {
+    const ranges = [
+      1 * HOUR, 6 * HOUR, 12 * HOUR, 24 * HOUR, 48 * HOUR,
+      3 * DAY, 7 * DAY, 14 * DAY, 30 * DAY, 60 * DAY, 120 * DAY,
+    ];
+    for (const r of ranges) {
+      const s = pickBucketSize(r);
+      const bars = r / s;
+      assert.ok(
+        bars <= 28,
+        `range ${r}s with bucket ${s}s gives ${bars.toFixed(1)} bars (want ≤ 28)`,
+      );
+    }
+  });
+
+  it('returns canonical bucket sizes (5/15/30 min, 1/3/6/12 h, 1/2/4/7/14/30 d) — no oddballs', () => {
+    const allowed = new Set([
+      60, 5 * 60, 15 * 60, 30 * 60,
+      HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR,
+      DAY, 2 * DAY, 4 * DAY, 7 * DAY, 14 * DAY, 30 * DAY,
+    ]);
+    const ranges = [HOUR, 6 * HOUR, 12 * HOUR, 24 * HOUR, 48 * HOUR, 7 * DAY, 30 * DAY, 365 * DAY];
+    for (const r of ranges) {
+      const s = pickBucketSize(r);
+      assert.ok(allowed.has(s), `bucket ${s}s for range ${r}s isn't a canonical step`);
+    }
   });
 
   it('scales monotonically — bigger range ⇒ bigger (or equal) bucket', () => {

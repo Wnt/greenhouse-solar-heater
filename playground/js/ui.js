@@ -210,20 +210,49 @@ function tickDateParts(d) {
   return out;
 }
 
+// Bucket-size candidates the duty-cycle bars snap to. Keeping the menu
+// short keeps the choices readable (no 7-minute or 19-hour buckets) and
+// guarantees the scaling is monotonic with range.
+const BUCKET_CANDIDATES_SEC = [
+  60,            // 1 min
+  5 * 60,        // 5 min
+  15 * 60,       // 15 min
+  30 * 60,       // 30 min
+  HOUR_SECONDS,
+  3 * HOUR_SECONDS,
+  6 * HOUR_SECONDS,
+  12 * HOUR_SECONDS,
+  DAY_SECONDS,
+  2 * DAY_SECONDS,
+  4 * DAY_SECONDS,
+  7 * DAY_SECONDS,
+  14 * DAY_SECONDS,
+  30 * DAY_SECONDS,
+];
+
 /**
- * Pick the bucket size (seconds) for the duty-cycle mode bars on the history
- * chart. Must divide the range cleanly and yield a readable number of bars:
+ * Pick the bucket size (seconds) for the duty-cycle mode bars on the
+ * history chart. The chart should show 12–24 bars regardless of the
+ * visible range — fewer is too coarse to read; more crowds the labels
+ * and turns the bars into a stripe. Walk the candidates and pick the
+ * largest bucket that still produces at least 12 bars.
  *
- *   - 1h range  → 15 min (4 bars — the operator asked for this explicitly)
- *   - ≤ 6h      → 30 min
- *   - ≤ 48h     → 1 h  (previous fixed default)
- *   - > 48h     → 1 day
+ * Examples:
+ *   1h    → 5 min   (12 bars)
+ *   6h    → 30 min  (12 bars)
+ *   24h   → 1 h     (24 bars)
+ *   3d    → 6 h     (12 bars)
+ *   7d    → 12 h    (14 bars)
+ *   1mo   → 2 d     (15 bars)
+ *   4mo   → 7 d     (~17 bars)
  */
 export function pickBucketSize(rangeSec) {
-  if (rangeSec <= HOUR_SECONDS) return 15 * 60;
-  if (rangeSec <= 6 * HOUR_SECONDS) return 30 * 60;
-  if (rangeSec <= 48 * HOUR_SECONDS) return HOUR_SECONDS;
-  return DAY_SECONDS;
+  let best = BUCKET_CANDIDATES_SEC[0];
+  for (const c of BUCKET_CANDIDATES_SEC) {
+    if (rangeSec / c >= 12) best = c;
+    else break;
+  }
+  return best;
 }
 
 /**
