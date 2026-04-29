@@ -115,6 +115,7 @@ function resolveRoute(urlPath, method) {
   if (urlPath.startsWith('/api/sensor-config/')) return '/api/sensor-config/*';
   if (urlPath === '/api/sensor-discovery') return '/api/sensor-discovery';
   if (urlPath === '/api/history') return '/api/history';
+  if (urlPath === '/api/runtime') return '/api/runtime';
   if (urlPath === '/api/events') return '/api/events';
   if (urlPath.startsWith('/api/push/')) return '/api/push/*';
   if (urlPath === '/ws') return '/ws';
@@ -134,17 +135,11 @@ const server = http.createServer(function (req, res) {
     span.updateName(req.method + ' ' + route);
   }
 
-  // Health — always accessible
-  if (urlPath === '/health') {
-    handlers.handleHealth(req, res);
-    return;
-  }
-
-  // Version — always accessible (no sensitive data)
-  if (urlPath === '/version') {
-    handlers.handleVersion(req, res);
-    return;
-  }
+  // Always-accessible routes (pre-auth, no sensitive data). /api/runtime
+  // is read by the unauthenticated login page to rebrand on PR previews.
+  if (urlPath === '/health') { handlers.handleHealth(req, res); return; }
+  if (urlPath === '/version') { handlers.handleVersion(req, res); return; }
+  if (urlPath === '/api/runtime') { handlers.handleRuntimeApi(req, res); return; }
 
   // Auth endpoints — always accessible
   if (AUTH_ENABLED && urlPath.startsWith('/auth/')) {

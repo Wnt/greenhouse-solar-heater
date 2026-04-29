@@ -82,6 +82,23 @@ function createHandlers(deps) {
     res.end(JSON.stringify({ hash: APP_VERSION }));
   }
 
+  // Public deploy-time runtime metadata, used by the frontend (and the
+  // unauthenticated login page) to rebrand themselves on PR previews.
+  // Shape: { preview: null | { pr: number|null, branch: string|null } }.
+  // Never returns 401; lives at the same trust level as /version.
+  function handleRuntimeApi(req, res) {
+    const isPreview = process.env.PREVIEW_MODE === 'true';
+    let preview = null;
+    if (isPreview) {
+      const prRaw = process.env.PR_NUMBER;
+      const prNum = prRaw && /^\d+$/.test(prRaw) ? parseInt(prRaw, 10) : null;
+      const branch = process.env.BRANCH_NAME || null;
+      preview = { pr: prNum, branch };
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ preview }));
+  }
+
   function handleHistoryApi(req, res) {
     if (!db) {
       jsonResponse(res, 503, { error: 'Database not available' });
@@ -290,6 +307,7 @@ function createHandlers(deps) {
   return {
     handleHealth,
     handleVersion,
+    handleRuntimeApi,
     handleHistoryApi,
     handleEventsApi,
     handleDeviceConfigApi,

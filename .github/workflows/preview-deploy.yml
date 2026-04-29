@@ -128,13 +128,14 @@ jobs:
       - name: Render preview manifests
         env:
           PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+          BRANCH_NAME: ${{ needs.preflight.outputs.ref }}
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
         run: |
           set -euo pipefail
           # 4-hour TTL refreshed on every deploy. ISO-8601 UTC; the GC
           # CronJob parses this with `date -u -d`.
           EXPIRES_AT=$(date -u -d "+${TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)
-          export PR_NUMBER IMAGE_TAG EXPIRES_AT
+          export PR_NUMBER BRANCH_NAME IMAGE_TAG EXPIRES_AT
           mkdir -p rendered
           for f in deploy/k8s/preview/*.yaml; do
             envsubst < "$f" > "rendered/$(basename "$f")"

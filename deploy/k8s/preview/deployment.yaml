@@ -11,7 +11,10 @@
 #     mosquitto via the in-cluster Service (see env below) so they
 #     observe live MQTT traffic without spinning up an isolated broker.
 #
-# Substituted at deploy time: ${PR_NUMBER}, ${IMAGE_TAG}, ${EXPIRES_AT}.
+# Substituted at deploy time: ${PR_NUMBER}, ${BRANCH_NAME}, ${IMAGE_TAG},
+# ${EXPIRES_AT}. PR_NUMBER + BRANCH_NAME are surfaced through /api/runtime
+# so the playground UI and the pre-auth login page can show a "Preview ·
+# #<PR> · <branch>" label instead of the prod "Live" / "Solar sanctuary".
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -55,6 +58,10 @@ spec:
           env:
             - name: PREVIEW_MODE
               value: "true"
+            - name: PR_NUMBER
+              value: "${PR_NUMBER}"
+            - name: BRANCH_NAME
+              value: "${BRANCH_NAME}"
             - name: ORIGIN
               value: "https://pr-${PR_NUMBER}.greenhouse.madekivi.fi"
             - name: DOMAIN

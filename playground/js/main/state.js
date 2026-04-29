@@ -56,23 +56,26 @@ export const params = {
 // Rolling time-series buffer shared by the history graph, the
 // inspector, and the clipboard export. Entries are appended by
 // simLoop (sim mode) and by recordLiveHistoryPoint (live mode).
+//
+// Per-sample mode tagging is gone: the bar chart, the inspector, and
+// the clipboard table all read mode from the mode-events store
+// (./mode-events.js), which is the single source of truth populated by
+// /api/history's events list (with a leading event from before the
+// window) and by detectLiveTransition / simLoop on transitions.
 export const timeSeriesStore = {
   maxPoints: 20000,
   times: [],
   values: [],  // { t_tank_top, t_tank_bottom, t_collector, t_greenhouse, t_outdoor }
-  modes: [],   // mode string at each sample
-  addPoint(time, vals, mode) {
+  addPoint(time, vals) {
     this.times.push(time);
     this.values.push({ ...vals });
-    this.modes.push(mode);
     if (this.times.length > this.maxPoints) {
       const trim = this.times.length - this.maxPoints;
       this.times.splice(0, trim);
       this.values.splice(0, trim);
-      this.modes.splice(0, trim);
     }
   },
-  reset() { this.times = []; this.values = []; this.modes = []; },
+  reset() { this.times = []; this.values = []; },
 };
 
 // Mode-transition log, unified across sim and live. Appended by

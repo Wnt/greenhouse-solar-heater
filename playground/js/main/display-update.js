@@ -8,6 +8,7 @@ import { timeSeriesStore, MODE_INFO, running, setLastLiveFrame } from './state.j
 import { detectLiveTransition, renderLogsList } from './logs.js';
 import { drawHistoryGraph, toSchematicState } from './history-graph.js';
 import { appendBalanceLivePoint, getLiveYesterdayHigh } from './balance-card.js';
+import { modeAt } from './mode-events.js';
 
 // Live data may have null sensors when a role is unassigned — show "—".
 const TEMP_PLACEHOLDER = '—';
@@ -456,6 +457,10 @@ function updateComponent(id, on, onLabel, offLabel) {
 // rerenderWithHistoryFallback — breaks the old cycle.
 function recordLiveHistoryPoint(state, result) {
   if (store.get('phase') !== 'live') return;
+  // result is consumed elsewhere (detectLiveTransition / displays); the
+  // bar chart and the clipboard table now resolve mode via the
+  // mode-events store, so this function only persists the temperatures.
+  void result;
   const tSec = Math.floor(Date.now() / 1000);
   const last = timeSeriesStore.times.length - 1;
   if (last >= 0 && (tSec - timeSeriesStore.times[last]) < 5) return;
@@ -465,7 +470,7 @@ function recordLiveHistoryPoint(state, result) {
     t_collector: state.t_collector,
     t_greenhouse: state.t_greenhouse,
     t_outdoor: state.t_outdoor,
-  }, result.mode || 'idle');
+  });
 }
 
 // Re-render the Status/Components views after something refills the
@@ -486,7 +491,7 @@ export function rerenderWithHistoryFallback() {
   const n = timeSeriesStore.times.length;
   if (n === 0) return;
   const lastVals = timeSeriesStore.values[n - 1];
-  const lastMode = timeSeriesStore.modes[n - 1] || 'idle';
+  const lastMode = modeAt(timeSeriesStore.times[n - 1]);
   const synth = {
     t_tank_top: lastVals.t_tank_top,
     t_tank_bottom: lastVals.t_tank_bottom,

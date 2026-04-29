@@ -11,6 +11,7 @@ import {
 } from './time-format.js';
 import { model, params, MODE_INFO, timeSeriesStore, transitionLog, lastLiveFrame } from './state.js';
 import { getWatchdogSnapshot } from './watchdog-ui.js';
+import { modeAt, appendModeEvent } from './mode-events.js';
 
 export { transitionLog };
 
@@ -164,10 +165,11 @@ export function detectLiveTransition(result) {
     return;
   }
   if (lastLiveMode === mode) return;
+  const tsMs = Date.now();
   transitionLog.unshift({
     kind: 'live',
     eventType: 'mode',
-    ts: Date.now(),
+    ts: tsMs,
     mode,
     from: lastLiveMode,
     text: formatLiveTransitionText(lastLiveMode, mode),
@@ -177,6 +179,15 @@ export function detectLiveTransition(result) {
     cause: (result && result.cause) || null,
     reason: (result && result.reason) || null,
     sensors: (result && result.temps) ? Object.assign({}, result.temps) : null,
+  });
+  // Mirror into the mode-events store (in seconds, matching the bar
+  // renderer's time base) so the duty-cycle bars reflect the new mode
+  // immediately — without waiting for the next /api/history round-trip.
+  appendModeEvent({
+    ts: Math.floor(tsMs / 1000),
+    type: 'mode',
+    from: lastLiveMode,
+    to: mode,
   });
   lastLiveMode = mode;
   renderLogsList();
@@ -518,6 +529,9 @@ function fmtTempCol(v) {
 
 // Down-sample timeSeriesStore to a given interval (in seconds).
 // Returns an array of { time, t_collector, t_tank_top, t_tank_bottom, t_greenhouse, t_outdoor, mode }.
+// `mode` is resolved against the mode-events store (single source of
+// truth) so the table column always agrees with the bar chart and the
+// transition log — no per-sample mode tagging happens any more.
 function downsampleHistory(intervalSec) {
   const out = [];
   if (timeSeriesStore.times.length === 0) return out;
@@ -527,16 +541,17 @@ function downsampleHistory(intervalSec) {
   for (let i = 0; i < timeSeriesStore.times.length; i++) {
     if (timeSeriesStore.times[i] >= nextBucket) {
       const v = timeSeriesStore.values[i];
+      const t = timeSeriesStore.times[i];
       out.push({
-        time: timeSeriesStore.times[i],
+        time: t,
         t_collector: v.t_collector,
         t_tank_top: v.t_tank_top,
         t_tank_bottom: v.t_tank_bottom,
         t_greenhouse: v.t_greenhouse,
         t_outdoor: v.t_outdoor,
-        mode: timeSeriesStore.modes[i],
+        mode: modeAt(t),
       });
-      nextBucket = timeSeriesStore.times[i] + intervalSec;
+      nextBucket = t + intervalSec;
     }
   }
   return out;

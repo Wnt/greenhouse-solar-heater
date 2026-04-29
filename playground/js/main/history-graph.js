@@ -8,6 +8,7 @@ import { store } from '../app-state.js';
 import { pickTickStep, formatTick, pickBucketSize } from '../ui.js';
 import { SIM_START_HOUR } from '../sim-bootstrap.js';
 import { timeSeriesStore, graphRange, showAllSensors } from './state.js';
+import { coverageInBucket } from './mode-events.js';
 
 function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
 
@@ -99,28 +100,23 @@ export function drawHistoryGraph() {
   const lastBucket = Math.ceil(tMax / bucketSec);
 
   let hasEmergency = false;
+  // The first sample in the store fixes the left edge of the time
+  // series; coverage before it has no observed temperature backing and
+  // would draw bars over a blank chart segment.
+  const firstSampleT = timeSeriesStore.times.length > 0 ? timeSeriesStore.times[0] : tMax;
   for (let bi = firstBucket; bi < lastBucket; bi++) {
     const hrStart = bi * bucketSec;
     const hrEnd = (bi + 1) * bucketSec;
 
-    // Skip if entirely outside visible range
+    // Skip if entirely outside visible range or entirely before the first sample
     if (hrEnd <= tMin || hrStart >= tMax) continue;
+    if (hrEnd <= firstSampleT) continue;
 
-    let chargingSec = 0, heatingSec = 0, emergencySec = 0, totalSec = 0;
-    for (let j = 0; j < timeSeriesStore.times.length; j++) {
-      const t = timeSeriesStore.times[j];
-      if (t >= hrStart && t < hrEnd) {
-        totalSec += 5;
-        if (timeSeriesStore.modes[j] === 'solar_charging') chargingSec += 5;
-        if (timeSeriesStore.modes[j] === 'greenhouse_heating') heatingSec += 5;
-        if (timeSeriesStore.modes[j] === 'emergency_heating') emergencySec += 5;
-      }
-    }
-
-    if (totalSec === 0) continue;
-    const chargingFrac = chargingSec / bucketSec;
-    const heatingFrac = heatingSec / bucketSec;
-    const emergencyFrac = emergencySec / bucketSec;
+    const segStart = Math.max(hrStart, firstSampleT);
+    const cov = coverageInBucket(segStart, hrEnd);
+    const chargingFrac = cov.charging / bucketSec;
+    const heatingFrac = cov.heating / bucketSec;
+    const emergencyFrac = cov.emergency / bucketSec;
 
     const barX = pad.left + ((hrStart - tMin) / graphRange) * pw;
     const barW = Math.max(1, (bucketSec / graphRange) * pw - 2);
