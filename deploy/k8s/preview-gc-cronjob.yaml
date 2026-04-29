@@ -1,0 +1,66 @@
+# Preview deploys carry a preview.greenhouse/expires-at annotation
+# (ISO-8601 UTC, set to deploy_time+4h, refreshed on every push). This
+# CronJob runs every 15 minutes, walks every Deployment with
+# purpose=preview, and deletes the full set of resources for any PR
+# whose annotation is in the past. PR-close teardown happens
+# immediately via the workflow; this is the safety net.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: preview-gc
+  labels:
+    app: greenhouse
+    purpose: preview-gc
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: preview-gc
+          restartPolicy: OnFailure
+          containers:
+            - name: gc
+              image: bitnami/kubectl:1.34
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  now=$(date -u +%s)
+                  prs=$(kubectl get deploy -l purpose=preview \
+                    -o jsonpath='{range .items[*]}{.metadata.labels.preview-pr}{"\n"}{end}' \
+                    | sort -u)
+                  for pr in $prs; do
+                    [ -z "$pr" ] && continue
+                    expiry=$(kubectl get deploy "app-preview-pr-$pr" \
+                      -o jsonpath='{.metadata.annotations.preview\.greenhouse/expires-at}' \
+                      2>/dev/null || true)
+                    if [ -z "$expiry" ]; then
+                      echo "preview-pr=$pr has no expires-at annotation — skipping"
+                      continue
+                    fi
+                    expiry_ts=$(date -u -d "$expiry" +%s 2>/dev/null || echo 0)
+                    if [ "$expiry_ts" -eq 0 ]; then
+                      echo "preview-pr=$pr has unparseable expires-at=$expiry — skipping"
+                      continue
+                    fi
+                    if [ "$expiry_ts" -lt "$now" ]; then
+                      echo "preview-pr=$pr expired at $expiry — deleting"
+                      kubectl delete deploy,svc,ingress -l "preview-pr=$pr" --ignore-not-found
+                    else
+                      remaining=$((expiry_ts - now))
+                      echo "preview-pr=$pr expires in ${remaining}s ($expiry)"
+                    fi
+                  done
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi

@@ -13,3 +13,26 @@ spec:
       port: 3000
       targetPort: 3000
       protocol: TCP
+---
+# Exposes the prod pod's mosquitto sidecar so preview deploys can
+# subscribe to live MQTT traffic. Preview servers run with
+# PREVIEW_MODE=true, so they only subscribe — never publish — and the
+# prod pod's vpn-firewall init-container already allows TCP/1883 from
+# the cluster pod CIDR (192.168.0.0/16).
+# Preview pods deliberately omit the app=greenhouse label, so this
+# selector matches only the prod pod.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mosquitto
+  labels:
+    app: greenhouse
+spec:
+  type: ClusterIP
+  selector:
+    app: greenhouse
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: 1883
+      protocol: TCP

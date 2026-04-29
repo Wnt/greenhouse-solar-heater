@@ -1,0 +1,111 @@
+name: Preview Teardown
+
+# Triggers an immediate cleanup of the preview environment when:
+#   - PR is closed (merged or not)
+#   - The `preview` label is removed from a PR
+#
+# The 15-min preview-gc CronJob is the safety net; this workflow makes
+# teardown happen instantly when the user signals intent.
+on:
+  pull_request:
+    types: [closed, unlabeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to tear down'
+        required: true
+
+env:
+  PREVIEW_LABEL: preview
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      should_teardown: ${{ steps.gate.outputs.should_teardown }}
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+    steps:
+      - id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          LABEL_NAME: ${{ github.event.label.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          DISPATCH_PR: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          should_teardown=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            should_teardown=true
+            echo "pr_number=$DISPATCH_PR" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            if [ "$ACTION" = "closed" ]; then
+              # Only teardown if the PR was preview-labeled at any point
+              # (i.e. we likely deployed for it). If it never had the
+              # label, there's nothing to delete and the kubectl delete
+              # is a harmless no-op anyway.
+              should_teardown=true
+            elif [ "$ACTION" = "unlabeled" ] && [ "$LABEL_NAME" = "${PREVIEW_LABEL}" ]; then
+              should_teardown=true
+            fi
+          fi
+          echo "should_teardown=$should_teardown" >> "$GITHUB_OUTPUT"
+          echo "Decision: should_teardown=$should_teardown"
+
+  teardown:
+    needs: preflight
+    if: needs.preflight.outputs.should_teardown == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Delete preview resources
+        env:
+          PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          echo "Tearing down preview-pr=$PR_NUMBER"
+          kubectl delete deploy,svc,ingress \
+            -l "preview-pr=$PR_NUMBER" \
+            --ignore-not-found
+          # cert-manager cleans the TLS Secret automatically when its
+          # owning Ingress is deleted (ownerReference). No explicit
+          # delete needed.
+
+      - name: Update PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v8.0.0
+        with:
+          script: |
+            const pr = ${{ needs.preflight.outputs.pr_number }};
+            const body = [
+              '### Preview deploy torn down',
+              '',
+              `Resources for PR #${pr} have been deleted.`,
+              '',
+              '<!-- preview-deploy-marker -->',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr,
+              per_page: 100,
+            });
+            const existing = comments.find(c => c.body && c.body.includes('<!-- preview-deploy-marker -->'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: existing.id, body,
+              });
+            }

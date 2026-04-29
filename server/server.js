@@ -32,6 +32,7 @@ const PLAYGROUND_DIR = path.join(__dirname, '..', 'playground');
 const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
 const VPN_CHECK_HOST = process.env.VPN_CHECK_HOST || '';
 const MQTT_HOST = process.env.MQTT_HOST || '';
+const PREVIEW_MODE = process.env.PREVIEW_MODE === 'true';
 
 const MIME = {
   '.html': 'text/html',
@@ -458,18 +459,26 @@ function initServices(callback) {
     }
     if (url) {
       db = dbModule;
-      db.initSchema(function (schemaErr) {
-        if (schemaErr) {
-          log.error('db schema init failed', { error: schemaErr.message });
-          db = null;
-        } else {
-          log.info('database initialized');
-          db.startMaintenance();
-        }
+      const onDbReady = function () {
         setWsCommandHandlersDb(db);
         initAnomalyManager();
         finish();
-      });
+      };
+      if (PREVIEW_MODE) {
+        log.info('database connected (PREVIEW_MODE: schema + maintenance skipped)');
+        onDbReady();
+      } else {
+        db.initSchema(function (schemaErr) {
+          if (schemaErr) {
+            log.error('db schema init failed', { error: schemaErr.message });
+            db = null;
+          } else {
+            log.info('database initialized');
+            db.startMaintenance();
+          }
+          onDbReady();
+        });
+      }
     } else {
       log.info('DATABASE_URL not found (checked env and S3) — history features disabled');
       initAnomalyManager();
@@ -500,11 +509,13 @@ function startMqttBridge() {
   // Script monitor runs alongside the MQTT bridge so its snapshot buffer
   // is fed by the same stream. Status changes broadcast "script-status"
   // (drives the in-app banner) and feed the push notifier.
-  scriptMonitor = createScriptMonitor({ db });
-  const crashNotifier = createScriptCrashNotifier(push);
+  // PREVIEW_MODE: pass db=null + skip crashNotifier so previews don't
+  // write crash rows or double-fire push notifications.
+  scriptMonitor = createScriptMonitor({ db: PREVIEW_MODE ? null : db });
+  const crashNotifier = PREVIEW_MODE ? null : createScriptCrashNotifier(push);
   scriptMonitor.onStatusChange(function (s) {
     broadcastToWebSockets({ type: 'script-status', data: s });
-    crashNotifier(s);
+    if (crashNotifier) crashNotifier(s);
   });
 
   mqttBridge.start({

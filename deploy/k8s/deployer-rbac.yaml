@@ -35,6 +35,22 @@ rules:
   - apiGroups: [""]
     resources: ["pods/exec"]
     verbs: ["create"]
+  # Preview deploys: create/update/get/delete Deployment + Service +
+  # Ingress named app-preview-pr-* in the default namespace. RBAC can't
+  # pattern-match on resource names with wildcards via resourceNames,
+  # so we grant these verbs on the resource types in general —
+  # restricted to the default namespace by virtue of being a Role
+  # (not a ClusterRole). The earlier resourceNames: ["app"] rule keeps
+  # the prod Deployment patch path explicitly scoped.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -61,3 +77,47 @@ metadata:
   annotations:
     kubernetes.io/service-account.name: deployer
 type: kubernetes.io/service-account-token
+---
+# Preview garbage collector. Runs as the preview-gc CronJob; deletes
+# expired preview resources (annotation preview.greenhouse/expires-at
+# in the past). Scoped to default namespace via Role.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: preview-gc
+  labels:
+    app: greenhouse
+    purpose: preview-gc
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: preview-gc
+  labels:
+    app: greenhouse
+    purpose: preview-gc
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: preview-gc
+  labels:
+    app: greenhouse
+    purpose: preview-gc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: preview-gc
+subjects:
+  - kind: ServiceAccount
+    name: preview-gc

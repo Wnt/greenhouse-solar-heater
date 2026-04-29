@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-preview-pr-${PR_NUMBER}
+  labels:
+    preview-pr: "${PR_NUMBER}"
+    purpose: preview
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    preview.greenhouse/expires-at: "${EXPIRES_AT}"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - pr-${PR_NUMBER}.greenhouse.madekivi.fi
+      secretName: app-preview-pr-${PR_NUMBER}-tls
+  rules:
+    - host: pr-${PR_NUMBER}.greenhouse.madekivi.fi
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app-preview-pr-${PR_NUMBER}
+                port:
+                  number: 3000
