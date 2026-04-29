@@ -16,16 +16,20 @@ const DAY_SEC = 86400;
 
 // Pure: pick a centered moving-average window for the temperature lines.
 // Below 7 days the server already serves raw or 30-second data and the
-// lines look fine as-is. Larger spans switch on a 5-min / 30-min / 2-hour
-// server bucket — this adds a *small* additional moving-average so the
-// lines read as curves instead of stair-stepped bucket means. Zooming in
-// (smaller visibleRange) shrinks the window so detail re-emerges.
+// lines look fine as-is. Larger spans switch on a 5-min / 10-min /
+// 30-min / 1-h / 2-h server bucket — short collector spikes still come
+// through as 60-90°C peaks even after bucket averaging, so this layer
+// has to be wide enough to actually round them off. Zooming in
+// (smaller visibleRange) drops the window so detail re-emerges.
+//
+// Window × bucket size translates to wall time: e.g. 11 × 5 min ≈ 55 min
+// at 7d, 17 × 30 min ≈ 8.5 h at 30d.
 export function lineSmoothingWindow(visibleRange) {
   if (visibleRange < 7 * DAY_SEC) return 1;
-  if (visibleRange <= 14 * DAY_SEC) return 3;
-  if (visibleRange <= 30 * DAY_SEC) return 5;
-  if (visibleRange <= 90 * DAY_SEC) return 7;
-  return 9;
+  if (visibleRange <= 14 * DAY_SEC) return 11;
+  if (visibleRange <= 30 * DAY_SEC) return 13;
+  if (visibleRange <= 90 * DAY_SEC) return 17;
+  return 21;
 }
 
 // Pure: centered moving-average over y (length-preserving). Edge points

@@ -29,13 +29,13 @@ describe('lineSmoothingWindow', () => {
   });
 
   it('enables smoothing at 7 days and scales up with range', () => {
-    assert.equal(lineSmoothingWindow(7 * DAY), 3);
-    assert.equal(lineSmoothingWindow(14 * DAY), 3);
-    assert.equal(lineSmoothingWindow(15 * DAY), 5);
-    assert.equal(lineSmoothingWindow(30 * DAY), 5);
-    assert.equal(lineSmoothingWindow(45 * DAY), 7);
-    assert.equal(lineSmoothingWindow(90 * DAY), 7);
-    assert.equal(lineSmoothingWindow(120 * DAY), 9);
+    assert.equal(lineSmoothingWindow(7 * DAY), 11);
+    assert.equal(lineSmoothingWindow(14 * DAY), 11);
+    assert.equal(lineSmoothingWindow(15 * DAY), 13);
+    assert.equal(lineSmoothingWindow(30 * DAY), 13);
+    assert.equal(lineSmoothingWindow(45 * DAY), 17);
+    assert.equal(lineSmoothingWindow(90 * DAY), 17);
+    assert.equal(lineSmoothingWindow(120 * DAY), 21);
   });
 
   it('shrinks the window as zooming reduces visibleRange (key UX)', () => {

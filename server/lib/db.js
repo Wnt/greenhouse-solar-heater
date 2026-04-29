@@ -231,7 +231,10 @@ const RANGE_INTERVALS = {
   '48h': '48 hours',
   '3d': '3 days',
   '7d': '7 days',
+  '14d': '14 days',
+  '1mo': '1 month',
   '30d': '30 days',
+  '2mo': '2 months',
   '4mo': '4 months',
   '1y': '1 year',
 };
@@ -243,7 +246,10 @@ const RANGE_INTERVALS = {
 const COARSE_BUCKETS = {
   '3d': '2 minutes',
   '7d': '5 minutes',
+  '14d': '10 minutes',
+  '1mo': '30 minutes',
   '30d': '30 minutes',
+  '2mo': '1 hour',
   '4mo': '2 hours',
   '1y': '6 hours',
 };
@@ -257,7 +263,9 @@ function getHistory(range, sensor, callback) {
   }
 
   // Raw for ≤6h, 30s aggregate for ≥3d (raw is pruned at 48h), blended for 24h/48h.
-  const useAggregate = range === '3d' || range === '7d' || range === '30d' || range === '4mo' || range === '1y' || range === 'all';
+  const useAggregate = range === '3d' || range === '7d' || range === '14d'
+    || range === '1mo' || range === '30d' || range === '2mo'
+    || range === '4mo' || range === '1y' || range === 'all';
   const useBlended = range === '24h' || range === '48h';
 
   const params = [];
