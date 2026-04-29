@@ -15,6 +15,7 @@ import { initAuth } from './auth.js';
 import { captureInstallPrompt, initNotifications } from './notifications.js';
 import { buildSchematic as buildSchematicFromSvg } from './schematic.js';
 import { setupFAB, togglePlay, updateFABIcon, resetSimulationTime } from './main/simulation.js';
+import { resetModeEvents, appendModeEvent } from './main/mode-events.js';
 import {
   formatClockTime, formatCauseLabel, formatReasonLabel,
   formatSensorsLine, formatFullTimeHelsinki, escapeHtml,
@@ -517,12 +518,20 @@ function restoreBootstrapSnapshot(snapshot) {
 
   // Push the historical points + log entries into the UI stores.
   // resetSim() already cleared both, so we can just append.
+  resetModeEvents();
   for (let i = 0; i < snapshot.points.length; i++) {
     const p = snapshot.points[i];
-    timeSeriesStore.addPoint(p.time, p.values, p.mode);
+    timeSeriesStore.addPoint(p.time, p.values);
   }
+  // Reconstruct mode-events from the bootstrap log: each transition
+  // entry encodes the mode the controller switched INTO at sim time
+  // `time`, which is exactly what coverageInBucket / modeAt need.
   for (let i = 0; i < snapshot.log_entries.length; i++) {
-    transitionLog.unshift(snapshot.log_entries[i]);
+    const e = snapshot.log_entries[i];
+    transitionLog.unshift(e);
+    if (e.kind === 'sim' && typeof e.time === 'number' && e.mode) {
+      appendModeEvent({ ts: e.time, type: 'mode', to: e.mode });
+    }
   }
 }
 

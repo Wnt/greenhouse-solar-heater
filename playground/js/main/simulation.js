@@ -9,6 +9,7 @@ import {
 } from './state.js';
 import { updateDisplay } from './display-update.js';
 import { updateSidebarSubtitle } from './connection.js';
+import { resetModeEvents, appendModeEvent } from './mode-events.js';
 
 const DT = 1;
 let lastFrame = 0;
@@ -35,6 +36,7 @@ export function togglePlay() {
       controller.reset();
       timeSeriesStore.reset();
       transitionLog.length = 0;
+      resetModeEvents();
     }
     document.getElementById('sim-status-text').textContent = 'Running — press pause to stop';
     updateSidebarSubtitle();
@@ -96,10 +98,17 @@ function simLoop(timestamp) {
       t_outdoor: model.state.t_outdoor,
     };
 
+    const prevSimMode = controller.currentMode;
     result = controller.evaluate(sensors, model.state.simTime);
 
     if (result.transition) {
       transitionLog.unshift({ kind: 'sim', time: model.state.simTime, text: result.transition, mode: result.mode });
+      appendModeEvent({
+        ts: model.state.simTime,
+        type: 'mode',
+        from: prevSimMode,
+        to: result.mode,
+      });
       // Prune sim entries older than 24h of simulated time
       const SIM_LOG_HORIZON = 86400; // 24h in seconds
       while (transitionLog.length > 0) {
@@ -122,7 +131,7 @@ function simLoop(timestamp) {
         t_collector: model.state.t_collector,
         t_greenhouse: model.state.t_greenhouse,
         t_outdoor: model.state.t_outdoor,
-      }, result.mode);
+      });
     }
   }
 

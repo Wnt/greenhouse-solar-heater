@@ -379,7 +379,8 @@ function getEventsPaginated(entityType, limit, before, callback) {
 function getEvents(range, entityType, callback) {
   const p = getPool();
   const interval = RANGE_INTERVALS[range];
-  const whereTime = (!interval && range !== 'all') ? '' : (range === 'all' ? '' : " WHERE ts > NOW() - INTERVAL '" + interval + "'");
+  const hasWindow = !!interval && range !== 'all';
+  const whereTime = hasWindow ? " WHERE ts > NOW() - INTERVAL '" + interval + "'" : '';
 
   const params = [];
   let whereType = '';
@@ -388,7 +389,25 @@ function getEvents(range, entityType, callback) {
     params.push(entityType);
   }
 
-  const sql = 'SELECT ts, entity_type, entity_id, old_value, new_value FROM state_events' + whereTime + whereType + ' ORDER BY ts';
+  const cols = 'ts, entity_type, entity_id, old_value, new_value';
+  const windowSql = 'SELECT ' + cols + ' FROM state_events' + whereTime + whereType;
+
+  // Leading edge: the single most recent event of this entity type from
+  // before the window. Without it the client cannot resolve "what mode
+  // was active at window-start" — it would default to idle and mislabel
+  // the bar chart and clipboard table when the controller was already
+  // in another mode at the time.
+  let sql;
+  if (hasWindow) {
+    let leadingType = '';
+    if (entityType) leadingType = ' AND entity_type = $1';
+    const leadingSql = 'SELECT ' + cols + ' FROM state_events' +
+      " WHERE ts <= NOW() - INTERVAL '" + interval + "'" + leadingType +
+      ' ORDER BY ts DESC LIMIT 1';
+    sql = '(' + leadingSql + ') UNION ALL (' + windowSql + ') ORDER BY ts';
+  } else {
+    sql = windowSql + ' ORDER BY ts';
+  }
   p.query(sql, params, function (err, result) {
     if (err) { callback(err); return; }
     const events = result.rows.map(function (row) {

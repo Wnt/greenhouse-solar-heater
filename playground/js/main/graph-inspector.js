@@ -8,6 +8,7 @@ import { SIM_START_HOUR } from '../sim-bootstrap.js';
 import { timeSeriesStore, graphRange, showAllSensors } from './state.js';
 import { tankAvgOf } from './history-graph.js';
 import { formatClockTime } from './time-format.js';
+import { coverageInBucket } from './mode-events.js';
 
 let inspectorX = null; // null = hidden, otherwise CSS pixel x relative to canvas
 
@@ -102,19 +103,10 @@ export function setupInspector() {
     const hr = Math.floor(t / hourSeconds);
     const hrStart = hr * hourSeconds;
     const hrEnd = (hr + 1) * hourSeconds;
-    let chargingSec = 0, heatingSec = 0, emergencySec = 0, totalSec = 0;
-    for (let j = 0; j < timeSeriesStore.times.length; j++) {
-      const st = timeSeriesStore.times[j];
-      if (st >= hrStart && st < hrEnd) {
-        totalSec += 5;
-        if (timeSeriesStore.modes[j] === 'solar_charging') chargingSec += 5;
-        if (timeSeriesStore.modes[j] === 'greenhouse_heating') heatingSec += 5;
-        if (timeSeriesStore.modes[j] === 'emergency_heating') emergencySec += 5;
-      }
-    }
-    const chPct = totalSec > 0 ? Math.round(100 * chargingSec / totalSec) : 0;
-    const htPct = totalSec > 0 ? Math.round(100 * heatingSec / totalSec) : 0;
-    const emPct = totalSec > 0 ? Math.round(100 * emergencySec / totalSec) : 0;
+    const cov = coverageInBucket(hrStart, hrEnd);
+    const chPct = Math.round(100 * cov.charging / hourSeconds);
+    const htPct = Math.round(100 * cov.heating / hourSeconds);
+    const emPct = Math.round(100 * cov.emergency / hourSeconds);
     document.getElementById('inspector-charging').textContent = chPct + '%';
     document.getElementById('inspector-heating').textContent = htPct + '%';
     document.getElementById('inspector-emergency').textContent = emPct + '%';

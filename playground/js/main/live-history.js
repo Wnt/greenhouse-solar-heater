@@ -18,6 +18,7 @@ import { timeSeriesStore } from './state.js';
 import { drawHistoryGraph } from './history-graph.js';
 import { rerenderWithHistoryFallback } from './display-update.js';
 import { registerDataSource } from '../sync/registry.js';
+import { populateModeEvents } from './mode-events.js';
 
 const RANGE_MAP = {
   3600: '1h', 21600: '6h', 43200: '12h', 86400: '24h',
@@ -83,21 +84,19 @@ export function registerLiveHistorySource(getRange) {
 // data with a single sliding-window routine.
 function loadLiveHistoryIntoStore(data) {
   timeSeriesStore.reset();
+  // Normalize event timestamps to seconds so they share the same time
+  // base as timeSeriesStore.times[] — the bar renderer's buckets are in
+  // epoch seconds.
+  const rawEvents = (data && Array.isArray(data.events)) ? data.events : [];
+  const eventsSec = rawEvents.map(e => Object.assign({}, e, {
+    ts: typeof e.ts === 'number' ? Math.floor(e.ts / 1000) : e.ts,
+  }));
+  populateModeEvents(eventsSec);
   if (!data || !Array.isArray(data.points)) return;
-
-  const modeEvents = Array.isArray(data.events)
-    ? data.events.filter(e => e && e.type === 'mode').sort((a, b) => a.ts - b.ts)
-    : [];
-  let currentMode = 'idle';
-  let eventIdx = 0;
 
   for (let i = 0; i < data.points.length; i++) {
     const p = data.points[i];
     if (!p || typeof p.ts !== 'number') continue;
-    while (eventIdx < modeEvents.length && modeEvents[eventIdx].ts <= p.ts) {
-      currentMode = modeEvents[eventIdx].to || currentMode;
-      eventIdx++;
-    }
     const tSec = Math.floor(p.ts / 1000);
     timeSeriesStore.addPoint(tSec, {
       t_tank_top: p.tank_top,
@@ -105,7 +104,7 @@ function loadLiveHistoryIntoStore(data) {
       t_collector: p.collector,
       t_greenhouse: p.greenhouse,
       t_outdoor: p.outdoor,
-    }, currentMode);
+    });
   }
 }
 
