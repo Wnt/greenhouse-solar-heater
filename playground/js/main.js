@@ -143,10 +143,19 @@ async function init() {
   // PWA install prompt capture (must be early, before beforeinstallprompt fires)
   captureInstallPrompt();
 
+  // Wire DOM listeners (install modal, notif toggle, category checkboxes,
+  // test buttons) synchronously so __initComplete genuinely means "the page
+  // is interactive". The install-button + toggle handlers gracefully handle
+  // a click that lands before initNotifications() finishes (subscribePush
+  // returns false when swRegistration is null; the modal handler only needs
+  // DOM wiring). Previously this lived inside initNotifications().then()
+  // and raced with __initComplete under parallel-worker load — clicking
+  // #pwa-install-btn from a test could land before the handler attached
+  // and leave the install modal hidden.
+  wireNotificationUI();
+
   // Initialize push notifications (service worker, VAPID key, existing subscription)
-  initNotifications().then(function () {
-    wireNotificationUI();
-  });
+  initNotifications();
 
   // Start polling for JS source updates
   startVersionCheck();
