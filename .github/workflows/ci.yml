@@ -63,7 +63,7 @@ jobs:
           echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
       - name: Restore Playwright browser cache
         id: pw-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ~/.cache/ms-playwright
           key: pw-browsers-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
@@ -74,7 +74,7 @@ jobs:
         run: npx playwright install-deps chromium
       - name: Save Playwright browser cache
         if: always() && steps.pw-cache.outputs.cache-hit != 'true' && matrix.shard == 1
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ~/.cache/ms-playwright
           key: pw-browsers-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
@@ -87,7 +87,7 @@ jobs:
       # one istanbul map, and runs the ≥50% gate against the union.
       - name: Upload coverage raw artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-raw-${{ matrix.shard }}
           path: coverage/raw/
@@ -109,7 +109,7 @@ jobs:
           echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
       - name: Restore Playwright browser cache
         id: pw-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ~/.cache/ms-playwright
           key: pw-browsers-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
@@ -134,7 +134,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Download coverage raw artifacts (all shards)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: coverage/raw/
           pattern: coverage-raw-*
