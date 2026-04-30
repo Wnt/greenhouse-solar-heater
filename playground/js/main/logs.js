@@ -41,7 +41,14 @@ function fetchEventPage(type, before, signal) {
   const opts = signal ? { signal } : undefined;
   return fetch(url, opts)
     .then(r => r.ok ? r.json() : { events: [], hasMore: false })
-    .catch(() => ({ events: [], hasMore: false }));
+    .catch((e) => {
+      // Re-throw aborts so the sync coordinator's catch branch handles
+      // them and skips applyToStore; swallow everything else (network
+      // blips, etc.) so the existing scroll-loader keeps quietly
+      // retrying on the next page.
+      if (e && e.name === 'AbortError') throw e;
+      return { events: [], hasMore: false };
+    });
 }
 
 function modeRowToLogEntry(e) {
@@ -72,6 +79,40 @@ function configRowToLogEntry(e) {
   };
 }
 
+// Apply a paged fetch result into transitionLog + cursor state. Pulled
+// out of fetchLiveEvents so the sync-coordinator data source can reuse
+// the same write path on Android resume. `_skipped` data carries no
+// fresh rows or pagination info, so its cursor branch no-ops.
+function applyEventPages(modeData, configData, isReset) {
+  // Only apply to the current phase — the user may have switched back
+  // to simulation while the requests were in flight.
+  if (store.get('phase') !== 'live') return;
+  const modeEvents = (modeData && Array.isArray(modeData.events)) ? modeData.events : [];
+  const configEvents = (configData && Array.isArray(configData.events)) ? configData.events : [];
+
+  if (isReset) transitionLog.length = 0;
+
+  for (let i = 0; i < modeEvents.length; i++) {
+    transitionLog.push(modeRowToLogEntry(modeEvents[i]));
+  }
+  for (let i = 0; i < configEvents.length; i++) {
+    transitionLog.push(configRowToLogEntry(configEvents[i]));
+  }
+  // Re-sort the merged list newest-first. Stable enough for our N (~20).
+  transitionLog.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+  if (!modeData._skipped) {
+    if (modeEvents.length > 0) modeCursor = modeEvents[modeEvents.length - 1].ts;
+    modeHasMore = !!(modeData && modeData.hasMore);
+  }
+  if (!configData._skipped) {
+    if (configEvents.length > 0) configCursor = configEvents[configEvents.length - 1].ts;
+    configHasMore = !!(configData && configData.hasMore);
+  }
+
+  renderLogsList();
+}
+
 // Fetch the next page of events. `reset` true clears the log and
 // fetches both feeds afresh; otherwise advances each feed's cursor
 // independently and appends to the existing list. Sorting by ts DESC
@@ -95,35 +136,7 @@ export function fetchLiveEvents(reset) {
     : Promise.resolve({ events: [], hasMore: false, _skipped: true });
 
   Promise.all([modePromise, configPromise])
-    .then(function ([modeData, configData]) {
-      // Only apply to the current phase — the user may have switched back
-      // to simulation while the requests were in flight.
-      if (store.get('phase') !== 'live') return;
-      const modeEvents = (modeData && Array.isArray(modeData.events)) ? modeData.events : [];
-      const configEvents = (configData && Array.isArray(configData.events)) ? configData.events : [];
-
-      if (isReset) transitionLog.length = 0;
-
-      for (let i = 0; i < modeEvents.length; i++) {
-        transitionLog.push(modeRowToLogEntry(modeEvents[i]));
-      }
-      for (let i = 0; i < configEvents.length; i++) {
-        transitionLog.push(configRowToLogEntry(configEvents[i]));
-      }
-      // Re-sort the merged list newest-first. Stable enough for our N (~20).
-      transitionLog.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-
-      if (!modeData._skipped) {
-        if (modeEvents.length > 0) modeCursor = modeEvents[modeEvents.length - 1].ts;
-        modeHasMore = !!(modeData && modeData.hasMore);
-      }
-      if (!configData._skipped) {
-        if (configEvents.length > 0) configCursor = configEvents[configEvents.length - 1].ts;
-        configHasMore = !!(configData && configData.hasMore);
-      }
-
-      renderLogsList();
-    })
+    .then(([modeData, configData]) => applyEventPages(modeData, configData, isReset))
     .then(() => { eventsLoading = false; });
 }
 
@@ -272,21 +285,7 @@ export function registerLogsSource() {
       fetchEventPage('mode', null, signal),
       fetchEventPage('config', null, signal),
     ]).then(([modeData, configData]) => ({ modeData, configData })),
-    applyToStore: ({ modeData, configData }) => {
-      modeCursor = null; modeHasMore = false;
-      configCursor = null; configHasMore = false;
-      transitionLog.length = 0;
-      const modeEvents = (modeData && Array.isArray(modeData.events)) ? modeData.events : [];
-      const configEvents = (configData && Array.isArray(configData.events)) ? configData.events : [];
-      for (let i = 0; i < modeEvents.length; i++) transitionLog.push(modeRowToLogEntry(modeEvents[i]));
-      for (let i = 0; i < configEvents.length; i++) transitionLog.push(configRowToLogEntry(configEvents[i]));
-      transitionLog.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-      if (modeEvents.length > 0) modeCursor = modeEvents[modeEvents.length - 1].ts;
-      modeHasMore = !!(modeData && modeData.hasMore);
-      if (configEvents.length > 0) configCursor = configEvents[configEvents.length - 1].ts;
-      configHasMore = !!(configData && configData.hasMore);
-      renderLogsList();
-    },
+    applyToStore: ({ modeData, configData }) => applyEventPages(modeData, configData, true),
   });
 }
 

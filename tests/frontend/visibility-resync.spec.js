@@ -50,9 +50,10 @@ test.describe('visibility resync', () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
 
-    // The logs source must re-fetch on resume. Two requests (mode +
-    // config) — assert at least one increment beyond baseline.
-    await expect.poll(() => eventsHits, { timeout: 5000 }).toBeGreaterThan(baseline);
+    // The logs source must re-fetch on resume — one per feed (mode +
+    // config). Assert both fired so a regression that re-registered
+    // only one feed still gets caught.
+    await expect.poll(() => eventsHits, { timeout: 5000 }).toBeGreaterThanOrEqual(baseline + 2);
   });
 
   test('hide → show triggers a /api/history re-fetch', async ({ page }) => {
