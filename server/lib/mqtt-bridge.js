@@ -215,6 +215,23 @@ function detectStateChanges(ts, prev, curr, _db) {
       }
     }
   }
+
+  // Overlay flag flips. Mode-driven actuator changes are already covered
+  // above, but overlays (fan-cool, emergency heat) can flip the actuator
+  // *within* the same mode and the operator has no way to tell from the
+  // mode log why the fan came on. Persist a separate `overlay` row so
+  // System Logs can render "Fan cooling started/stopped" entries.
+  const prevFlags = prev.flags || {};
+  const currFlags = curr.flags || {};
+  if (prevFlags.greenhouse_fan_cooling_active !== undefined &&
+      currFlags.greenhouse_fan_cooling_active !== undefined &&
+      prevFlags.greenhouse_fan_cooling_active !== currFlags.greenhouse_fan_cooling_active) {
+    const oldO = prevFlags.greenhouse_fan_cooling_active ? 'on' : 'off';
+    const newO = currFlags.greenhouse_fan_cooling_active ? 'on' : 'off';
+    d.insertStateEvent(ts, 'overlay', 'greenhouse_fan_cooling', oldO, newO, function (err) {
+      if (err) log.error('db insert overlay event failed', { error: err.message });
+    });
+  }
 }
 
 // Adds manual_override (from device config) to a greenhouse/state payload.

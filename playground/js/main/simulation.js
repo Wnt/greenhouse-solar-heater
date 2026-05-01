@@ -99,7 +99,22 @@ function simLoop(timestamp) {
     };
 
     const prevSimMode = controller.currentMode;
+    const prevSimFanCool = !!controller.greenhouseFanCoolingActive;
     result = controller.evaluate(sensors, model.state.simTime);
+
+    // Fan-cool overlay flip: separate from a mode change because the
+    // overlay can fire while staying in the same pump mode.
+    const curSimFanCool = !!controller.greenhouseFanCoolingActive;
+    if (curSimFanCool !== prevSimFanCool) {
+      transitionLog.unshift({
+        kind: 'sim',
+        eventType: 'overlay',
+        time: model.state.simTime,
+        overlayId: 'greenhouse_fan_cooling',
+        from: prevSimFanCool ? 'on' : 'off',
+        to: curSimFanCool ? 'on' : 'off',
+      });
+    }
 
     if (result.transition) {
       transitionLog.unshift({ kind: 'sim', time: model.state.simTime, text: result.transition, mode: result.mode });

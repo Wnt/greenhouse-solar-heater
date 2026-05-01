@@ -143,6 +143,69 @@ describe('mqtt-bridge', () => {
       assert.strictEqual(events[0].newVal, 'on');
     });
 
+    it('detects greenhouse_fan_cooling_active overlay flip', () => {
+      const events = [];
+      const mockDb = {
+        insertStateEvent: function (ts, type, id, oldVal, newVal, cb) {
+          events.push({ type, id, oldVal, newVal });
+          if (cb) cb(null);
+        },
+      };
+
+      const prev = {
+        mode: 'idle', valves: {}, actuators: {},
+        flags: { greenhouse_fan_cooling_active: false },
+      };
+      const curr = {
+        mode: 'idle', valves: {}, actuators: {},
+        flags: { greenhouse_fan_cooling_active: true },
+      };
+      bridge.detectStateChanges(new Date(), prev, curr, mockDb);
+      const overlayEvt = events.find(e => e.type === 'overlay');
+      assert.ok(overlayEvt, 'expected an overlay event');
+      assert.strictEqual(overlayEvt.id, 'greenhouse_fan_cooling');
+      assert.strictEqual(overlayEvt.oldVal, 'off');
+      assert.strictEqual(overlayEvt.newVal, 'on');
+    });
+
+    it('does not emit overlay event when prev flags are missing (first frame)', () => {
+      // Initial snapshot from boot: prev has no flags, curr does. We
+      // can't tell whether the overlay just turned on or has been on
+      // since boot, so suppress the spurious "started" log entry.
+      const events = [];
+      const mockDb = {
+        insertStateEvent: function (ts, type, id, oldVal, newVal, cb) {
+          events.push({ type, id });
+          if (cb) cb(null);
+        },
+      };
+      const prev = { mode: 'idle', valves: {}, actuators: {} };
+      const curr = {
+        mode: 'idle', valves: {}, actuators: {},
+        flags: { greenhouse_fan_cooling_active: true },
+      };
+      bridge.detectStateChanges(new Date(), prev, curr, mockDb);
+      const overlayEvt = events.find(e => e.type === 'overlay');
+      assert.strictEqual(overlayEvt, undefined, 'no overlay event on missing prev flags');
+    });
+
+    it('does not emit overlay event when flag stays the same', () => {
+      const events = [];
+      const mockDb = {
+        insertStateEvent: function (ts, type, id, oldVal, newVal, cb) {
+          events.push({ type, id });
+          if (cb) cb(null);
+        },
+      };
+      const state = {
+        mode: 'idle', valves: {}, actuators: {},
+        flags: { greenhouse_fan_cooling_active: true },
+      };
+      bridge.detectStateChanges(new Date(), state, state, mockDb);
+      const overlayEvt = events.find(e => e.type === 'overlay');
+      assert.strictEqual(overlayEvt, undefined);
+    });
+
     it('does not emit events when nothing changed', () => {
       const events = [];
       const mockDb = {
