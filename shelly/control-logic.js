@@ -138,6 +138,11 @@ var DEFAULT_CONFIG = {
   greenhouseExitTankDelta: 2,
   emergencyEnterTemp: 9,
   emergencyExitTemp: 12,
+  // Fan-cool overlay hysteresis (overlays.greenhouse_fan_cooling in
+  // system.yaml). Repurposes the radiator fan as a circulation aid
+  // when the greenhouse runs hot.
+  greenhouseFanCoolEnter: 30,
+  greenhouseFanCoolExit: 28,
   // Drain threshold for the colder of (outdoor, collector). Raised
   // 2 → 4 on 2026-04-22 for a safety margin: at 2 °C the collector is
   // already close enough to freezing that a sharp cooling transient
@@ -283,6 +288,7 @@ function evaluate(state, config, deviceConfig) {
     collectorsDrained: state.collectorsDrained,
     lastRefillAttempt: state.lastRefillAttempt,
     emergencyHeatingActive: state.emergencyHeatingActive || false,
+    greenhouseFanCoolingActive: state.greenhouseFanCoolingActive || false,
     // Solar-charging tank-rise tracking. Carried forward only while we
     // remain in SOLAR_CHARGING — cleared whenever pumpMode ends up
     // anything else (see end of function). Metric is the mean of
@@ -316,9 +322,12 @@ function evaluate(state, config, deviceConfig) {
     flags.solarChargePeakTankAvgAt = carriedPeakAt;
   }
 
-  // Sensor staleness — any sensor stale triggers IDLE, emergency off
+  // Sensor staleness — any sensor stale triggers IDLE, all overlays off
+  // (a failed greenhouse sensor must not strand emergency heat or the
+  // fan-cool fan running indefinitely).
   if (anySensorStale(state.sensorAge, cfg.sensorStaleThreshold)) {
     flags.emergencyHeatingActive = false;
+    flags.greenhouseFanCoolingActive = false;
     flags.solarChargePeakTankAvg = null;
     flags.solarChargePeakTankAvgAt = 0;
     return makeResult(MODES.IDLE, flags, dc, false, "sensor_stale");
@@ -369,9 +378,14 @@ function evaluate(state, config, deviceConfig) {
       state.currentMode !== MODES.EMERGENCY_HEATING &&
       elapsed < getMinDuration(state, cfg)) {
     var result = makeResult(state.currentMode, flags, dc, false, "min_duration");
-    // Emergency overlay still applies during min-duration hold
+    // Overlays still apply during min-duration hold; carried-forward
+    // state actuates, hysteresis updates wait for the hold to expire.
     if (t.greenhouse !== null && flags.emergencyHeatingActive) {
       result.actuators.space_heater = true;
+    }
+    if (flags.greenhouseFanCoolingActive &&
+        (!dc || (dc.ce && ((dc.ea || 0) & EA_FAN)))) {
+      result.actuators.fan = true;
     }
     return result;
   }
@@ -386,6 +400,18 @@ function evaluate(state, config, deviceConfig) {
       }
     } else if (t.greenhouse < cfg.emergencyEnterTemp) {
       flags.emergencyHeatingActive = true;
+    }
+  }
+
+  // Fan-cool overlay hysteresis (independent of pump mode; drain paths
+  // return earlier so the fan stays off during drain).
+  if (t.greenhouse !== null) {
+    if (flags.greenhouseFanCoolingActive) {
+      if (t.greenhouse <= cfg.greenhouseFanCoolExit) {
+        flags.greenhouseFanCoolingActive = false;
+      }
+    } else if (t.greenhouse >= cfg.greenhouseFanCoolEnter) {
+      flags.greenhouseFanCoolingActive = true;
     }
   }
 
@@ -540,6 +566,13 @@ function evaluate(state, config, deviceConfig) {
   var result = makeResult(pumpMode, flags, dc, false, reason);
   if (flags.emergencyHeatingActive) {
     result.actuators.space_heater = true;
+  }
+  // Fan-cool overlay is a comfort feature, not a safety override — unlike
+  // emergency_heating it respects EA_FAN and ce. Hysteresis still tracks
+  // regardless so the flag is consistent across ticks.
+  if (flags.greenhouseFanCoolingActive &&
+      (!dc || (dc.ce && ((dc.ea || 0) & EA_FAN)))) {
+    result.actuators.fan = true;
   }
 
   // ── Natural-mode ban check (post-evaluation) ──

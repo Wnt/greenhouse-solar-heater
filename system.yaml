@@ -122,7 +122,14 @@ components:
     type: car radiator (syyläri)
     fan: 230V
     position: inside greenhouse, near ground
-    purpose: heat distribution from tank to greenhouse air
+    purpose: >
+      Heat distribution from tank to greenhouse air during
+      greenhouse_heating mode. The fan is also reused as an air-
+      circulation overlay (independent of pump mode) when greenhouse
+      temperature exceeds 30°C — moves air past the radiator and
+      around the greenhouse to reduce stratification and keep
+      conditions comfortable for plants. Hysteresis: fan-cool ON at
+      ≥30°C, OFF at ≤28°C. See `overlays.greenhouse_fan_cooling`.
 
   space_heater:
     type: fan heater
@@ -702,6 +709,41 @@ modes:
       - Run autumn_shutdown if not already done
       - Space heater on standalone thermostat for greenhouse minimum temp
       - System is passive — no Shelly control needed
+
+# =============================================================================
+# ACTUATOR OVERLAYS
+# =============================================================================
+# Overlays apply on top of whatever pump mode is active. They are evaluated
+# after mode selection in control-logic.js evaluate(), and force a single
+# actuator on regardless of the mode's default actuator state. Each overlay
+# tracks its own hysteresis flag carried across ticks via control state.
+
+overlays:
+  emergency_heating:
+    actuator: space_heater
+    enter: t_greenhouse < 9°C
+    exit: t_greenhouse > 12°C
+    notes: >
+      Independent of pump mode — when the greenhouse falls below the
+      enter threshold the space heater fires even if a pump mode is
+      idle or actively heating. The dedicated emergency_heating mode
+      is entered only when no pump mode is selected; otherwise the
+      space heater is overlaid on the active pump mode.
+
+  greenhouse_fan_cooling:
+    actuator: fan
+    enter: t_greenhouse >= 30°C
+    exit:  t_greenhouse <= 28°C
+    notes: >
+      Repurposes the radiator fan as a circulation aid when the
+      greenhouse gets hot. The radiator itself is at greenhouse air
+      temperature when no pump mode is heating it, so the fan
+      primarily destratifies and moves air past the plants rather
+      than removing heat — but air movement alone keeps conditions
+      better for plants. Hysteresis (30/28 °C) prevents short-cycling.
+      Suppressed during active_drain (early-return) and when sensors
+      are stale (early-return). Respects the EA_FAN device-config
+      bit and the watchdog/permanent ban on the active mode.
 
 # =============================================================================
 # SAFETY RULES

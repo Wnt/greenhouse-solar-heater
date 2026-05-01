@@ -358,6 +358,7 @@ function restoreBootstrapSnapshot(snapshot) {
   controller.collectorsDrained = fcs.collectorsDrained;
   controller.lastRefillAttempt = fcs.lastRefillAttempt;
   controller.emergencyHeatingActive = fcs.emergencyHeatingActive;
+  controller.greenhouseFanCoolingActive = !!fcs.greenhouseFanCoolingActive;
   controller.solarChargePeakTankAvg = (fcs.solarChargePeakTankAvg !== undefined)
     ? fcs.solarChargePeakTankAvg
     : null;

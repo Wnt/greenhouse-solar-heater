@@ -11,6 +11,7 @@ function makeState(overrides) {
     collectorsDrained: false,
     lastRefillAttempt: 0,
     emergencyHeatingActive: false,
+    greenhouseFanCoolingActive: false,
     sensorAge: { collector: 0, tank_top: 0, tank_bottom: 0, greenhouse: 0, outdoor: 0 }
   };
   return Object.assign({}, base, overrides);
@@ -1117,5 +1118,6 @@ describe('manual override safety interaction', () => {
 });
 
 // planValveTransition scheduler helpers + tests moved to ./control-logic-valves.test.js
+// greenhouse fan-cooling overlay tests moved to ./control-logic-fan-cooling.test.js
 
 
