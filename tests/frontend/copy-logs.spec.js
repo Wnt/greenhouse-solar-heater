@@ -427,6 +427,55 @@ test.describe('Copy System Logs — live mode', () => {
     expect(text).toMatch(/Watchdogs snoozed: {2}ggr=\d+m/);
     expect(text).toContain('Mode bans (wb):     SC=disabled');
   });
+
+  test('fan-cool overlay flips render in transition log + controller state', async ({ page }) => {
+    // Server-persisted overlay rows should round-trip through /api/events
+    // and land in the System Logs UI as "Fan cooling started/stopped"
+    // entries — not as bare "Idle" rows. Also verifies the controller
+    // state section reflects the live fan-cool flag.
+    const now = Date.now();
+    const rows = [
+      makeEvent(now - 30_000, 'idle', 'solar_charging'),
+      {
+        ts: now - 90_000, type: 'overlay', id: 'greenhouse_fan_cooling',
+        from: 'off', to: 'on',
+      },
+      {
+        ts: now - 60_000, type: 'overlay', id: 'greenhouse_fan_cooling',
+        from: 'on', to: 'off',
+      },
+    ];
+
+    await installMockWs(page, {
+      mode: 'idle',
+      flags: {
+        collectors_drained: false,
+        emergency_heating_active: false,
+        greenhouse_fan_cooling_active: true,
+      },
+    });
+    await mockHistoryApi(page);
+    await mockEventsApi(page, rows);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(3, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+
+    expect(text).toContain('Fan cooling:        on');
+    expect(text).toContain('Fan cooling started');
+    expect(text).toContain('Fan cooling stopped');
+    expect(text).toContain('[overlay: greenhouse_fan_cooling]');
+
+    // Guard the no-bare-"Idle" regression for the new event type too.
+    const tlIdx = text.indexOf('--- Transition Log ---');
+    expect(tlIdx).toBeGreaterThan(-1);
+    const transitionLogLines = text.slice(tlIdx).split('\n');
+    const bareIdle = transitionLogLines.filter(line => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\s+Idle\s*$/.test(line));
+    expect(bareIdle).toHaveLength(0);
+  });
 });
 
 // ── Timezone tests ──

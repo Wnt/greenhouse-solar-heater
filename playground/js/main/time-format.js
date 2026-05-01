@@ -203,6 +203,21 @@ function safeParseJson(s) {
   try { return JSON.parse(s); } catch (e) { return null; }
 }
 
+// Overlay flips (fan-cool today, future overlays will reuse this shape).
+// `t` carries `overlayId`, `from`, `to` per overlayRowToLogEntry.
+export function formatOverlayEntry(t) {
+  if (t.overlayId === 'greenhouse_fan_cooling') {
+    const verb = t.to === 'on' ? 'started' : 'stopped';
+    return {
+      title: 'Fan cooling ' + verb,
+      desc: t.to === 'on'
+        ? 'Greenhouse hot — fan circulating air'
+        : 'Greenhouse cooled — fan stopped',
+    };
+  }
+  return { title: 'Overlay ' + (t.overlayId || ''), desc: (t.from || '?') + ' → ' + (t.to || '?') };
+}
+
 // Render the temp snapshot as "coll 62.3° · tank 41/29° · gh 12° · out 8°"
 export function formatSensorsLine(sensors) {
   if (!sensors) return '';

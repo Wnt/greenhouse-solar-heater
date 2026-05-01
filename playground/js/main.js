@@ -20,8 +20,9 @@ import { initDeviceConfig } from './main/device-config.js';
 import { wireNotificationUI } from './main/notifications-ui.js';
 import { drawHistoryGraph, toSchematicState } from './main/history-graph.js';
 import {
-  transitionLog, setupLogsScrollLoader, setupCopyLogsButton,
+  transitionLog, setupLogsScrollLoader,
 } from './main/logs.js';
+import { setupCopyLogsButton } from './main/logs-clipboard.js';
 import { initBalanceCard } from './main/balance-card.js';
 import { setupInspector } from './main/graph-inspector.js';
 import { setupChartPinchZoom, resetChartZoom } from './main/chart-pinch-zoom.js';

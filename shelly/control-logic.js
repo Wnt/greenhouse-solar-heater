@@ -875,7 +875,8 @@ function buildSnapshotFromState(st, dc, now) {
     },
     flags: {
       collectors_drained: st.collectors_drained,
-      emergency_heating_active: st.emergency_heating_active
+      emergency_heating_active: st.emergency_heating_active,
+      greenhouse_fan_cooling_active: !!st.greenhouse_fan_cooling_active
     },
     controls_enabled: dc.ce,
     manual_override: (dc.mo && dc.mo.a) ? {
