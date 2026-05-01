@@ -34,6 +34,7 @@ export class ControlStateMachine {
     this.collectorsDrained = false;
     this.lastRefillAttempt = 0;
     this.emergencyHeatingActive = false;
+    this.greenhouseFanCoolingActive = false;
     // Solar-charging tank-rise tracking (mirrors evaluate() flags).
     // Reset each time we leave SOLAR_CHARGING; carried across ticks
     // while we are in solar charging so the no-rise-for-5-min and
@@ -64,6 +65,7 @@ export class ControlStateMachine {
       collectorsDrained: this.collectorsDrained,
       lastRefillAttempt: this.lastRefillAttempt,
       emergencyHeatingActive: this.emergencyHeatingActive,
+      greenhouseFanCoolingActive: this.greenhouseFanCoolingActive,
       solarChargePeakTankAvg: this.solarChargePeakTankAvg,
       solarChargePeakTankAvgAt: this.solarChargePeakTankAvgAt,
       sensorAge: { collector: 0, tank_top: 0, tank_bottom: 0, greenhouse: 0, outdoor: 0 },
@@ -92,6 +94,7 @@ export class ControlStateMachine {
     this.collectorsDrained = result.flags.collectorsDrained;
     this.lastRefillAttempt = result.flags.lastRefillAttempt;
     this.emergencyHeatingActive = result.flags.emergencyHeatingActive;
+    this.greenhouseFanCoolingActive = !!result.flags.greenhouseFanCoolingActive;
     this.solarChargePeakTankAvg = result.flags.solarChargePeakTankAvg;
     this.solarChargePeakTankAvgAt = result.flags.solarChargePeakTankAvgAt;
 
@@ -116,6 +119,7 @@ export class ControlStateMachine {
       flags: {
         collectors_drained: !!this.collectorsDrained,
         emergency_heating_active: !!this.emergencyHeatingActive,
+        greenhouse_fan_cooling_active: !!this.greenhouseFanCoolingActive,
       },
       transition,
     };
@@ -170,6 +174,7 @@ export class ControlStateMachine {
     this.collectorsDrained = false;
     this.lastRefillAttempt = 0;
     this.emergencyHeatingActive = false;
+    this.greenhouseFanCoolingActive = false;
     this.solarChargePeakTankAvg = null;
     this.solarChargePeakTankAvgAt = 0;
     this.transitionLog = [];

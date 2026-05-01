@@ -178,6 +178,7 @@ export function generate() {
     collectorsDrained: !!controller.collectorsDrained,
     lastRefillAttempt: controller.lastRefillAttempt,
     emergencyHeatingActive: !!controller.emergencyHeatingActive,
+    greenhouseFanCoolingActive: !!controller.greenhouseFanCoolingActive,
     solarChargePeakTankAvg: controller.solarChargePeakTankAvg,
     solarChargePeakTankAvgAt: controller.solarChargePeakTankAvgAt,
   };

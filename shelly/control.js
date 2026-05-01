@@ -85,6 +85,7 @@ var state = {
   collectors_drained: false,
   last_refill_attempt: 0,
   emergency_heating_active: false,
+  greenhouse_fan_cooling_active: false,
   // Solar-charging tank-rise tracking (mirrors evaluate() flags). Tank
   // top temperature is tracked so we can keep pumping until the tank
   // stops accepting heat (no rise for 5 min, or 2°C drop from peak).
@@ -132,14 +133,20 @@ function setPump(on) {
   state.pump_on = on;
 }
 
-// Individual per-actuator setFan/setImmersion helpers were removed —
-// all callers go through setActuators. setSpaceHeater kept as a thin
-// standalone because controlLoop() fires it inside an in-flight chain
-// (see its call site in controlLoop) without gating on ce/ea elsewhere.
+// setImmersion helper was removed — all callers go through setActuators.
+// setSpaceHeater + setFan stay as thin standalones because controlLoop()
+// fires them in-line for the same-mode overlay path; one Shelly.call each
+// keeps the 5-call concurrency budget intact.
 function setSpaceHeater(on) {
   if (on && (!deviceConfig.ce || !(deviceConfig.ea & EA_SPACE_HEATER))) return;
   Shelly.call("Switch.Set", {id: 3, on: on});
   state.space_heater_on = on;
+}
+
+function setFan(on) {
+  if (on && (!deviceConfig.ce || !(deviceConfig.ea & EA_FAN))) return;
+  Shelly.call("Switch.Set", {id: 1, on: on});
+  state.fan_on = on;
 }
 
 // setActuators — sequentially sets the 4 local switches (pump, fan, immersion
@@ -339,6 +346,7 @@ function buildEvalState() {
     collectorsDrained: state.collectors_drained,
     lastRefillAttempt: state.last_refill_attempt / 1000,
     emergencyHeatingActive: state.emergency_heating_active,
+    greenhouseFanCoolingActive: state.greenhouse_fan_cooling_active,
     solarChargePeakTankAvg: state.solar_charge_peak_tank_avg,
     solarChargePeakTankAvgAt: state.solar_charge_peak_tank_avg_at,
     sensorAge: sensorAge,
@@ -357,6 +365,7 @@ function applyFlags(flags) {
   state.collectors_drained = flags.collectorsDrained;
   state.last_refill_attempt = flags.lastRefillAttempt * 1000;
   state.emergency_heating_active = flags.emergencyHeatingActive;
+  state.greenhouse_fan_cooling_active = !!flags.greenhouseFanCoolingActive;
   state.solar_charge_peak_tank_avg =
     flags.solarChargePeakTankAvg !== undefined ? flags.solarChargePeakTankAvg : null;
   state.solar_charge_peak_tank_avg_at = flags.solarChargePeakTankAvgAt || 0;
@@ -1033,6 +1042,8 @@ function controlLoop() {
       } else {
         applyFlags(result.flags);
         setSpaceHeater(!!result.actuators.space_heater);
+        // Fan-cool overlay can flip the fan on/off without a mode change.
+        setFan(!!result.actuators.fan);
         emitStateUpdate();
       }
 
