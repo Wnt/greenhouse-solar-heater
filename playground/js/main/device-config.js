@@ -6,10 +6,30 @@ import { store } from '../app-state.js';
 import { renderModeEnablement } from './watchdog-ui.js';
 import { putJson } from './fetch-helpers.js';
 
+// Last-known wb (mode-ban map). Updated on form load and via the
+// 'wb-changed' DOM event dispatched by renderModeEnablement, which
+// fires on initial render AND on every WS-driven mode-enablement
+// update — so the mismatch warning stays accurate even if the user
+// disables EH from the mode-enablement card while looking at the
+// device-config form.
+let _currentWb = {};
+
 export function initDeviceConfig() {
   // Toggle buttons (exclude relay override toggles — they have their own handlers)
   document.querySelectorAll('.device-toggle:not(#override-suppress-safety)').forEach(el => {
     el.addEventListener('click', () => el.classList.toggle('active'));
+  });
+
+  // Re-evaluate the heater-mask warning when the user flips the
+  // Space Heater toggle. Runs after the generic toggle handler above
+  // so .active reflects the new state.
+  const ehToggle = document.getElementById('dc-ea-sh');
+  if (ehToggle) {
+    ehToggle.addEventListener('click', updateHeaterMaskWarning);
+  }
+  document.addEventListener('wb-changed', (e) => {
+    _currentWb = (e && e.detail) || {};
+    updateHeaterMaskWarning();
   });
 
   // Save button
@@ -26,6 +46,22 @@ export function initDeviceConfig() {
 
   // Load on first view
   loadDeviceConfig();
+}
+
+// Show the warning when Emergency Heating mode is enabled (no active
+// wb.EH ban) but the EA_SPACE_HEATER bit (8) is unset. In that
+// configuration the controller will enter EMERGENCY_HEATING mode
+// when the greenhouse is cold, but setSpaceHeater() short-circuits
+// the relay write — the mode is theatrical and no heat is delivered.
+function updateHeaterMaskWarning() {
+  const banner = document.getElementById('dc-heater-mask-warning');
+  const toggle = document.getElementById('dc-ea-sh');
+  if (!banner || !toggle) return;
+  const heaterEnabled = toggle.classList.contains('active');
+  const ehBan = _currentWb && _currentWb.EH;
+  const now = Math.floor(Date.now() / 1000);
+  const ehDisabled = ehBan && ehBan > now;
+  banner.style.display = (!heaterEnabled && !ehDisabled) ? '' : 'none';
 }
 
 function loadDeviceConfig() {
@@ -58,7 +94,9 @@ function populateDeviceForm(cfg) {
   setToggle('dc-ea-sh', !!(ea & 8));
   setToggle('dc-ea-ih', !!(ea & 16));
 
-  // Mode enablement card (replaces the old allowed-modes checkboxes)
+  // Mode enablement card (replaces the old allowed-modes checkboxes).
+  // renderModeEnablement also dispatches the 'wb-changed' event, which
+  // updates _currentWb and the heater-mask warning.
   renderModeEnablement(cfg.wb || {}, store.get('userRole') || 'admin');
 
   // Version & size

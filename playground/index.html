@@ -629,6 +629,9 @@
           <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Greenhouse ventilation fan for forced air circulation.</p>
           <div class="device-config-row"><label class="device-config-label">Space Heater</label><div class="device-toggle" id="dc-ea-sh" data-bit="8"></div></div>
           <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Electric space heater for greenhouse backup heating.</p>
+          <div id="dc-heater-mask-warning" style="display:none;margin:8px 0 4px;padding:8px 12px;border-left:3px solid var(--error);background:var(--surface-variant);font-size:12px;color:var(--on-surface);">
+            <strong>Settings conflict.</strong> Emergency Heating mode is enabled (in the Mode Enablement section below), but the Space Heater actuator above is switched off. The controller will report Emergency Heating as active when the greenhouse gets cold, but the heater relay will not fire &mdash; no heat will actually be delivered. Either switch the Space Heater on, or disable Emergency Heating in the Mode Enablement section.
+          </div>
           <div class="device-config-row"><label class="device-config-label">Immersion Heater</label><div class="device-toggle" id="dc-ea-ih" data-bit="16"></div></div>
           <p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">Electric immersion heater in the water tank for direct water heating.</p>
 

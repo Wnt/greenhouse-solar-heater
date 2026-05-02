@@ -74,15 +74,19 @@ describe('greenhouse fan cooling overlay', () => {
     assert.strictEqual(result.actuators.fan, true);
   });
 
-  // Drain modes return early before the overlay block so the fan stays
-  // off — drain is a brief safety operation and must not be sidetracked
-  // by comfort overlays.
-  it('overlay does not run during ACTIVE_DRAIN (drain-mode early return)', () => {
+  // Overlays (fan-cool + space heater) are fully independent of pump
+  // mode and run on every tick, including during drain. The fan and
+  // heater are physically separate from the drain plumbing (drain
+  // uses pump+valves), so there's no conflict. Detailed coverage of
+  // the heater overlay across all 4 drain paths is in the
+  // "overlays are independent of pump mode" describe block in
+  // control-logic.test.js.
+  it('overlay runs during ACTIVE_DRAIN (overlays are independent of pump mode)', () => {
     const result = evaluate(makeState({
       temps: { collector: 1, tank_top: 40, tank_bottom: 30, greenhouse: 35, outdoor: 1 },
     }), null);
     assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
-    assert.strictEqual(result.actuators.fan, false);
+    assert.strictEqual(result.actuators.fan, true);
   });
 
   it('clears the cooling flag on sensor staleness', () => {
