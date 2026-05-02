@@ -546,6 +546,29 @@ function evaluate(state, config, deviceConfig) {
     flags.solarChargePeakTankAvgAt = 0;
   }
 
+  // ── Banned-mode collapse ──
+  // If physics picked a pump mode that wb bans (user-disabled sentinel
+  // or watchdog cool-off), collapse it to IDLE here — BEFORE overlay
+  // dispatch — so the emergency-overlay path below sees pumpMode ===
+  // IDLE and can return EMERGENCY_HEATING when the greenhouse is
+  // critically cold. Doing this only after `result` is built (the
+  // previous post-evaluation ban check) silently dropped the
+  // emergency / fan-cool overlay actuators when the rebuild swapped
+  // them onto an IDLE template. See the 2026-05-02 field log:
+  // wb.GH=disabled + greenhouse=4 °C left the space heater off for
+  // hours despite EH being enabled. The ban reason is preserved so
+  // the System Logs UI still surfaces "mode_disabled" /
+  // "watchdog_ban" instead of plain "idle".
+  if (dc && dc.wb && pumpMode !== MODES.IDLE) {
+    var pumpCode = shortCodeOf(pumpMode);
+    if (pumpCode && dc.wb[pumpCode] && dc.wb[pumpCode] > state.now) {
+      reason = (dc.wb[pumpCode] >= WB_PERMANENT_SENTINEL) ? "mode_disabled" : "watchdog_ban";
+      pumpMode = MODES.IDLE;
+      flags.solarChargePeakTankAvg = null;
+      flags.solarChargePeakTankAvgAt = 0;
+    }
+  }
+
   // ── Combine pump mode + emergency overlay ──
   // EH ban gates the overlay. Two ban shapes share `wb.EH`:
   //   - permanent sentinel (user disabled emergency heating in the UI), or
@@ -573,22 +596,6 @@ function evaluate(state, config, deviceConfig) {
   if (flags.greenhouseFanCoolingActive &&
       (!dc || (dc.ce && ((dc.ea || 0) & EA_FAN)))) {
     result.actuators.fan = true;
-  }
-
-  // ── Natural-mode ban check (post-evaluation) ──
-  // Blocks the mode that the physics evaluation chose if its wb entry
-  // is still active. Distinguishes a user-set permanent disable
-  // (sentinel → "mode_disabled") from a watchdog cool-off
-  // ("watchdog_ban") so the System Logs UI tells the operator which
-  // one they are looking at.
-  if (dc && dc.wb && result.nextMode !== MODES.IDLE) {
-    var natCode = shortCodeOf(result.nextMode);
-    if (natCode && dc.wb[natCode] && dc.wb[natCode] > state.now) {
-      flags.solarChargePeakTankAvg = null;
-      flags.solarChargePeakTankAvgAt = 0;
-      var banReason = (dc.wb[natCode] >= WB_PERMANENT_SENTINEL) ? "mode_disabled" : "watchdog_ban";
-      return makeResult(MODES.IDLE, flags, dc, false, banReason);
-    }
   }
 
   return result;
