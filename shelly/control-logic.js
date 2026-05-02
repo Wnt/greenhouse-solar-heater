@@ -225,6 +225,24 @@ function shortCodeOf(mode) {
   return null;
 }
 
+// Stamp the heater + fan-cool overlay actuators onto an already-built
+// result. Used at every early-return path where overlays must survive
+// alongside the chosen pump-mode result (drain modes, min-duration
+// hold, the final result builder). The heater overlay is unmasked at
+// this layer — control.js setSpaceHeater enforces the EA_SPACE_HEATER
+// bit. Fan-cool is masked here because it's a comfort overlay that
+// must respect the user's EA_FAN bit (see existing test commentary).
+function stampOverlays(result, flags, deviceConfig) {
+  if (flags.emergencyHeatingActive) {
+    result.actuators.space_heater = true;
+  }
+  if (flags.greenhouseFanCoolingActive &&
+      (!deviceConfig || (deviceConfig.ce && ((deviceConfig.ea || 0) & EA_FAN)))) {
+    result.actuators.fan = true;
+  }
+  return result;
+}
+
 function makeResult(mode, flags, deviceConfig, safetyOverride, reason) {
   var valves = {};
   var actuators = {};
@@ -333,13 +351,48 @@ function evaluate(state, config, deviceConfig) {
     return makeResult(MODES.IDLE, flags, dc, false, "sensor_stale");
   }
 
+  // ── Overlay hysteresis + ban gate ──
+  // Run BEFORE every early-return path below (drain modes, min-duration
+  // hold) so overlays are decided per-tick on the latest temperature
+  // and the latest wb.EH ban state. Pre-2026-05-02 these updates
+  // happened only after the early returns, so:
+  //   - freeze_drain at outdoor=2 °C left the heater off even when
+  //     greenhouse was 4 °C (worst-case timing for plant safety).
+  //   - a 5-min min-duration hold froze the emergency flag at its
+  //     entry value, so a mid-hold greenhouse crash didn't fire heat.
+  //   - a mid-hold "Disable Emergency Heating" via the app didn't
+  //     take effect until the hold expired.
+  if (t.greenhouse !== null) {
+    if (flags.emergencyHeatingActive) {
+      if (t.greenhouse > cfg.emergencyExitTemp) {
+        flags.emergencyHeatingActive = false;
+      }
+    } else if (t.greenhouse < cfg.emergencyEnterTemp) {
+      flags.emergencyHeatingActive = true;
+    }
+    if (flags.greenhouseFanCoolingActive) {
+      if (t.greenhouse <= cfg.greenhouseFanCoolExit) {
+        flags.greenhouseFanCoolingActive = false;
+      }
+    } else if (t.greenhouse >= cfg.greenhouseFanCoolEnter) {
+      flags.greenhouseFanCoolingActive = true;
+    }
+  }
+  // wb.EH ban (user-disabled sentinel OR watchdog cool-off) suppresses
+  // the heater overlay everywhere it might fire below. Cleared here
+  // rather than at the overlay return so drain-mode + min-duration
+  // paths see the same gate.
+  if (flags.emergencyHeatingActive && dc && dc.wb && dc.wb.EH && dc.wb.EH > state.now) {
+    flags.emergencyHeatingActive = false;
+  }
+
   // Already draining — stay until shell completes or timeout
   if (state.currentMode === MODES.ACTIVE_DRAIN) {
     if (elapsed > cfg.drainTimeout) {
       flags.collectorsDrained = true;
-      return makeResult(MODES.IDLE, flags, dc, false, "drain_timeout");
+      return stampOverlays(makeResult(MODES.IDLE, flags, dc, false, "drain_timeout"), flags, dc);
     }
-    return makeResult(MODES.ACTIVE_DRAIN, flags, dc, false, "drain_running");
+    return stampOverlays(makeResult(MODES.ACTIVE_DRAIN, flags, dc, false, "drain_running"), flags, dc);
   }
 
   // Freeze protection — preempts immediately, ignores min duration
@@ -359,7 +412,7 @@ function evaluate(state, config, deviceConfig) {
       !state.collectorsDrained) {
     flags.solarChargePeakTankAvg = null;
     flags.solarChargePeakTankAvgAt = 0;
-    return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "freeze_drain");
+    return stampOverlays(makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "freeze_drain"), flags, dc);
   }
 
   // Collector overheat protection — drain only as a last resort.
@@ -370,49 +423,14 @@ function evaluate(state, config, deviceConfig) {
       state.currentMode === MODES.SOLAR_CHARGING && !state.collectorsDrained) {
     flags.solarChargePeakTankAvg = null;
     flags.solarChargePeakTankAvgAt = 0;
-    return makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "overheat_drain");
+    return stampOverlays(makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "overheat_drain"), flags, dc);
   }
 
   // Minimum mode duration (not for IDLE or EMERGENCY_HEATING, not for drain above)
   if (state.currentMode !== MODES.IDLE &&
       state.currentMode !== MODES.EMERGENCY_HEATING &&
       elapsed < getMinDuration(state, cfg)) {
-    var result = makeResult(state.currentMode, flags, dc, false, "min_duration");
-    // Overlays still apply during min-duration hold; carried-forward
-    // state actuates, hysteresis updates wait for the hold to expire.
-    if (t.greenhouse !== null && flags.emergencyHeatingActive) {
-      result.actuators.space_heater = true;
-    }
-    if (flags.greenhouseFanCoolingActive &&
-        (!dc || (dc.ce && ((dc.ea || 0) & EA_FAN)))) {
-      result.actuators.fan = true;
-    }
-    return result;
-  }
-
-  // ── Emergency heating overlay (independent of pump mode) ──
-  // Space heater activates whenever greenhouse is critically cold.
-  // Tracked separately so it works alongside greenhouse heating.
-  if (t.greenhouse !== null) {
-    if (flags.emergencyHeatingActive) {
-      if (t.greenhouse > cfg.emergencyExitTemp) {
-        flags.emergencyHeatingActive = false;
-      }
-    } else if (t.greenhouse < cfg.emergencyEnterTemp) {
-      flags.emergencyHeatingActive = true;
-    }
-  }
-
-  // Fan-cool overlay hysteresis (independent of pump mode; drain paths
-  // return earlier so the fan stays off during drain).
-  if (t.greenhouse !== null) {
-    if (flags.greenhouseFanCoolingActive) {
-      if (t.greenhouse <= cfg.greenhouseFanCoolExit) {
-        flags.greenhouseFanCoolingActive = false;
-      }
-    } else if (t.greenhouse >= cfg.greenhouseFanCoolEnter) {
-      flags.greenhouseFanCoolingActive = true;
-    }
+    return stampOverlays(makeResult(state.currentMode, flags, dc, false, "min_duration"), flags, dc);
   }
 
   // ── Pump mode selection (solar > greenhouse heating > idle) ──
@@ -546,52 +564,40 @@ function evaluate(state, config, deviceConfig) {
     flags.solarChargePeakTankAvgAt = 0;
   }
 
-  // ── Combine pump mode + emergency overlay ──
-  // EH ban gates the overlay. Two ban shapes share `wb.EH`:
-  //   - permanent sentinel (user disabled emergency heating in the UI), or
-  //   - 4-hour cool-off (watchdog auto-shutdown).
-  // Either way, suppress the overlay AND fall through — do not return
-  // IDLE with reason "watchdog_ban", which would clobber the natural
-  // pumpMode reason (e.g. "greenhouse_tank_depleted") and falsely tell
-  // the user a watchdog tripped when they had simply disabled emergency
-  // heating. See 2026-04-28 04:54 field log for the original symptom.
-  if (flags.emergencyHeatingActive) {
-    if (dc && dc.wb && dc.wb.EH && dc.wb.EH > state.now) {
-      flags.emergencyHeatingActive = false;
-    } else if (pumpMode === MODES.IDLE) {
-      return makeResult(MODES.EMERGENCY_HEATING, flags, dc, false, "emergency_enter");
-    }
-  }
-
-  var result = makeResult(pumpMode, flags, dc, false, reason);
-  if (flags.emergencyHeatingActive) {
-    result.actuators.space_heater = true;
-  }
-  // Fan-cool overlay is a comfort feature, not a safety override — unlike
-  // emergency_heating it respects EA_FAN and ce. Hysteresis still tracks
-  // regardless so the flag is consistent across ticks.
-  if (flags.greenhouseFanCoolingActive &&
-      (!dc || (dc.ce && ((dc.ea || 0) & EA_FAN)))) {
-    result.actuators.fan = true;
-  }
-
-  // ── Natural-mode ban check (post-evaluation) ──
-  // Blocks the mode that the physics evaluation chose if its wb entry
-  // is still active. Distinguishes a user-set permanent disable
-  // (sentinel → "mode_disabled") from a watchdog cool-off
-  // ("watchdog_ban") so the System Logs UI tells the operator which
-  // one they are looking at.
-  if (dc && dc.wb && result.nextMode !== MODES.IDLE) {
-    var natCode = shortCodeOf(result.nextMode);
-    if (natCode && dc.wb[natCode] && dc.wb[natCode] > state.now) {
+  // ── Banned-mode collapse ──
+  // If physics picked a pump mode that wb bans (user-disabled sentinel
+  // or watchdog cool-off), collapse it to IDLE here — BEFORE overlay
+  // dispatch — so the emergency-overlay path below sees pumpMode ===
+  // IDLE and can return EMERGENCY_HEATING when the greenhouse is
+  // critically cold. Doing this only after `result` is built (the
+  // previous post-evaluation ban check) silently dropped the
+  // emergency / fan-cool overlay actuators when the rebuild swapped
+  // them onto an IDLE template. See the 2026-05-02 field log:
+  // wb.GH=disabled + greenhouse=4 °C left the space heater off for
+  // hours despite EH being enabled. The ban reason is preserved so
+  // the System Logs UI still surfaces "mode_disabled" /
+  // "watchdog_ban" instead of plain "idle".
+  if (dc && dc.wb && pumpMode !== MODES.IDLE) {
+    var pumpCode = shortCodeOf(pumpMode);
+    if (pumpCode && dc.wb[pumpCode] && dc.wb[pumpCode] > state.now) {
+      reason = (dc.wb[pumpCode] >= WB_PERMANENT_SENTINEL) ? "mode_disabled" : "watchdog_ban";
+      pumpMode = MODES.IDLE;
       flags.solarChargePeakTankAvg = null;
       flags.solarChargePeakTankAvgAt = 0;
-      var banReason = (dc.wb[natCode] >= WB_PERMANENT_SENTINEL) ? "mode_disabled" : "watchdog_ban";
-      return makeResult(MODES.IDLE, flags, dc, false, banReason);
     }
   }
 
-  return result;
+  // ── Pump mode → mode result (with overlay return for pure emergency) ──
+  // wb.EH is gated up at the hysteresis block so flags.emergencyHeatingActive
+  // is already false when EH is banned. When pumpMode is IDLE and the
+  // flag is set, the system "is" in Emergency Heating — so the natural
+  // pumpMode reason (e.g. "greenhouse_tank_depleted") is replaced with
+  // "emergency_enter" and the mode itself becomes EMERGENCY_HEATING.
+  // For non-IDLE pump modes the heater rides as an overlay alongside.
+  if (flags.emergencyHeatingActive && pumpMode === MODES.IDLE) {
+    return makeResult(MODES.EMERGENCY_HEATING, flags, dc, false, "emergency_enter");
+  }
+  return stampOverlays(makeResult(pumpMode, flags, dc, false, reason), flags, dc);
 }
 
 // ── Valve transition scheduler (pure, no Shelly calls) ──

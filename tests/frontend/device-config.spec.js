@@ -685,6 +685,56 @@ test.describe('Device config UI', () => {
     await expect(toggle).not.toHaveClass(/active/);
   });
 
+  // The space heater bit (EA_SPACE_HEATER = 8) and the Emergency
+  // Heating mode-enable (wb.EH absent / not in the future) live in
+  // separate config layers. If the heater is masked off but the mode
+  // is enabled, the controller will enter emergency_heating when the
+  // greenhouse gets cold but the relay write is silently dropped —
+  // no actual heat. The warning surfaces this mismatch so the
+  // operator can spot it before the next cold night.
+  test('heater-mask warning shows when EH mode enabled but heater bit off', async ({ page }) => {
+    await setupDeviceView(page, { ce: true, ea: 7 /* valves+pump+fan, no SH */, wb: {} });
+    const banner = page.locator('#dc-heater-mask-warning');
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('Settings conflict');
+  });
+
+  test('heater-mask warning hidden when heater bit is on', async ({ page }) => {
+    await setupDeviceView(page, { ce: true, ea: 15 /* valves+pump+fan+SH */, wb: {} });
+    await expect(page.locator('#dc-heater-mask-warning')).toBeHidden();
+  });
+
+  test('heater-mask warning hidden when EH mode is permanently disabled', async ({ page }) => {
+    await setupDeviceView(page, {
+      ce: true, ea: 7, // heater off
+      wb: { EH: WB_PERMANENT_SENTINEL }, // but EH also disabled — no mismatch
+    });
+    await expect(page.locator('#dc-heater-mask-warning')).toBeHidden();
+  });
+
+  test('heater-mask warning hidden when EH is on a 4-hour cool-off', async ({ page }) => {
+    const fourHoursFromNow = Math.floor(Date.now() / 1000) + 14400;
+    await setupDeviceView(page, {
+      ce: true, ea: 7,
+      wb: { EH: fourHoursFromNow },
+    });
+    await expect(page.locator('#dc-heater-mask-warning')).toBeHidden();
+  });
+
+  test('heater-mask warning toggles live as the user flips the heater toggle', async ({ page }) => {
+    await setupDeviceView(page, { ce: true, ea: 7, wb: {} });
+    const banner = page.locator('#dc-heater-mask-warning');
+    await expect(banner).toBeVisible();
+
+    // Flip the heater toggle on — warning hides
+    await page.locator('#dc-ea-sh').click();
+    await expect(banner).toBeHidden();
+
+    // Flip it back off — warning returns
+    await page.locator('#dc-ea-sh').click();
+    await expect(banner).toBeVisible();
+  });
+
   test('device view only visible in live mode', async ({ page }) => {
     await page.route('**/api/device-config', route => route.fulfill({
       status: 200, contentType: 'application/json',

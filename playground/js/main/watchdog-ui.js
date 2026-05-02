@@ -200,6 +200,12 @@ function renderCooloffIndicator(wb) {
 
 export function renderModeEnablement(wb, userRole) {
   const list = document.getElementById('mode-enablement-list');
+  // Broadcast wb state to other parts of the device-config form that
+  // need to react to mode-enablement changes (e.g. the Space Heater /
+  // Emergency Heating mismatch warning). Fired even if the list
+  // element is missing so callers loaded out of order still receive
+  // the latest snapshot.
+  document.dispatchEvent(new CustomEvent('wb-changed', { detail: wb || {} }));
   if (!list) return;
   const now = Math.floor(Date.now() / 1000);
   const isAdmin = userRole === 'admin';
