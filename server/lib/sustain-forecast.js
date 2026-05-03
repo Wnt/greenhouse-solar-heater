@@ -99,9 +99,6 @@ function computeSustainForecast(opts) {
   const cfg          = Object.assign({}, DEFAULT_CONFIG, opts.config || {});
 
   const tankLeakageWPerK    = typeof coeff.tankLeakageWPerK    === 'number' ? coeff.tankLeakageWPerK    : DEFAULT_TANK_LEAKAGE_W_PER_K;
-  const solarEffByHour      = Array.isArray(coeff.solarEffectivenessByHour) && coeff.solarEffectivenessByHour.length === 24
-    ? coeff.solarEffectivenessByHour
-    : DEFAULT_SOLAR_EFFECTIVENESS;
   // Observed tank-drop rate during the most recent ~hour, in K/h (positive
   // = cooling). When the system is currently in heating mode we trust this
   // over the abstract "deliver exactly ghLossW" formula — it captures the
@@ -372,18 +369,35 @@ function computeSustainForecast(opts) {
   });
 
   // ── Notes ──
+  // Compute summary metrics for the notes.
+  const ghTemps        = ghTrajectory.map(function (p) { return p.temp; });
+  const ghMin          = Math.min.apply(null, ghTemps);
+  const ghMinIdx       = ghTemps.indexOf(ghMin);
+  const tankAvgs       = tankTrajectory.map(function (p) { return p.avg; });
+  const tankMin        = Math.min.apply(null, tankAvgs);
+  const tankAvgNow     = tankAvgs[0];
+  // "Useful" tank energy = above the floor temp the operator considers warm
+  // enough to sustain heating (floor + 5 K). Below that the radiator can't
+  // really heat the greenhouse.
+  const usefulTankKwhNow = Math.max(0, (tankAvgNow - cfg.tankFloorC - 5)) * 0.349;
+
   const notes = buildNotes({
     now,
     solarChargingHours,
     greenhouseHeatingHours,
     electricKwh,
+    electricCostEur,
     hoursUntilFloor,
     hoursUntilBackupNeeded,
     usedDefaults,
     tankFloorC:              cfg.tankFloorC,
     weather48h:              weather,
-    solarEffectivenessByHour: solarEffByHour,
     solarGainByDay,
+    ghMin,
+    ghMinIdx,
+    tankMin,
+    tankAvgNow,
+    usefulTankKwhNow,
   });
 
   return {
@@ -405,6 +419,14 @@ function computeSustainForecast(opts) {
 }
 
 // ── Note generation ──
+//
+// Notes are ordered by operational relevance:
+//   1. Greenhouse temperature trajectory (what the user cares about most).
+//   2. Tank stored energy + how long it sustains heating.
+//   3. Backup electric usage + cost.
+//   4. Solar gain context (today / tomorrow).
+//
+// Cap at 3 notes so the card stays scannable.
 function buildNotes(ctx) {
   const notes = [];
 
@@ -412,9 +434,54 @@ function buildNotes(ctx) {
     notes.push('Forecast based on default coefficients — model still warming up with limited history.');
   }
 
-  // Per-day solar gain note. Maps the first two Helsinki days of the
-  // forecast horizon to "Today"/"Tomorrow" labels (or just two date
-  // labels if the user is reading at midnight).
+  // 1. Greenhouse temperature: the operator's primary concern. Surface the
+  //    minimum temperature the greenhouse will reach and when it bottoms out.
+  if (ctx.ghMin !== undefined && notes.length < 3) {
+    const minDate = new Date(ctx.now + ctx.ghMinIdx * 3600 * 1000);
+    const hhmm    = helsinkiHHMM(minDate);
+    if (ctx.electricKwh > 0) {
+      notes.push(
+        'Greenhouse cools to ' + ctx.ghMin.toFixed(1) + ' °C around ' + hhmm +
+        ', when the space heater takes over to hold it there.'
+      );
+    } else {
+      notes.push(
+        'Greenhouse holds above ' + ctx.ghMin.toFixed(1) + ' °C the whole window — tank covers it without backup.'
+      );
+    }
+  }
+
+  // 2. Tank storage + how long it sustains greenhouse heating.
+  if (ctx.usefulTankKwhNow !== undefined && notes.length < 3) {
+    const stored = ctx.usefulTankKwhNow.toFixed(1);
+    if (ctx.hoursUntilBackupNeeded !== null) {
+      notes.push(
+        'Tank stores ~' + stored + ' kWh of useful heat — covers greenhouse heating for about ~' +
+        Math.round(ctx.hoursUntilBackupNeeded) + ' h before the space heater kicks in.'
+      );
+    } else if (ctx.electricKwh > 0) {
+      notes.push(
+        'Tank stores ~' + stored + ' kWh; heating bridges most of the night, with ~' +
+        Math.round(ctx.electricKwh) + ' h of space-heater backup mixed in.'
+      );
+    } else {
+      notes.push(
+        'Tank stores ~' + stored + ' kWh of useful heat — enough for the whole window with no backup needed.'
+      );
+    }
+  }
+
+  // 3. Backup electricity summary (cost and hours), if any.
+  if (ctx.electricKwh > 0 && notes.length < 3) {
+    const eur = ctx.electricCostEur;
+    notes.push(
+      'Space heater projected: ~' + Math.round(ctx.electricKwh) +
+      ' kWh over the next 48 h, costing about €' + eur.toFixed(2) + '.'
+    );
+  }
+
+  // 4. Solar gain context (today / tomorrow). Only include if there's room
+  //    AND we haven't filled the slots with more pressing notes.
   if (Array.isArray(ctx.solarGainByDay) && ctx.solarGainByDay.length > 0 && notes.length < 3) {
     const today = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Europe/Helsinki', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -427,53 +494,6 @@ function buildNotes(ctx) {
     if (parts.length > 0) {
       notes.push('Solar gain projected: ' + parts.join(', ') + '.');
     }
-  } else if (notes.length < 3) {
-    // No solar gain at all — be explicit.
-    notes.push('No useful solar gain projected over the next 48 h.');
-  }
-
-  // Backup-needed note: tank can heat the greenhouse for X hours, then space
-  // heater takes over. This is the operationally meaningful "tank lasts" point.
-  if (ctx.hoursUntilBackupNeeded !== null && notes.length < 3) {
-    const bH = ctx.hoursUntilBackupNeeded;
-    const switchDate = new Date(ctx.now + bH * 3600 * 1000);
-    const hhmm = helsinkiHHMM(switchDate);
-    notes.push(
-      'Tank can cover greenhouse heating for ~' + Math.round(bH) +
-      ' h (until ' + hhmm + '). After that the space heater takes over for ~' +
-      Math.round(ctx.electricKwh) + ' h.'
-    );
-  } else if (ctx.electricKwh > 0 && notes.length < 3) {
-    // Backup runs but tank never crosses the "can't heat" threshold (intermittent
-    // need, e.g. cold snaps). Still surface the cost so €X.YZ isn't a mystery.
-    notes.push(
-      'Space heater projected to run ~' + Math.round(ctx.electricKwh) +
-      ' h over the next 48 h.'
-    );
-  }
-
-  if (ctx.hoursUntilFloor !== null && notes.length < 3) {
-    const floorDate = new Date(ctx.now + ctx.hoursUntilFloor * 3600 * 1000);
-    notes.push(
-      'Tank reaches ' + ctx.tankFloorC + '°C floor at ~' + helsinkiHHMM(floorDate) + '.'
-    );
-  }
-
-  // Collector shading window note (only when the mask comes from real history).
-  if (ctx.solarEffectivenessByHour && notes.length < 3) {
-    let firstEffective = -1, lastEffective = -1;
-    const EFF_THRESHOLD = 0.3;
-    for (let he = 0; he < 24; he++) {
-      if (ctx.solarEffectivenessByHour[he] > EFF_THRESHOLD) {
-        if (firstEffective === -1) firstEffective = he;
-        lastEffective = he;
-      }
-    }
-    // Only emit when the window is narrower than 10..16 (i.e. data-derived, not the flat default).
-    if (firstEffective !== -1 && !(firstEffective === 10 && lastEffective === 16)) {
-      const winNote = 'Collectors typically gain heat from ' + pad2(firstEffective) + ':00 to ' + pad2(lastEffective) + ':00 based on the past 14 days.';
-      notes.push(winNote);
-    }
   }
 
   return notes;
@@ -481,7 +501,6 @@ function buildNotes(ctx) {
 
 function round2(v) { return Math.round(v * 100) / 100; }
 function round4(v) { return Math.round(v * 10000) / 10000; }
-function pad2(n)   { return n < 10 ? '0' + n : '' + n; }
 
 module.exports = {
   fitSolarEffectivenessByHour,

@@ -38,6 +38,7 @@ const BASE_FORECAST = {
       temp: 10 + Math.sin(i / 8),
     })),
     hoursUntilFloor: 17.5,
+    hoursUntilBackupNeeded: 17.5,
     electricKwh: 8.4,
     electricCostEur: 1.21,
     costBreakdown: [
@@ -133,7 +134,7 @@ test.describe('Forecast card — basic rendering', () => {
     await expect(card).toBeAttached();
   });
 
-  test('renders "Tank lasts" from hoursUntilFloor', async ({ page }) => {
+  test('renders "Tank lasts" from hoursUntilBackupNeeded', async ({ page }) => {
     await scaffold(page);
     await page.goto('/playground/');
     await page.waitForFunction(() => window.__initComplete === true);
@@ -200,10 +201,11 @@ test.describe('Forecast card — basic rendering', () => {
   });
 });
 
-test.describe('Forecast card — "48+ h" when hoursUntilFloor is null', () => {
-  test('shows "48+ h" for null hoursUntilFloor', async ({ page }) => {
+test.describe('Forecast card — "48+ h" when no backup needed', () => {
+  test('shows "48+ h" when hoursUntilBackupNeeded is null', async ({ page }) => {
     const payload = JSON.parse(JSON.stringify(BASE_FORECAST));
     payload.forecast.hoursUntilFloor = null;
+    payload.forecast.hoursUntilBackupNeeded = null;
 
     await scaffold(page, { forecastPayload: payload });
     await page.goto('/playground/');
