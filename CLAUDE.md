@@ -219,7 +219,7 @@ The cap exists because runaway CI loops mask design-level problems (flaky test, 
   npm test
   ```
 
-  Revert by re-running `npm ci` before committing. **In-repo, always track the latest production-ready `@playwright/test` release** — CI installs the matching Chromium via `npx playwright install --with-deps chromium`, with `~/.cache/ms-playwright` cached by `actions/cache` keyed on the package version, so a bump invalidates the cache automatically and pulls a fresh browser on the next run.
+  Leave the downgrade in place — `--no-save` keeps package.json + package-lock.json untouched and `node_modules/` is gitignored, so it never reaches a commit. The pre-push hook also runs Playwright, so reverting to the production version with `npm ci` before pushing just makes the gate fail and forces another reinstall. **In-repo, always track the latest production-ready `@playwright/test` release** — CI installs the matching Chromium via `npx playwright install --with-deps chromium`, with `~/.cache/ms-playwright` cached by `actions/cache` keyed on the package version, so a bump invalidates the cache automatically and pulls a fresh browser on the next run.
 - **Use plain `serve`, NOT `serve -s`.** SPA mode rewrites `/flow-tester.html` → `/flow-tester` → `index.html`, so standalone pages (flow-tester, liquid-glass-test) become unreachable. Playwright config auto-starts plain `serve` on port 3210.
 
 ## Cloud Deployment

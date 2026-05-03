@@ -121,7 +121,8 @@ HINT
   # Run this exact command — chromium-$cached_chromium ships in @playwright/test@$mapped_version.
   npm install --no-save @playwright/test@$mapped_version playwright@$mapped_version
   npm test  # or rerun the gate / 'git push'
-  # Revert with 'npm ci' before committing.
+  # No revert needed — --no-save leaves package.json + lock untouched
+  # and node_modules is gitignored.
 
 HINT
   else
