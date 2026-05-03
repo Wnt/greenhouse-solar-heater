@@ -26,11 +26,16 @@ function loadSystemYaml(repoRoot, log) {
   }
 }
 
-function start({ pool, log, repoRoot, isPreviewMode }) {
+function start({ pool, log, repoRoot, isPreviewMode: _isPreviewMode }) {
   const systemYaml = loadSystemYaml(repoRoot, log);
   const handler = createForecastHandler({ pool, log, systemYaml });
-  // The e2e harness uses pg-mem (no weather_forecasts/spot_prices tables)
-  // and runs offline; skip refresher fetches under NODE_ENV=test.
+  // The forecast refresher writes purely external/idempotent data
+  // (FMI weather + Nord Pool prices), so it's safe to run from preview
+  // pods alongside the prod pod — both upsert the same hourly rows
+  // into the shared TimescaleDB. Skipping it would mean preview can't
+  // exercise /api/forecast end-to-end. The only environment we still
+  // skip is NODE_ENV=test, where pg-mem doesn't have the hypertables
+  // and we run offline.
   const isTestEnv = process.env.NODE_ENV === 'test';
   const refresher = createForecastRefresher({
     pool,
@@ -39,7 +44,7 @@ function start({ pool, log, repoRoot, isPreviewMode }) {
       location: systemYaml.location || {},
       refreshIntervalMs: 30 * 60 * 1000,
     },
-    isPreviewMode: isPreviewMode || isTestEnv,
+    isPreviewMode: isTestEnv,
     fmiClient,
     spotPriceClient,
   });
