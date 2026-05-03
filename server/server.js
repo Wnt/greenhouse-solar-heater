@@ -22,6 +22,11 @@ const { createScriptCrashNotifier } = require('./lib/script-crash-notifier');
 const { handleWsCommand, setDb: setWsCommandHandlersDb } = require('./lib/ws-command-handlers');
 const { createHandlers, readBody, jsonResponse, parseJsonOrFail } = require('./lib/http-handlers');
 const { getNetworkAddress, printBanner } = require('./lib/banner');
+const { create: createForecastRefresher } = require('./lib/forecast-refresher');
+const { createForecastHandler } = require('./lib/forecast-handler');
+const fmiClient = require('./lib/fmi-client');
+const spotPriceClient = require('./lib/spot-price-client');
+const loadYaml = require('../scripts/lib/yaml-load');
 
 const log = createLogger('server');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
@@ -99,6 +104,16 @@ if (AUTH_ENABLED) {
 let db = null;
 let scriptMonitor = null;
 let handlers = null;
+let forecastRefresher = null;
+let forecastHandler = null;
+
+// Load system.yaml once at module level (synchronous; tiny file).
+let systemYaml = {};
+try {
+  systemYaml = loadYaml(fs.readFileSync(path.join(REPO_ROOT, 'system.yaml'), 'utf8'));
+} catch (e) {
+  log.warn('failed to load system.yaml for forecast config', { error: e.message });
+}
 
 // ── HTTP route detection (for OTel span naming) ──
 function resolveRoute(urlPath, _method) {
@@ -111,6 +126,7 @@ function resolveRoute(urlPath, _method) {
   if (urlPath.startsWith('/api/sensor-config/')) return '/api/sensor-config/*';
   if (urlPath === '/api/sensor-discovery') return '/api/sensor-discovery';
   if (urlPath === '/api/history') return '/api/history';
+  if (urlPath === '/api/forecast') return '/api/forecast';
   if (urlPath === '/api/runtime') return '/api/runtime';
   if (urlPath === '/api/events') return '/api/events';
   if (urlPath.startsWith('/api/push/')) return '/api/push/*';
@@ -281,6 +297,12 @@ const server = http.createServer(function (req, res) {
     });
   } else if (urlPath === '/api/history') {
     handlers.handleHistoryApi(req, res);
+  } else if (urlPath === '/api/forecast' && req.method === 'GET') {
+    if (forecastHandler) {
+      forecastHandler.handle(req, res);
+    } else {
+      jsonResponse(res, 503, { error: 'Forecast not available' });
+    }
   } else if (urlPath === '/api/events') {
     handlers.handleEventsApi(req, res);
   } else if (urlPath === '/api/watchdog/state' && req.method === 'GET') {
@@ -453,6 +475,25 @@ function initServices(callback) {
       const onDbReady = function () {
         setWsCommandHandlersDb(db);
         initAnomalyManager();
+        // Forecast handler and refresher (need pool after DB init).
+        const pool = db.getPool();
+        forecastHandler = createForecastHandler({ pool, log, systemYaml });
+        // The e2e harness uses pg-mem (no weather_forecasts/spot_prices
+        // hypertables) and runs offline; skip the refresher's outbound
+        // fetches under NODE_ENV=test so the harness stays self-contained.
+        var isTestEnv = process.env.NODE_ENV === 'test';
+        forecastRefresher = createForecastRefresher({
+          pool,
+          log,
+          config: {
+            location: systemYaml.location || {},
+            refreshIntervalMs: 30 * 60 * 1000,
+          },
+          isPreviewMode: PREVIEW_MODE || isTestEnv,
+          fmiClient: fmiClient,
+          spotPriceClient: spotPriceClient,
+        });
+        forecastRefresher.start();
         finish();
       };
       if (PREVIEW_MODE) {
@@ -551,6 +592,7 @@ function startServer() {
 // ── Graceful shutdown ──
 function shutdown(signal) {
   log.info('shutdown signal received', { signal });
+  if (forecastRefresher) forecastRefresher.stop();
   server.close(function () {
     log.info('server closed');
     process.exit(0);

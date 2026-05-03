@@ -9,6 +9,14 @@ project:
   greenhouse_target_temp: 10°C
   system_type: open (unpressurized)
 
+location:
+  city: Kaarina
+  lat: 60.41
+  lon: 22.37
+
+electricity:
+  transfer_fee_c_kwh: 5            # added on top of spot price for cost projections
+
 # =============================================================================
 # COMPONENTS
 # =============================================================================
@@ -137,6 +145,7 @@ components:
     voltage: 230V
     position: inside greenhouse
     purpose: emergency / backup heating
+    assumed_continuous_power_kw: 1   # used by the 48h sustain forecast for backup heating cost projection
 
   # auto_air_vent removed — sub-atmospheric pressure at collector top (due to
   # 80cm water column falling to reservoir) would draw air IN, not vent it out.

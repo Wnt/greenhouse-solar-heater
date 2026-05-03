@@ -84,6 +84,32 @@ const SCHEMA_SQL = [
   "SELECT create_hypertable('config_events', 'ts', if_not_exists => true)",
 
   "CREATE INDEX IF NOT EXISTS config_events_ts ON config_events (ts DESC)",
+
+  "CREATE TABLE IF NOT EXISTS weather_forecasts (\n" +
+  "  fetched_at        TIMESTAMPTZ        NOT NULL,\n" +
+  "  valid_at          TIMESTAMPTZ        NOT NULL,\n" +
+  "  temperature       DOUBLE PRECISION,\n" +
+  "  radiation_global  DOUBLE PRECISION,\n" +
+  "  wind_speed        DOUBLE PRECISION,\n" +
+  "  precipitation     DOUBLE PRECISION,\n" +
+  "  PRIMARY KEY (fetched_at, valid_at)\n" +
+  ")",
+
+  "SELECT create_hypertable('weather_forecasts', 'valid_at', if_not_exists => true)",
+
+  "CREATE INDEX IF NOT EXISTS weather_forecasts_valid_at ON weather_forecasts (valid_at DESC)",
+
+  "CREATE TABLE IF NOT EXISTS spot_prices (\n" +
+  "  fetched_at  TIMESTAMPTZ        NOT NULL,\n" +
+  "  valid_at    TIMESTAMPTZ        NOT NULL,\n" +
+  "  source      TEXT               NOT NULL,\n" +
+  "  price_c_kwh DOUBLE PRECISION   NOT NULL,\n" +
+  "  PRIMARY KEY (valid_at, source)\n" +
+  ")",
+
+  "SELECT create_hypertable('spot_prices', 'valid_at', if_not_exists => true)",
+
+  "CREATE INDEX IF NOT EXISTS spot_prices_valid_at ON spot_prices (valid_at DESC)",
 ];
 
 // Pre-aggregated 30-second buckets, used by getHistory for ranges ≥ 24 h.
