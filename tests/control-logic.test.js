@@ -168,64 +168,7 @@ describe('DEFAULT_CONFIG thresholds', () => {
   });
 });
 
-describe('tu (tuning) overrides via deviceConfig', () => {
-  // Default greenhouseEnterTemp = 10. With tu.geT = 12, greenhouse
-  // heating should fire at 11 °C (which would not have triggered with
-  // the default).
-  it('cfg.tu.geT raises the greenhouse-heating enter threshold', () => {
-    const noTu = evaluate(makeState({
-      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 11, outdoor: 10 }
-    }), null, {});
-    assert.strictEqual(noTu.nextMode, MODES.IDLE);
-
-    const withTu = evaluate(makeState({
-      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 11, outdoor: 10 }
-    }), null, { tu: { geT: 12 } });
-    assert.strictEqual(withTu.nextMode, MODES.GREENHOUSE_HEATING);
-  });
-
-  // Default freezeDrainTemp = 4. With tu.frT = 2, outdoor 3 °C must
-  // NOT trigger drain anymore.
-  it('cfg.tu.frT lowers the freeze-drain threshold', () => {
-    const noTu = evaluate(makeState({
-      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 3 }
-    }), null);
-    assert.strictEqual(noTu.nextMode, MODES.ACTIVE_DRAIN);
-
-    const withTu = evaluate(makeState({
-      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 3 }
-    }), null, { tu: { frT: 2 } });
-    assert.strictEqual(withTu.nextMode, MODES.IDLE);
-  });
-
-  // Default emergencyEnterTemp = 9. With tu.ehE = 11 the heater
-  // overlay must engage when greenhouse is 10 (where the default
-  // would NOT have triggered).
-  it('cfg.tu.ehE raises the emergency-heater enter threshold', () => {
-    const noTu = evaluate(makeState({
-      temps: { collector: 5, tank_top: 12, tank_bottom: 10, greenhouse: 10, outdoor: -5 },
-      collectorsDrained: true
-    }), null, {});
-    assert.strictEqual(noTu.flags.emergencyHeatingActive, false);
-
-    const withTu = evaluate(makeState({
-      temps: { collector: 5, tank_top: 12, tank_bottom: 10, greenhouse: 10, outdoor: -5 },
-      collectorsDrained: true
-    }), null, { tu: { ehE: 11 } });
-    assert.strictEqual(withTu.flags.emergencyHeatingActive, true);
-  });
-
-  // Sparse tu — keys omitted MUST fall back to DEFAULT_CONFIG. Setting
-  // only fcE leaves freeze, overheat, greenhouse heating untouched.
-  it('keys omitted from tu fall back to DEFAULT_CONFIG', () => {
-    const result = evaluate(makeState({
-      temps: { collector: 20, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 3 }
-    }), null, { tu: { fcE: 35 } });
-    // freeze drain still fires at outdoor=3 because frT default = 4
-    assert.strictEqual(result.nextMode, MODES.ACTIVE_DRAIN);
-    assert.strictEqual(result.reason, 'freeze_drain');
-  });
-});
+// `tu` (tuning) overrides via deviceConfig live in tests/control-logic-tu.test.js.
 
 describe('hysteresis', () => {
   it('enters solar charging at collector > tank_bottom + solarEnterDelta', () => {
