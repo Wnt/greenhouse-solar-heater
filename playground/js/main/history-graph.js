@@ -162,7 +162,10 @@ export function drawHistoryGraph() {
     ctx.fillText(label, x, dh - 4);
   }
 
-  if (timeSeriesStore.times.length < 2) return;
+  if (timeSeriesStore.times.length < 2) {
+    updateLegendStats(tMin, tMax);
+    return;
+  }
 
   // ── Duty cycle bars ──
   // Bucket granularity scales with the visible range — see pickBucketSize
@@ -214,8 +217,7 @@ export function drawHistoryGraph() {
   document.getElementById('legend-emergency').style.display = hasEmergency ? 'flex' : 'none';
 
   // ── Temperature line (gold, matching Stitch design) ──
-  // Tank line plots the top/bottom average — matches the central gauge
-  // and keeps "Yesterday's High" consistent with the visible peak.
+  // Tank line plots the top/bottom average — matches the central gauge.
   // collectSeriesPts carries a pre-window sample forward as an
   // interpolated point at tMin so the line meets the chart's left edge
   // even when a real sensor-reading gap straddles the boundary.
@@ -280,6 +282,75 @@ export function drawHistoryGraph() {
 
   // ── Outside line (blue) ──
   drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_outdoor', '#42a5f5', 1);
+
+  updateLegendStats(tMin, tMax);
+}
+
+// Pure: walk the time-series store once and pull min / max / latest for
+// each requested key inside [tMin, tMax]. Returns null entries for series
+// with no in-window samples so the caller can blank the label cleanly.
+export function computeSeriesStats(store, tMin, tMax, keys) {
+  const acc = {};
+  for (let k = 0; k < keys.length; k++) {
+    acc[keys[k].id] = { min: Infinity, max: -Infinity, latest: null, latestT: -Infinity };
+  }
+  for (let i = 0; i < store.times.length; i++) {
+    const t = store.times[i];
+    if (t < tMin || t > tMax) continue;
+    const row = store.values[i];
+    for (let k = 0; k < keys.length; k++) {
+      const def = keys[k];
+      const v = typeof def.extract === 'function' ? def.extract(row) : row[def.id];
+      if (!isNum(v)) continue;
+      const a = acc[def.id];
+      if (v < a.min) a.min = v;
+      if (v > a.max) a.max = v;
+      if (t >= a.latestT) { a.latest = v; a.latestT = t; }
+    }
+  }
+  const out = {};
+  for (let k = 0; k < keys.length; k++) {
+    const a = acc[keys[k].id];
+    out[keys[k].id] = a.latest === null
+      ? null
+      : { min: a.min, max: a.max, latest: a.latest };
+  }
+  return out;
+}
+
+function fmtTempStat(v) { return Math.round(v).toString(); }
+
+function renderLegendStats(el, stats) {
+  if (!el) return;
+  if (!stats) { el.textContent = ''; return; }
+  // Latest value (with °) + a muted range span "(min–max°)". Single
+  // unit at the tail of the range matches the issue's design ("15.8
+  // → 68.2 °C") and keeps the legend line short on narrow viewports.
+  el.textContent = fmtTempStat(stats.latest) + '°';
+  const range = document.createElement('span');
+  range.className = 'graph-legend-stats-range';
+  range.textContent = '(' + fmtTempStat(stats.min) + '–' + fmtTempStat(stats.max) + '°)';
+  el.appendChild(range);
+}
+
+// Per-series legend keys. tankAvgOf collapses top+bottom for the main
+// Tank line; the individual sub-sensors are only shown when "All sensors"
+// is on, but their stats still update so toggling reveals fresh numbers.
+const LEGEND_SERIES = [
+  { id: 't_collector',  domId: 'legend-stats-collector' },
+  { id: 'tank',         domId: 'legend-stats-tank',         extract: tankAvgOf },
+  { id: 't_tank_top',   domId: 'legend-stats-tank-top' },
+  { id: 't_tank_bottom',domId: 'legend-stats-tank-bottom' },
+  { id: 't_greenhouse', domId: 'legend-stats-greenhouse' },
+  { id: 't_outdoor',    domId: 'legend-stats-outdoor' },
+];
+
+function updateLegendStats(tMin, tMax) {
+  const stats = computeSeriesStats(timeSeriesStore, tMin, tMax, LEGEND_SERIES);
+  for (let i = 0; i < LEGEND_SERIES.length; i++) {
+    const def = LEGEND_SERIES[i];
+    renderLegendStats(document.getElementById(def.domId), stats[def.id]);
+  }
 }
 
 // Collect visible plot points for a single series, carrying a leading-edge

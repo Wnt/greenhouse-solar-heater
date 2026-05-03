@@ -255,46 +255,68 @@ test.describe('Live mode is the default data source', () => {
   });
 });
 
-test.describe("Yesterday's High label in live mode", () => {
-  test("shows peak tank-average from yesterday's history points (matching the graph)", async ({ page }) => {
-    const yAt = (h) => {
-      const d = new Date();
-      d.setDate(d.getDate() - 1);
-      d.setHours(h, 0, 0, 0);
-      return d.getTime();
-    };
+test.describe('Per-series legend stats (latest + min/max for the visible window)', () => {
+  // Issue #133 — replaces the old "Yesterday's High" header with
+  // latest + visible-range min/max labels per temperature series, so
+  // the chart line reads as magnitude as well as shape. Numbers must
+  // follow pan/zoom: switch to a narrower range and the min/max should
+  // collapse to the samples actually visible.
+  test('renders latest + visible-range min/max next to each temperature series', async ({ page }) => {
     const now = Date.now();
     const points = [
-      // Yesterday's readings — peak tank avg = (80 + 60) / 2 = 70°C at 15:00
-      { ts: yAt(9),  collector: 40.0, tank_top: 50.0, tank_bottom: 40.0, greenhouse: 18.0, outdoor: 10.0 },
-      { ts: yAt(12), collector: 55.0, tank_top: 70.0, tank_bottom: 50.0, greenhouse: 22.0, outdoor: 12.0 },
-      { ts: yAt(15), collector: 62.0, tank_top: 80.0, tank_bottom: 60.0, greenhouse: 24.0, outdoor: 14.0 },
-      // Today's readings — must not count toward yesterday's high
-      { ts: now - 3600_000, collector: 50.0, tank_top: 90.0, tank_bottom: 70.0, greenhouse: 20.0, outdoor: 11.0 },
+      // Three samples within the last hour so even the 1h range covers them.
+      { ts: now - 1800_000, collector: 30.0, tank_top: 40.0, tank_bottom: 30.0, greenhouse: 18.0, outdoor: 9.0 },
+      { ts: now - 900_000,  collector: 55.0, tank_top: 50.0, tank_bottom: 36.0, greenhouse: 20.0, outdoor: 10.5 },
+      { ts: now - 60_000,   collector: 62.0, tank_top: 56.0, tank_bottom: 40.0, greenhouse: 22.0, outdoor: 11.0 },
     ];
-    await installMockWs(page);
+    // Pin the live WS frame to the same values as the most recent history
+    // point so the latest sample appended by recordLiveHistoryPoint doesn't
+    // shift the min/max under the test.
+    await installMockWs(page, {
+      temps: { collector: 62.0, tank_top: 56.0, tank_bottom: 40.0, greenhouse: 22.0, outdoor: 11.0 },
+    });
     await mockHistoryApi(page, points);
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
 
     await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
 
-    await expect(page.locator('#graph-peak-label')).toHaveText(/Yesterday's High: 70°C/, { timeout: 5000 });
+    // Latest is the value at the rightmost in-window sample; min/max
+    // are the in-window extrema. Collector: latest 62°, min 30°, max 62°.
+    const collector = page.locator('#legend-stats-collector');
+    await expect(collector).toContainText('62°', { timeout: 5000 });
+    await expect(collector).toContainText('(30–62°)');
+
+    // Tank line plots (top + bottom) / 2: 35, 43, 48 → latest 48°, range 35°–48°.
+    const tank = page.locator('#legend-stats-tank');
+    await expect(tank).toContainText('48°');
+    await expect(tank).toContainText('(35–48°)');
   });
 
-  test("stays at -- when history has no points from yesterday", async ({ page }) => {
+  test('stats follow the visible window when the timeframe changes', async ({ page }) => {
     const now = Date.now();
-    // All points are from today (within the last 2 hours).
+    // Old sample (3 h ago) carries the historical max — it must drop
+    // out of the min/max once the user switches to the 1 h range.
     const points = [
-      { ts: now - 7200_000, collector: 50.0, tank_top: 60.0, tank_bottom: 40.0, greenhouse: 20.0, outdoor: 11.0 },
-      { ts: now - 1800_000, collector: 55.0, tank_top: 65.0, tank_bottom: 45.0, greenhouse: 21.0, outdoor: 12.0 },
+      { ts: now - 3 * 3600_000, collector: 90.0, tank_top: 80.0, tank_bottom: 60.0, greenhouse: 25.0, outdoor: 14.0 },
+      { ts: now - 1800_000,     collector: 30.0, tank_top: 40.0, tank_bottom: 30.0, greenhouse: 18.0, outdoor: 9.0 },
+      { ts: now - 60_000,       collector: 40.0, tank_top: 44.0, tank_bottom: 32.0, greenhouse: 19.0, outdoor: 10.0 },
     ];
-    await installMockWs(page);
+    await installMockWs(page, {
+      temps: { collector: 40.0, tank_top: 44.0, tank_bottom: 32.0, greenhouse: 19.0, outdoor: 10.0 },
+    });
     await mockHistoryApi(page, points);
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
 
     await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
 
-    await expect(page.locator('#graph-peak-label')).toHaveText("Yesterday's High: --");
+    // Default 24 h range — old 90° sample is in window, so collector max is 90°.
+    const collector = page.locator('#legend-stats-collector');
+    await expect(collector).toContainText('(30–90°)', { timeout: 5000 });
+
+    // Switch to the 1 h range. The 3 h-ago sample drops out, so collector
+    // max collapses to the most recent two: 30°–40°.
+    await page.locator('.time-range-slider-step[data-range="3600"]').click();
+    await expect(collector).toContainText('(30–40°)');
   });
 });
 

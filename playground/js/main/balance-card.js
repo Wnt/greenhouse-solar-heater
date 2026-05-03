@@ -3,14 +3,11 @@
 // External API:
 //   initBalanceCard({ onRerender })
 //     onRerender: callback invoked after the 48-hour history fetch
-//       resolves, so the rest of the status view can pick up the
-//       freshly-computed yesterdayHigh without waiting for the next
-//       WS frame.
+//       resolves, so the rest of the status view can re-render with
+//       the freshly-loaded points without waiting for the next WS frame.
 //   fetchBalanceHistory() — call when entering live mode.
 //   appendBalanceLivePoint(state, result) — call from each WS frame.
 //   renderBalanceCard() — re-render (also called internally).
-//   getLiveYesterdayHigh() / resetLiveYesterdayHigh() — accessors the
-//     display layer and mode-switch code use for the peak-temp label.
 
 import { store } from '../app-state.js';
 import {
@@ -47,24 +44,12 @@ let balanceLiveLastMode = null;
 let balanceLastAppendTs = 0;
 const BALANCE_APPEND_MIN_INTERVAL_MS = 5 * 60 * 1000;
 
-// Peak tank average across yesterday's local calendar day, computed
-// from the 48h history fetch. null when no qualifying points.
-let liveYesterdayHigh = null;
-
 let _onRerender = () => {};
 
 function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
 
 export function initBalanceCard({ onRerender } = {}) {
   if (typeof onRerender === 'function') _onRerender = onRerender;
-}
-
-export function getLiveYesterdayHigh() {
-  return liveYesterdayHigh;
-}
-
-export function resetLiveYesterdayHigh() {
-  liveYesterdayHigh = null;
 }
 
 // Drop the 48h snapshot + live-point buffer + mode tracker. Called
@@ -75,7 +60,6 @@ export function resetBalanceState() {
   balanceLiveEvents = [];
   balanceLiveLastMode = null;
   balanceLastAppendTs = 0;
-  liveYesterdayHigh = null;
 }
 
 // Fetcher: returns Promise<data>. AbortSignal honoured so the sync
@@ -93,11 +77,10 @@ function applyBalanceHistory(data) {
   balanceLivePoints = [];
   balanceLiveEvents = [];
   balanceLiveLastMode = null;
-  liveYesterdayHigh = computeLiveYesterdayHigh(data && data.points);
   renderBalanceCard();
-  // Balance fetch completes independently of the WS state stream,
-  // so re-render so the peak label reflects the freshly-computed
-  // yesterdayHigh instead of waiting for the next state frame.
+  // Balance fetch completes independently of the WS state stream;
+  // re-render so the rest of the view picks up freshly-loaded points
+  // without waiting for the next state frame.
   _onRerender();
 }
 
@@ -118,27 +101,6 @@ export function registerBalanceHistorySource() {
     fetch: (signal) => balanceHistoryFetch(signal),
     applyToStore: (data) => applyBalanceHistory(data),
   });
-}
-
-// Peak tank average ((tank_top + tank_bottom) / 2) across points whose
-// timestamps fall within yesterday's local calendar day. Matches what
-// the graph's Tank line plots and the central tank gauge displays.
-// Returns null when no qualifying points exist.
-function computeLiveYesterdayHigh(points) {
-  if (!Array.isArray(points) || points.length === 0) return null;
-  const now = new Date();
-  const yStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime();
-  const yEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  let peak = null;
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    if (!p || typeof p.ts !== 'number') continue;
-    if (p.ts < yStart || p.ts >= yEnd) continue;
-    if (!isNum(p.tank_top) || !isNum(p.tank_bottom)) continue;
-    const avg = (p.tank_top + p.tank_bottom) / 2;
-    if (peak === null || avg > peak) peak = avg;
-  }
-  return peak;
 }
 
 export function appendBalanceLivePoint(state, result) {

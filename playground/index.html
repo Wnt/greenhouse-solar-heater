@@ -257,10 +257,6 @@
         <!-- History Graph (2 cols) + Critical Components (1 col, vertical) -->
         <div class="card bento-span-2 graph-card">
           <div class="graph-header">
-            <div style="display:flex;align-items:center;gap:16px;">
-              <h3 style="margin-bottom:0;">24h History</h3>
-              <span class="graph-peak" id="graph-peak-label">Yesterday's High: --</span>
-            </div>
             <div class="time-range-slider" id="time-range-slider" role="slider" tabindex="0" aria-label="Timeframe"
                  aria-valuemin="0" aria-valuemax="6" aria-valuenow="3" aria-valuetext="24h">
               <div class="time-range-slider-track">
@@ -309,12 +305,12 @@
             <div class="graph-legend-item"><div class="graph-legend-dot" style="background:#ee7d77;"></div>Charging</div>
             <div class="graph-legend-item"><div class="graph-legend-dot" style="background:#e9c349;"></div>Heating</div>
             <div class="graph-legend-item" id="legend-emergency" style="display:none;"><div class="graph-legend-dot" style="background:#ff7043;"></div>Emergency</div>
-            <div class="graph-legend-item"><div class="graph-legend-line" style="background:#ef5350;"></div>Collector</div>
-            <div class="graph-legend-item"><div class="graph-legend-line" style="background:#e9c349;"></div>Tank</div>
-            <div class="graph-legend-item sensor-detail" id="legend-tank-top" style="display:none;"><div class="graph-legend-line" style="background:#ff9f43;"></div>Tank Top</div>
-            <div class="graph-legend-item sensor-detail" id="legend-tank-bottom" style="display:none;"><div class="graph-legend-line" style="background:#b088d6;"></div>Tank Bottom</div>
-            <div class="graph-legend-item"><div class="graph-legend-line" style="background:#69d0c5;"></div>Greenhouse</div>
-            <div class="graph-legend-item"><div class="graph-legend-line" style="background:#42a5f5;"></div>Outside</div>
+            <div class="graph-legend-item"><div class="graph-legend-line" style="background:#ef5350;"></div>Collector<span class="graph-legend-stats" id="legend-stats-collector"></span></div>
+            <div class="graph-legend-item"><div class="graph-legend-line" style="background:#e9c349;"></div>Tank<span class="graph-legend-stats" id="legend-stats-tank"></span></div>
+            <div class="graph-legend-item sensor-detail" id="legend-tank-top" style="display:none;"><div class="graph-legend-line" style="background:#ff9f43;"></div>Tank Top<span class="graph-legend-stats" id="legend-stats-tank-top"></span></div>
+            <div class="graph-legend-item sensor-detail" id="legend-tank-bottom" style="display:none;"><div class="graph-legend-line" style="background:#b088d6;"></div>Tank Bottom<span class="graph-legend-stats" id="legend-stats-tank-bottom"></span></div>
+            <div class="graph-legend-item"><div class="graph-legend-line" style="background:#69d0c5;"></div>Greenhouse<span class="graph-legend-stats" id="legend-stats-greenhouse"></span></div>
+            <div class="graph-legend-item"><div class="graph-legend-line" style="background:#42a5f5;"></div>Outside<span class="graph-legend-stats" id="legend-stats-outdoor"></span></div>
           </div>
         </div>
 
