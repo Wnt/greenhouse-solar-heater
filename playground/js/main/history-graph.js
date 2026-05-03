@@ -5,7 +5,7 @@
 // in main.js is observed here on the next call.
 
 import { store } from '../app-state.js';
-import { pickTickStep, formatTick, pickBucketSize } from '../ui.js';
+import { pickTickStep, formatTick, pickBucketSize, formatBucketLabel } from '../ui.js';
 import { SIM_START_HOUR } from '../sim-bootstrap.js';
 import { timeSeriesStore, graphRange, showAllSensors, chartZoom } from './state.js';
 import { coverageInBucket } from './mode-events.js';
@@ -172,6 +172,7 @@ export function drawHistoryGraph() {
   const barAreaH = ph * 0.3;
   const barY0 = pad.top + ph;
   const bucketSec = pickBucketSize(visibleRange);
+  updateBucketBadge(bucketSec);
 
   let hasEmergency = false;
   const firstSampleT = timeSeriesStore.times.length > 0 ? timeSeriesStore.times[0] : tMax;
@@ -332,6 +333,19 @@ function drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, p
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
   ctx.stroke();
   ctx.globalAlpha = 1;
+}
+
+// Refresh the "<bucket> / bar" badge in the chart corner so the user
+// always sees what each duty-cycle bar represents at the current zoom.
+// Tooltip carries the long-form explanation; the visible label is just
+// the short bucket size (e.g. "5 min", "1 day").
+function updateBucketBadge(bucketSec) {
+  const valEl = document.getElementById('chart-bucket-badge-val');
+  if (!valEl) return;
+  const label = formatBucketLabel(bucketSec);
+  if (valEl.textContent !== label) valEl.textContent = label;
+  const badge = document.getElementById('chart-bucket-badge');
+  if (badge) badge.title = 'Each bar shows duty-cycle aggregated over ' + label;
 }
 
 // ── SVG Schematic ──

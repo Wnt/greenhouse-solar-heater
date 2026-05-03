@@ -726,6 +726,32 @@ select, input, textarea { max-width: 100%; }
 .graph-crosshair::before { top: 0; }
 .graph-crosshair::after { bottom: 0; }
 
+/* Bucket-resolution badge in the corner of the history chart so users can
+ * tell what each duty-cycle bar represents (e.g. "5 min / bar", "1 day /
+ * bar"). Pinned top-right; non-interactive so it doesn't block the
+ * inspector tooltip / pinch-zoom. */
+.chart-bucket-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--on-surface-variant);
+  background: rgba(12, 14, 18, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  padding: 2px 8px;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chart-bucket-badge #chart-bucket-badge-val {
+  color: var(--on-surface);
+}
+
 .graph-inspector {
   display: none;
   position: absolute;

@@ -202,6 +202,46 @@ test.describe('Status history graph includes collector temperature', () => {
   });
 });
 
+test.describe('Bucket-resolution badge on history chart', () => {
+  // Issue #132 — without this badge the user can't tell whether each duty-
+  // cycle bar represents 5 minutes or a whole day at the current zoom.
+
+  test('renders a "<bucket> / bar" badge inside the graph container', async ({ page }) => {
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    const badge = page.locator('#chart-bucket-badge');
+    await expect(badge).toBeVisible();
+    // Default range is 24 h → pickBucketSize returns 1 hour.
+    await expect(badge).toContainText(/^\s*1 h\s*\/\s*bar\s*$/);
+    // Tooltip carries the long-form explanation so users hovering the badge
+    // get the "Each bar shows duty-cycle aggregated over …" hint.
+    await expect(badge).toHaveAttribute('title', /Each bar shows duty-cycle/);
+  });
+
+  test('updates the bucket label when the time range changes', async ({ page }) => {
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    const badge = page.locator('#chart-bucket-badge');
+    await expect(badge).toContainText(/1 h \/ bar/);
+
+    // Switch to the 1 h range — pickBucketSize(3600) returns 5 minutes.
+    await page.locator('.time-range-slider-step[data-range="3600"]').click();
+    await expect(badge).toContainText(/5 min \/ bar/);
+
+    // And to 6 h — pickBucketSize(21600) returns 30 min.
+    await page.locator('.time-range-slider-step[data-range="21600"]').click();
+    await expect(badge).toContainText(/30 min \/ bar/);
+  });
+});
+
 test.describe('Live mode is the default data source', () => {
   test('app starts in live mode on localhost (simulation is secondary)', async ({ page }) => {
     await installMockWs(page);

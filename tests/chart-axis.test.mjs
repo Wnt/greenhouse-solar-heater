@@ -18,7 +18,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 
-import { pickTickStep, formatTick, pickBucketSize } from '../playground/js/ui.js';
+import { pickTickStep, formatTick, pickBucketSize, formatBucketLabel } from '../playground/js/ui.js';
 
 const HOUR = 3600;
 const DAY = 86400;
@@ -159,5 +159,52 @@ describe('formatTick — label format per step', () => {
     const a = formatTick(T0, HOUR);
     const b = formatTick(T0 + 2 * HOUR, HOUR);
     assert.notStrictEqual(a, b, 'HH:MM labels must change with time');
+  });
+});
+
+describe('formatBucketLabel — human-readable bucket size', () => {
+  // The badge in the corner of the history chart shows "what each bar means"
+  // so users can tell whether they're looking at 5-minute or 1-day buckets.
+  // Issue #132 — without this, pinch-zooming changes the bar resolution
+  // invisibly.
+
+  it('uses minute units below an hour', () => {
+    assert.strictEqual(formatBucketLabel(60), '1 min');
+    assert.strictEqual(formatBucketLabel(5 * 60), '5 min');
+    assert.strictEqual(formatBucketLabel(15 * 60), '15 min');
+    assert.strictEqual(formatBucketLabel(30 * 60), '30 min');
+  });
+
+  it('uses hour units from one hour up to one day', () => {
+    assert.strictEqual(formatBucketLabel(HOUR), '1 h');
+    assert.strictEqual(formatBucketLabel(3 * HOUR), '3 h');
+    assert.strictEqual(formatBucketLabel(6 * HOUR), '6 h');
+    assert.strictEqual(formatBucketLabel(12 * HOUR), '12 h');
+  });
+
+  it('uses singular "day" for 1 day and plural "days" thereafter', () => {
+    assert.strictEqual(formatBucketLabel(DAY), '1 day');
+    assert.strictEqual(formatBucketLabel(2 * DAY), '2 days');
+    assert.strictEqual(formatBucketLabel(4 * DAY), '4 days');
+    assert.strictEqual(formatBucketLabel(7 * DAY), '7 days');
+    assert.strictEqual(formatBucketLabel(14 * DAY), '14 days');
+    assert.strictEqual(formatBucketLabel(30 * DAY), '30 days');
+  });
+
+  it('round-trips every canonical bucket size from pickBucketSize', () => {
+    // Every value pickBucketSize can return must format to a non-empty
+    // label without throwing.
+    const ranges = [
+      1 * HOUR, 6 * HOUR, 12 * HOUR, 24 * HOUR, 48 * HOUR,
+      3 * DAY, 7 * DAY, 14 * DAY, 30 * DAY, 60 * DAY, 120 * DAY, 365 * DAY,
+    ];
+    for (const r of ranges) {
+      const s = pickBucketSize(r);
+      const label = formatBucketLabel(s);
+      assert.ok(typeof label === 'string' && label.length > 0,
+        `bucket ${s}s (range ${r}s) produced empty label: ${JSON.stringify(label)}`);
+      assert.match(label, /^\d+\s+(min|h|day|days)$/,
+        `bucket ${s}s formatted as "${label}" — expected "<n> min|h|day|days"`);
+    }
   });
 });
