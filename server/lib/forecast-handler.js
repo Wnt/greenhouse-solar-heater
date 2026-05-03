@@ -43,25 +43,41 @@ function createForecastHandler(opts) {
 
   // ── Query helpers ──
 
-  function queryRecentTankRate(callback) {
-    // Average tank-avg drop rate (K/h) over the most recent ~hour. Used to
-    // calibrate the engine's heating-mode projection to actual current
-    // conditions (controller cycle behaviour, current outdoor ΔT, current
-    // user-set thresholds — all baked into the observed rate).
+  function queryRecentRates(callback) {
+    // Observed K/h drop rates for tank-avg AND greenhouse over the last
+    // ~70 min. Both are used to calibrate the engine: the tank rate sets
+    // the projected depletion, and the greenhouse rate captures whatever
+    // heat balance is currently achieved (which the engine's first-
+    // principles model can't easily reproduce — the greenhouse loss
+    // coefficient depends on ventilation, soil moisture, etc.).
     const sql =
-      "WITH t AS (SELECT bucket, avg_value FROM sensor_readings_30s " +
-      "  WHERE sensor_id IN ('tank_top','tank_bottom') AND bucket > NOW() - INTERVAL '70 minutes')" +
-      "SELECT bucket, AVG(avg_value) AS tank_avg FROM t GROUP BY bucket ORDER BY bucket";
+      "SELECT bucket, sensor_id, avg_value FROM sensor_readings_30s " +
+      "WHERE sensor_id IN ('tank_top','tank_bottom','greenhouse') " +
+      "  AND bucket > NOW() - INTERVAL '70 minutes' " +
+      "ORDER BY bucket";
     pool.query(sql, [], function (err, result) {
       if (err) return callback(err);
-      const rows = result.rows || [];
-      if (rows.length < 4) return callback(null, null);  // need ≥ ~2 min of data
-      const first = rows[0];
-      const last  = rows[rows.length - 1];
-      const dtH = (last.bucket.getTime() - first.bucket.getTime()) / 3600000;
-      if (dtH < 0.25) return callback(null, null);       // need ≥ 15 min span
-      const dropK = Number(first.tank_avg) - Number(last.tank_avg);  // positive = cooling
-      callback(null, dropK / dtH);
+      const tankByTs = {}; const ghByTs = {};
+      (result.rows || []).forEach(function (r) {
+        const k = r.bucket.toISOString();
+        if (r.sensor_id === 'greenhouse') ghByTs[k] = r.avg_value;
+        else {
+          if (!tankByTs[k]) tankByTs[k] = { sum: 0, n: 0, ts: r.bucket };
+          tankByTs[k].sum += r.avg_value; tankByTs[k].n += 1;
+        }
+      });
+      const tankRows = Object.values(tankByTs).filter(function (x) { return x.n === 2; });
+      tankRows.sort(function (a, b) { return a.ts - b.ts; });
+      const ghKeys = Object.keys(ghByTs).sort();
+      if (tankRows.length < 4 || ghKeys.length < 4) return callback(null, { tank: null, gh: null });
+      const tankFirst = tankRows[0], tankLast = tankRows[tankRows.length - 1];
+      const tankDtH   = (tankLast.ts - tankFirst.ts) / 3600000;
+      if (tankDtH < 0.25) return callback(null, { tank: null, gh: null });
+      const tankRate  = ((tankFirst.sum / 2) - (tankLast.sum / 2)) / tankDtH;
+      const ghFirstTs = new Date(ghKeys[0]); const ghLastTs = new Date(ghKeys[ghKeys.length - 1]);
+      const ghDtH     = (ghLastTs - ghFirstTs) / 3600000;
+      const ghRate    = ghDtH > 0.25 ? (ghByTs[ghKeys[0]] - ghByTs[ghKeys[ghKeys.length - 1]]) / ghDtH : null;
+      callback(null, { tank: tankRate, gh: ghRate });
     });
   }
 
@@ -223,7 +239,8 @@ function createForecastHandler(opts) {
 
     // Gather all data in parallel where possible.
     let pending = 5;
-    let sensors, currentMode, weather, prices, coeff, observedTankDropKPerH, fetchErr;
+    let sensors, currentMode, weather, prices, coeff,
+        observedTankDropKPerH, observedGhDropKPerH, fetchErr;
 
     function onPart(err) {
       if (err && !fetchErr) fetchErr = err;
@@ -283,6 +300,7 @@ function createForecastHandler(opts) {
           greenhouseTemp: ghTemp !== null ? ghTemp : 10,
           currentMode:   currentMode || 'idle',
           observedTankDropKPerH,
+          observedGhDropKPerH,
           weather48h:    wx48,
           prices48h:     px48,
           coefficients:  coeff,
@@ -319,11 +337,11 @@ function createForecastHandler(opts) {
       prices = p || [];
       onPart(err);
     });
-    queryRecentTankRate(function (err, rate) {
-      // Soft failure: missing observed rate just means we fall back to the
-      // empirical "during heating" default (2 K/h) inside the engine.
+    queryRecentRates(function (err, rates) {
+      // Soft failure: missing observed rates fall back to engine defaults.
       if (err) log.warn('forecast-handler: observed-rate query failed', { error: err.message });
-      observedTankDropKPerH = (typeof rate === 'number' && isFinite(rate)) ? rate : null;
+      observedTankDropKPerH = (rates && typeof rates.tank === 'number' && isFinite(rates.tank)) ? rates.tank : null;
+      observedGhDropKPerH   = (rates && typeof rates.gh   === 'number' && isFinite(rates.gh))   ? rates.gh   : null;
       onPart(null);
     });
   }
