@@ -18,12 +18,16 @@ test.describe('e2e server smoke', () => {
     // API calls during the initial render are included in the check.
     // /api/history is excluded: pg-mem can't parse the ≤6h UNION ALL
     // query the production db.js builds, so those requests 500 under
-    // the harness. That limitation is harness-local and doesn't block
-    // the server from booting — which is what this test is asserting.
+    // the harness. /api/forecast is excluded for the same reason —
+    // its queries against weather_forecasts/spot_prices use TimescaleDB
+    // shapes pg-mem doesn't support. Both limitations are harness-local
+    // and don't block the server from booting — which is what this
+    // test is asserting.
     const errors = [];
     page.on('response', r => {
       if (r.status() < 500) return;
-      if (new URL(r.url()).pathname === '/api/history') return;
+      const path = new URL(r.url()).pathname;
+      if (path === '/api/history' || path === '/api/forecast') return;
       errors.push(r.url());
     });
 
