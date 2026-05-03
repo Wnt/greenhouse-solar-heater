@@ -858,9 +858,21 @@ function transitionTo(result, cause) {
     return;
   }
 
-  // Default path: stop pump/fan/heaters first, then actuate valves.
+  // Default path: stop pump and water-loop heaters first, then actuate
+  // valves. Fan is electrically + logically independent of the pump
+  // (commit 15f598f) and the valve manifold has no relationship with it,
+  // so the fan is left alone across the transition when the post-
+  // transition state still calls for fan_on. Avoids spurious off→on
+  // flicker during overlay-driven fan-cool periods, which align with the
+  // warmest part of the day when transitions are most frequent (issue
+  // #135). The drain-exit branch above bypasses this whole block so its
+  // fan handling follows the same rule by construction.
   state.transition_step = "pump_stop";
-  setActuators({ pump: false, fan: false, space_heater: false, immersion_heater: false }, function() {
+  var stopActuators = { pump: false, space_heater: false, immersion_heater: false };
+  if (!(result && result.actuators && result.actuators.fan)) {
+    stopActuators.fan = false;
+  }
+  setActuators(stopActuators, function() {
     emitStateUpdate();
     Timer.set(SHELL_CFG.VALVE_SETTLE_MS, false, function() {
       scheduleStep();

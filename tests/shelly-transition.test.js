@@ -360,4 +360,93 @@ describe('shelly/control.js :: transitionTo() ordering', function() {
       });
     });
   });
+
+  // Issue #135: the fan is electrically + logically independent of the pump
+  // (commit 15f598f), so a pump-mode swap must NOT toggle the fan off→on
+  // when the post-transition state still calls for fan_on. Cycling the fan
+  // every mode change shortens its life and produces noticeable
+  // temperature/airflow blips during the warmest part of the day.
+  it('non-drain transition: fan stays ON across transition when next state still wants fan_on', function(t, done) {
+    const rt = createOrderingRuntime();
+    rt.kvs.config = JSON.stringify({
+      ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1
+    });
+    rt.kvs.drained = '0';
+    rt.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
+    loadScript(rt, ['control-logic.js', 'control.js']);
+    rt.advance(10000, function() {
+      rt.clearEvents();
+      // Source: GREENHOUSE_HEATING (fan ON via mode actuators).
+      // Target: SOLAR_CHARGING with fan-cool overlay active — actuators.fan
+      // is true because greenhouse is hot. Without the fix, transitionTo's
+      // pump_stop step indiscriminately fired Switch.Set(id:1, on:false),
+      // producing an off→on flicker once finalize re-asserted fan=true.
+      rt.globals.Shelly.__test_driveTransition('GREENHOUSE_HEATING', {
+        nextMode: 'SOLAR_CHARGING',
+        valves: { vi_btm: true, vi_top: false, vi_coll: false,
+                  vo_coll: true, vo_rad: false, vo_tank: false, v_air: false },
+        actuators: { pump: true, fan: true, space_heater: false, immersion_heater: false },
+        flags: { collectorsDrained: false, lastRefillAttempt: 0,
+                 emergencyHeatingActive: false,
+                 greenhouseFanCoolingActive: true,
+                 solarChargePeakTankAvg: null, solarChargePeakTankAvgAt: 0 },
+        suppressed: false, safetyOverride: false,
+      });
+      rt.advance(10000, function() {
+        const events = rt.events();
+        const fanEvents = events.filter(function(e) {
+          return e.kind === 'switch_set' && e.detail.id === 1;
+        });
+        const fanOff = fanEvents.find(function(e) { return e.detail.on === false; });
+        assert.ok(!fanOff,
+          'Fan must NOT toggle off when the post-transition state still calls for fan_on. ' +
+          'Got fan switch_set events: ' + JSON.stringify(fanEvents));
+        done();
+      });
+    });
+  });
+
+  it('non-drain transition: fan still stops when next state wants fan_off', function(t, done) {
+    const rt = createOrderingRuntime();
+    rt.kvs.config = JSON.stringify({
+      ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1
+    });
+    rt.kvs.drained = '0';
+    rt.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
+    loadScript(rt, ['control-logic.js', 'control.js']);
+    rt.advance(10000, function() {
+      rt.clearEvents();
+      // Source: GREENHOUSE_HEATING (fan ON). Target: IDLE (fan OFF, no
+      // overlay). The fan must be stopped during the pump_stop step.
+      rt.globals.Shelly.__test_driveTransition('GREENHOUSE_HEATING', {
+        nextMode: 'IDLE',
+        valves: { vi_btm: false, vi_top: false, vi_coll: false,
+                  vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
+        actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
+        flags: { collectorsDrained: false, lastRefillAttempt: 0,
+                 emergencyHeatingActive: false,
+                 greenhouseFanCoolingActive: false,
+                 solarChargePeakTankAvg: null, solarChargePeakTankAvgAt: 0 },
+        suppressed: false, safetyOverride: false,
+      });
+      rt.advance(10000, function() {
+        const events = rt.events();
+        const fanOff = events.find(function(e) {
+          return e.kind === 'switch_set' && e.detail.id === 1 && e.detail.on === false;
+        });
+        const firstValve = events.findIndex(function(e) {
+          return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0;
+        });
+        assert.ok(fanOff,
+          'Fan must stop when the post-transition state has fan_off');
+        const fanOffIdx = events.findIndex(function(e) {
+          return e.kind === 'switch_set' && e.detail.id === 1 && e.detail.on === false;
+        });
+        assert.ok(firstValve >= 0, 'expected valve HTTP.GET events');
+        assert.ok(fanOffIdx < firstValve,
+          'Fan-off must precede valve commands when target wants fan_off');
+        done();
+      });
+    });
+  });
 });
