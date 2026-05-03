@@ -115,21 +115,52 @@ describe('held field — pump mode', () => {
     assert.strictEqual(result.held.pumpMode.until, undefined);
   });
 
-  it('captures min_duration with until when current mode is held by the 5-min lock', () => {
-    // GREENHOUSE_HEATING entered 60 s ago; minModeDuration = 300 s. Hold
-    // is active. Greenhouse is now warm enough to exit, but the hold
-    // keeps us in GH for another 240 s.
+  it('captures min_duration with wanted mode + reason from the would-be decision', () => {
+    // SOLAR_CHARGING entered 60 s ago; minModeDuration = 300 s. Tank
+    // stalled (peak set 600 s ago, no rise) — natural pump-mode would
+    // exit to IDLE with reason "solar_stall". The hold keeps SC for
+    // another 240 s. The held entry must surface BOTH the wanted mode
+    // (IDLE) AND the underlying reason (solar_stall) so the operator
+    // can read "change to idle pending: tank stopped gaining heat" in
+    // the live banner — not just "held by min_duration".
     const result = evaluate(makeState({
-      temps: { collector: 5, tank_top: 40, tank_bottom: 30, greenhouse: 15, outdoor: 10 },
+      temps: { collector: 35, tank_top: 40, tank_bottom: 40, greenhouse: 15, outdoor: 10 },
+      currentMode: MODES.SOLAR_CHARGING,
+      modeEnteredAt: 1940,  // 60 s ago at now=2000
+      now: 2000,
+      // Peak was 800 s ago and tank hasn't risen — solar_stall.
+      solarChargePeakTankAvg: 40,
+      solarChargePeakTankAvgAt: 1200,
+    }), null, allEnabled);
+    assert.strictEqual(result.nextMode, MODES.SOLAR_CHARGING);
+    assert.strictEqual(result.reason, 'min_duration');
+    assert.ok(result.held && result.held.pumpMode);
+    assert.strictEqual(result.held.pumpMode.blockedBy, 'min_duration');
+    assert.strictEqual(result.held.pumpMode.until, 1940 + 300);
+    assert.strictEqual(result.held.pumpMode.wanted, MODES.IDLE);
+    assert.strictEqual(result.held.pumpMode.wantedReason, 'solar_stall');
+  });
+
+  it('omits wanted/wantedReason on min_duration when current matches the natural pick', () => {
+    // GREENHOUSE_HEATING entered 60 s ago, greenhouse still cold + tank
+    // still has delta — the natural pump mode is the same GH we're
+    // already in, so technically no transition is "pending". Still
+    // surface min_duration so the operator sees the hold, but skip the
+    // "would change to X" framing.
+    const result = evaluate(makeState({
+      temps: { collector: 5, tank_top: 40, tank_bottom: 30, greenhouse: 8, outdoor: 5 },
       currentMode: MODES.GREENHOUSE_HEATING,
       modeEnteredAt: 1940,
       now: 2000,
+      collectorsDrained: true,
     }), null, allEnabled);
     assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
     assert.strictEqual(result.reason, 'min_duration');
     assert.ok(result.held && result.held.pumpMode);
     assert.strictEqual(result.held.pumpMode.blockedBy, 'min_duration');
-    assert.strictEqual(result.held.pumpMode.until, 1940 + 300);
+    assert.strictEqual(result.held.pumpMode.wanted, undefined,
+      'no wanted entry — would have stayed put anyway');
+    assert.strictEqual(result.held.pumpMode.wantedReason, undefined);
   });
 });
 

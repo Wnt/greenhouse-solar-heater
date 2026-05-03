@@ -197,19 +197,56 @@ function formatWatchdogSnoozed(wz, nowSec) {
 }
 
 // Per-tick `held` diagnostic from the evaluator. Surfaces in the
-// controller-state block of the System Logs export so the operator
-// can see "held by refill_cooldown — 12m remaining" without having
-// to deduce it from sensor values + system knowledge. Three sub-
-// fields (pumpMode / emergencyHeating / fanCooling); each renders
-// as its own line with a remaining-time countdown when bounded.
-const HELD_REASON_LABELS = {
-  refill_cooldown: 'refill cooldown',
-  freeze_guard: 'collector or outdoor below freeze threshold',
-  wb_ban: 'mode disabled / banned',
-  min_duration: '5-min mode-duration hold',
+// controller-state block of the System Logs export AND a banner under
+// the active-mode card so the operator can read "Change to Idle pending
+// — tank stopped gaining heat. Hold 3m remaining." without having to
+// deduce it from sensor values + system knowledge. Three sub-fields
+// (pumpMode / emergencyHeating / fanCooling); each renders as its own
+// line with a countdown when the guard is time-bounded.
+//
+// Subject phrasing per sub-field:
+//   pumpMode          → "Change to <Mode> pending" / "<Subject> held"
+//   emergencyHeating  → "Emergency heating suppressed"
+//   fanCooling        → "Fan cooling suppressed"
+//
+// blockedBy → human label maps to a phrase that fits BOTH the "would
+// have done X but" framing and the standalone overlay-suppressed lines.
+const HELD_BLOCKED_PHRASES = {
+  refill_cooldown: 'refill cooldown still ticking',
+  freeze_guard: 'collector or outdoor still below freeze threshold',
+  wb_ban: 'mode disabled or in watchdog cool-off',
+  min_duration: '5-min minimum mode duration',
   ea_mask: 'actuator disabled in device config',
   controls_disabled: 'controls disabled (master switch off)',
   sensor_stale: 'sensor reading stale',
+};
+
+// blockedBy code → label embedded in the trailing "Hold X" /
+// "Cool-off X" hint (we drop the verbose phrase to keep the line short
+// when an explicit countdown is also rendered).
+const HELD_BLOCKED_SHORT = {
+  refill_cooldown: 'cool-off',
+  min_duration: 'hold',
+  wb_ban: 'cool-off',
+};
+
+// Reason codes the evaluator emits for the natural pump-mode pick.
+// Matches REASON_LABELS in time-format.js but kept local to avoid an
+// import cycle (logs-clipboard imports time-format already, this is the
+// reverse direction). Subset focused on decisions that actually surface
+// as "wanted" in held.pumpMode.
+const HELD_WANTED_REASON_LABELS = {
+  solar_enter: 'collector hot enough to charge',
+  solar_refill: 'refilling drained collectors',
+  solar_active: 'tank still gaining heat',
+  solar_stall: 'tank stopped gaining heat',
+  solar_drop_from_peak: 'tank cooling below peak',
+  overheat_circulate: 'collector overheat — would circulate to cool',
+  greenhouse_enter: 'greenhouse cold — would heat',
+  greenhouse_active: 'greenhouse still cold',
+  greenhouse_warm: 'greenhouse warm enough',
+  greenhouse_tank_depleted: 'tank too cool to heat greenhouse',
+  idle: 'no trigger active',
 };
 
 function prettyMode(code) {
@@ -227,23 +264,54 @@ function formatRemaining(untilSec, nowSec) {
   return h + 'h' + (m < 10 ? '0' : '') + m + 'm remaining';
 }
 
+// Render the pump-mode held entry. Two flavours:
+//   - wanted set: "Change to Idle pending — tank stopped gaining heat.
+//                  Hold 3m remaining."
+//   - wanted unset: "Pump mode held — 5-min minimum mode duration.
+//                    3m remaining."
+// The wanted-set form is the user-facing phrasing the operator asked for
+// (PR #126 / live-banner readability follow-up).
+function formatPumpMode(entry, nowSec) {
+  const blockedPhrase = HELD_BLOCKED_PHRASES[entry.blockedBy] || entry.blockedBy;
+  const remaining = formatRemaining(entry.until, nowSec);
+  const shortLabel = HELD_BLOCKED_SHORT[entry.blockedBy] || 'guard';
+  if (entry.wanted) {
+    const wantedLabel = prettyMode(entry.wanted);
+    const reasonLabel = entry.wantedReason
+      ? (HELD_WANTED_REASON_LABELS[entry.wantedReason] || entry.wantedReason)
+      : null;
+    let line = 'Change to ' + wantedLabel + ' pending';
+    if (reasonLabel) line += ' — ' + reasonLabel + '.';
+    else line += '.';
+    if (remaining) line += ' ' + capitalise(shortLabel) + ' ' + remaining + '.';
+    return line;
+  }
+  let line = 'Pump mode held — ' + blockedPhrase + '.';
+  if (remaining) line += ' ' + remaining + '.';
+  return line;
+}
+
+// Render an overlay held entry (heater / fan). The "wanted" flag is
+// always true when the entry exists (otherwise the evaluator wouldn't
+// populate it), so we phrase it as "<Subject> suppressed by <reason>".
+function formatOverlay(subject, entry, nowSec) {
+  const blockedPhrase = HELD_BLOCKED_PHRASES[entry.blockedBy] || entry.blockedBy;
+  const remaining = formatRemaining(entry.until, nowSec);
+  let line = subject + ' suppressed — ' + blockedPhrase + '.';
+  if (remaining) line += ' Cool-off ' + remaining + '.';
+  return line;
+}
+
+function capitalise(s) {
+  return s ? s[0].toUpperCase() + s.slice(1) : s;
+}
+
 export function formatHeldLines(held, nowSec) {
   if (!held) return [];
   const out = [];
-  const fmt = (subject, entry) => {
-    if (!entry) return;
-    const reason = HELD_REASON_LABELS[entry.blockedBy] || entry.blockedBy;
-    const remaining = formatRemaining(entry.until, nowSec);
-    let line = subject + ': held by ' + reason;
-    if (entry.wanted) {
-      line += ' — would enter ' + prettyMode(entry.wanted);
-    }
-    if (remaining) line += ' (' + remaining + ')';
-    out.push(line);
-  };
-  fmt('Pump mode', held.pumpMode);
-  fmt('Emergency heating', held.emergencyHeating);
-  fmt('Fan cooling', held.fanCooling);
+  if (held.pumpMode) out.push(formatPumpMode(held.pumpMode, nowSec));
+  if (held.emergencyHeating) out.push(formatOverlay('Emergency heating', held.emergencyHeating, nowSec));
+  if (held.fanCooling) out.push(formatOverlay('Fan cooling', held.fanCooling, nowSec));
   return out;
 }
 
