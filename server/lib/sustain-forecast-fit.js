@@ -127,6 +127,118 @@ function fitSolarEffectivenessByHour(history) {
 /**
  * Fit empirical thermal coefficients from historical sensor + mode data.
  */
+// Tank energy capacity in kWh per K (300 L water, 4186 J/(kg·K)):
+// 300 × 4186 / 3.6e6 = 0.349 kWh/K. Useful for converting between tank ΔK
+// and kWh — the operationally meaningful unit.
+const TANK_KWH_PER_K = TANK_THERMAL_MASS_J_PER_K / 3.6e6;
+
+/**
+ * Empirical solar gain by hour-of-day, in kWh of tank energy per clock hour
+ * (averaged over the days covered by `history`). Captures the combined effect
+ * of: (a) probability that the controller has the system in solar_charging
+ * during that hour, (b) actual heat transfer rate when charging, (c) shading,
+ * (d) typical weather over the historical window.
+ *
+ * The forecast engine multiplies this by a cloud factor derived from the FMI
+ * forecast radiation, so a forecast hour that is much sunnier (or cloudier)
+ * than the historical average scales appropriately.
+ *
+ * Why "per clock hour" rather than "per charging hour": we never know in
+ * advance how many hours the controller will run solar_charging, so we
+ * pre-multiply by the historical probability and produce kWh values directly
+ * usable in the forecast loop (one value × one cloud factor = one prediction).
+ *
+ * Falls back to a conservative default mask (low gain 10..16) when history
+ * is sparse.
+ *
+ * @param {object} history  { readings, modes } — same shape as fitEmpiricalCoefficients
+ * @returns {number[24]}    Per-hour expected kWh tank gain (positive, typically 0–1).
+ */
+function fitSolarGainByHour(history) {
+  const fallback = (function () {
+    const arr = new Array(24);
+    for (let h = 0; h < 24; h++) arr[h] = (h >= 10 && h <= 16) ? 0.4 : 0;
+    return arr;
+  }());
+
+  if (!history || !Array.isArray(history.readings) || history.readings.length < 2 ||
+      !Array.isArray(history.modes)) {
+    return fallback;
+  }
+
+  const readings = history.readings;
+  const modes    = history.modes;
+
+  // Forward-walking mode cursor (same pattern as fitEmpiricalCoefficients).
+  const modeLabels = new Array(readings.length);
+  let cursor = 0;
+  let currentMode = 'idle';
+  while (cursor < modes.length) {
+    const tsMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
+    const r0Ms = readings[0].ts instanceof Date ? readings[0].ts.getTime() : Number(readings[0].ts);
+    if (tsMs <= r0Ms) { currentMode = modes[cursor].mode; cursor++; }
+    else break;
+  }
+  modeLabels[0] = currentMode;
+  for (let i = 1; i < readings.length; i++) {
+    const rMs = readings[i].ts instanceof Date ? readings[i].ts.getTime() : Number(readings[i].ts);
+    while (cursor < modes.length) {
+      const mMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
+      if (mMs <= rMs) { currentMode = modes[cursor].mode; cursor++; }
+      else break;
+    }
+    modeLabels[i] = currentMode;
+  }
+
+  // Sum ΔKelvin gained per hour-of-day during solar_charging mode.
+  // Then convert to kWh and divide by the number of distinct days covered
+  // → average kWh per clock hour at that hour-of-day.
+  const sumDeltaK = new Array(24).fill(0);
+  const dayKey = function (ts) {
+    // Use Helsinki day boundary so a "day" matches what the user perceives.
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Helsinki', year: 'numeric', month: '2-digit', day: '2-digit',
+    });
+    return fmt.format(ts);
+  };
+  const daysSeen = new Set();
+
+  for (let i = 0; i < readings.length - 1; i++) {
+    if (modeLabels[i] !== 'solar_charging') continue;
+    const r0 = readings[i];
+    const r1 = readings[i + 1];
+    const t0Ms = r0.ts instanceof Date ? r0.ts.getTime() : Number(r0.ts);
+    const t1Ms = r1.ts instanceof Date ? r1.ts.getTime() : Number(r1.ts);
+    const dtSec = (t1Ms - t0Ms) / 1000;
+    // Skip degenerate gaps.
+    if (dtSec <= 0 || dtSec > 600) continue;
+    if (typeof r0.tankTop !== 'number' || typeof r0.tankBottom !== 'number' ||
+        typeof r1.tankTop !== 'number' || typeof r1.tankBottom !== 'number') continue;
+    const tankAvg0 = (r0.tankTop + r0.tankBottom) / 2;
+    const tankAvg1 = (r1.tankTop + r1.tankBottom) / 2;
+    const dK = tankAvg1 - tankAvg0;
+    // Only count positive deltas — the system sometimes briefly enters
+    // solar_charging when it's actually losing heat (e.g. start-up). We're
+    // measuring "what does charging typically deliver", not "any temp delta".
+    if (dK <= 0 || !isFinite(dK)) continue;
+    const ts = r0.ts instanceof Date ? r0.ts : new Date(t0Ms);
+    sumDeltaK[helsinkiHour(ts)] += dK;
+    daysSeen.add(dayKey(ts));
+  }
+
+  const numDays = Math.max(1, daysSeen.size);
+  const out = new Array(24);
+  for (let h = 0; h < 24; h++) {
+    out[h] = (sumDeltaK[h] * TANK_KWH_PER_K) / numDays;
+  }
+
+  // If we never observed any charging (cold start), use the fallback.
+  let total = 0;
+  for (let h = 0; h < 24; h++) total += out[h];
+  if (total < 0.5) return fallback;
+  return out;
+}
+
 function fitEmpiricalCoefficients(history) {
   const defaults = {
     tankLeakageWPerK:         DEFAULT_TANK_LEAKAGE_W_PER_K,
@@ -137,6 +249,7 @@ function fitEmpiricalCoefficients(history) {
   };
 
   if (!history || !Array.isArray(history.readings) || history.readings.length < 2) {
+    defaults.solarGainKwhByHour = fitSolarGainByHour(history);
     return defaults;
   }
 
@@ -233,6 +346,7 @@ function fitEmpiricalCoefficients(history) {
     greenhouseLossWPerKBase:  ghSlope   !== null && ghSlope   > 0 ? ghSlope   : DEFAULT_GH_LOSS_W_PER_K_BASE,
     windFactor:               DEFAULT_WIND_FACTOR,
     solarEffectivenessByHour: fitSolarEffectivenessByHour(history),
+    solarGainKwhByHour:       fitSolarGainByHour(history),
     usedDefaults:             (tankSlope === null && ghSlope === null),
   };
 }
@@ -241,11 +355,13 @@ module.exports = {
   // Constants the engine also needs.
   TANK_THERMAL_MASS_J_PER_K,
   GH_THERMAL_MASS_J_PER_K,
+  TANK_KWH_PER_K,
   DEFAULT_SOLAR_EFFECTIVENESS,
   // TZ helpers.
   helsinkiHour,
   helsinkiHHMM,
   // Fit functions.
   fitSolarEffectivenessByHour,
+  fitSolarGainByHour,
   fitEmpiricalCoefficients,
 };

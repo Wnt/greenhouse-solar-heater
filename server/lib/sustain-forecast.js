@@ -42,9 +42,20 @@ const DEFAULT_CONFIG = {
   greenhouseTargetC:        10,
   spaceHeaterKw:            1,    // from system.yaml space_heater.assumed_continuous_power_kw
   transferFeeCKwh:          5,    // from system.yaml electricity.transfer_fee_c_kwh
-  collectorAreaM2:          4,    // from system.yaml (approx)
-  collectorEfficiency:      0.5,  // empirical placeholder
-  solarChargeMinRadiationWm2: 200,
+  // Reference FMI RadiationGlobal that maps to "cloudFactor = 1" in the data-
+  // driven solar gain model. ~500 W/m² is a typical partly-cloudy noon at lat
+  // 60° in May (clear sky peaks ~700-900). The historical solarGainKwhByHour
+  // baseline is normalised against this reference.
+  cloudReferenceWm2:        500,
+  // Tank stops charging around this temperature in the real controller.
+  tankMaxC:                 55,
+  // Threshold for counting an hour as "solar charging" in the output.
+  // 0.15 kWh corresponds to roughly the gain from 30 min of typical noontime
+  // operation — below this we're seeing residual cloud-modulated noise, not
+  // a meaningful charging window.
+  solarChargeMinKwh:        0.15,
+  // Radiator output power (kW from tank to greenhouse air) — observed in data.
+  radiatorPowerKw:          2.4,
   // Confidence boost: set this to a recent Date when weather was fetched
   weatherFetchedAt:         null,
   // Number of buckets used for the empirical fit (for confidence)
@@ -82,6 +93,12 @@ function computeSustainForecast(opts) {
   const solarEffByHour      = Array.isArray(coeff.solarEffectivenessByHour) && coeff.solarEffectivenessByHour.length === 24
     ? coeff.solarEffectivenessByHour
     : DEFAULT_SOLAR_EFFECTIVENESS;
+  // Empirical kWh-to-tank gain per clock hour (averaged over the historical
+  // window). The forecast loop multiplies this by a cloud factor derived from
+  // the FMI radiation. Falls back to a conservative low-gain mask.
+  const solarGainKwhByHour  = Array.isArray(coeff.solarGainKwhByHour) && coeff.solarGainKwhByHour.length === 24
+    ? coeff.solarGainKwhByHour
+    : (function () { const a = new Array(24); for (let h = 0; h < 24; h++) a[h] = (h >= 10 && h <= 16) ? 0.4 : 0; return a; }());
   // usedDefaults is true when the caller explicitly set it, OR when no real
   // coefficient values were provided (empty object or coefficients not from fit).
   const usedDefaults = coeff.usedDefaults === true ||
@@ -98,6 +115,14 @@ function computeSustainForecast(opts) {
   let electricCostEur   = 0;
   let solarChargingHours     = 0;
   let greenhouseHeatingHours = 0;
+  // Per-day buckets keyed by Helsinki date string (YYYY-MM-DD). The engine
+  // emits the sum of solar kWh added on each day so the UI can show
+  // "Today: 1 kWh, Tomorrow: 7 kWh" — much more useful than a single 48 h
+  // total for understanding *when* recovery happens.
+  const solarKwhByDay = {};
+  const dayKeyFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Helsinki', year: 'numeric', month: '2-digit', day: '2-digit',
+  });
   let hoursUntilFloor        = null;
   // Hours until tank can no longer cover the greenhouse heating load alone.
   // Always ≤ hoursUntilFloor — tank stops being able to heat the greenhouse
@@ -156,13 +181,14 @@ function computeSustainForecast(opts) {
     if (curGhTemp < cfg.greenhouseTargetC) {
       // Greenhouse needs heat.
       if (tankAvg > cfg.tankFloorC + 5) {
-        // Tank has enough — simulate greenhouse_heating mode.
-        // The tank supplies ghLossW (to cover GH losses) plus its own natural losses.
-        // Simplified: tank absorbs the greenhouse loss into itself.
-        const heatDeliveredJ = ghLossW * SECONDS_PER_HOUR;
-        // Greenhouse receives heat back (net: covered)
-        ghDeltaJ += heatDeliveredJ;
-        // Tank pays for it
+        // Tank has enough — simulate greenhouse_heating mode. The radiator
+        // delivers ~ghLossW continuously (controller cycles to maintain
+        // greenhouse near setpoint), capped at the radiator's physical peak
+        // power. Empirical avg draw when "in heating mode" ≈ 0.7-0.8 kW —
+        // matches greenhouse loss at typical (gh-outdoor) ΔT ≈ 30-40 K.
+        const deliveredW = Math.min(ghLossW, cfg.radiatorPowerKw * 1000);
+        const heatDeliveredJ = deliveredW * SECONDS_PER_HOUR;
+        ghDeltaJ   += heatDeliveredJ;
         tankDeltaJ -= heatDeliveredJ;
         greenhouseHeatingHours += 1;
       } else {
@@ -183,18 +209,31 @@ function computeSustainForecast(opts) {
       }
     }
 
-    // ── 3. Solar charging credit ──
-    // Two gates must both pass:
-    //   a) FMI radiation > threshold (there is sun in the sky at all)
-    //   b) solarEffByHour[localHour] > 0 (the collectors actually see it)
-    const hourOfDay = helsinkiHour(new Date(hourMs));
-    const solarEff  = solarEffByHour[hourOfDay];
-    let solarGainJ = 0;
-    if (radiation > cfg.solarChargeMinRadiationWm2 && solarEff > 0 && tankAvg < 60) {
-      const solarGainW = cfg.collectorAreaM2 * radiation * cfg.collectorEfficiency * solarEff;
-      solarGainJ = solarGainW * SECONDS_PER_HOUR;
+    // ── 3. Solar charging credit (data-driven) ──
+    // Use the historical kWh-per-clock-hour baseline (already integrates
+    // controller cycle probability, shading, typical conditions) and modulate
+    // by the FMI radiation forecast so cloudy/rainy hours get scaled down and
+    // sunnier-than-average hours scaled up. No raw collector physics —
+    // observed history already encodes the real system response.
+    //
+    // Cap at tank near max temp (system stops charging around 60 °C).
+    const hourOfDay   = helsinkiHour(new Date(hourMs));
+    const baseGainKwh = solarGainKwhByHour[hourOfDay];
+    // Reference radiation: ~500 W/m² is roughly the historical-average sunny
+    // hour at noon, lat 60° in spring. Forecast hours hitting this map to
+    // cloudFactor = 1; clear midday (~700) maps to ~1.4; overcast (~150)
+    // maps to ~0.3; rainy (~50) maps to ~0.1.
+    let cloudFactor = radiation / cfg.cloudReferenceWm2;
+    if (cloudFactor < 0)   cloudFactor = 0;
+    if (cloudFactor > 1.5) cloudFactor = 1.5;
+    let solarGainKwh = baseGainKwh * cloudFactor;
+    if (tankAvg >= cfg.tankMaxC) solarGainKwh = 0;
+    const solarGainJ = solarGainKwh * 3.6e6;
+    if (solarGainKwh > cfg.solarChargeMinKwh) {
       tankDeltaJ += solarGainJ;
       solarChargingHours += 1;
+      const dayKey = dayKeyFmt.format(new Date(hourMs));
+      solarKwhByDay[dayKey] = (solarKwhByDay[dayKey] || 0) + solarGainKwh;
     }
 
     // ── 4. Update tank state ──
@@ -258,6 +297,13 @@ function computeSustainForecast(opts) {
     }
   }
 
+  // Sorted [{ date, kWh }] per-day breakdown; the first two entries are
+  // "today" and "tomorrow" in Helsinki days (or just "today" if the 48 h
+  // window straddles only one day boundary).
+  const solarGainByDay = Object.keys(solarKwhByDay).sort().map(function (k) {
+    return { date: k, kWh: round4(solarKwhByDay[k]) };
+  });
+
   // ── Notes ──
   const notes = buildNotes({
     now,
@@ -270,6 +316,7 @@ function computeSustainForecast(opts) {
     tankFloorC:              cfg.tankFloorC,
     weather48h:              weather,
     solarEffectivenessByHour: solarEffByHour,
+    solarGainByDay,
   });
 
   return {
@@ -284,6 +331,7 @@ function computeSustainForecast(opts) {
     costBreakdown,
     solarChargingHours,
     greenhouseHeatingHours,
+    solarGainByDay,
     modelConfidence:        confidence,
     notes,
   };
@@ -297,19 +345,24 @@ function buildNotes(ctx) {
     notes.push('Forecast based on default coefficients — model still warming up with limited history.');
   }
 
-  if (ctx.solarChargingHours > 0) {
-    // Find the peak solar window using weather array.
-    let peakH = -1;
-    let peakR = 0;
-    for (let i = 0; i < ctx.weather48h.length; i++) {
-      if (ctx.weather48h[i] && ctx.weather48h[i].radiationGlobal > peakR) {
-        peakR = ctx.weather48h[i].radiationGlobal;
-        peakH = i;
-      }
+  // Per-day solar gain note. Maps the first two Helsinki days of the
+  // forecast horizon to "Today"/"Tomorrow" labels (or just two date
+  // labels if the user is reading at midnight).
+  if (Array.isArray(ctx.solarGainByDay) && ctx.solarGainByDay.length > 0 && notes.length < 3) {
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Helsinki', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(ctx.now));
+    const parts = ctx.solarGainByDay.slice(0, 2).map(function (d) {
+      const label = d.date === today ? 'Today' : 'Tomorrow';
+      const kwh = d.kWh < 0.5 ? d.kWh.toFixed(1) : Math.round(d.kWh);
+      return label + ' ~' + kwh + ' kWh';
+    });
+    if (parts.length > 0) {
+      notes.push('Solar gain projected: ' + parts.join(', ') + '.');
     }
-    const dayLabel = peakH >= 24 ? 'Tomorrow' : 'Today';
-    const solNote = dayLabel + ': ' + ctx.solarChargingHours + ' h of solar charging projected.';
-    if (notes.length < 3) notes.push(solNote);
+  } else if (notes.length < 3) {
+    // No solar gain at all — be explicit.
+    notes.push('No useful solar gain projected over the next 48 h.');
   }
 
   // Backup-needed note: tank can heat the greenhouse for X hours, then space
@@ -365,6 +418,7 @@ function pad2(n)   { return n < 10 ? '0' + n : '' + n; }
 
 module.exports = {
   fitSolarEffectivenessByHour,
+  fitSolarGainByHour: fit.fitSolarGainByHour,
   fitEmpiricalCoefficients,
   computeSustainForecast,
   // Exported for tests

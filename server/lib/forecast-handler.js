@@ -28,26 +28,16 @@ function createForecastHandler(opts) {
   let _coeffCachedAt    = 0;
 
   // Read config from system.yaml with fallbacks matching sustain-forecast defaults.
+  // The engine no longer takes collector area / efficiency — solar gain is
+  // empirical (see fitSolarGainByHour) so those physics constants are dead.
   const electricity  = systemYaml.electricity || {};
   const spaceHeater  = systemYaml.space_heater || {};
-  const collectors   = (systemYaml.components && systemYaml.components.solar_collectors) || {};
 
   const configFromYaml = {
     spaceHeaterKw:    typeof spaceHeater.assumed_continuous_power_kw === 'number'
                         ? spaceHeater.assumed_continuous_power_kw : 1,
     transferFeeCKwh:  typeof electricity.transfer_fee_c_kwh === 'number'
                         ? electricity.transfer_fee_c_kwh : 5,
-    // total_area is stored as "4m²" string in yaml; extract number.
-    collectorAreaM2: (function () {
-      const raw = collectors.total_area;
-      if (typeof raw === 'number') return raw;
-      if (typeof raw === 'string') {
-        const m = raw.match(/([0-9.]+)/);
-        if (m) return parseFloat(m[1]);
-      }
-      return 4;
-    }()),
-    collectorEfficiency: 0.5,
   };
 
   // ── Query helpers ──
@@ -235,8 +225,6 @@ function createForecastHandler(opts) {
         const forecastConfig = {
           spaceHeaterKw:   configFromYaml.spaceHeaterKw,
           transferFeeCKwh: configFromYaml.transferFeeCKwh,
-          collectorAreaM2: configFromYaml.collectorAreaM2,
-          collectorEfficiency: configFromYaml.collectorEfficiency,
           fitBucketCount: coeff.fitBucketCount || 0,
           weatherFetchedAt: weather.length > 0 ? new Date() : null,
         };

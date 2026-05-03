@@ -4,6 +4,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   fitSolarEffectivenessByHour,
+  fitSolarGainByHour,
   fitEmpiricalCoefficients,
   computeSustainForecast,
   _TANK_THERMAL_MASS_J_PER_K,
@@ -149,13 +150,20 @@ describe('computeSustainForecast', () => {
 
     const result = computeSustainForecast({
       now:            Date.now(),
-      tankTop:        60,
-      tankBottom:     58,
+      tankTop:        40,
+      tankBottom:     38,
       greenhouseTemp: 12,
       currentMode:    'idle',
       weather48h:     weather,
       prices48h:      makePrices48h(5),
-      coefficients:   {},
+      coefficients:   {
+        // Provide a non-zero baseline so the data-driven solar credit fires.
+        solarGainKwhByHour: (function () {
+          const a = new Array(24);
+          for (let h = 0; h < 24; h++) a[h] = (h >= 6 && h <= 20) ? 0.5 : 0;
+          return a;
+        }()),
+      },
       config:         { greenhouseTargetC: 8, spaceHeaterKw: 1, transferFeeCKwh: 5 },
     });
 
@@ -334,6 +342,58 @@ describe('fitSolarEffectivenessByHour', () => {
   });
 });
 
+// ── fitSolarGainByHour — empirical kWh-per-clock-hour baseline ──
+
+describe('fitSolarGainByHour', () => {
+  it('empty history → conservative fallback (low-gain 10..16)', () => {
+    const out = fitSolarGainByHour({ readings: [], modes: [] });
+    assert.equal(out.length, 24);
+    assert.equal(out[5], 0);
+    assert.equal(out[12], 0.4);   // fallback peak
+    assert.equal(out[20], 0);
+  });
+
+  it('null history → conservative fallback', () => {
+    const out = fitSolarGainByHour(null);
+    assert.equal(out.length, 24);
+    assert.equal(out[14], 0.4);
+  });
+
+  it('synthetic charging history → produces non-zero gain at the active hour', () => {
+    // Build 14 days of readings; on each day, hour 12-14 the system is in
+    // solar_charging mode and the tank rises by 1 K every 5 min.
+    const readings = [];
+    const modes    = [{ ts: new Date('2026-04-01T00:00:00Z'), mode: 'idle' }];
+    const dayMs = 24 * 3600 * 1000;
+    const stepMs = 5 * 60 * 1000;
+    const start = new Date('2026-04-01T00:00:00Z').getTime();
+    for (let d = 0; d < 14; d++) {
+      const dayStart = start + d * dayMs;
+      // Switch to solar_charging at 09:00 UTC (local 12:00 in EEST)
+      modes.push({ ts: new Date(dayStart + 9 * 3600 * 1000), mode: 'solar_charging' });
+      modes.push({ ts: new Date(dayStart + 12 * 3600 * 1000), mode: 'idle' });
+      // Per-day readings (288 every 5 min)
+      let tank = 30;
+      for (let s = 0; s < 288; s++) {
+        const ts = new Date(dayStart + s * stepMs);
+        const hUtc = ts.getUTCHours();
+        // While in solar_charging (09:00 UTC – 12:00 UTC = local 12-15 EEST),
+        // tank rises by 0.5 K per 5 min step → 6 K per hour.
+        if (hUtc >= 9 && hUtc < 12) tank += 0.5;
+        readings.push({ ts, tankTop: tank + 1, tankBottom: tank - 1, greenhouse: 15, outdoor: 10, collector: 50 });
+      }
+    }
+    const out = fitSolarGainByHour({ readings, modes });
+    // Expected per-hour gain: 6 K/h × 0.349 kWh/K = 2.09 kWh/h while charging.
+    // Local hours 12, 13, 14 (EEST) — three hours of strong gain.
+    assert.ok(out[12] > 1.0, 'expected non-trivial gain at local hour 12, got ' + out[12]);
+    assert.ok(out[13] > 1.0, 'expected non-trivial gain at local hour 13, got ' + out[13]);
+    assert.ok(out[14] > 1.0, 'expected non-trivial gain at local hour 14, got ' + out[14]);
+    assert.equal(out[3], 0,  'no gain expected outside charging hours');
+    assert.equal(out[20], 0, 'no gain expected at evening');
+  });
+});
+
 // ── Solar mask integration in computeSustainForecast ──
 
 describe('computeSustainForecast — solar effectiveness mask', () => {
@@ -392,13 +452,16 @@ describe('computeSustainForecast — solar effectiveness mask', () => {
   it('effectiveness = 1.0 for the sunny hour → solar charging is credited', () => {
     const SUN_HOUR = 9; // hour 09 local time
 
-    // Mask: 1.0 everywhere.
-    const fullSunMask = new Array(24).fill(1.0);
+    // Non-zero baseline gain at hour 09: data-driven path requires the
+    // historical baseline to be > 0 for that hour; FMI radiation alone isn't
+    // sufficient (a hour-of-day with shaded collectors stays at 0 even on a
+    // bright day).
+    const fullGain = new Array(24).fill(0.5);
 
     const result = computeSustainForecast({
       now:            localMidnight(),
-      tankTop:        50,
-      tankBottom:     48,
+      tankTop:        40,
+      tankBottom:     38,
       greenhouseTemp: 12,
       currentMode:    'idle',
       weather48h:     makeWeatherWithSunAtHour(SUN_HOUR),
@@ -409,7 +472,7 @@ describe('computeSustainForecast — solar effectiveness mask', () => {
         tankLeakageWPerK:        3.0,
         greenhouseLossWPerKBase: 25.0,
         windFactor:              0.05,
-        solarEffectivenessByHour: fullSunMask,
+        solarGainKwhByHour:      fullGain,
         usedDefaults:            false,
       },
       config: { greenhouseTargetC: 8, spaceHeaterKw: 1, transferFeeCKwh: 5 },
@@ -417,5 +480,71 @@ describe('computeSustainForecast — solar effectiveness mask', () => {
 
     assert.ok(result.solarChargingHours > 0,
       'Full-mask should allow solar charging when radiation is present');
+  });
+});
+
+// ── Cloud-factor modulation (data-driven solar gain) ──
+
+describe('computeSustainForecast — FMI cloud factor', () => {
+  function localMidnight() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  function makeWeather48hWithRad(radPerHour) {
+    return Array.from({ length: 48 }, function (_, i) {
+      const t = new Date(localMidnight() + i * 3600000);
+      return { validAt: t, temperature: 5, radiationGlobal: radPerHour, windSpeed: 1, precipitation: 0 };
+    });
+  }
+  const flatGain = (function () { const a = new Array(24); for (let h = 0; h < 24; h++) a[h] = 1.0; return a; }());
+
+  it('overcast (radiation 50 W/m²) → near-zero solar charging credited', () => {
+    const result = computeSustainForecast({
+      now:            localMidnight(),
+      tankTop:        30, tankBottom: 28, greenhouseTemp: 12,
+      currentMode:    'idle',
+      weather48h:     makeWeather48hWithRad(50),
+      prices48h:      Array.from({ length: 48 }, function (_, i) { return { validAt: new Date(localMidnight() + i * 3600000), priceCKwh: 5 }; }),
+      coefficients:   { solarGainKwhByHour: flatGain, usedDefaults: false },
+      config:         { greenhouseTargetC: 8 },
+    });
+    assert.equal(result.solarChargingHours, 0,
+      '50 W/m² with baseline 1 kWh/h × cloudFactor 0.1 = 0.1 kWh < 0.15 threshold → 0 hours');
+  });
+
+  it('partly cloudy (radiation 250 W/m²) → modest solar gain credited', () => {
+    const result = computeSustainForecast({
+      now:            localMidnight(),
+      tankTop:        30, tankBottom: 28, greenhouseTemp: 12,
+      currentMode:    'idle',
+      weather48h:     makeWeather48hWithRad(250),
+      prices48h:      Array.from({ length: 48 }, function (_, i) { return { validAt: new Date(localMidnight() + i * 3600000), priceCKwh: 5 }; }),
+      coefficients:   { solarGainKwhByHour: flatGain, usedDefaults: false },
+      config:         { greenhouseTargetC: 8 },
+    });
+    // 250/500 = 0.5 cloudFactor × 1 kWh = 0.5 kWh per hour > 0.15 threshold
+    assert.ok(result.solarChargingHours >= 24,
+      'all 48 hours should count when radiation × baseline > threshold');
+  });
+
+  it('clear sky (radiation 700 W/m²) → cloudFactor capped at 1.5', () => {
+    const result = computeSustainForecast({
+      now:            localMidnight(),
+      tankTop:        30, tankBottom: 28, greenhouseTemp: 12,
+      currentMode:    'idle',
+      weather48h:     makeWeather48hWithRad(700),
+      prices48h:      Array.from({ length: 48 }, function (_, i) { return { validAt: new Date(localMidnight() + i * 3600000), priceCKwh: 5 }; }),
+      coefficients:   { solarGainKwhByHour: flatGain, usedDefaults: false },
+      config:         { greenhouseTargetC: 8, tankMaxC: 80 },
+    });
+    // Verify per-day breakdown is exposed and roughly matches 24h × 1.4 = ~33 kWh/day
+    assert.ok(Array.isArray(result.solarGainByDay));
+    assert.ok(result.solarGainByDay.length >= 1);
+    // Tank cap kicks in mid-day so the per-day total stops growing once tank
+    // reaches tankMaxC; just assert it's well above the partly-cloudy
+    // baseline (24 × 0.5 = 12) to confirm cloudFactor scaled past 1.
+    assert.ok(result.solarGainByDay[0].kWh > 18,
+      'expected > 18 kWh/day on a 700 W/m² day; got ' + result.solarGainByDay[0].kWh);
   });
 });
