@@ -207,6 +207,13 @@
               <a href="#" id="mode-card-exit-link" style="display:none;">Exit override</a>
             </div>
           </div>
+          <!-- Held-by banner — populated from result.held when the evaluator's
+               preferred decision is suppressed by a guard (refill cooldown,
+               wb-ban, ea_mask, …). Hidden when nothing is held. -->
+          <div id="mode-held-banner" class="card mode-held-banner" style="display:none;margin-top:8px;padding:10px 12px;border-left:3px solid var(--tertiary, #f0a82a);background:var(--surface-variant);font-size:13px;color:var(--on-surface);">
+            <div class="mode-held-title" style="font-weight:600;margin-bottom:4px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--on-surface-variant);">Held this tick</div>
+            <ul id="mode-held-list" style="margin:0;padding-left:18px;"></ul>
+          </div>
           <!-- Inactive modes -->
           <div id="inactive-modes"></div>
         </div>

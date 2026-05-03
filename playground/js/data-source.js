@@ -218,6 +218,12 @@ export class LiveSource extends DataSource {
       // Status view can show whether the collector loop currently
       // holds water.
       flags: data.flags || {},
+      // Live diagnostic from evaluate() — see attachHeld() in
+      // shelly/control-logic.js. Either null (nothing blocked this
+      // tick) or { pumpMode?, emergencyHeating?, fanCooling? }
+      // describing wanted-but-blocked decisions. Consumed by the
+      // Status view's "held by …" banner and the System Logs export.
+      held: data.held || null,
     };
 
     this._emitUpdate(state, result);

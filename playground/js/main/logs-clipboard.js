@@ -196,6 +196,57 @@ function formatWatchdogSnoozed(wz, nowSec) {
   return out.length ? out.join(' ') : 'none';
 }
 
+// Per-tick `held` diagnostic from the evaluator. Surfaces in the
+// controller-state block of the System Logs export so the operator
+// can see "held by refill_cooldown — 12m remaining" without having
+// to deduce it from sensor values + system knowledge. Three sub-
+// fields (pumpMode / emergencyHeating / fanCooling); each renders
+// as its own line with a remaining-time countdown when bounded.
+const HELD_REASON_LABELS = {
+  refill_cooldown: 'refill cooldown',
+  freeze_guard: 'collector or outdoor below freeze threshold',
+  wb_ban: 'mode disabled / banned',
+  min_duration: '5-min mode-duration hold',
+  ea_mask: 'actuator disabled in device config',
+  controls_disabled: 'controls disabled (master switch off)',
+  sensor_stale: 'sensor reading stale',
+};
+
+function prettyMode(code) {
+  if (!code) return '';
+  return code.toLowerCase().replace(/_/g, ' ').replace(/\b./g, c => c.toUpperCase());
+}
+
+function formatRemaining(untilSec, nowSec) {
+  if (typeof untilSec !== 'number' || untilSec <= nowSec) return '';
+  const rem = Math.floor(untilSec - nowSec);
+  if (rem < 60) return rem + 's remaining';
+  const h = Math.floor(rem / 3600);
+  const m = Math.floor((rem % 3600) / 60);
+  if (h === 0) return m + 'm remaining';
+  return h + 'h' + (m < 10 ? '0' : '') + m + 'm remaining';
+}
+
+export function formatHeldLines(held, nowSec) {
+  if (!held) return [];
+  const out = [];
+  const fmt = (subject, entry) => {
+    if (!entry) return;
+    const reason = HELD_REASON_LABELS[entry.blockedBy] || entry.blockedBy;
+    const remaining = formatRemaining(entry.until, nowSec);
+    let line = subject + ': held by ' + reason;
+    if (entry.wanted) {
+      line += ' — would enter ' + prettyMode(entry.wanted);
+    }
+    if (remaining) line += ' (' + remaining + ')';
+    out.push(line);
+  };
+  fmt('Pump mode', held.pumpMode);
+  fmt('Emergency heating', held.emergencyHeating);
+  fmt('Fan cooling', held.fanCooling);
+  return out;
+}
+
 function appendControllerState(lines) {
   const result = (lastLiveFrame && lastLiveFrame.result) || null;
   const snap = getWatchdogSnapshot() || {};
@@ -228,6 +279,14 @@ function appendControllerState(lines) {
   lines.push('Watchdogs snoozed:  ' + formatWatchdogSnoozed(snap.wz, nowSec));
   lines.push('Mode bans (wb):     ' + formatBanList(snap.wb, nowSec));
   lines.push('Config version:     ' + (typeof snap.v === 'number' ? snap.v : '(unknown)'));
+  const heldLines = formatHeldLines(result && result.held, nowSec);
+  if (heldLines.length) {
+    lines.push('');
+    lines.push('Held this tick:');
+    for (let i = 0; i < heldLines.length; i++) {
+      lines.push('  ' + heldLines[i]);
+    }
+  }
   lines.push('');
 }
 

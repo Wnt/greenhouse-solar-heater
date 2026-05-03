@@ -266,7 +266,12 @@ function makeResult(mode, flags, deviceConfig, safetyOverride, reason) {
     // tick. The server copies it alongside state_events.cause so the
     // System Logs UI can show "automation: solar_stall" instead of a
     // bare "automation" tag. Null only for legacy/missing paths.
-    reason: reason || null
+    reason: reason || null,
+    // Live diagnostic: see pruneHeld() / held assignments in evaluate().
+    // The shape is { pumpMode?, emergencyHeating?, fanCooling? } where
+    // each sub-field describes "would have done X but blocked by Y".
+    // null when no guard is suppressing a wanted action this tick.
+    held: null
   };
   // Safety overrides (freeze drain, overheat drain) bypass all device config
   // suppression — they MUST actuate even when controls are disabled.
@@ -297,6 +302,25 @@ function getMinDuration(state, cfg) {
   return cfg.minModeDuration;
 }
 
+// Build a held-sub-entry. `until` is omitted (left undefined) when the
+// caller passes a falsy value — a permanent ban or a non-time-bounded
+// guard like freeze_guard / ea_mask should not pretend to have a clock.
+function heldEntry(blockedBy, wanted, wantedReason, until) {
+  var e = { blockedBy: blockedBy };
+  if (wanted !== undefined && wanted !== null) e.wanted = wanted;
+  if (wantedReason) e.wantedReason = wantedReason;
+  if (until) e.until = until;
+  return e;
+}
+
+// Drop the held container if every sub-field is empty; saves bytes on
+// the snapshot wire and lets consumers `if (snap.held) …` cheaply.
+function pruneHeld(h) {
+  if (!h) return null;
+  if (!h.pumpMode && !h.emergencyHeating && !h.fanCooling) return null;
+  return h;
+}
+
 function evaluate(state, config, deviceConfig) {
   var cfg = applyDefaults(config);
   var dc = deviceConfig || null;
@@ -315,6 +339,10 @@ function evaluate(state, config, deviceConfig) {
     solarChargePeakTankAvg: null,
     solarChargePeakTankAvgAt: 0
   };
+  // Live diagnostic accumulator — see `held` field doc on makeResult().
+  // Attached to the final result via attachHeld() / pruneHeld() right
+  // before each return so every code path produces a consistent shape.
+  var held = {};
 
   // Carry forward and update peak tank-mean while in SOLAR_CHARGING. We
   // do this before the min-duration hold so peakAt advances during the
@@ -348,7 +376,7 @@ function evaluate(state, config, deviceConfig) {
     flags.greenhouseFanCoolingActive = false;
     flags.solarChargePeakTankAvg = null;
     flags.solarChargePeakTankAvgAt = 0;
-    return makeResult(MODES.IDLE, flags, dc, false, "sensor_stale");
+    return attachHeld(makeResult(MODES.IDLE, flags, dc, false, "sensor_stale"), held);
   }
 
   // ── Overlay hysteresis + ban gate ──
@@ -384,15 +412,37 @@ function evaluate(state, config, deviceConfig) {
   // paths see the same gate.
   if (flags.emergencyHeatingActive && dc && dc.wb && dc.wb.EH && dc.wb.EH > state.now) {
     flags.emergencyHeatingActive = false;
+    held.emergencyHeating = heldEntry(
+      "wb_ban", true, null,
+      dc.wb.EH >= WB_PERMANENT_SENTINEL ? null : dc.wb.EH
+    );
+  }
+  // EA_SPACE_HEATER mask is enforced at the device layer (setSpaceHeater
+  // in control.js); evaluate() flags it as held so the UI can warn
+  // "heater would fire but EA bit is clear". Don't override an existing
+  // held entry from the wb.EH branch — the ban is the more user-actionable
+  // signal.
+  if (flags.emergencyHeatingActive && dc && !((dc.ea || 0) & EA_SPACE_HEATER) &&
+      !held.emergencyHeating) {
+    held.emergencyHeating = heldEntry("ea_mask", true);
+  }
+  // Fan-cool overlay masking happens in stampOverlays (ce + EA_FAN). Mirror
+  // the diagnostic here so the held signal lives next to its decision.
+  if (flags.greenhouseFanCoolingActive && dc) {
+    if (!dc.ce) {
+      held.fanCooling = heldEntry("controls_disabled", true);
+    } else if (!((dc.ea || 0) & EA_FAN)) {
+      held.fanCooling = heldEntry("ea_mask", true);
+    }
   }
 
   // Already draining — stay until shell completes or timeout
   if (state.currentMode === MODES.ACTIVE_DRAIN) {
     if (elapsed > cfg.drainTimeout) {
       flags.collectorsDrained = true;
-      return stampOverlays(makeResult(MODES.IDLE, flags, dc, false, "drain_timeout"), flags, dc);
+      return attachHeld(stampOverlays(makeResult(MODES.IDLE, flags, dc, false, "drain_timeout"), flags, dc), held);
     }
-    return stampOverlays(makeResult(MODES.ACTIVE_DRAIN, flags, dc, false, "drain_running"), flags, dc);
+    return attachHeld(stampOverlays(makeResult(MODES.ACTIVE_DRAIN, flags, dc, false, "drain_running"), flags, dc), held);
   }
 
   // Freeze protection — preempts immediately, ignores min duration
@@ -412,7 +462,7 @@ function evaluate(state, config, deviceConfig) {
       !state.collectorsDrained) {
     flags.solarChargePeakTankAvg = null;
     flags.solarChargePeakTankAvgAt = 0;
-    return stampOverlays(makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "freeze_drain"), flags, dc);
+    return attachHeld(stampOverlays(makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "freeze_drain"), flags, dc), held);
   }
 
   // Collector overheat protection — drain only as a last resort.
@@ -423,14 +473,16 @@ function evaluate(state, config, deviceConfig) {
       state.currentMode === MODES.SOLAR_CHARGING && !state.collectorsDrained) {
     flags.solarChargePeakTankAvg = null;
     flags.solarChargePeakTankAvgAt = 0;
-    return stampOverlays(makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "overheat_drain"), flags, dc);
+    return attachHeld(stampOverlays(makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "overheat_drain"), flags, dc), held);
   }
 
   // Minimum mode duration (not for IDLE or EMERGENCY_HEATING, not for drain above)
   if (state.currentMode !== MODES.IDLE &&
       state.currentMode !== MODES.EMERGENCY_HEATING &&
       elapsed < getMinDuration(state, cfg)) {
-    return stampOverlays(makeResult(state.currentMode, flags, dc, false, "min_duration"), flags, dc);
+    held.pumpMode = heldEntry("min_duration", null, null,
+      state.modeEnteredAt + getMinDuration(state, cfg));
+    return attachHeld(stampOverlays(makeResult(state.currentMode, flags, dc, false, "min_duration"), flags, dc), held);
   }
 
   // ── Pump mode selection (solar > greenhouse heating > idle) ──
@@ -504,19 +556,31 @@ function evaluate(state, config, deviceConfig) {
       // would re-trigger the drain immediately after refill, and a warm
       // outdoor reading doesn't protect a still-cold collector (same
       // radiative-cooling asymmetry the drain trigger now handles).
-      if (t.collector > t.tank_bottom + cfg.solarEnterDelta &&
-          t.outdoor !== null && t.outdoor >= cfg.freezeDrainTemp &&
-          t.collector >= cfg.freezeDrainTemp) {
-        if (state.now - state.lastRefillAttempt > cfg.refillRetryCooldown) {
-          flags.collectorsDrained = false;
-          flags.lastRefillAttempt = state.now;
-          pumpMode = MODES.SOLAR_CHARGING;
-          reason = "solar_refill";
-          if (t.tank_top !== null && t.tank_bottom !== null) {
-            flags.solarChargePeakTankAvg = (t.tank_top + t.tank_bottom) / 2;
-            flags.solarChargePeakTankAvgAt = state.now;
-          }
+      var deltaMet = (t.collector > t.tank_bottom + cfg.solarEnterDelta);
+      var freezeOk = (t.outdoor !== null && t.outdoor >= cfg.freezeDrainTemp &&
+                      t.collector >= cfg.freezeDrainTemp);
+      var cooldownOk = (state.now - state.lastRefillAttempt > cfg.refillRetryCooldown);
+      if (deltaMet && freezeOk && cooldownOk) {
+        flags.collectorsDrained = false;
+        flags.lastRefillAttempt = state.now;
+        pumpMode = MODES.SOLAR_CHARGING;
+        reason = "solar_refill";
+        if (t.tank_top !== null && t.tank_bottom !== null) {
+          flags.solarChargePeakTankAvg = (t.tank_top + t.tank_bottom) / 2;
+          flags.solarChargePeakTankAvgAt = state.now;
         }
+      } else if (deltaMet && !freezeOk) {
+        // Refill wanted but at least one of (outdoor, collector) is still
+        // below the freeze bar — typical morning case after a night drain.
+        held.pumpMode = heldEntry("freeze_guard",
+          MODES.SOLAR_CHARGING, "solar_refill");
+      } else if (deltaMet && !cooldownOk) {
+        // Refill wanted but the 30-min retry cooldown is still ticking
+        // (the device just attempted and failed, or we're inside the
+        // overheat-drain re-entry window).
+        held.pumpMode = heldEntry("refill_cooldown",
+          MODES.SOLAR_CHARGING, "solar_refill",
+          state.lastRefillAttempt + cfg.refillRetryCooldown);
       }
     }
   }
@@ -580,6 +644,8 @@ function evaluate(state, config, deviceConfig) {
   if (dc && dc.wb && pumpMode !== MODES.IDLE) {
     var pumpCode = shortCodeOf(pumpMode);
     if (pumpCode && dc.wb[pumpCode] && dc.wb[pumpCode] > state.now) {
+      held.pumpMode = heldEntry("wb_ban", pumpMode, reason,
+        dc.wb[pumpCode] >= WB_PERMANENT_SENTINEL ? null : dc.wb[pumpCode]);
       reason = (dc.wb[pumpCode] >= WB_PERMANENT_SENTINEL) ? "mode_disabled" : "watchdog_ban";
       pumpMode = MODES.IDLE;
       flags.solarChargePeakTankAvg = null;
@@ -595,9 +661,17 @@ function evaluate(state, config, deviceConfig) {
   // "emergency_enter" and the mode itself becomes EMERGENCY_HEATING.
   // For non-IDLE pump modes the heater rides as an overlay alongside.
   if (flags.emergencyHeatingActive && pumpMode === MODES.IDLE) {
-    return makeResult(MODES.EMERGENCY_HEATING, flags, dc, false, "emergency_enter");
+    return attachHeld(makeResult(MODES.EMERGENCY_HEATING, flags, dc, false, "emergency_enter"), held);
   }
-  return stampOverlays(makeResult(pumpMode, flags, dc, false, reason), flags, dc);
+  return attachHeld(stampOverlays(makeResult(pumpMode, flags, dc, false, reason), flags, dc), held);
+}
+
+// Attach the per-tick held diagnostic to a result, dropping it entirely
+// when no sub-field is populated. Centralised so every return site stays
+// one line and consumers always see either null or a non-empty object.
+function attachHeld(result, held) {
+  result.held = pruneHeld(held);
+  return result;
 }
 
 // ── Valve transition scheduler (pure, no Shelly calls) ──
@@ -904,7 +978,11 @@ function buildSnapshotFromState(st, dc, now) {
     // transition was not produced by evaluate() — e.g. user_shutdown,
     // drain_complete, failed. Written to state_events.reason on mode
     // change. See REASON_LABELS in playground/js/main.js for UI mapping.
-    reason: st.lastTransitionReason || null
+    reason: st.lastTransitionReason || null,
+    // Live diagnostic — see attachHeld() / pruneHeld() in evaluate().
+    // Populated from state.last_held, refreshed every control tick.
+    // Null when no guard is suppressing a wanted action this tick.
+    held: st.last_held || null
   };
 }
 

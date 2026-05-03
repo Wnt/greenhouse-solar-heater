@@ -86,6 +86,11 @@ var state = {
   last_refill_attempt: 0,
   emergency_heating_active: false,
   greenhouse_fan_cooling_active: false,
+  // Latest result.held from evaluate() — published in every state snapshot
+  // so the playground can show "held by refill_cooldown — 12m remaining"
+  // live. Per-tick (not persisted across boots) and refreshed every
+  // control loop, regardless of whether the tick ended in a transition.
+  last_held: null,
   // Solar-charging tank-rise tracking (mirrors evaluate() flags). Tank
   // top temperature is tracked so we can keep pumping until the tank
   // stops accepting heat (no rise for 5 min, or 2°C drop from peak).
@@ -1029,6 +1034,11 @@ function controlLoop() {
 
       var evalState = buildEvalState();
       var result = evaluate(evalState, null, deviceConfig);
+      // Refresh the live `held` diagnostic every tick — independent of
+      // whether the tick produces a mode transition. Consumed by
+      // buildSnapshotFromState so the playground can render
+      // "held by X" without stale data.
+      state.last_held = result.held || null;
 
       if (result.nextMode !== state.mode) {
         if (result.safetyOverride) {
