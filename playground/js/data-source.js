@@ -224,6 +224,12 @@ export class LiveSource extends DataSource {
       // describing wanted-but-blocked decisions. Consumed by the
       // Status view's "held by …" banner and the System Logs export.
       held: data.held || null,
+      // Live per-tick evaluator reason (greenhouse_active, solar_stall,
+      // …). Distinct from `reason` above which is the LAST TRANSITION'S
+      // reason — eval_reason refreshes every 30 s tick. Consumed by
+      // the mode-card status line so the operator sees "Greenhouse
+      // still cold" instead of the generic "System Active".
+      eval_reason: data.eval_reason || null,
     };
 
     this._emitUpdate(state, result);

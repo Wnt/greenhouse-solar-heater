@@ -94,6 +94,14 @@ var state = {
   // live. Per-tick (not persisted across boots) and refreshed every
   // control loop, regardless of whether the tick ended in a transition.
   last_held: null,
+  // Latest result.reason from evaluate(), refreshed every tick. Sibling
+  // of last_held, distinct from lastTransitionReason (which only
+  // updates at mode changes). Published as snapshot.eval_reason so the
+  // playground mode-card status text can read "Greenhouse still cold"
+  // instead of the generic "System Active". Decoupled from the
+  // transition-tied snapshot.reason field so the System Logs row
+  // stays semantically "this is why we transitioned to mode X".
+  last_eval_reason: null,
   // Solar-charging tank-rise tracking (mirrors evaluate() flags). Tank
   // top temperature is tracked so we can keep pumping until the tank
   // stops accepting heat (no rise for 5 min, or 2°C drop from peak).
@@ -1054,6 +1062,11 @@ function controlLoop() {
       // buildSnapshotFromState so the playground can render
       // "held by X" without stale data.
       state.last_held = result.held || null;
+      // Same lifecycle for the live evaluator reason — refreshed every
+      // tick so the playground mode-card status text reflects the
+      // current decision ("greenhouse still cold") rather than the
+      // entry reason carried by snapshot.reason.
+      state.last_eval_reason = result.reason || null;
 
       if (result.nextMode !== state.mode) {
         if (result.safetyOverride) {

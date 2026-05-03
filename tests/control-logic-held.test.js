@@ -141,12 +141,17 @@ describe('held field — pump mode', () => {
     assert.strictEqual(result.held.pumpMode.wantedReason, 'solar_stall');
   });
 
-  it('omits wanted/wantedReason on min_duration when current matches the natural pick', () => {
+  it('drops the min_duration held entry entirely when current matches the natural pick', () => {
     // GREENHOUSE_HEATING entered 60 s ago, greenhouse still cold + tank
     // still has delta — the natural pump mode is the same GH we're
-    // already in, so technically no transition is "pending". Still
-    // surface min_duration so the operator sees the hold, but skip the
-    // "would change to X" framing.
+    // already in, so the 5-min hold is innocuous: nothing is being
+    // "held back". Don't surface a held entry at all (it would just
+    // be noise saying "Pump mode held — 5-min minimum mode duration"
+    // when in fact the system is doing exactly what the evaluator
+    // wants). The result.reason must reflect the natural pick
+    // (greenhouse_active) so the live banner / mode card status can
+    // show "Greenhouse still cold" instead of "holding minimum run
+    // time".
     const result = evaluate(makeState({
       temps: { collector: 5, tank_top: 40, tank_bottom: 30, greenhouse: 8, outdoor: 5 },
       currentMode: MODES.GREENHOUSE_HEATING,
@@ -155,12 +160,10 @@ describe('held field — pump mode', () => {
       collectorsDrained: true,
     }), null, allEnabled);
     assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
-    assert.strictEqual(result.reason, 'min_duration');
-    assert.ok(result.held && result.held.pumpMode);
-    assert.strictEqual(result.held.pumpMode.blockedBy, 'min_duration');
-    assert.strictEqual(result.held.pumpMode.wanted, undefined,
-      'no wanted entry — would have stayed put anyway');
-    assert.strictEqual(result.held.pumpMode.wantedReason, undefined);
+    assert.strictEqual(result.reason, 'greenhouse_active',
+      'reason mirrors the natural pick — not the (innocuous) hold');
+    assert.ok(!result.held || !result.held.pumpMode,
+      'no pumpMode held entry when wanted == current');
   });
 });
 

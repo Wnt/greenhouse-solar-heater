@@ -117,6 +117,14 @@ describe('overlays are independent of pump mode (drain + min-duration)', () => {
     // flag was false at entry (greenhouse was 11 °C). Now greenhouse
     // crashes to 4 °C mid-hold. The hold MUST NOT freeze the
     // hysteresis — heater must fire on this tick, not wait 3 min.
+    //
+    // Natural pump-mode pick is GREENHOUSE_HEATING (greenhouse still
+    // cold, tank still has delta) — same as currentMode — so the
+    // min-duration override is innocuous and the reason stays
+    // "greenhouse_active". The hold is still in effect (would block a
+    // mode swap if conditions tried to push us elsewhere), but
+    // intentionally not surfaced as held since nothing is being
+    // overridden.
     const result = evaluate(makeState({
       temps: { collector: 5, tank_top: 30, tank_bottom: 25, greenhouse: 4, outdoor: 5 },
       currentMode: MODES.GREENHOUSE_HEATING,
@@ -125,8 +133,9 @@ describe('overlays are independent of pump mode (drain + min-duration)', () => {
       emergencyHeatingActive: false,
       collectorsDrained: true,
     }), null);
-    assert.strictEqual(result.reason, 'min_duration',
-      'Still inside the hold');
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+    assert.strictEqual(result.reason, 'greenhouse_active',
+      'natural reason wins when wanted == current — hold is innocuous');
     assert.strictEqual(result.flags.emergencyHeatingActive, true,
       'Hysteresis must update during the hold — greenhouse is critically cold');
     assert.strictEqual(result.actuators.space_heater, true,
@@ -145,7 +154,9 @@ describe('overlays are independent of pump mode (drain + min-duration)', () => {
       emergencyHeatingActive: true,
       collectorsDrained: true,
     }), null, { ce: true, ea: 31, wb: { EH: 9999999999 } });
-    assert.strictEqual(result.reason, 'min_duration');
+    assert.strictEqual(result.nextMode, MODES.GREENHOUSE_HEATING);
+    assert.strictEqual(result.reason, 'greenhouse_active',
+      'natural reason wins — see sibling min-duration test');
     assert.strictEqual(result.flags.emergencyHeatingActive, false,
       'wb.EH ban clears the flag even mid-hold');
     assert.strictEqual(result.actuators.space_heater, false);
