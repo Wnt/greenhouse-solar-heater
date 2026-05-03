@@ -5,6 +5,7 @@
 
 import { derived } from './app-state.js';
 import { navigateTo } from './actions/navigation.js';
+import { drawHistoryGraph } from './main/history-graph.js';
 
 const OVERLAY_MESSAGES = {
   connecting: {
@@ -93,6 +94,17 @@ export function initSubscriptions(store) {
     if (viewCallbacks[viewId] && viewCallbacks[viewId].mount) {
       const container = viewEl ? viewEl.querySelector('[id$="-content"]') || viewEl : null;
       currentUnmount = viewCallbacks[viewId].mount(container, store) || null;
+    }
+
+    // Repaint the history chart when entering #status. drawHistoryGraph
+    // is called periodically (every WS state frame in live mode, every
+    // sim tick otherwise), but each call sizes the canvas backing
+    // buffer from canvas.offsetWidth — which is 0 while #status is
+    // hidden, so the buffer gets reset to 0×0 and the chart appears
+    // blank. Without this redraw the user has to wait until the next
+    // periodic trigger; in live mode that can be 30+ seconds.
+    if (viewId === 'status') {
+      drawHistoryGraph();
     }
   });
 
