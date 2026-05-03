@@ -287,6 +287,9 @@
           </div>
           <div class="graph-container">
             <canvas id="chart"></canvas>
+            <div class="chart-bucket-badge" id="chart-bucket-badge" aria-live="polite" title="Each bar shows duty-cycle aggregated over this interval">
+              <span id="chart-bucket-badge-val">--</span> / bar
+            </div>
             <div class="graph-inspector" id="graph-inspector">
               <div class="graph-inspector-time" id="inspector-time"></div>
               <div class="graph-inspector-row"><span class="graph-inspector-dot" style="background:#ef5350;"></span><span>Collector</span><span class="graph-inspector-val" id="inspector-coll"></span></div>

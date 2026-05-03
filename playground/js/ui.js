@@ -256,6 +256,26 @@ export function pickBucketSize(rangeSec) {
 }
 
 /**
+ * Human-readable label for a bucket size returned by pickBucketSize.
+ * Example outputs: "5 min", "1 h", "1 day", "7 days". Used by the
+ * "<bucket> / bar" badge on the history chart so users can tell what
+ * each duty-cycle bar represents at the current zoom.
+ *
+ * @param {number} bucketSec  bucket span in seconds
+ * @returns {string}
+ */
+export function formatBucketLabel(bucketSec) {
+  if (bucketSec < HOUR_SECONDS) {
+    return Math.round(bucketSec / 60) + ' min';
+  }
+  if (bucketSec < DAY_SECONDS) {
+    return Math.round(bucketSec / HOUR_SECONDS) + ' h';
+  }
+  const days = Math.round(bucketSec / DAY_SECONDS);
+  return days + (days === 1 ? ' day' : ' days');
+}
+
+/**
  * Format a tick label for an epoch-seconds timestamp. The step determines the
  * granularity: sub-day ⇒ HH:MM, single-to-twoweek ⇒ D.M, month+ ⇒ MMM YY.
  *
