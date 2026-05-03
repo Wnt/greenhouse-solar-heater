@@ -4,7 +4,7 @@ import { LiveSource } from '../data-source.js';
 import { store } from '../app-state.js';
 import { initSyncCoordinator } from '../sync/coordinator.js';
 import { attachScriptStatusWebSocket } from '../actions/script-monitor.js';
-import { graphRange, timeSeriesStore, running } from './state.js';
+import { graphRange, timeSeriesStore, trendStore, running } from './state.js';
 import { attachWatchdogWebSocket } from './watchdog-ui.js';
 import { handleOverrideResponse, updateRelayBoard } from './relay-board.js';
 import { updateDrainageControl } from './drainage-control.js';
@@ -416,8 +416,12 @@ function clearLiveDisplay() {
   // Clear component statuses
   const compEls = document.querySelectorAll('.comp-status');
   compEls.forEach(function(el) { el.textContent = '--'; });
-  // Clear simulation graph data and redraw empty canvas
+  // Clear simulation graph data and redraw empty canvas. trendStore
+  // is reset too so the rising/falling arrows don't carry simulation
+  // values into the live view (and vice versa) before fresh samples
+  // arrive.
   timeSeriesStore.reset();
+  trendStore.reset();
   resetChartZoom();
   drawHistoryGraph();
   // Clear the transition log — fetchLiveEvents() will repopulate it from the DB

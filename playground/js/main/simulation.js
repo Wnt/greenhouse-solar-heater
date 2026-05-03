@@ -5,7 +5,7 @@
 import { SIM_START_HOUR, getDayNightEnv } from '../sim-bootstrap.js';
 import {
   running, setRunning, model, controller, params, simSpeed,
-  timeSeriesStore, transitionLog,
+  timeSeriesStore, trendStore, transitionLog,
 } from './state.js';
 import { updateDisplay } from './display-update.js';
 import { updateSidebarSubtitle } from './connection.js';
@@ -35,6 +35,7 @@ export function togglePlay() {
       });
       controller.reset();
       timeSeriesStore.reset();
+      trendStore.reset();
       transitionLog.length = 0;
       resetModeEvents();
     }
@@ -140,13 +141,15 @@ function simLoop(timestamp) {
 
     // Record every ~5 seconds of sim time
     if (Math.floor(model.state.simTime) % 5 === 0) {
-      timeSeriesStore.addPoint(model.state.simTime, {
+      const vals = {
         t_tank_top: model.state.t_tank_top,
         t_tank_bottom: model.state.t_tank_bottom,
         t_collector: model.state.t_collector,
         t_greenhouse: model.state.t_greenhouse,
         t_outdoor: model.state.t_outdoor,
-      });
+      };
+      timeSeriesStore.addPoint(model.state.simTime, vals);
+      trendStore.addPoint(model.state.simTime, vals);
     }
   }
 

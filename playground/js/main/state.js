@@ -86,6 +86,49 @@ export const timeSeriesStore = {
   reset() { this.times = []; this.values = []; },
 };
 
+// Dedicated short-window buffer for the rising/falling trend arrows
+// shown in the Status gauge and Components view. Kept separate from
+// timeSeriesStore so picking a longer graph range (which calls
+// timeSeriesStore.reset() and reloads downsampled history) does not
+// blow away the high-resolution recent samples the trend computation
+// reads from. Pruned by age (TREND_RETENTION_S of headroom over the
+// 5 min trend window) so it stays cheap. Survives phase flips; only
+// the explicit reset() (called from sim reset / phase flip) clears it.
+//
+// addPoint accepts samples in any order so the live boot race —
+// where the WebSocket state frame may land before the /api/history
+// seed (whose points are all older) — does not throw away the
+// pre-window history. Out-of-order inserts go to their sorted
+// position; duplicate timestamps are dropped (the earlier write
+// wins, so a later live-WS sample at the same second can't silently
+// overwrite a history point already trusted).
+const TREND_RETENTION_S = 600;
+export const trendStore = {
+  times: [],
+  values: [],
+  addPoint(time, vals) {
+    let lo = 0;
+    let hi = this.times.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (this.times[mid] < time) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo < this.times.length && this.times[lo] === time) return;
+    this.times.splice(lo, 0, time);
+    this.values.splice(lo, 0, { ...vals });
+    const latest = this.times[this.times.length - 1];
+    const cutoff = latest - TREND_RETENTION_S;
+    let drop = 0;
+    while (drop < this.times.length && this.times[drop] < cutoff) drop++;
+    if (drop > 0) {
+      this.times.splice(0, drop);
+      this.values.splice(0, drop);
+    }
+  },
+  reset() { this.times = []; this.values = []; },
+};
+
 // Mode-transition log, unified across sim and live. Appended by
 // simLoop (sim mode) and fetchLiveEvents / detectLiveTransition
 // (live mode); read by renderLogsList + buildLogsClipboardText.
