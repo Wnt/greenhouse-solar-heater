@@ -10,6 +10,7 @@ import { drawHistoryGraph, toSchematicState } from './history-graph.js';
 import { appendBalanceLivePoint } from './balance-card.js';
 import { modeAt } from './mode-events.js';
 import { formatHeldLines } from './logs-clipboard.js';
+import { formatReasonLabel } from './time-format.js';
 
 // Live data may have null sensors when a role is unassigned — show "—".
 const TEMP_PLACEHOLDER = '—';
@@ -150,7 +151,23 @@ export function updateDisplay(state, result) {
     pulseSpan.className = 'pulse';
     statusEl.insertBefore(pulseSpan, statusEl.firstChild);
   }
-  const statusText = document.createTextNode(running ? ' System Active' : ' System Ready');
+  // Status line shows the live evaluator reason ("Greenhouse still
+  // cold", "Tank still gaining heat", …) when one is published, so the
+  // operator gets a meaningful one-line "why is the system in this
+  // mode?" answer instead of the generic "System Active". Falls back
+  // to the generic when eval_reason is missing (sim mode, pre-first-
+  // tick, legacy snapshots). The reason label is title-cased so it
+  // reads as a standalone sentence next to the mode title.
+  let liveReasonText = '';
+  if (result && typeof result.eval_reason === 'string' && result.eval_reason) {
+    const label = formatReasonLabel(result.eval_reason);
+    if (label && label !== result.eval_reason) {
+      liveReasonText = ' ' + label.charAt(0).toUpperCase() + label.slice(1);
+    }
+  }
+  const statusText = document.createTextNode(
+    liveReasonText || (running ? ' System Active' : ' System Ready')
+  );
   statusEl.appendChild(statusText);
 
   // Exit override link — admin only, visible when override is active

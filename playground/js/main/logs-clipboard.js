@@ -329,6 +329,15 @@ function appendControllerState(lines) {
 
   const flags = (result && result.flags) || {};
   lines.push('Mode:               ' + ((result && result.mode) || 'idle'));
+  // Live evaluator reason — refreshed every tick, distinct from the
+  // transition-tied reason on transition log rows. Surfaces the same
+  // sentence the mode-card status line shows ("Greenhouse still cold")
+  // so an exported log answers "why is the system in this mode right
+  // now?" without forcing the reader to skim the transition log for
+  // the entry reason.
+  if (result && typeof result.eval_reason === 'string' && result.eval_reason) {
+    lines.push('Reason:             ' + formatReasonLabel(result.eval_reason));
+  }
   lines.push('Collectors drained: ' + (flags.collectors_drained ? 'yes' : 'no'));
   lines.push('Emergency heating:  ' + (flags.emergency_heating_active ? 'on' : 'off'));
   lines.push('Fan cooling:        ' + (flags.greenhouse_fan_cooling_active ? 'on' : 'off'));

@@ -662,24 +662,27 @@ function evaluate(state, config, deviceConfig) {
   // seconds before allowing automation to switch away. Runs AFTER
   // pump-mode selection so we know what the natural choice would have
   // been — that gets stashed on held.pumpMode as { wanted, wantedReason }
-  // so the playground can render "change to Idle pending — tank stopped
+  // so the playground can render "Change to Idle pending — tank stopped
   // gaining heat. Hold 3m remaining."
+  //
+  // The hold is only surfaced (and the reason swapped to "min_duration")
+  // when the natural pick differs from the current mode. If the natural
+  // pick is the same mode we're already in, the hold is innocuous —
+  // nothing is being held back, and surfacing "Pump mode held — 5-min
+  // minimum mode duration" would be pure noise. In that case keep the
+  // natural reason ("greenhouse_active" / "solar_active" / …) so the
+  // mode card status can read "Greenhouse still cold" instead.
+  //
   // Skipped for IDLE (no transition cost to escape) and EMERGENCY_HEATING
   // (heater overlay is purely hysteresis-driven, no entry/exit ceremony).
   // Drain modes (ACTIVE_DRAIN, freeze_drain, overheat_drain) early-return
   // above this block so they bypass the hold.
   if (state.currentMode !== MODES.IDLE &&
       state.currentMode !== MODES.EMERGENCY_HEATING &&
-      elapsed < getMinDuration(state, cfg)) {
-    if (pumpMode !== state.currentMode) {
-      held.pumpMode = heldEntry("min_duration", pumpMode, reason,
-        state.modeEnteredAt + getMinDuration(state, cfg));
-    } else {
-      // Natural choice is to stay put — still surface the hold so the
-      // operator sees the countdown, but no "would change to" framing.
-      held.pumpMode = heldEntry("min_duration", null, null,
-        state.modeEnteredAt + getMinDuration(state, cfg));
-    }
+      elapsed < getMinDuration(state, cfg) &&
+      pumpMode !== state.currentMode) {
+    held.pumpMode = heldEntry("min_duration", pumpMode, reason,
+      state.modeEnteredAt + getMinDuration(state, cfg));
     pumpMode = state.currentMode;
     reason = "min_duration";
   }
@@ -1043,6 +1046,14 @@ function buildSnapshotFromState(st, dc, now) {
     // drain_complete, failed. Written to state_events.reason on mode
     // change. See REASON_LABELS in playground/js/main.js for UI mapping.
     reason: st.lastTransitionReason || null,
+    // Live per-tick evaluator reason — refreshed every control loop
+    // regardless of mode transitions. Distinct from `reason` above
+    // (which is the transition-tied reason consumed by mqtt-bridge to
+    // populate state_events.reason on mode changes). The playground's
+    // mode-card status reads this so the line under the mode title
+    // shows "Greenhouse still cold" instead of the generic "System
+    // Active". Null on first boot before evaluate() has run a tick.
+    eval_reason: st.last_eval_reason || null,
     // Live diagnostic — see attachHeld() / pruneHeld() in evaluate().
     // Populated from state.last_held, refreshed every control tick.
     // Null when no guard is suppressing a wanted action this tick.
