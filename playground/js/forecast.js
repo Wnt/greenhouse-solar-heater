@@ -375,7 +375,16 @@ export function renderForecastCard(data) {
   const elKwh   = document.getElementById('forecast-val-kwh');
   const elEur   = document.getElementById('forecast-val-eur');
 
-  if (elHours) elHours.textContent = fc ? fmtHours(fc.hoursUntilFloor) : '—';
+  // "Tank lasts" = until the tank can no longer cover the greenhouse heating
+  // load (avg drops below floor + 5°C). That's the operationally meaningful
+  // moment — the floor itself (12°C) is where stored heat is exhausted. Fall
+  // back to hoursUntilFloor for older API responses without the new field.
+  const lastsH = fc
+    ? (fc.hoursUntilBackupNeeded !== undefined && fc.hoursUntilBackupNeeded !== null
+        ? fc.hoursUntilBackupNeeded
+        : fc.hoursUntilFloor)
+    : null;
+  if (elHours) elHours.textContent = fc ? fmtHours(lastsH) : '—';
   if (elKwh)   elKwh.textContent   = fc ? fmtKwh(fc.electricKwh)       : '—';
   if (elEur)   elEur.textContent   = fc ? fmtEur(fc.electricCostEur)   : '—';
 
