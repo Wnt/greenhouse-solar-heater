@@ -12,12 +12,16 @@ import { putJson } from './fetch-helpers.js';
 // must match shelly/control-logic.js DEFAULT_CONFIG; a drift test in
 // tests/device-config.test.js guards both directions.
 const TUNING_FIELDS = [
-  { key: 'geT', label: 'Greenhouse heat enter',  defaultValue: 10, min: 0,  max: 25,  step: 0.5, group: 'Greenhouse heating', help: 'Heating starts when greenhouse drops below this.' },
-  { key: 'gxT', label: 'Greenhouse heat exit',   defaultValue: 12, min: 1,  max: 30,  step: 0.5, group: 'Greenhouse heating', help: 'Heating stops once the greenhouse exceeds this.' },
-  { key: 'fcE', label: 'Fan-cool enter',         defaultValue: 30, min: 20, max: 50,  step: 0.5, group: 'Fan-cool',           help: 'Fan starts circulating air above this temperature.' },
-  { key: 'fcX', label: 'Fan-cool exit',          defaultValue: 28, min: 15, max: 50,  step: 0.5, group: 'Fan-cool',           help: 'Fan stops once the greenhouse drops below this.' },
-  { key: 'frT', label: 'Freeze drain',           defaultValue: 4,  min: 0,  max: 10,  step: 0.5, group: 'Safety',             help: 'Drain collectors when the colder of (outdoor, collector) falls below this.' },
-  { key: 'ohT', label: 'Overheat drain',         defaultValue: 95, min: 70, max: 100, step: 1,   group: 'Safety',             help: 'Drain collectors if circulation cannot keep collector below this.' },
+  { key: 'geT', label: 'Greenhouse heat enter (°C)',     defaultValue: 10, min: 0,  max: 25,  step: 0.5, group: 'Greenhouse heating', help: 'Tank-fed heating starts when greenhouse drops below this.' },
+  { key: 'gxT', label: 'Greenhouse heat exit (°C)',      defaultValue: 12, min: 1,  max: 30,  step: 0.5, group: 'Greenhouse heating', help: 'Tank-fed heating stops once the greenhouse exceeds this.' },
+  { key: 'gmD', label: 'Min tank delta to start (K)',    defaultValue: 5,  min: 1,  max: 20,  step: 0.5, group: 'Greenhouse heating', help: 'Tank must be at least this many K warmer than the greenhouse to start heating.' },
+  { key: 'gxD', label: 'Tank delta to keep going (K)',   defaultValue: 2,  min: 0,  max: 15,  step: 0.5, group: 'Greenhouse heating', help: 'While heating, stop if the tank drops below greenhouse + this delta.' },
+  { key: 'ehE', label: 'Emergency heater enter (°C)',    defaultValue: 9,  min: 0,  max: 20,  step: 0.5, group: 'Emergency heater',   help: 'Electric space heater fires when greenhouse drops below this.' },
+  { key: 'ehX', label: 'Emergency heater exit (°C)',     defaultValue: 12, min: 1,  max: 25,  step: 0.5, group: 'Emergency heater',   help: 'Electric space heater stops once the greenhouse exceeds this.' },
+  { key: 'fcE', label: 'Fan-cool enter (°C)',            defaultValue: 30, min: 20, max: 50,  step: 0.5, group: 'Fan-cool',           help: 'Fan starts circulating air above this temperature.' },
+  { key: 'fcX', label: 'Fan-cool exit (°C)',             defaultValue: 28, min: 15, max: 50,  step: 0.5, group: 'Fan-cool',           help: 'Fan stops once the greenhouse drops below this.' },
+  { key: 'frT', label: 'Freeze drain (°C)',              defaultValue: 4,  min: 0,  max: 10,  step: 0.5, group: 'Safety',             help: 'Drain collectors when the colder of (outdoor, collector) falls below this.' },
+  { key: 'ohT', label: 'Overheat drain (°C)',            defaultValue: 95, min: 70, max: 100, step: 1,   group: 'Safety',             help: 'Drain collectors if circulation cannot keep collector below this.' },
 ];
 
 // Last-known wb (mode-ban map). Updated on form load and via the
