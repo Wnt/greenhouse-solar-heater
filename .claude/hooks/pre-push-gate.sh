@@ -16,24 +16,53 @@
 set -uo pipefail
 
 # Read the tool-call payload (JSON via stdin per Claude Code's hook
-# contract) and pull out the actual command string. If parsing fails,
-# behave as no-match — better to let the call through than to block on
-# our own bug.
+# contract) and decide two things in one node invocation:
+#   1. extract the actual command string (kept for debugging / future use)
+#   2. decide whether the command actually invokes `git push` as a shell
+#      command word — NOT just contains the substring "git push" inside
+#      a heredoc body or quoted string (e.g. a commit message that
+#      mentions "git push" in prose). The substring-only check trips on
+#      `git commit -m "$(cat <<'EOF' … git push … EOF)"` and falsely
+#      fires the gate during a `git commit`. Stripping heredoc bodies
+#      and string literals first eliminates that false positive.
+# Output format is "<isPush>\n<command>". If parsing fails we emit
+# "0\n" so the gate is a no-op — better to let the call through than
+# to block on our own bug.
 payload=$(cat)
-command=$(printf '%s' "$payload" | node -e '
+parsed=$(printf '%s' "$payload" | node -e '
 let buf = "";
 process.stdin.on("data", c => buf += c).on("end", () => {
-  try { console.log(JSON.parse(buf).tool_input?.command || ""); }
-  catch { /* unparseable -> empty string -> no-match */ }
+  let cmd = "";
+  try { cmd = JSON.parse(buf).tool_input?.command || ""; } catch {}
+  // Strip shell heredoc bodies (quoted, double-quoted, and bare delimiters).
+  // Multiline regex requires the closing delimiter at start-of-line.
+  let s = cmd.replace(
+    /<<-?\s*(["\x27]?)(\w+)\1[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/gm,
+    " "
+  );
+  // Strip double-quoted strings (with backslash escapes), then single-quoted
+  // strings (no escapes inside). After stripping, only real shell tokens
+  // remain.
+  s = s.replace(/"(?:[^"\\]|\\.)*"/g, " ")
+       .replace(/\x27[^\x27]*\x27/g, " ");
+  // Match `git push` only when it appears as a real command word —
+  // preceded by start-of-string, whitespace, or a shell separator
+  // (&&, ||, ;, |, (, ), backtick) and followed by whitespace, a
+  // separator, or end-of-string.
+  const isPush = /(?:^|[\s;&|()`])git[ \t]+push(?:[\s;&|()]|$)/.test(s);
+  process.stdout.write((isPush ? "1" : "0") + "\n" + cmd);
 });
-' 2>/dev/null || printf '')
+' 2>/dev/null || printf "0\n")
+
+is_git_push=${parsed%%$'\n'*}
+command=${parsed#*$'\n'}
 
 # Only gate `git push`. Any other Bash command (status, diff, fetch,
-# build invocations, …) passes through with zero overhead.
-case "$command" in
-  *"git push"*) ;;
-  *) exit 0 ;;
-esac
+# build invocations, commit messages mentioning "git push", …) passes
+# through with zero overhead.
+if [ "$is_git_push" != "1" ]; then
+  exit 0
+fi
 
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
 if [ -z "$repo_root" ]; then
