@@ -172,6 +172,36 @@ var DEFAULT_CONFIG = {
 // you ever change the magic number.
 var WB_PERMANENT_SENTINEL = 9999999999;
 
+// Map of compact tuning-key (`tu`) -> long DEFAULT_CONFIG name. Compact
+// keys exist because the whole device config has to fit Shelly's KVS
+// 256-byte limit. Server-side validation lives in
+// server/lib/device-config.js (TUNING_RANGES); the playground UI uses
+// the same short keys. Adding a new tunable threshold requires:
+//   1. add the long-name constant + default in DEFAULT_CONFIG,
+//   2. add a (short -> long) entry here,
+//   3. add a {min,max,step} range in server/lib/device-config.js,
+//   4. add an input row in playground/js/main/device-config.js +
+//      playground/index.html.
+var TUNING_KEYS = {
+  geT: "greenhouseEnterTemp",
+  gxT: "greenhouseExitTemp",
+  fcE: "greenhouseFanCoolEnter",
+  fcX: "greenhouseFanCoolExit",
+  frT: "freezeDrainTemp",
+  ohT: "overheatDrainTemp"
+};
+
+function applyTuning(cfg, tu) {
+  if (!tu) return cfg;
+  var k;
+  for (k in TUNING_KEYS) {
+    if (tu[k] !== undefined && tu[k] !== null && typeof tu[k] === "number") {
+      cfg[TUNING_KEYS[k]] = tu[k];
+    }
+  }
+  return cfg;
+}
+
 function applyDefaults(config) {
   var result = {};
   var key;
@@ -324,6 +354,10 @@ function pruneHeld(h) {
 function evaluate(state, config, deviceConfig) {
   var cfg = applyDefaults(config);
   var dc = deviceConfig || null;
+  // Overlay user-tunable thresholds (greenhouse heat enter/exit, fan-cool
+  // enter/exit, freeze drain, overheat drain) from dc.tu. Sparse — keys
+  // not present in tu fall through to the DEFAULT_CONFIG constants.
+  if (dc && dc.tu) cfg = applyTuning(cfg, dc.tu);
   var t = state.temps;
   var elapsed = state.now - state.modeEnteredAt;
   var flags = {
@@ -1117,6 +1151,8 @@ if (typeof module !== "undefined" && module.exports) {
     EA_PUMP: EA_PUMP,
     EA_FAN: EA_FAN,
     EA_SPACE_HEATER: EA_SPACE_HEATER,
-    EA_IMMERSION: EA_IMMERSION
+    EA_IMMERSION: EA_IMMERSION,
+    TUNING_KEYS: TUNING_KEYS,
+    applyTuning: applyTuning
   };
 }

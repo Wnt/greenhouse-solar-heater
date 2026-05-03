@@ -132,6 +132,18 @@ const EA_BIT_LABELS = {
   immersion_heater: 'Immersion Heater',
 };
 
+// tu (tuning thresholds) compact-key → human label. Mirrors the order
+// in shelly/control-logic.js TUNING_KEYS and the TUNING_RANGES table
+// in server/lib/device-config.js.
+const TUNING_LABELS = {
+  geT: 'greenhouse heat enter',
+  gxT: 'greenhouse heat exit',
+  fcE: 'fan-cool enter',
+  fcX: 'fan-cool exit',
+  frT: 'freeze drain',
+  ohT: 'overheat drain',
+};
+
 // Source attribution for config_events. Combined with actor for the
 // per-row description in the System Logs view.
 const CONFIG_SOURCE_LABELS = {
@@ -178,6 +190,18 @@ export function formatConfigEntry(t) {
     const bitLabel = EA_BIT_LABELS[t.configKey] || t.configKey || 'unknown actuator';
     const verb = t.to === '1' ? 'Enabled actuator' : 'Disabled actuator';
     return { title: verb + ': ' + bitLabel, desc: subtitle };
+  }
+
+  if (t.configKind === 'tu') {
+    const label = TUNING_LABELS[t.configKey] || t.configKey || 'unknown threshold';
+    const fromLabel = (t.from === null || t.from === undefined)
+      ? 'default' : t.from + '°C';
+    const toLabel = (t.to === null || t.to === undefined)
+      ? 'default' : t.to + '°C';
+    return {
+      title: 'Tuning: ' + label + ' ' + fromLabel + ' → ' + toLabel,
+      desc: subtitle,
+    };
   }
 
   if (t.configKind === 'mo') {

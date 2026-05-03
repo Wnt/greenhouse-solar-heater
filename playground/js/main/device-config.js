@@ -6,6 +6,20 @@ import { store } from '../app-state.js';
 import { renderModeEnablement } from './watchdog-ui.js';
 import { putJson } from './fetch-helpers.js';
 
+// Tuning-threshold inputs. Compact key + UI metadata. Mirrors the
+// server-side TUNING_RANGES table in server/lib/device-config.js and
+// the TUNING_KEYS map in shelly/control-logic.js. Defaults shown here
+// must match shelly/control-logic.js DEFAULT_CONFIG; a drift test in
+// tests/device-config.test.js guards both directions.
+const TUNING_FIELDS = [
+  { key: 'geT', label: 'Greenhouse heat enter',  defaultValue: 10, min: 0,  max: 25,  step: 0.5, group: 'Greenhouse heating', help: 'Heating starts when greenhouse drops below this.' },
+  { key: 'gxT', label: 'Greenhouse heat exit',   defaultValue: 12, min: 1,  max: 30,  step: 0.5, group: 'Greenhouse heating', help: 'Heating stops once the greenhouse exceeds this.' },
+  { key: 'fcE', label: 'Fan-cool enter',         defaultValue: 30, min: 20, max: 50,  step: 0.5, group: 'Fan-cool',           help: 'Fan starts circulating air above this temperature.' },
+  { key: 'fcX', label: 'Fan-cool exit',          defaultValue: 28, min: 15, max: 50,  step: 0.5, group: 'Fan-cool',           help: 'Fan stops once the greenhouse drops below this.' },
+  { key: 'frT', label: 'Freeze drain',           defaultValue: 4,  min: 0,  max: 10,  step: 0.5, group: 'Safety',             help: 'Drain collectors when the colder of (outdoor, collector) falls below this.' },
+  { key: 'ohT', label: 'Overheat drain',         defaultValue: 95, min: 70, max: 100, step: 1,   group: 'Safety',             help: 'Drain collectors if circulation cannot keep collector below this.' },
+];
+
 // Last-known wb (mode-ban map). Updated on form load and via the
 // 'wb-changed' DOM event dispatched by renderModeEnablement, which
 // fires on initial render AND on every WS-driven mode-enablement
@@ -34,6 +48,18 @@ export function initDeviceConfig() {
 
   // Save button
   document.getElementById('dc-save').addEventListener('click', saveDeviceConfig);
+
+  // Render tuning inputs once at boot — values populated each load.
+  renderTuningInputs();
+  const resetBtn = document.getElementById('dc-tuning-reset');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      TUNING_FIELDS.forEach((f) => {
+        const input = document.getElementById('dc-tu-' + f.key);
+        if (input) input.value = '';
+      });
+    });
+  }
 
   // "Try anyway" link
   const tryLink = document.getElementById('dc-try-anyway');
@@ -99,9 +125,69 @@ function populateDeviceForm(cfg) {
   // updates _currentWb and the heater-mask warning.
   renderModeEnablement(cfg.wb || {}, store.get('userRole') || 'admin');
 
+  // Tuning thresholds (sparse — undefined = use firmware default)
+  const tu = cfg.tu || {};
+  TUNING_FIELDS.forEach((f) => {
+    const input = document.getElementById('dc-tu-' + f.key);
+    if (!input) return;
+    input.value = (typeof tu[f.key] === 'number') ? String(tu[f.key]) : '';
+  });
+
   // Version & size
   document.getElementById('dc-version').textContent = cfg.v || '-';
   document.getElementById('dc-size').textContent = JSON.stringify(cfg).length;
+}
+
+function renderTuningInputs() {
+  const list = document.getElementById('dc-tuning-list');
+  if (!list) return;
+  // Group fields under their group heading. Iteration order in
+  // TUNING_FIELDS already matches the desired UI order.
+  let html = '';
+  let lastGroup = null;
+  TUNING_FIELDS.forEach((f) => {
+    if (f.group !== lastGroup) {
+      html += '<div style="font-size:11px;font-weight:600;color:var(--on-surface-variant);margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.5px;">'
+        + escapeText(f.group) + '</div>';
+      lastGroup = f.group;
+    }
+    html += '<div class="device-config-row">'
+      + '<label class="device-config-label" for="dc-tu-' + f.key + '">' + escapeText(f.label) + '</label>'
+      + '<input type="number" id="dc-tu-' + f.key + '" data-tu-key="' + f.key + '" '
+      + 'min="' + f.min + '" max="' + f.max + '" step="' + f.step + '" '
+      + 'placeholder="' + f.defaultValue + '" '
+      + 'style="width:88px;padding:4px 8px;border:1px solid var(--outline-variant);border-radius:6px;background:var(--surface-variant);color:var(--on-surface);font-size:13px;text-align:right;">'
+      + '</div>'
+      + '<p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">' + escapeText(f.help) + '</p>';
+  });
+  list.innerHTML = html;
+}
+
+function escapeText(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function readTuningFromForm() {
+  const tu = {};
+  let hasAny = false;
+  TUNING_FIELDS.forEach((f) => {
+    const input = document.getElementById('dc-tu-' + f.key);
+    if (!input) return;
+    const raw = input.value.trim();
+    if (raw === '') {
+      // empty input → clear the override (server treats null as "remove")
+      tu[f.key] = null;
+      hasAny = true;
+      return;
+    }
+    const num = Number(raw);
+    if (!Number.isFinite(num)) return;
+    tu[f.key] = num;
+    hasAny = true;
+  });
+  return hasAny ? tu : null;
 }
 
 function setToggle(id, on) {
@@ -127,16 +213,25 @@ function saveDeviceConfig() {
   // (Disable / Re-enable / Clear cool-off), which calls PUT
   // /api/device-config with a partial wb payload. No am field is
   // computed or sent from this form.
-  putJson('/api/device-config', { ce, ea })
-    .then(r => {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(cfg => {
-      document.getElementById('dc-version').textContent = cfg.v;
-      document.getElementById('dc-size').textContent = JSON.stringify(cfg).length;
-      status.textContent = 'Saved (v' + cfg.v + ')';
+  const payload = { ce, ea };
+  const tu = readTuningFromForm();
+  if (tu) payload.tu = tu;
+  putJson('/api/device-config', payload)
+    .then(r => r.json().then(body => ({ ok: r.ok, status: r.status, body })))
+    .then(({ ok, body }) => {
+      if (!ok) throw new Error(body && body.error ? body.error : 'HTTP error');
+      document.getElementById('dc-version').textContent = body.v;
+      document.getElementById('dc-size').textContent = JSON.stringify(body).length;
+      status.textContent = 'Saved (v' + body.v + ')';
       status.style.color = 'var(--secondary)';
+      // Refresh the tuning inputs from the response so the user sees
+      // any clamped values (e.g. typed 200, server saved 100).
+      const ttu = body.tu || {};
+      TUNING_FIELDS.forEach((f) => {
+        const input = document.getElementById('dc-tu-' + f.key);
+        if (!input) return;
+        input.value = (typeof ttu[f.key] === 'number') ? String(ttu[f.key]) : '';
+      });
       setTimeout(() => { status.textContent = ''; }, 3000);
     })
     .catch(err => {
