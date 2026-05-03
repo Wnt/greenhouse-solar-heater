@@ -416,6 +416,19 @@ test.describe('System Logs card is backed by live state events', () => {
     // synthesised history fallback must not invent a partial row.
     await expect(page.locator('#logs-list .log-item')).toHaveCount(1, { timeout: 1000 });
 
+    // Detach the sync coordinator's visibility/pageshow listeners
+    // before firing the WS frame. Under heavy parallel-test CPU load,
+    // headless Chromium has been observed to fire spontaneous
+    // visibilitychange events between the WS frame and the
+    // assertions below; the resulting resync re-fetches /api/events
+    // (which only carries the original solar_charging row in this
+    // test's mock) and applyEventPages(isReset=true) clobbers the
+    // freshly-detected idle entry from transitionLog. _resetForTests
+    // unhooks the listeners without clearing registered sources, so
+    // an explicit triggerResync would still work — but nothing in
+    // the rest of this test triggers one.
+    await page.evaluate(() => { window.__sync._resetForTests(); });
+
     // Now the real WS frame for the idle transition lands, carrying
     // cause / reason / temps. detectLiveTransition must produce a
     // *complete* row — title + cause chip + reason line + sensors line.
@@ -438,7 +451,12 @@ test.describe('System Logs card is backed by live state events', () => {
 
     await expect(page.locator('#logs-list .log-item')).toHaveCount(2, { timeout: 3000 });
     const first = page.locator('#logs-list .log-item').first();
-    await expect(first).toContainText('Idle');
+    // toContainText('Idle') is intentionally avoided here: the "from"
+    // half of the previous solar_charging entry's transition text also
+    // reads "Idle → Collecting Solar Energy", so a substring match
+    // can't tell the two rows apart. Anchor on the title node, which
+    // exclusively renders the destination mode label.
+    await expect(first.locator('.log-title')).toHaveText(/^Idle\b/);
     await expect(first.locator('.log-cause')).toHaveText('Automation');
     await expect(first.locator('.log-reason')).toHaveText('tank stopped gaining heat');
     await expect(first.locator('.log-sensors')).toContainText('coll 25.0°');
