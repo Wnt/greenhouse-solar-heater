@@ -476,14 +476,11 @@ function evaluate(state, config, deviceConfig) {
     return attachHeld(stampOverlays(makeResult(MODES.ACTIVE_DRAIN, flags, dc, true, "overheat_drain"), flags, dc), held);
   }
 
-  // Minimum mode duration (not for IDLE or EMERGENCY_HEATING, not for drain above)
-  if (state.currentMode !== MODES.IDLE &&
-      state.currentMode !== MODES.EMERGENCY_HEATING &&
-      elapsed < getMinDuration(state, cfg)) {
-    held.pumpMode = heldEntry("min_duration", null, null,
-      state.modeEnteredAt + getMinDuration(state, cfg));
-    return attachHeld(stampOverlays(makeResult(state.currentMode, flags, dc, false, "min_duration"), flags, dc), held);
-  }
+  // Minimum mode duration is enforced AFTER pump-mode selection (see the
+  // "Min-duration override" block further down). Running selection first
+  // lets the held entry surface the would-be decision so the operator
+  // sees "change to Idle pending — tank stopped gaining heat" instead of
+  // a bare "held by min_duration".
 
   // ── Pump mode selection (solar > greenhouse heating > idle) ──
   // Solar charging has priority: free energy, time-limited (daylight only).
@@ -622,7 +619,36 @@ function evaluate(state, config, deviceConfig) {
     }
   }
 
-  // Clear peak tracking if we are not staying in / entering SOLAR_CHARGING
+  // ── Min-duration override ──
+  // Once an active pump mode has started, hold it for getMinDuration
+  // seconds before allowing automation to switch away. Runs AFTER
+  // pump-mode selection so we know what the natural choice would have
+  // been — that gets stashed on held.pumpMode as { wanted, wantedReason }
+  // so the playground can render "change to Idle pending — tank stopped
+  // gaining heat. Hold 3m remaining."
+  // Skipped for IDLE (no transition cost to escape) and EMERGENCY_HEATING
+  // (heater overlay is purely hysteresis-driven, no entry/exit ceremony).
+  // Drain modes (ACTIVE_DRAIN, freeze_drain, overheat_drain) early-return
+  // above this block so they bypass the hold.
+  if (state.currentMode !== MODES.IDLE &&
+      state.currentMode !== MODES.EMERGENCY_HEATING &&
+      elapsed < getMinDuration(state, cfg)) {
+    if (pumpMode !== state.currentMode) {
+      held.pumpMode = heldEntry("min_duration", pumpMode, reason,
+        state.modeEnteredAt + getMinDuration(state, cfg));
+    } else {
+      // Natural choice is to stay put — still surface the hold so the
+      // operator sees the countdown, but no "would change to" framing.
+      held.pumpMode = heldEntry("min_duration", null, null,
+        state.modeEnteredAt + getMinDuration(state, cfg));
+    }
+    pumpMode = state.currentMode;
+    reason = "min_duration";
+  }
+
+  // Clear peak tracking if we are not staying in / entering SOLAR_CHARGING.
+  // Runs AFTER the min-duration override so a held SOLAR_CHARGING keeps
+  // its peak (we're still pumping; the tank is still being driven).
   if (pumpMode !== MODES.SOLAR_CHARGING) {
     flags.solarChargePeakTankAvg = null;
     flags.solarChargePeakTankAvgAt = 0;
