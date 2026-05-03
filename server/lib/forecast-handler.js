@@ -11,6 +11,7 @@
  */
 
 const { fitEmpiricalCoefficients, computeSustainForecast } = require('./sustain-forecast');
+const deviceConfig = require('./device-config');
 const { jsonResponse } = require('./http-handlers');
 
 const CACHE_TTL_MS         = 60 * 1000;     // 60 s response cache
@@ -41,6 +42,28 @@ function createForecastHandler(opts) {
   };
 
   // ── Query helpers ──
+
+  function queryRecentTankRate(callback) {
+    // Average tank-avg drop rate (K/h) over the most recent ~hour. Used to
+    // calibrate the engine's heating-mode projection to actual current
+    // conditions (controller cycle behaviour, current outdoor ΔT, current
+    // user-set thresholds — all baked into the observed rate).
+    const sql =
+      "WITH t AS (SELECT bucket, avg_value FROM sensor_readings_30s " +
+      "  WHERE sensor_id IN ('tank_top','tank_bottom') AND bucket > NOW() - INTERVAL '70 minutes')" +
+      "SELECT bucket, AVG(avg_value) AS tank_avg FROM t GROUP BY bucket ORDER BY bucket";
+    pool.query(sql, [], function (err, result) {
+      if (err) return callback(err);
+      const rows = result.rows || [];
+      if (rows.length < 4) return callback(null, null);  // need ≥ ~2 min of data
+      const first = rows[0];
+      const last  = rows[rows.length - 1];
+      const dtH = (last.bucket.getTime() - first.bucket.getTime()) / 3600000;
+      if (dtH < 0.25) return callback(null, null);       // need ≥ 15 min span
+      const dropK = Number(first.tank_avg) - Number(last.tank_avg);  // positive = cooling
+      callback(null, dropK / dtH);
+    });
+  }
 
   function queryLatestSensorReadings(callback) {
     // Latest value per sensor from the 30 s aggregate (last 24 h).
@@ -199,8 +222,8 @@ function createForecastHandler(opts) {
     }
 
     // Gather all data in parallel where possible.
-    let pending = 4;
-    let sensors, currentMode, weather, prices, coeff, fetchErr;
+    let pending = 5;
+    let sensors, currentMode, weather, prices, coeff, observedTankDropKPerH, fetchErr;
 
     function onPart(err) {
       if (err && !fetchErr) fetchErr = err;
@@ -221,10 +244,20 @@ function createForecastHandler(opts) {
         const tankBottom = (sensors && sensors.tank_bottom) || null;
         const ghTemp     = (sensors && sensors.greenhouse)  || null;
 
-        // Config for sustain engine
+        // Pull live device-config heating thresholds. The engine uses these
+        // (instead of hardcoded 10 °C) so when the user has e.g. set
+        // greenhouse heat enter to 13 °C, "Tank lasts" reflects the actual
+        // continuous-heating depletion at the current threshold.
+        const dcfg     = deviceConfig.getConfig() || {};
+        const tuning   = deviceConfig.effectiveTuning(dcfg.tu || {});
         const forecastConfig = {
           spaceHeaterKw:   configFromYaml.spaceHeaterKw,
           transferFeeCKwh: configFromYaml.transferFeeCKwh,
+          // tu.geT / tu.gxT / tu.ehE keys → engine field names. effectiveTuning
+          // already merged user values over control-logic.js defaults.
+          greenhouseEnterC: tuning.greenhouseEnterTemp,
+          greenhouseExitC:  tuning.greenhouseExitTemp,
+          emergencyEnterC:  tuning.emergencyEnterTemp,
           fitBucketCount: coeff.fitBucketCount || 0,
           weatherFetchedAt: weather.length > 0 ? new Date() : null,
         };
@@ -249,6 +282,7 @@ function createForecastHandler(opts) {
           tankBottom:    tankBottom !== null ? tankBottom : 18,
           greenhouseTemp: ghTemp !== null ? ghTemp : 10,
           currentMode:   currentMode || 'idle',
+          observedTankDropKPerH,
           weather48h:    wx48,
           prices48h:     px48,
           coefficients:  coeff,
@@ -284,6 +318,13 @@ function createForecastHandler(opts) {
     queryPrices48h(function (err, p) {
       prices = p || [];
       onPart(err);
+    });
+    queryRecentTankRate(function (err, rate) {
+      // Soft failure: missing observed rate just means we fall back to the
+      // empirical "during heating" default (2 K/h) inside the engine.
+      if (err) log.warn('forecast-handler: observed-rate query failed', { error: err.message });
+      observedTankDropKPerH = (typeof rate === 'number' && isFinite(rate)) ? rate : null;
+      onPart(null);
     });
   }
 

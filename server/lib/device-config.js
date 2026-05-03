@@ -411,6 +411,7 @@ module.exports = {
   load,
   save,
   getConfig,
+  effectiveTuning,
   updateConfig,
   handleGet,
   handlePut,

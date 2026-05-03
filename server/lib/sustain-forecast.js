@@ -36,10 +36,15 @@ const SECONDS_PER_HOUR = 3600;
 // ── Default config ──
 const DEFAULT_CONFIG = {
   tankFloorC:               12,
-  // Greenhouse heating setpoint aligned with control-logic.js
-  // greenhouseEnterTemp = 10 °C, greenhouseExitTemp = 12 °C.
-  // We target 10 °C as the "needs heating" threshold.
-  greenhouseTargetC:        10,
+  // Greenhouse-heating control thresholds. The handler reads the live
+  // device-config tu.geT/gxT and overrides these per-request — the
+  // defaults match shelly/control-logic.js when no user tuning is set.
+  greenhouseEnterC:         10,   // controller enters heating when gh < this
+  greenhouseExitC:          12,   // controller exits heating when gh > this
+  // Emergency heating (space heater) trigger — when gh drops below this we
+  // expect the controller to turn the space heater on. Matches the real
+  // device's behaviour driven by tu.ehE / tu.ehX.
+  emergencyEnterC:          8,
   spaceHeaterKw:            1,    // from system.yaml space_heater.assumed_continuous_power_kw
   transferFeeCKwh:          5,    // from system.yaml electricity.transfer_fee_c_kwh
   // Reference FMI RadiationGlobal that maps to "cloudFactor = 1" in the data-
@@ -82,17 +87,24 @@ function computeSustainForecast(opts) {
   const tankTop      = Number(opts.tankTop      || 20);
   const tankBottom   = Number(opts.tankBottom   || 18);
   const ghTemp       = Number(opts.greenhouseTemp || 10);
+  const currentMode  = String(opts.currentMode || 'idle');
   const weather      = opts.weather48h  || [];
   const prices       = opts.prices48h   || [];
   const coeff        = opts.coefficients || {};
   const cfg          = Object.assign({}, DEFAULT_CONFIG, opts.config || {});
 
   const tankLeakageWPerK    = typeof coeff.tankLeakageWPerK    === 'number' ? coeff.tankLeakageWPerK    : DEFAULT_TANK_LEAKAGE_W_PER_K;
-  const ghLossWPerKBase     = typeof coeff.greenhouseLossWPerKBase === 'number' ? coeff.greenhouseLossWPerKBase : DEFAULT_GH_LOSS_W_PER_K_BASE;
-  const windFactor          = typeof coeff.windFactor          === 'number' ? coeff.windFactor          : DEFAULT_WIND_FACTOR;
   const solarEffByHour      = Array.isArray(coeff.solarEffectivenessByHour) && coeff.solarEffectivenessByHour.length === 24
     ? coeff.solarEffectivenessByHour
     : DEFAULT_SOLAR_EFFECTIVENESS;
+  // Observed tank-drop rate during the most recent ~hour, in K/h (positive
+  // = cooling). When the system is currently in heating mode we trust this
+  // over the abstract "deliver exactly ghLossW" formula — it captures the
+  // actual radiator output, control cycling and current outdoor delta.
+  // Falls back to the empirical "while heating" rate (~2 K/h) when no
+  // recent observation is available.
+  const observedTankDropKPerH = typeof opts.observedTankDropKPerH === 'number'
+    ? opts.observedTankDropKPerH : null;
   // Empirical kWh-to-tank gain per clock hour (averaged over the historical
   // window). The forecast loop multiplies this by a cloud factor derived from
   // the FMI radiation. Falls back to a conservative low-gain mask.
@@ -109,6 +121,11 @@ function computeSustainForecast(opts) {
   let tankTopC    = tankTop;
   let tankBotC    = tankBottom;
   let curGhTemp   = ghTemp;
+  // Simulated mode — initialised from the actual current device mode so
+  // the engine projects "tank stays draining" behaviour from the start
+  // instead of waiting until the greenhouse has cooled to enterC again.
+  let simMode = (currentMode === 'greenhouse_heating' || currentMode === 'emergency_heating')
+    ? currentMode : 'idle';
 
   // Accumulators
   let electricKwh       = 0;
@@ -155,59 +172,87 @@ function computeSustainForecast(opts) {
     ghTrajectory.push({ ts: hourDate, temp: round2(curGhTemp) });
 
     // ── Weather for this hour ──
-    const wx = weather[h] || weather[weather.length - 1] || { temperature: 0, radiationGlobal: 0, windSpeed: 0 };
+    const wx = weather[h] || weather[weather.length - 1] || { temperature: 0, radiationGlobal: 0 };
     const outdoorC   = typeof wx.temperature     === 'number' ? wx.temperature     : 0;
     const radiation  = typeof wx.radiationGlobal === 'number' ? wx.radiationGlobal : 0;
-    const wind       = typeof wx.windSpeed       === 'number' ? wx.windSpeed       : 0;
 
     // ── Price for this hour ──
     const px = prices[h] || prices[prices.length - 1] || { priceCKwh: 10 };
     const priceCKwh = typeof px.priceCKwh === 'number' ? px.priceCKwh : 10;
 
-    // ── 1. Heat losses ──
-    // Tank loses heat to greenhouse (ambient)
-    let tankLossW = tankLeakageWPerK * (tankAvg - curGhTemp);
-    if (tankLossW < 0) tankLossW = 0; // tank can't gain from GH in this simplified model
-
-    // Greenhouse loses heat to outdoor (with wind multiplier)
-    let ghLossW = ghLossWPerKBase * (1 + windFactor * wind) * (curGhTemp - outdoorC);
-    if (ghLossW < 0) ghLossW = 0; // greenhouse doesn't gain from outdoor in this model
-
-    // Energy removed from / added to tank and greenhouse this hour (Joules)
-    let tankDeltaJ = -tankLossW * SECONDS_PER_HOUR;
-    let ghDeltaJ   = -ghLossW  * SECONDS_PER_HOUR;
-
-    // ── 2. Greenhouse heating need ──
-    if (curGhTemp < cfg.greenhouseTargetC) {
-      // Greenhouse needs heat.
-      if (tankAvg > cfg.tankFloorC + 5) {
-        // Tank has enough — simulate greenhouse_heating mode. The radiator
-        // delivers ~ghLossW continuously (controller cycles to maintain
-        // greenhouse near setpoint), capped at the radiator's physical peak
-        // power. Empirical avg draw when "in heating mode" ≈ 0.7-0.8 kW —
-        // matches greenhouse loss at typical (gh-outdoor) ΔT ≈ 30-40 K.
-        const deliveredW = Math.min(ghLossW, cfg.radiatorPowerKw * 1000);
-        const heatDeliveredJ = deliveredW * SECONDS_PER_HOUR;
-        ghDeltaJ   += heatDeliveredJ;
-        tankDeltaJ -= heatDeliveredJ;
-        greenhouseHeatingHours += 1;
-      } else {
-        // Tank too depleted — space heater runs for the hour.
-        if (hoursUntilBackupNeeded === null) hoursUntilBackupNeeded = h;
-        const heaterEnergyKwh = cfg.spaceHeaterKw; // 1 kW × 1 h = 1 kWh
-        electricKwh += heaterEnergyKwh;
-        const costEur = heaterEnergyKwh * (priceCKwh + cfg.transferFeeCKwh) / 100;
-        electricCostEur += costEur;
-        costBreakdown.push({
-          ts:            hourDate,
-          kWh:           heaterEnergyKwh,
-          priceCKwh,
-          eurInclTransfer: round4(costEur),
-        });
-        // Space heater covers greenhouse heat need.
-        ghDeltaJ += cfg.spaceHeaterKw * 1000 * SECONDS_PER_HOUR;
-      }
+    // ── 1. Decide simulation mode for this hour ──
+    // Hysteresis matches the device: enter heating when gh < enterC, exit
+    // when gh > exitC. Persist mode across hours via simMode below the loop.
+    if (curGhTemp < cfg.greenhouseEnterC && simMode !== 'greenhouse_heating' && simMode !== 'emergency_heating') {
+      simMode = 'greenhouse_heating';
+    } else if (curGhTemp > cfg.greenhouseExitC) {
+      simMode = 'idle';
     }
+    // Backup (space_heater / emergency_heating) takes over from greenhouse
+    // heating once the tank can no longer sustain the load OR greenhouse
+    // drops below the device's emergency threshold.
+    if (simMode === 'greenhouse_heating' &&
+        (tankAvg <= cfg.tankFloorC + 5 || curGhTemp < cfg.emergencyEnterC)) {
+      simMode = 'emergency_heating';
+      if (hoursUntilBackupNeeded === null) hoursUntilBackupNeeded = h;
+    }
+    if (simMode === 'emergency_heating' && tankAvg > cfg.tankFloorC + 7) {
+      // Tank recovered (e.g. solar charged it) — controller hands back to
+      // greenhouse_heating. Exit purely on tank state; the greenhouse-warmth
+      // check is implicit (if gh is still cold, the next iteration will
+      // re-enter heating mode and the radiator will take over).
+      simMode = 'greenhouse_heating';
+    }
+
+    // ── 2. Tank energy balance for this hour ──
+    let tankDeltaJ = 0;
+    // Greenhouse temp evolves on a simple "drift toward target" curve
+    // rather than a real energy balance. The greenhouse has substantial
+    // hidden thermal mass (soil, plants, water, structure — easily 30 MJ/K
+    // vs the 240 kJ/K of air alone) that's hard to fit, but its observed
+    // behaviour is well approximated as a 30-min time constant toward
+    // whatever the controller is targeting (or toward outdoor in idle).
+    let ghTarget;
+    if (simMode === 'greenhouse_heating') {
+      // Tank drops at the OBSERVED rate when we have a recent observation
+      // from a heating-mode bucket; otherwise fall back to ~2.0 K/h
+      // (≈ 0.7 kW continuous, matching the historical heating-mode mean).
+      const dropKPerH = (observedTankDropKPerH !== null && currentMode === 'greenhouse_heating' && h < 6)
+        ? observedTankDropKPerH
+        : 2.0;
+      tankDeltaJ -= dropKPerH * TANK_THERMAL_MASS_J_PER_K;
+      ghTarget = (cfg.greenhouseEnterC + cfg.greenhouseExitC) / 2;
+      greenhouseHeatingHours += 1;
+    } else if (simMode === 'emergency_heating') {
+      // Backup runs continuously at spaceHeaterKw. Tank just leaks naturally.
+      const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
+      tankDeltaJ -= tankLossW * SECONDS_PER_HOUR;
+      const heaterEnergyKwh = cfg.spaceHeaterKw;
+      electricKwh += heaterEnergyKwh;
+      const costEur = heaterEnergyKwh * (priceCKwh + cfg.transferFeeCKwh) / 100;
+      electricCostEur += costEur;
+      costBreakdown.push({
+        ts:            hourDate,
+        kWh:           heaterEnergyKwh,
+        priceCKwh,
+        eurInclTransfer: round4(costEur),
+      });
+      // Backup keeps greenhouse around the emergency-exit threshold.
+      ghTarget = cfg.emergencyEnterC + 1;
+    } else {
+      // Idle. Tank loses heat slowly to ambient.
+      const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
+      tankDeltaJ -= tankLossW * SECONDS_PER_HOUR;
+      // Greenhouse drifts toward outdoor (slowly — the structure traps heat).
+      ghTarget = outdoorC;
+    }
+    // Simple exponential approach: alpha = 1 - exp(-Δt/τ). For Δt = 1 h and
+    // τ = 0.5 h (heating modes) or τ = 6 h (idle, slower passive cooling).
+    const ghTau = (simMode === 'idle') ? 6 : 0.5;
+    const ghAlpha = 1 - Math.exp(-1 / ghTau);
+    const newGhTemp = curGhTemp + (ghTarget - curGhTemp) * ghAlpha;
+    const ghDeltaJ = 0;  // unused now (kept for readability with stratification block)
+    void ghDeltaJ;
 
     // ── 3. Solar charging credit (data-driven) ──
     // Use the historical kWh-per-clock-hour baseline (already integrates
@@ -237,31 +282,23 @@ function computeSustainForecast(opts) {
     }
 
     // ── 4. Update tank state ──
+    // Simplified stratification: solar gain skews 60/40 top/bottom; losses
+    // and draws split evenly. This is a rough proxy; the trajectory's
+    // real value is the avg, which is what the floor checks operate on.
     const prevTankAvg = tankAvg;
     const tankAvgDeltaC = tankDeltaJ / TANK_THERMAL_MASS_J_PER_K;
-
     if (solarGainJ > 0) {
-      // On charge: 60% gain goes to top, 40% to bottom (stratification).
-      const gainTop = solarGainJ * 0.6;
-      const gainBot = solarGainJ * 0.4;
-      const lossTop = tankLossW * SECONDS_PER_HOUR * 0.5;
-      const lossBot = tankLossW * SECONDS_PER_HOUR * 0.5;
-      // GH-mode draw from top
-      const drawJ = Math.max(0, -tankDeltaJ - solarGainJ + (tankLossW * SECONDS_PER_HOUR));
-      // Actually compute per-node simply:
-      const topDeltaJ = gainTop - lossTop - drawJ * 0.6;
-      const botDeltaJ = gainBot - lossBot - drawJ * 0.4;
-      tankTopC += topDeltaJ / (TANK_THERMAL_MASS_J_PER_K / 2);
-      tankBotC += botDeltaJ / (TANK_THERMAL_MASS_J_PER_K / 2);
+      const solarDeltaC = solarGainJ / TANK_THERMAL_MASS_J_PER_K;
+      const otherDeltaC = tankAvgDeltaC - solarDeltaC;
+      tankTopC += solarDeltaC * 1.2 + otherDeltaC;
+      tankBotC += solarDeltaC * 0.8 + otherDeltaC;
     } else {
-      // Even loss: split equally between top and bottom.
-      const halfDeltaC = tankAvgDeltaC / 2;
-      tankTopC += halfDeltaC;
-      tankBotC += halfDeltaC;
+      tankTopC += tankAvgDeltaC;
+      tankBotC += tankAvgDeltaC;
     }
 
     // ── 5. Greenhouse temperature update ──
-    curGhTemp += ghDeltaJ / GH_THERMAL_MASS_J_PER_K;
+    curGhTemp = newGhTemp;
     // Clamp: greenhouse can't go below outdoor (passive equilibrium).
     if (curGhTemp < outdoorC) curGhTemp = outdoorC;
 

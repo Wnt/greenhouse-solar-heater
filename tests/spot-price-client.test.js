@@ -18,7 +18,8 @@ describe('spot-price-client', () => {
       assert.strictEqual(rows.length, 46, 'expected 46 data rows');
       const first = rows[0];
       assert.deepStrictEqual(first.validAt, new Date('2026-05-03T00:00:00.000Z'));
-      assert.strictEqual(first.priceCKwh, 19.45);
+      // sahkotin returns EUR/MWh; parser converts to c/kWh by /10.
+      assert.strictEqual(first.priceCKwh, 1.945);
       assert.strictEqual(first.source, 'sahkotin');
     });
   });

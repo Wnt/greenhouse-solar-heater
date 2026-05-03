@@ -40,7 +40,14 @@ function round4(n) {
 
 /**
  * Parse sahkotin.fi CSV (header + data rows).
- * CSV format: hour,price\n<ISO>,<c/kWh incl. VAT>\n…
+ *
+ * CSV format: hour,price\n<ISO>,<EUR/MWh — includes VAT when vat=true>\n…
+ *
+ * IMPORTANT: sahkotin returns EUR/MWh, NOT cents/kWh. (Verified by
+ * comparing 78.75 base ↔ 98.83 with VAT — exactly 1.255× — and against
+ * known typical Finnish nordpool levels of 5–15 c/kWh = 50–150 EUR/MWh.)
+ * The internal `priceCKwh` field name is the engine's unit, so we divide
+ * by 10 here to convert. Without this, costs are 10× too high.
  */
 function parseSahkotinCsv(csv) {
   const rows = [];
@@ -53,7 +60,7 @@ function parseSahkotinCsv(csv) {
     const ts = line.slice(0, comma).trim();
     const price = parseFloat(line.slice(comma + 1).trim());
     if (!ts || isNaN(price)) continue;
-    rows.push({ validAt: new Date(ts), priceCKwh: round4(price), source: 'sahkotin' });
+    rows.push({ validAt: new Date(ts), priceCKwh: round4(price / 10), source: 'sahkotin' });
   }
   return rows;
 }
