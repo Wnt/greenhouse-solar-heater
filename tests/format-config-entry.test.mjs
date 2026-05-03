@@ -93,6 +93,45 @@ describe('formatConfigEntry — mo (manual override)', () => {
   });
 });
 
+describe('formatConfigEntry — tu (tuning thresholds)', () => {
+  it('threshold raised from default to a numeric value', () => {
+    const out = formatConfigEntry({
+      eventType: 'config', configKind: 'tu', configKey: 'geT',
+      from: null, to: '11',
+      source: 'api', actor: 'alice',
+    });
+    assert.equal(out.title, 'Tuning: greenhouse heat enter default → 11°C');
+    assert.match(out.desc, /mode-enablement UI by alice/);
+  });
+
+  it('threshold cleared (override removed)', () => {
+    const out = formatConfigEntry({
+      eventType: 'config', configKind: 'tu', configKey: 'frT',
+      from: '6', to: null,
+      source: 'api', actor: 'alice',
+    });
+    assert.equal(out.title, 'Tuning: freeze drain 6°C → default');
+  });
+
+  it('threshold updated (numeric → numeric)', () => {
+    const out = formatConfigEntry({
+      eventType: 'config', configKind: 'tu', configKey: 'ohT',
+      from: '95', to: '90',
+      source: 'api', actor: 'alice',
+    });
+    assert.equal(out.title, 'Tuning: overheat drain 95°C → 90°C');
+  });
+
+  it('falls back to the raw key when label is unknown', () => {
+    const out = formatConfigEntry({
+      eventType: 'config', configKind: 'tu', configKey: 'qqq',
+      from: null, to: '5',
+      source: 'api', actor: 'alice',
+    });
+    assert.equal(out.title, 'Tuning: qqq default → 5°C');
+  });
+});
+
 describe('formatConfigSourceLabel', () => {
   it('maps every known source', () => {
     assert.equal(formatConfigSourceLabel('api'), 'mode-enablement UI');

@@ -646,6 +646,11 @@
           <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 12px;">Each mode can be permanently disabled, on a watchdog cool-off (temporary auto-ban), or allowed. The manual-override Forced mode selector respects bans: a banned mode cannot be forced.</p>
           <div id="mode-enablement-list"></div>
 
+          <h4 style="margin:24px 0 4px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Tuning thresholds</h4>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 12px;">Override the temperature thresholds that drive automation. Empty fields fall back to the firmware defaults shown as placeholders. Out-of-range values are clamped server-side.</p>
+          <div id="dc-tuning-list"></div>
+          <div style="margin-top:8px;"><button type="button" id="dc-tuning-reset" class="link-btn" style="background:none;border:0;color:var(--secondary);cursor:pointer;font-size:12px;padding:0;">Reset all to firmware defaults</button></div>
+
           <div style="margin-top:24px;display:flex;gap:12px;align-items:center;">
             <button class="primary" id="dc-save">Save &amp; Push to Device</button>
             <span id="dc-status" style="font-size:13px;color:var(--on-surface-variant);"></span>

@@ -1,11 +1,14 @@
 // Diff (prev, next) deviceConfig snapshots into config_events rows
-// covering wb (mode bans), mo (manual override session), and ea
-// (enabled-actuator bitmask). ea is emitted one row per flipped bit so
-// "fan toggled" shows up as a single audit entry, not "ea: 3 → 7".
+// covering wb (mode bans), mo (manual override session), ea (enabled-
+// actuator bitmask) and tu (user-tunable thresholds). ea is emitted
+// one row per flipped bit so "fan toggled" shows up as a single audit
+// entry, not "ea: 3 → 7"; tu is emitted one row per changed key.
 // ce / we / wz / v deltas are intentionally not audited — they have
 // their own UI or are coarse bookkeeping.
 
 const { VALID_MODES } = require('./mode-constants');
+const { TUNING_KEYS } = require('../../shelly/control-logic.js');
+const TUNING_SHORT_KEYS = Object.keys(TUNING_KEYS);
 
 const EA_BITS = [
   { bit: 1,  name: 'valves' },
@@ -71,6 +74,23 @@ function diffConfig(prev, next, source, actor) {
         actor: actor || null,
       });
     }
+  }
+
+  const tuPrev = (prev && prev.tu) || {};
+  const tuNext = (next && next.tu) || {};
+  for (let i = 0; i < TUNING_SHORT_KEYS.length; i++) {
+    const k = TUNING_SHORT_KEYS[i];
+    const pv = tuPrev[k];
+    const nv = tuNext[k];
+    if (pv === nv) continue;
+    out.push({
+      kind: 'tu',
+      key: k,
+      old_value: (pv === undefined || pv === null) ? null : String(pv),
+      new_value: (nv === undefined || nv === null) ? null : String(nv),
+      source,
+      actor: actor || null,
+    });
   }
 
   const moPrev = getMo(prev);

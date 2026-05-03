@@ -245,20 +245,187 @@ describe('device-config', () => {
     });
   });
 
-  it('config with watchdog fields fits within 256 bytes', (t, done) => {
+  // ── Tuning thresholds (tu) ──
+
+  it('tu defaults to empty object', (t, done) => {
+    deviceConfig.load(function (err, config) {
+      assert.ifError(err);
+      assert.deepStrictEqual(config.tu, {});
+      done();
+    });
+  });
+
+  it('tu accepts a single threshold and persists it', (t, done) => {
     deviceConfig.load(function (err) {
       assert.ifError(err);
-      // Max-size config with mo + watchdog fields
+      deviceConfig.updateConfig({ tu: { geT: 11 } }, function (err2, config) {
+        assert.ifError(err2);
+        assert.strictEqual(config.tu.geT, 11);
+        const saved = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(saved.tu.geT, 11);
+        done();
+      });
+    });
+  });
+
+  it('tu null clears all overrides', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ tu: { geT: 11, gxT: 13 } }, function (err2) {
+        assert.ifError(err2);
+        deviceConfig.updateConfig({ tu: null }, function (err3, config) {
+          assert.ifError(err3);
+          assert.deepStrictEqual(config.tu, {});
+          done();
+        });
+      });
+    });
+  });
+
+  it('tu per-key null clears that key only', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ tu: { geT: 11, gxT: 13 } }, function (err2) {
+        assert.ifError(err2);
+        deviceConfig.updateConfig({ tu: { geT: null } }, function (err3, config) {
+          assert.ifError(err3);
+          assert.strictEqual(config.tu.geT, undefined);
+          assert.strictEqual(config.tu.gxT, 13);
+          done();
+        });
+      });
+    });
+  });
+
+  it('tu clamps out-of-range values', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      // ohT range is [70, 100]; 110 clamps to 100, -5 clamps to 0 for frT.
+      deviceConfig.updateConfig({ tu: { ohT: 110, frT: -5 } }, function (err2, config) {
+        assert.ifError(err2);
+        assert.strictEqual(config.tu.ohT, 100);
+        assert.strictEqual(config.tu.frT, 0);
+        done();
+      });
+    });
+  });
+
+  it('tu rejects non-numeric values', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ tu: { geT: 'hot' } }, function (err2) {
+        assert.ok(err2);
+        assert.match(err2.message, /tu\.geT/);
+        assert.strictEqual(err2.code, 'VALIDATION');
+        done();
+      });
+    });
+  });
+
+  it('tu rejects greenhouse heat exit <= enter (invariant)', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      // Default geT = 10. Try to set gxT = 9 which is below.
+      deviceConfig.updateConfig({ tu: { gxT: 9 } }, function (err2) {
+        assert.ok(err2);
+        assert.match(err2.message, /greenhouse heat exit/);
+        done();
+      });
+    });
+  });
+
+  it('tu rejects fan-cool enter <= exit (invariant)', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      // Default fcX = 28. Setting fcE = 27 violates fcE > fcX.
+      deviceConfig.updateConfig({ tu: { fcE: 27 } }, function (err2) {
+        assert.ok(err2);
+        assert.match(err2.message, /fan-cool enter/);
+        done();
+      });
+    });
+  });
+
+  it('tu invariant uses effective values across partial updates', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      // Raise geT to 13 first.
+      deviceConfig.updateConfig({ tu: { geT: 13, gxT: 15 } }, function (err2) {
+        assert.ifError(err2);
+        // Now try to lower gxT to 12 — would violate gxT > geT (13).
+        deviceConfig.updateConfig({ tu: { gxT: 12 } }, function (err3) {
+          assert.ok(err3);
+          assert.match(err3.message, /greenhouse heat exit/);
+          done();
+        });
+      });
+    });
+  });
+
+  it('tu unrelated config update preserves tu', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      deviceConfig.updateConfig({ tu: { geT: 11 } }, function (err2) {
+        assert.ifError(err2);
+        deviceConfig.updateConfig({ ce: true }, function (err3, config) {
+          assert.ifError(err3);
+          assert.strictEqual(config.tu.geT, 11);
+          assert.strictEqual(config.ce, true);
+          done();
+        });
+      });
+    });
+  });
+
+  it('tu schema keys agree with control-logic.js TUNING_KEYS', () => {
+    delete require.cache[require.resolve('../shelly/control-logic.js')];
+    const cl = require('../shelly/control-logic.js');
+    const ranges = require('../server/lib/device-config.js').TUNING_RANGES;
+    assert.deepStrictEqual(
+      Object.keys(cl.TUNING_KEYS).sort(),
+      Object.keys(ranges).sort(),
+      'TUNING_KEYS in control-logic.js and TUNING_RANGES in device-config.js must list the same short keys'
+    );
+  });
+
+  it('config with watchdog fields + a couple of tu overrides fits within 256 bytes', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      // Realistic worst-case shape: watchdogs in flight + mode bans +
+      // manual override + a couple of tuned thresholds.
       deviceConfig.updateConfig({
         ce: true, ea: 31,
         we: { sng: 1, scs: 1, ggr: 1 },
         wz: { sng: 1713050000, scs: 1713050000, ggr: 1713053400 },
         wb: { SC: 9999999999, GH: 1713094215, AD: 9999999999 },
         mo: { a: true, ex: 9999999999, fm: 'EH' },
+        tu: { geT: 11, frT: 5 },
       }, function (err2, config) {
         assert.ifError(err2);
         const size = JSON.stringify(config).length;
         assert.ok(size <= 256, 'Config size ' + size + ' exceeds 256 bytes');
+        done();
+      });
+    });
+  });
+
+  it('rejects PUT that would push the saved config over 256 bytes', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      // Pile every long-form field together so the projected size is
+      // guaranteed to overflow. Overwriting the whole worst-case config
+      // in a single update (server's projectedSize guard fires before
+      // S3/MQTT).
+      deviceConfig.updateConfig({
+        ce: true, ea: 31,
+        we: { sng: 1, scs: 1, ggr: 1 },
+        wz: { sng: 1713050000, scs: 1713050000, ggr: 1713053400 },
+        wb: { SC: 9999999999, GH: 1713094215, AD: 9999999999 },
+        mo: { a: true, ex: 9999999999, fm: 'EH' },
+        tu: { geT: 11, gxT: 13, fcE: 31, fcX: 29, frT: 4, ohT: 95 },
+      }, function (err2) {
+        assert.ok(err2);
+        assert.match(err2.message, /256-byte/);
         done();
       });
     });

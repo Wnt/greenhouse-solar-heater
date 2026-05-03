@@ -5,6 +5,7 @@ const path = require('path');
 const createLogger = require('./logger');
 const s3Helper = require('./s3-config-helper');
 const { VALID_MODES, WATCHDOG_IDS } = require('./mode-constants');
+const { TUNING_KEYS } = require('../../shelly/control-logic.js');
 
 const log = createLogger('device-config');
 const S3_KEY = 'device-config.json';
@@ -18,6 +19,9 @@ let currentConfig = null;
 //   wz = watchdog_snooze ({sng:<unix>, ...} — absent = not snoozed)
 //   wb = mode_bans ({SC:<unix>, GH:9999999999, ...} — sentinel = permanent)
 //   mo = manual override session ({a, ex, fm?} or null)
+//   tu = tuning thresholds (sparse — keys absent fall back to control-
+//        logic.js DEFAULT_CONFIG constants). See TUNING_RANGES below
+//        for the validated set.
 //   v  = version (int)
 const DEFAULT_CONFIG = {
   ce: false,
@@ -25,10 +29,52 @@ const DEFAULT_CONFIG = {
   we: {},
   wz: {},
   wb: {},
+  tu: {},
   v: 1,
 };
 
 const WB_PERMANENT_SENTINEL = 9999999999;
+
+// Hard clamp + invariant ranges for the user-tunable thresholds in
+// `tu`. Long-name mapping lives in shelly/control-logic.js TUNING_KEYS;
+// keys here MUST line up. Values outside [min,max] are clamped (and the
+// clamped value is what the response carries — UI sees the actual saved
+// value). Invariants (gxT > geT, fcE > fcX) are rejected with 400.
+const TUNING_RANGES = {
+  geT: { min: 0,  max: 25,  step: 0.5, label: 'Greenhouse heat enter (°C)' },
+  gxT: { min: 1,  max: 30,  step: 0.5, label: 'Greenhouse heat exit (°C)' },
+  fcE: { min: 20, max: 50,  step: 0.5, label: 'Fan-cool enter (°C)' },
+  fcX: { min: 15, max: 50,  step: 0.5, label: 'Fan-cool exit (°C)' },
+  frT: { min: 0,  max: 10,  step: 0.5, label: 'Freeze drain (°C)' },
+  ohT: { min: 70, max: 100, step: 1,   label: 'Overheat drain (°C)' },
+};
+const TUNING_SHORT_KEYS = Object.keys(TUNING_RANGES);
+
+function clampTuningValue(key, value) {
+  const range = TUNING_RANGES[key];
+  if (!range) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  if (value < range.min) return range.min;
+  if (value > range.max) return range.max;
+  return value;
+}
+
+// Resolve the effective tuning values for invariant checks: pull from
+// `tu` when present, otherwise fall back to the control-logic.js
+// DEFAULT_CONFIG constant via TUNING_KEYS. Lazy-loaded to avoid a
+// circular-import gotcha at module-eval time (control-logic.js is a
+// pure leaf, but some tests stub the require cache around it).
+function effectiveTuning(tu) {
+  const cl = require('../../shelly/control-logic.js');
+  const out = {};
+  for (let i = 0; i < TUNING_SHORT_KEYS.length; i++) {
+    const k = TUNING_SHORT_KEYS[i];
+    out[k] = (tu && typeof tu[k] === 'number')
+      ? tu[k]
+      : cl.DEFAULT_CONFIG[TUNING_KEYS[k]];
+  }
+  return out;
+}
 
 function getLocalPath() {
   return process.env.DEVICE_CONFIG_PATH || path.join(__dirname, '..', 'device-config.json');
@@ -176,6 +222,56 @@ function updateConfig(newConfig, callback) {
     }
   }
 
+  // tu: sparse map of compact tuning keys (geT, gxT, fcE, fcX, frT,
+  // ohT) -> Celsius. null clears all tuning; 0/null per key clears
+  // that one entry and falls back to the control-logic constant.
+  // Out-of-range numbers are clamped to TUNING_RANGES[k] (the response
+  // body carries the clamped value so the UI can re-display it).
+  // Invariant violations (gxT must exceed geT, fcE must exceed fcX)
+  // reject the whole PUT with a 400.
+  if (newConfig.tu !== undefined) {
+    if (newConfig.tu === null) {
+      config.tu = {};
+    } else if (typeof newConfig.tu === 'object') {
+      config.tu = config.tu || {};
+      for (let i = 0; i < TUNING_SHORT_KEYS.length; i++) {
+        const k = TUNING_SHORT_KEYS[i];
+        if (!Object.prototype.hasOwnProperty.call(newConfig.tu, k)) continue;
+        const raw = newConfig.tu[k];
+        if (raw === null) {
+          delete config.tu[k];
+        } else if (typeof raw === 'number') {
+          const clamped = clampTuningValue(k, raw);
+          if (clamped === null) {
+            callback(validationError('tu.' + k + ' must be a finite number'));
+            return;
+          }
+          config.tu[k] = clamped;
+        } else {
+          callback(validationError('tu.' + k + ' must be a number or null'));
+          return;
+        }
+      }
+      // Invariants computed against the *effective* values (any key
+      // not in tu falls through to its control-logic constant).
+      const effective = effectiveTuning(config.tu);
+      if (effective.gxT <= effective.geT) {
+        callback(validationError(
+          'tu invariant violated: greenhouse heat exit (' + effective.gxT +
+          ') must be greater than enter (' + effective.geT + ')'
+        ));
+        return;
+      }
+      if (effective.fcE <= effective.fcX) {
+        callback(validationError(
+          'tu invariant violated: fan-cool enter (' + effective.fcE +
+          ') must be greater than exit (' + effective.fcX + ')'
+        ));
+        return;
+      }
+    }
+  }
+
   if (newConfig.mo !== undefined) {
     if (newConfig.mo === null) {
       config.mo = null;
@@ -202,6 +298,21 @@ function updateConfig(newConfig, callback) {
       if (mo.a) newMo.fm = mo.fm;
       config.mo = newMo;
     }
+  }
+
+  // Reject configs that would exceed the Shelly KVS 256-byte cap before
+  // we persist them. Without this guard the server would happily save a
+  // 271-byte config to S3, then the controller's KVS.Set would fail and
+  // it'd be left running on stale config silently. Worst-case shape =
+  // every watchdog snoozed + every mode banned + manual override active
+  // + all six tu thresholds set; realistic users stay well under.
+  const projectedSize = JSON.stringify(Object.assign({}, config, { v: (config.v || 0) + 1 })).length;
+  if (projectedSize > 256) {
+    callback(validationError(
+      'Config too large: ' + projectedSize + ' bytes exceeds the 256-byte Shelly KVS cap. ' +
+      'Clear unused tuning thresholds, watchdog snoozes, or mode bans.'
+    ));
+    return;
   }
 
   // Skip the S3 write + MQTT republish if nothing actually changed.
@@ -278,6 +389,7 @@ function loadForTest(cfg) {
 module.exports = {
   DEFAULT_CONFIG,
   WB_PERMANENT_SENTINEL,
+  TUNING_RANGES,
   load,
   save,
   getConfig,

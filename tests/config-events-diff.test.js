@@ -170,6 +170,60 @@ describe('config-events diff — ea (enabled-actuator bitmask)', () => {
   });
 });
 
+describe('config-events diff — tu (tuning thresholds)', () => {
+  it('emits one row per added tu key', () => {
+    const rows = diffConfig(
+      { tu: {} },
+      { tu: { geT: 11, frT: 2 } },
+      'api',
+      'alice'
+    );
+    rows.sort((a, b) => a.key.localeCompare(b.key));
+    assert.deepStrictEqual(rows, [
+      { kind: 'tu', key: 'frT', old_value: null, new_value: '2',  source: 'api', actor: 'alice' },
+      { kind: 'tu', key: 'geT', old_value: null, new_value: '11', source: 'api', actor: 'alice' },
+    ]);
+  });
+
+  it('emits a row when a tu key is cleared', () => {
+    const rows = diffConfig(
+      { tu: { geT: 11 } },
+      { tu: {} },
+      'api',
+      'alice'
+    );
+    assert.deepStrictEqual(rows, [
+      { kind: 'tu', key: 'geT', old_value: '11', new_value: null, source: 'api', actor: 'alice' },
+    ]);
+  });
+
+  it('emits a row when a tu key value changes', () => {
+    const rows = diffConfig(
+      { tu: { ohT: 95 } },
+      { tu: { ohT: 90 } },
+      'api',
+      'alice'
+    );
+    assert.deepStrictEqual(rows, [
+      { kind: 'tu', key: 'ohT', old_value: '95', new_value: '90', source: 'api', actor: 'alice' },
+    ]);
+  });
+
+  it('emits no rows when tu unchanged', () => {
+    assert.deepStrictEqual(
+      diffConfig({ tu: { geT: 11 } }, { tu: { geT: 11 } }, 'api', 'alice'),
+      []
+    );
+  });
+
+  it('treats missing tu on either side as empty', () => {
+    const rows = diffConfig({}, { tu: { geT: 11 } }, 'api', 'alice');
+    assert.deepStrictEqual(rows, [
+      { kind: 'tu', key: 'geT', old_value: null, new_value: '11', source: 'api', actor: 'alice' },
+    ]);
+  });
+});
+
 describe('config-events diff — combined wb + mo + ea deltas', () => {
   it('emits rows for both fields when both change in one update', () => {
     const rows = diffConfig(

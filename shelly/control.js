@@ -55,8 +55,11 @@ var VALVES = {
 
 // Sensor config from KVS (null = skip polling, safe IDLE default)
 var sensorConfig = null;
-// Device config from KVS
-var deviceConfig = { ce: false, ea: 0, fm: null, we: {}, wz: {}, wb: {}, v: 0 };
+// Device config from KVS. tu (tuning thresholds) is a sparse map read
+// by control-logic.evaluate(); kept on the default literal so a fresh
+// device round-trips the same shape as server/lib/device-config.js
+// DEFAULT_CONFIG.
+var deviceConfig = { ce: false, ea: 0, fm: null, we: {}, wz: {}, wb: {}, tu: {}, v: 0 };
 
 var state = {
   mode: MODES.IDLE,
@@ -1167,6 +1170,9 @@ function applyConfig(newCfg) {
   if (newCfg.v === deviceConfig.v) return;
   var prev = deviceConfig;
   var critical = isSafetyCritical(prev, newCfg);
+  // Defensive: server may PUT a config without tu (older clients), and
+  // we never want control-logic to dereference undefined.tu.
+  if (!newCfg.tu) newCfg.tu = {};
   deviceConfig = newCfg;
   Shelly.call("KVS.Set", { key: CONFIG_KVS_KEY, value: JSON.stringify(newCfg) });
   // Watchdog snooze ack / user-initiated shutdown arrive as wz/wb config
