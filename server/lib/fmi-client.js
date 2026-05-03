@@ -40,31 +40,31 @@ function parseWfsResponse(xml) {
   }
 
   // Map of ISO-string → { temperature, radiationGlobal, windSpeed, precipitation }
-  var rows = {};
+  const rows = {};
 
   // Regex to find each BsWfsElement block.
-  var elementRe = /<BsWfs:BsWfsElement[\s\S]*?<\/BsWfs:BsWfsElement>/g;
-  var timeRe = /<BsWfs:Time>\s*([\s\S]*?)\s*<\/BsWfs:Time>/;
-  var nameRe = /<BsWfs:ParameterName>\s*([\s\S]*?)\s*<\/BsWfs:ParameterName>/;
-  var valueRe = /<BsWfs:ParameterValue>\s*([\s\S]*?)\s*<\/BsWfs:ParameterValue>/;
+  const elementRe = /<BsWfs:BsWfsElement[\s\S]*?<\/BsWfs:BsWfsElement>/g;
+  const timeRe = /<BsWfs:Time>\s*([\s\S]*?)\s*<\/BsWfs:Time>/;
+  const nameRe = /<BsWfs:ParameterName>\s*([\s\S]*?)\s*<\/BsWfs:ParameterName>/;
+  const valueRe = /<BsWfs:ParameterValue>\s*([\s\S]*?)\s*<\/BsWfs:ParameterValue>/;
 
-  var match;
+  let match;
   while ((match = elementRe.exec(xml)) !== null) {
-    var block = match[0];
-    var tm = timeRe.exec(block);
-    var nm = nameRe.exec(block);
-    var vm = valueRe.exec(block);
+    const block = match[0];
+    const tm = timeRe.exec(block);
+    const nm = nameRe.exec(block);
+    const vm = valueRe.exec(block);
     if (!tm || !nm || !vm) continue;
 
-    var timeStr = tm[1].trim();
-    var paramName = nm[1].trim();
-    var rawValue = vm[1].trim();
+    const timeStr = tm[1].trim();
+    const paramName = nm[1].trim();
+    const rawValue = vm[1].trim();
 
-    var field = PARAM_MAP[paramName];
+    const field = PARAM_MAP[paramName];
     if (!field) continue;
 
-    var value = parseFloat(rawValue);
-    var coerced = isNaN(value) ? null : value;
+    const value = parseFloat(rawValue);
+    const coerced = isNaN(value) ? null : value;
 
     if (!rows[timeStr]) {
       rows[timeStr] = { temperature: null, radiationGlobal: null, windSpeed: null, precipitation: null };
@@ -72,8 +72,8 @@ function parseWfsResponse(xml) {
     rows[timeStr][field] = coerced;
   }
 
-  var result = Object.keys(rows).map(function (ts) {
-    var r = rows[ts];
+  const result = Object.keys(rows).map(function (ts) {
+    const r = rows[ts];
     return {
       validAt: new Date(ts),
       temperature: r.temperature,
@@ -88,8 +88,8 @@ function parseWfsResponse(xml) {
 }
 
 function buildUrl(lat, lon, hours) {
-  var now = new Date();
-  var end = new Date(now.getTime() + hours * 3600 * 1000);
+  const now = new Date();
+  const end = new Date(now.getTime() + hours * 3600 * 1000);
   return (
     WFS_BASE +
     '?service=WFS&version=2.0.0&request=getFeature' +
@@ -102,21 +102,21 @@ function buildUrl(lat, lon, hours) {
 }
 
 function fetchForecast(opts) {
-  var lat = opts.lat;
-  var lon = opts.lon;
-  var hours = opts.hours != null ? opts.hours : DEFAULT_HOURS;
-  var url = buildUrl(lat, lon, hours);
+  const lat = opts.lat;
+  const lon = opts.lon;
+  const hours = opts.hours != null ? opts.hours : DEFAULT_HOURS;
+  const url = buildUrl(lat, lon, hours);
 
   return new Promise(function (resolve, reject) {
-    var req = https.get(url, function (res) {
+    const req = https.get(url, function (res) {
       if (res.statusCode !== 200) {
         res.resume();
         return reject(new Error('FMI fetch failed: HTTP ' + res.statusCode));
       }
-      var chunks = [];
+      const chunks = [];
       res.on('data', function (c) { chunks.push(c); });
       res.on('end', function () {
-        var xml = Buffer.concat(chunks).toString('utf8');
+        const xml = Buffer.concat(chunks).toString('utf8');
         try {
           resolve(parseWfsResponse(xml));
         } catch (e) {

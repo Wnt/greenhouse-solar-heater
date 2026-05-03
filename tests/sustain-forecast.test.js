@@ -23,7 +23,7 @@ function makeWeather48h(overrides) {
 }
 
 function makePrices48h(priceCKwh) {
-  var price = typeof priceCKwh === 'number' ? priceCKwh : 10;
+  const price = typeof priceCKwh === 'number' ? priceCKwh : 10;
   return Array.from({ length: 48 }, (_, i) => ({
     ts:        new Date(Date.now() + i * 3600 * 1000).toISOString(),
     priceCKwh: price,
@@ -33,7 +33,7 @@ function makePrices48h(priceCKwh) {
 // ── 1. fitEmpiricalCoefficients with empty history ──
 describe('fitEmpiricalCoefficients', () => {
   it('returns defaults for empty history', () => {
-    var result = fitEmpiricalCoefficients({});
+    const result = fitEmpiricalCoefficients({});
     assert.equal(result.tankLeakageWPerK,        3.0);
     assert.equal(result.greenhouseLossWPerKBase,  25.0);
     assert.equal(result.windFactor,               0.05);
@@ -41,14 +41,14 @@ describe('fitEmpiricalCoefficients', () => {
   });
 
   it('returns defaults for null history', () => {
-    var result = fitEmpiricalCoefficients(null);
+    const result = fitEmpiricalCoefficients(null);
     assert.equal(result.tankLeakageWPerK,        3.0);
     assert.equal(result.greenhouseLossWPerKBase,  25.0);
     assert.equal(result.windFactor,               0.05);
   });
 
   it('returns defaults for single-reading history', () => {
-    var result = fitEmpiricalCoefficients({
+    const result = fitEmpiricalCoefficients({
       readings: [{ ts: new Date(), tankTop: 30, tankBottom: 25, greenhouse: 12, outdoor: 0 }],
       modes:    [],
     });
@@ -61,28 +61,28 @@ describe('fitEmpiricalCoefficients', () => {
     // between tank average and greenhouse.
     // Expected: powerW = 1/3600 * TANK_THERMAL_MASS_J_PER_K ≈ 349.4 W
     // slope = powerW / deltaK = 349.4 / 30 ≈ 11.65 W/K
-    var SECONDS_PER_HOUR = 3600;
+    const SECONDS_PER_HOUR = 3600;
     // Scenario: tank drops 1 °C/h, greenhouse tracks tank exactly 30 K below
     // so the deltaK is constant at 30 K throughout.
     // This ensures every consecutive pair contributes the same (x, y) sample,
     // so the least-squares slope = y/x = powerW / deltaK exactly.
-    var dTankPerHour = 1;  // °C/h
-    var tankAvgStart = 50;
-    var DELTA_K      = 30; // constant tank-greenhouse gap
+    const dTankPerHour = 1;  // °C/h
+    const tankAvgStart = 50;
+    const DELTA_K      = 30; // constant tank-greenhouse gap
 
-    var expectedPowerW = (dTankPerHour / SECONDS_PER_HOUR) * _TANK_THERMAL_MASS_J_PER_K;
-    var expectedSlope  = expectedPowerW / DELTA_K;
+    const expectedPowerW = (dTankPerHour / SECONDS_PER_HOUR) * _TANK_THERMAL_MASS_J_PER_K;
+    const expectedSlope  = expectedPowerW / DELTA_K;
 
     // Build 10 hourly readings in idle mode.
-    var readings = [];
-    var modes    = [];
-    var baseMs   = Date.now();
+    const readings = [];
+    const modes    = [];
+    const baseMs   = Date.now();
 
-    for (var i = 0; i < 10; i++) {
-      var ts  = new Date(baseMs + i * SECONDS_PER_HOUR * 1000);
-      var avg = tankAvgStart - i * dTankPerHour;
+    for (let i = 0; i < 10; i++) {
+      const ts  = new Date(baseMs + i * SECONDS_PER_HOUR * 1000);
+      const avg = tankAvgStart - i * dTankPerHour;
       readings.push({
-        ts:          ts,
+        ts,
         tankTop:     avg + 2,
         tankBottom:  avg - 2,
         // Greenhouse tracks 30 K below tank average so deltaK stays constant.
@@ -93,7 +93,7 @@ describe('fitEmpiricalCoefficients', () => {
     }
     modes.push({ ts: new Date(baseMs), mode: 'idle' });
 
-    var result = fitEmpiricalCoefficients({ readings, modes });
+    const result = fitEmpiricalCoefficients({ readings, modes });
 
     assert.equal(result.usedDefaults, false,
       'Should not fall back to defaults with 9+ buckets');
@@ -108,7 +108,7 @@ describe('fitEmpiricalCoefficients', () => {
 // ── 3. Smoke test: dark cold 48 h ──
 describe('computeSustainForecast', () => {
   it('smoke test: dark cold 48 h charges electricity', () => {
-    var result = computeSustainForecast({
+    const result = computeSustainForecast({
       now:            Date.now(),
       tankTop:        30,
       tankBottom:     28,
@@ -124,7 +124,7 @@ describe('computeSustainForecast', () => {
     assert.ok(result.electricKwh > 0, 'Should have some electric usage on dark cold 48 h');
 
     // Cost should equal kWh × (10+5)/100 ± tiny rounding.
-    var expectedCost = result.electricKwh * (10 + 5) / 100;
+    const expectedCost = result.electricKwh * (10 + 5) / 100;
     assert.ok(
       Math.abs(result.electricCostEur - expectedCost) < 0.001,
       'electricCostEur = electricKwh × (price+transfer)/100: got ' +
@@ -141,13 +141,13 @@ describe('computeSustainForecast', () => {
   // ── 4. Warm and sunny ──
   it('warm/sunny: solarChargingHours > 0, low electric kWh', () => {
     // Build weather with sunny midday hours (radiation 600 W/m²).
-    var weather = makeWeather48h({ temperature: 10, radiationGlobal: 0 });
+    const weather = makeWeather48h({ temperature: 10, radiationGlobal: 0 });
     // Hours 10-16 of the first day are sunny.
-    for (var h = 10; h <= 16; h++) {
+    for (let h = 10; h <= 16; h++) {
       weather[h] = { temperature: 15, radiationGlobal: 600, windSpeed: 1 };
     }
 
-    var result = computeSustainForecast({
+    const result = computeSustainForecast({
       now:            Date.now(),
       tankTop:        60,
       tankBottom:     58,
@@ -171,7 +171,7 @@ describe('computeSustainForecast', () => {
   it('floor crossing: hoursUntilFloor < 12 and backup heater runs after', () => {
     // Tank barely above floor (14 °C avg), no sun, cold outdoor.
     // Use a high tankLeakageWPerK so the tank drains quickly.
-    var result = computeSustainForecast({
+    const result = computeSustainForecast({
       now:            Date.now(),
       tankTop:        15,
       tankBottom:     13,
@@ -202,7 +202,7 @@ describe('computeSustainForecast', () => {
 
   // ── 6. Confidence: empty history + fresh weather → low ──
   it('confidence is low when usedDefaults is true', () => {
-    var result = computeSustainForecast({
+    const result = computeSustainForecast({
       now:            Date.now(),
       tankTop:        30,
       tankBottom:     28,
@@ -224,7 +224,7 @@ describe('computeSustainForecast', () => {
 
   // ── Extra: high confidence when many buckets + fresh weather ──
   it('confidence is high with many buckets and fresh weather', () => {
-    var result = computeSustainForecast({
+    const result = computeSustainForecast({
       now:            Date.now(),
       tankTop:        30,
       tankBottom:     28,
@@ -255,7 +255,7 @@ describe('fitSolarEffectivenessByHour', () => {
 
   // Helper: build a local-time-aligned base so that ts + h * 3600 s gives local hour h.
   function localMidnight() {
-    var d = new Date();
+    const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d.getTime();
   }
@@ -264,20 +264,20 @@ describe('fitSolarEffectivenessByHour', () => {
   // For each day, for each hour h: collector = outdoor + (shaded hours: 0, sun hours: 30).
   // "sun hours" = hours 12..16. All others shaded (collector == outdoor).
   function makeShadedReadings() {
-    var base = localMidnight();
-    var DAYS = 14;
-    var readings = [];
-    for (var day = 0; day < DAYS; day++) {
-      for (var h = 0; h < 24; h++) {
-        var ts = new Date(base - day * 86400000 + h * 3600000);
-        var outdoor = 10;
-        var excess = (h >= 12 && h <= 16) ? 30 : 0;
+    const base = localMidnight();
+    const DAYS = 14;
+    const readings = [];
+    for (let day = 0; day < DAYS; day++) {
+      for (let h = 0; h < 24; h++) {
+        const ts = new Date(base - day * 86400000 + h * 3600000);
+        const outdoor = 10;
+        const excess = (h >= 12 && h <= 16) ? 30 : 0;
         readings.push({
-          ts:        ts,
+          ts,
           tankTop:   50,
           tankBottom: 45,
           greenhouse: 15,
-          outdoor:   outdoor,
+          outdoor,
           collector: outdoor + excess,
         });
       }
@@ -286,12 +286,12 @@ describe('fitSolarEffectivenessByHour', () => {
   }
 
   it('shaded morning: effectiveness 1.0 for hours 12..16, 0 elsewhere', () => {
-    var mask = fitSolarEffectivenessByHour({ readings: makeShadedReadings() });
+    const mask = fitSolarEffectivenessByHour({ readings: makeShadedReadings() });
 
     assert.equal(mask.length, 24, 'mask must have 24 entries');
 
     // Sun hours should be ≈ 1.0
-    for (var h = 12; h <= 16; h++) {
+    for (let h = 12; h <= 16; h++) {
       assert.ok(
         mask[h] >= 0.95,
         'effectiveness[' + h + '] should be ≈ 1.0, got ' + mask[h],
@@ -299,27 +299,27 @@ describe('fitSolarEffectivenessByHour', () => {
     }
 
     // Shaded hours must be 0
-    for (var h = 0; h < 12; h++) {
+    for (let h = 0; h < 12; h++) {
       assert.equal(mask[h], 0, 'effectiveness[' + h + '] should be 0 (shaded morning)');
     }
-    for (var h = 17; h < 24; h++) {
+    for (let h = 17; h < 24; h++) {
       assert.equal(mask[h], 0, 'effectiveness[' + h + '] should be 0 (shaded evening)');
     }
   });
 
   it('insufficient data (empty history) → returns flat 10..16 = 1 fallback mask', () => {
-    var mask = fitSolarEffectivenessByHour({ readings: [] });
+    const mask = fitSolarEffectivenessByHour({ readings: [] });
 
     assert.equal(mask.length, 24);
-    for (var h = 0; h < 24; h++) {
-      var expected = (h >= 10 && h <= 16) ? 1.0 : 0;
+    for (let h = 0; h < 24; h++) {
+      const expected = (h >= 10 && h <= 16) ? 1.0 : 0;
       assert.equal(mask[h], expected,
         'fallback mask[' + h + '] should be ' + expected + ', got ' + mask[h]);
     }
   });
 
   it('null history → returns flat 10..16 = 1 fallback mask', () => {
-    var mask = fitSolarEffectivenessByHour(null);
+    const mask = fitSolarEffectivenessByHour(null);
     assert.equal(mask.length, 24);
     assert.equal(mask[10], 1.0);
     assert.equal(mask[9],  0);
@@ -328,7 +328,7 @@ describe('fitSolarEffectivenessByHour', () => {
 
   it('fitEmpiricalCoefficients includes solarEffectivenessByHour', () => {
     // Even with empty history the field must be present.
-    var coeff = fitEmpiricalCoefficients(null);
+    const coeff = fitEmpiricalCoefficients(null);
     assert.ok(Array.isArray(coeff.solarEffectivenessByHour), 'field must exist');
     assert.equal(coeff.solarEffectivenessByHour.length, 24);
   });
@@ -339,17 +339,17 @@ describe('fitSolarEffectivenessByHour', () => {
 describe('computeSustainForecast — solar effectiveness mask', () => {
 
   function localMidnight() {
-    var d = new Date();
+    const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d.getTime();
   }
 
   // Build weather48h: bright sun (600 W/m²) during targetHour of today, dark otherwise.
   function makeWeatherWithSunAtHour(targetHour) {
-    var base = localMidnight();
+    const base = localMidnight();
     return Array.from({ length: 48 }, function(_, i) {
-      var ts    = new Date(base + i * 3600000);
-      var localH = ts.getHours();
+      const ts    = new Date(base + i * 3600000);
+      const localH = ts.getHours();
       return {
         ts:              ts.toISOString(),
         temperature:     10,
@@ -360,12 +360,12 @@ describe('computeSustainForecast — solar effectiveness mask', () => {
   }
 
   it('effectiveness = 0 for the sunny hour → zero solar charging credit', () => {
-    var SUN_HOUR = 9; // hour 09 local time
+    const SUN_HOUR = 9; // hour 09 local time
 
     // Mask: 0 everywhere (fully shaded at all hours).
-    var noSunMask = new Array(24).fill(0);
+    const noSunMask = new Array(24).fill(0);
 
-    var result = computeSustainForecast({
+    const result = computeSustainForecast({
       now:            localMidnight(),
       tankTop:        50,
       tankBottom:     48,
@@ -390,12 +390,12 @@ describe('computeSustainForecast — solar effectiveness mask', () => {
   });
 
   it('effectiveness = 1.0 for the sunny hour → solar charging is credited', () => {
-    var SUN_HOUR = 9; // hour 09 local time
+    const SUN_HOUR = 9; // hour 09 local time
 
     // Mask: 1.0 everywhere.
-    var fullSunMask = new Array(24).fill(1.0);
+    const fullSunMask = new Array(24).fill(1.0);
 
-    var result = computeSustainForecast({
+    const result = computeSustainForecast({
       now:            localMidnight(),
       tankTop:        50,
       tankBottom:     48,

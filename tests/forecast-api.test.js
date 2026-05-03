@@ -1,21 +1,21 @@
 'use strict';
 
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { createForecastHandler } = require('../server/lib/forecast-handler.js');
 
 // ── Stubs ──
 
 function makeLog() {
-  var msgs = [];
-  var stub = function (level) {
+  const msgs = [];
+  const stub = function (level) {
     return function (msg, meta) { msgs.push({ level, msg, meta }); };
   };
   return { msgs, info: stub('info'), warn: stub('warn'), error: stub('error') };
 }
 
 function fakeRes() {
-  var written = { status: null, headers: {}, body: null };
+  const written = { status: null, headers: {}, body: null };
   return {
     written,
     writeHead: function (status, headers) {
@@ -36,9 +36,9 @@ function fakeReq(url) {
 function makePool(rowMap) {
   return {
     query: function (sql, _params, cb) {
-      var result = { rows: [] };
-      var keys = Object.keys(rowMap);
-      for (var i = 0; i < keys.length; i++) {
+      const result = { rows: [] };
+      const keys = Object.keys(rowMap);
+      for (let i = 0; i < keys.length; i++) {
         if (sql.includes(keys[i])) {
           result.rows = rowMap[keys[i]].slice();
           break;
@@ -51,11 +51,11 @@ function makePool(rowMap) {
 
 // ── Fixture data ──
 
-var NOW_ISO = new Date('2026-05-04T10:00:00Z');
+const NOW_ISO = new Date('2026-05-04T10:00:00Z');
 
 function makeWeatherRows() {
-  var rows = [];
-  for (var h = 0; h < 48; h++) {
+  const rows = [];
+  for (let h = 0; h < 48; h++) {
     rows.push({
       valid_at:        new Date(NOW_ISO.getTime() + h * 3600 * 1000),
       temperature:     7.2,
@@ -68,8 +68,8 @@ function makeWeatherRows() {
 }
 
 function makePriceRows() {
-  var rows = [];
-  for (var h = 0; h < 48; h++) {
+  const rows = [];
+  for (let h = 0; h < 48; h++) {
     rows.push({
       valid_at:   new Date(NOW_ISO.getTime() + h * 3600 * 1000),
       priceCKwh:  12.5,
@@ -102,10 +102,10 @@ function makeSensorReadings30sRows() {
 
 describe('GET /api/forecast handler', () => {
   it('returns 503 when pool is null', function (t, done) {
-    var log = makeLog();
-    var handler = createForecastHandler({ pool: null, log, systemYaml: {} });
-    var req = fakeReq();
-    var res = fakeRes();
+    const log = makeLog();
+    const handler = createForecastHandler({ pool: null, log, systemYaml: {} });
+    const req = fakeReq();
+    const res = fakeRes();
     handler.handle(req, res);
     assert.equal(res.written.status, 503);
     assert.ok(res.written.body.error, 'error field present');
@@ -113,9 +113,9 @@ describe('GET /api/forecast handler', () => {
   });
 
   it('returns 200 with correct response shape on happy path', function (t, done) {
-    var log = makeLog();
+    const log = makeLog();
 
-    var pool = makePool({
+    const pool = makePool({
       // Latest sensors
       'sensor_readings_30s': makeSensorReadings30sRows(),
       // Current mode
@@ -126,7 +126,7 @@ describe('GET /api/forecast handler', () => {
       'spot_prices': makePriceRows(),
     });
 
-    var handler = createForecastHandler({
+    const handler = createForecastHandler({
       pool,
       log,
       systemYaml: {
@@ -137,18 +137,18 @@ describe('GET /api/forecast handler', () => {
       },
     });
 
-    var req = fakeReq();
-    var res = fakeRes();
+    const req = fakeReq();
+    const res = fakeRes();
     handler.handle(req, res);
 
     // Handler is async (multiple pool.query calls + callback chain).
     // Use setImmediate to let the microtask/callback queue flush.
-    var deadline = Date.now() + 2000;
+    const deadline = Date.now() + 2000;
     function poll() {
       if (res.written.status !== null) {
         // Assertions
         assert.equal(res.written.status, 200);
-        var body = res.written.body;
+        const body = res.written.body;
         assert.ok(typeof body.generatedAt === 'string', 'generatedAt present');
         assert.ok(Array.isArray(body.weather), 'weather array');
         assert.ok(Array.isArray(body.prices), 'prices array');
@@ -169,10 +169,10 @@ describe('GET /api/forecast handler', () => {
   });
 
   it('uses 60 s in-process cache on second call', function (t, done) {
-    var log = makeLog();
-    var queryCalls = 0;
+    const log = makeLog();
+    let queryCalls = 0;
 
-    var pool = {
+    const pool = {
       query: function (sql, params, cb) {
         queryCalls++;
         cb(null, { rows: [] });
@@ -180,18 +180,18 @@ describe('GET /api/forecast handler', () => {
     };
 
     // Create a fresh handler (no cached state from previous test).
-    var handler = createForecastHandler({ pool, log, systemYaml: {} });
+    const handler = createForecastHandler({ pool, log, systemYaml: {} });
 
-    var req = fakeReq();
-    var res1 = fakeRes();
-    var res2 = fakeRes();
+    const req = fakeReq();
+    const res1 = fakeRes();
+    const res2 = fakeRes();
 
     handler.handle(req, res1);
 
-    var deadline = Date.now() + 2000;
+    const deadline = Date.now() + 2000;
     function waitFirst() {
       if (res1.written.status !== null) {
-        var callsAfterFirst = queryCalls;
+        const callsAfterFirst = queryCalls;
         handler.handle(req, res2);
         // Second call should return cached response immediately — same tick.
         assert.equal(res2.written.status, 200, 'second call 200');
@@ -207,9 +207,9 @@ describe('GET /api/forecast handler', () => {
   });
 
   it('returns 500 when all parallel queries fail', function (t, done) {
-    var log = makeLog();
+    const log = makeLog();
 
-    var pool = {
+    const pool = {
       query: function (sql, params, cb) {
         cb(new Error('DB connection lost'));
       },
@@ -217,12 +217,12 @@ describe('GET /api/forecast handler', () => {
 
     // Clear module-level caches so previous test's cache doesn't mask the error.
     // We can't reach private _responseCache directly, so create a fresh handler.
-    var handler = createForecastHandler({ pool, log, systemYaml: {} });
-    var req = fakeReq();
-    var res = fakeRes();
+    const handler = createForecastHandler({ pool, log, systemYaml: {} });
+    const req = fakeReq();
+    const res = fakeRes();
     handler.handle(req, res);
 
-    var deadline = Date.now() + 2000;
+    const deadline = Date.now() + 2000;
     function waitForResponse() {
       if (res.written.status !== null) {
         // When all 4 parallel queries fail, the first error triggers a 500.
@@ -239,12 +239,12 @@ describe('GET /api/forecast handler', () => {
   });
 
   it('reads space_heater and electricity config from systemYaml', function (t, done) {
-    var log = makeLog();
-    var pool = {
+    const log = makeLog();
+    const pool = {
       query: function (sql, params, cb) { cb(null, { rows: [] }); },
     };
 
-    var handler = createForecastHandler({
+    const handler = createForecastHandler({
       pool,
       log,
       systemYaml: {
@@ -253,11 +253,11 @@ describe('GET /api/forecast handler', () => {
       },
     });
 
-    var req = fakeReq();
-    var res = fakeRes();
+    const req = fakeReq();
+    const res = fakeRes();
     handler.handle(req, res);
 
-    var deadline = Date.now() + 2000;
+    const deadline = Date.now() + 2000;
     function waitForResponse() {
       if (res.written.status !== null) {
         // Handler should not crash on non-standard config values.

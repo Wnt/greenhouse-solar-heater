@@ -51,7 +51,7 @@ describe('spot-price-client', () => {
       assert.strictEqual(merged.length, 7, 'expected 7 rows');
 
       // h0–h4 must be sahkotin
-      for (var i = 0; i < 5; i++) {
+      for (let i = 0; i < 5; i++) {
         assert.strictEqual(merged[i].source, 'sahkotin', 'h' + i + ' should be sahkotin');
       }
       // h5–h6 must be nordpool-predict
@@ -59,7 +59,7 @@ describe('spot-price-client', () => {
       assert.strictEqual(merged[6].source, 'nordpool-predict', 'h6 should be nordpool-predict');
 
       // sorted ascending
-      for (var j = 1; j < merged.length; j++) {
+      for (let j = 1; j < merged.length; j++) {
         assert.ok(merged[j].validAt >= merged[j - 1].validAt, 'not sorted at index ' + j);
       }
     });

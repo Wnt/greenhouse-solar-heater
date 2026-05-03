@@ -43,15 +43,15 @@ function round4(n) {
  * CSV format: hour,price\n<ISO>,<c/kWh incl. VAT>\n…
  */
 function parseSahkotinCsv(csv) {
-  var rows = [];
-  var lines = csv.split('\n');
-  for (var i = 1; i < lines.length; i++) {
-    var line = lines[i].trim();
+  const rows = [];
+  const lines = csv.split('\n');
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
     if (!line) continue;
-    var comma = line.indexOf(',');
+    const comma = line.indexOf(',');
     if (comma < 0) continue;
-    var ts = line.slice(0, comma).trim();
-    var price = parseFloat(line.slice(comma + 1).trim());
+    const ts = line.slice(0, comma).trim();
+    const price = parseFloat(line.slice(comma + 1).trim());
     if (!ts || isNaN(price)) continue;
     rows.push({ validAt: new Date(ts), priceCKwh: round4(price), source: 'sahkotin' });
   }
@@ -64,7 +64,7 @@ function parseSahkotinCsv(csv) {
  * Prices are VAT-exclusive → multiply by FI_VAT.
  */
 function parseNordpoolPredict(json) {
-  var data = typeof json === 'string' ? JSON.parse(json) : json;
+  const data = typeof json === 'string' ? JSON.parse(json) : json;
   return data.map(function (pair) {
     return {
       validAt: new Date(pair[0]),
@@ -87,15 +87,15 @@ function mergePrices(sahkotinRows, nordpoolRows) {
     return nordpoolRows.slice().sort(function (a, b) { return a.validAt - b.validAt; });
   }
 
-  var lastSahkotin = sahkotinRows.reduce(function (max, r) {
+  const lastSahkotin = sahkotinRows.reduce(function (max, r) {
     return r.validAt > max ? r.validAt : max;
   }, sahkotinRows[0].validAt);
 
-  var firstSahkotin = sahkotinRows.reduce(function (min, r) {
+  const firstSahkotin = sahkotinRows.reduce(function (min, r) {
     return r.validAt < min ? r.validAt : min;
   }, sahkotinRows[0].validAt);
 
-  var merged = sahkotinRows.slice();
+  const merged = sahkotinRows.slice();
 
   nordpoolRows.forEach(function (r) {
     if (r.validAt > lastSahkotin && r.validAt >= firstSahkotin) {
@@ -110,15 +110,15 @@ function mergePrices(sahkotinRows, nordpoolRows) {
  * Fetch and merge prices for the next horizonHours.
  */
 function fetchPrices(opts) {
-  var horizonHours = (opts && opts.horizonHours) || 48;
-  var now = new Date();
-  var start = new Date(Math.floor(now.getTime() / 3600000) * 3600000);
-  var end = new Date(start.getTime() + horizonHours * 3600000);
+  const horizonHours = (opts && opts.horizonHours) || 48;
+  const now = new Date();
+  const start = new Date(Math.floor(now.getTime() / 3600000) * 3600000);
+  const end = new Date(start.getTime() + horizonHours * 3600000);
 
-  var sahkotinUrl = 'https://sahkotin.fi/prices.csv?vat=true'
+  const sahkotinUrl = 'https://sahkotin.fi/prices.csv?vat=true'
     + '&start=' + encodeURIComponent(start.toISOString())
     + '&end=' + encodeURIComponent(end.toISOString());
-  var nordpoolUrl = 'https://raw.githubusercontent.com/vividfog/nordpool-predict-fi/main/deploy/prediction.json';
+  const nordpoolUrl = 'https://raw.githubusercontent.com/vividfog/nordpool-predict-fi/main/deploy/prediction.json';
 
   return Promise.all([
     _get(sahkotinUrl).then(function (r) {

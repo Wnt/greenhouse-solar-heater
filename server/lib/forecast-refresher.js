@@ -10,27 +10,27 @@
  * config = { location: { lat, lon }, refreshIntervalMs }
  */
 
-var DEFAULT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
-var FORECAST_HOURS = 48;
+const DEFAULT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+const FORECAST_HOURS = 48;
 
 function create(opts) {
-  var pool          = opts.pool;
-  var log           = opts.log;
-  var config        = opts.config || {};
-  var isPreviewMode = opts.isPreviewMode || false;
-  var fmiClient     = opts.fmiClient;
-  var spotClient    = opts.spotPriceClient;
+  const pool          = opts.pool;
+  const log           = opts.log;
+  const config        = opts.config || {};
+  const isPreviewMode = opts.isPreviewMode || false;
+  const fmiClient     = opts.fmiClient;
+  const spotClient    = opts.spotPriceClient;
 
-  var intervalMs = config.refreshIntervalMs || DEFAULT_INTERVAL_MS;
-  var lat        = config.location && config.location.lat;
-  var lon        = config.location && config.location.lon;
+  const intervalMs = config.refreshIntervalMs || DEFAULT_INTERVAL_MS;
+  const lat        = config.location && config.location.lat;
+  const lon        = config.location && config.location.lon;
 
-  var _intervalHandle = null;
-  var _inFlightPromise = null;
+  let _intervalHandle = null;
+  let _inFlightPromise = null;
 
   function upsertWeather(rows, fetchedAt) {
     if (!rows || rows.length === 0) return Promise.resolve();
-    var sql = 'INSERT INTO weather_forecasts ' +
+    const sql = 'INSERT INTO weather_forecasts ' +
       '(fetched_at, valid_at, temperature, radiation_global, wind_speed, precipitation) ' +
       'VALUES ($1, $2, $3, $4, $5, $6) ' +
       'ON CONFLICT (fetched_at, valid_at) DO UPDATE SET ' +
@@ -39,7 +39,7 @@ function create(opts) {
       '  wind_speed = EXCLUDED.wind_speed, ' +
       '  precipitation = EXCLUDED.precipitation';
 
-    var chain = Promise.resolve();
+    let chain = Promise.resolve();
     rows.forEach(function (row) {
       chain = chain.then(function () {
         return new Promise(function (resolve, reject) {
@@ -61,13 +61,13 @@ function create(opts) {
 
   function upsertPrices(rows, fetchedAt) {
     if (!rows || rows.length === 0) return Promise.resolve();
-    var sql = 'INSERT INTO spot_prices (fetched_at, valid_at, source, price_c_kwh) ' +
+    const sql = 'INSERT INTO spot_prices (fetched_at, valid_at, source, price_c_kwh) ' +
       'VALUES ($1, $2, $3, $4) ' +
       'ON CONFLICT (valid_at, source) DO UPDATE SET ' +
       '  fetched_at = EXCLUDED.fetched_at, ' +
       '  price_c_kwh = EXCLUDED.price_c_kwh';
 
-    var chain = Promise.resolve();
+    let chain = Promise.resolve();
     rows.forEach(function (row) {
       chain = chain.then(function () {
         return new Promise(function (resolve, reject) {
@@ -86,9 +86,9 @@ function create(opts) {
   }
 
   function runCycle() {
-    var fetchedAt = new Date();
+    const fetchedAt = new Date();
 
-    var weatherPromise = fmiClient.fetchForecast({ lat: lat, lon: lon, hours: FORECAST_HOURS })
+    const weatherPromise = fmiClient.fetchForecast({ lat, lon, hours: FORECAST_HOURS })
       .then(function (rows) {
         return upsertWeather(rows, fetchedAt).then(function () {
           log.info('forecast-refresher: weather upserted', { rows: rows.length });
@@ -98,7 +98,7 @@ function create(opts) {
         log.error('forecast-refresher: weather fetch failed', { error: err.message });
       });
 
-    var pricesPromise = spotClient.fetchPrices({ horizonHours: FORECAST_HOURS })
+    const pricesPromise = spotClient.fetchPrices({ horizonHours: FORECAST_HOURS })
       .then(function (rows) {
         return upsertPrices(rows, fetchedAt).then(function () {
           log.info('forecast-refresher: prices upserted', { rows: rows.length });
@@ -132,7 +132,7 @@ function create(opts) {
     return _inFlightPromise || Promise.resolve();
   }
 
-  return { start: start, stop: stop };
+  return { start, stop };
 }
 
-module.exports = { create: create };
+module.exports = { create };
