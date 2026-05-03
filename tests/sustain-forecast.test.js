@@ -548,3 +548,40 @@ describe('computeSustainForecast — FMI cloud factor', () => {
       'expected > 18 kWh/day on a 700 W/m² day; got ' + result.solarGainByDay[0].kWh);
   });
 });
+
+// Regression test for the undefined-threshold bug. The forecast handler used to
+// pass `tuning.greenhouseEnterTemp` etc. where `effectiveTuning` actually
+// returns `tuning.geT` — so all three thresholds were undefined. With the
+// previous Object.assign, undefined overwrote DEFAULT_CONFIG, and every
+// `curGhTemp < cfg.emergencyEnterC` comparison was false → backup never fired
+// → the card showed "Tank lasts 48+ h, Backup 0 kWh" while greenhouse drifted
+// down to outdoor (~5 °C). Pinning this so a future regression surfaces in CI.
+describe('computeSustainForecast — undefined config thresholds fall back to defaults', () => {
+  it('cold night with explicit-undefined thresholds still triggers backup', () => {
+    const result = computeSustainForecast({
+      now:            Date.now(),
+      tankTop:        20,
+      tankBottom:     18,
+      greenhouseTemp: 12,
+      currentMode:    'idle',
+      weather48h:     makeWeather48h({ temperature: 2, radiationGlobal: 0 }),
+      prices48h:      makePrices48h(10),
+      coefficients:   {},
+      // Simulates the broken handler shape: keys present but undefined values.
+      config: {
+        spaceHeaterKw:    1,
+        transferFeeCKwh:  5,
+        greenhouseEnterC: undefined,
+        greenhouseExitC:  undefined,
+        emergencyEnterC:  undefined,
+      },
+    });
+
+    // With defaults restored (greenhouseEnterC=10, emergencyEnterC=8), the
+    // greenhouse should cool below 8 within 48 h and trigger backup heating.
+    assert.ok(result.hoursUntilBackupNeeded !== null,
+      'expected hoursUntilBackupNeeded to be set, got null');
+    assert.ok(result.electricKwh > 0,
+      'expected backup heating > 0 kWh, got ' + result.electricKwh);
+  });
+});

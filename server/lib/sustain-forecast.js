@@ -96,7 +96,17 @@ function computeSustainForecast(opts) {
   const weather      = opts.weather48h  || [];
   const prices       = opts.prices48h   || [];
   const coeff        = opts.coefficients || {};
-  const cfg          = Object.assign({}, DEFAULT_CONFIG, opts.config || {});
+  // Object.assign overwrites with undefined values too, which has burned us
+  // before (handler passing tuning.greenhouseEnterTemp where the field was
+  // `geT` → undefined → `gh < undefined` always false → backup never fires).
+  // Filter out undefined fields so they fall through to DEFAULT_CONFIG.
+  const cfgOverrides = {};
+  if (opts.config) {
+    Object.keys(opts.config).forEach(function (k) {
+      if (opts.config[k] !== undefined) cfgOverrides[k] = opts.config[k];
+    });
+  }
+  const cfg = Object.assign({}, DEFAULT_CONFIG, cfgOverrides);
 
   const tankLeakageWPerK    = typeof coeff.tankLeakageWPerK    === 'number' ? coeff.tankLeakageWPerK    : DEFAULT_TANK_LEAKAGE_W_PER_K;
   // Observed tank-drop rate during the most recent ~hour, in K/h (positive

@@ -265,16 +265,16 @@ function createForecastHandler(opts) {
         // (instead of hardcoded 10 °C) so when the user has e.g. set
         // greenhouse heat enter to 13 °C, "Tank lasts" reflects the actual
         // continuous-heating depletion at the current threshold.
+        // effectiveTuning returns SHORT keys (geT, gxT, ehE) — same shape as
+        // tu — and merges user overrides over the control-logic defaults.
         const dcfg     = deviceConfig.getConfig() || {};
         const tuning   = deviceConfig.effectiveTuning(dcfg.tu || {});
         const forecastConfig = {
           spaceHeaterKw:   configFromYaml.spaceHeaterKw,
           transferFeeCKwh: configFromYaml.transferFeeCKwh,
-          // tu.geT / tu.gxT / tu.ehE keys → engine field names. effectiveTuning
-          // already merged user values over control-logic.js defaults.
-          greenhouseEnterC: tuning.greenhouseEnterTemp,
-          greenhouseExitC:  tuning.greenhouseExitTemp,
-          emergencyEnterC:  tuning.emergencyEnterTemp,
+          greenhouseEnterC: tuning.geT,
+          greenhouseExitC:  tuning.gxT,
+          emergencyEnterC:  tuning.ehE,
           fitBucketCount: coeff.fitBucketCount || 0,
           weatherFetchedAt: weather.length > 0 ? new Date() : null,
         };
