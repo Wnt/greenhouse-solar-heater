@@ -14,7 +14,7 @@
 //   between /api/history fetches.
 
 import { store } from '../app-state.js';
-import { timeSeriesStore } from './state.js';
+import { timeSeriesStore, trendStore } from './state.js';
 import { drawHistoryGraph } from './history-graph.js';
 import { rerenderWithHistoryFallback } from './display-update.js';
 import { registerDataSource } from '../sync/registry.js';
@@ -100,13 +100,21 @@ function loadLiveHistoryIntoStore(data) {
     const p = data.points[i];
     if (!p || typeof p.ts !== 'number') continue;
     const tSec = Math.floor(p.ts / 1000);
-    timeSeriesStore.addPoint(tSec, {
+    const vals = {
       t_tank_top: p.tank_top,
       t_tank_bottom: p.tank_bottom,
       t_collector: p.collector,
       t_greenhouse: p.greenhouse,
       t_outdoor: p.outdoor,
-    });
+    };
+    timeSeriesStore.addPoint(tSec, vals);
+    // Seed trendStore so the rising/falling arrows populate on first
+    // page load instead of waiting 5 min for live WS frames to fill in.
+    // addPoint drops samples ≤ the last stored timestamp, so a later
+    // timeframe change to (e.g.) 4mo — which returns sparse downsampled
+    // points — cannot clobber high-resolution recent samples already
+    // written by earlier fetches or live frames.
+    trendStore.addPoint(tSec, vals);
   }
 }
 

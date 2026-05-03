@@ -329,3 +329,81 @@ test.describe('Collectors fluid-state indicator', () => {
     await expect(page.locator('#comp-collectors')).toHaveText('FILLED');
   });
 });
+
+test.describe('Direction-of-change is decoupled from the graph timeframe selector', () => {
+  // The trend arrows in the Status gauge ("RISING" / "FALLING" / "STABLE")
+  // and the per-sensor arrows in the Components view must always reflect
+  // the most recent ~5 minutes of samples. Picking a longer graph range
+  // (4mo) reloads the graph's history with downsampled points; that must
+  // NOT clear the trend state.
+  test('trend label stays RISING after switching the graph range', async ({ page }) => {
+    const now = Date.now();
+    // 6 fine-grained recent samples within the trend's 5-min window,
+    // tank_top climbing 32 → 35 °C (well past the 0.083 °C threshold).
+    const fineGrained = [];
+    for (let i = 6; i >= 0; i--) {
+      fineGrained.push({
+        ts: now - i * 30_000,
+        collector: 50 + (6 - i),
+        tank_top: 32 + (6 - i) * 0.5,
+        tank_bottom: 28 + (6 - i) * 0.5,
+        greenhouse: 20,
+        outdoor: 10,
+      });
+    }
+
+    // Server-side handler: respond with the fine-grained set for the
+    // initial 24h fetch, then with a sparse downsampled set (one
+    // ancient point, no recent ones) for any 4mo refetch. The sparse
+    // response is what would silently break the trend if it clobbered
+    // the trendStore.
+    await page.route('**/api/history**', (route) => {
+      const url = route.request().url();
+      const isLong = url.includes('range=4mo');
+      const body = isLong
+        ? JSON.stringify({
+            range: '4mo',
+            points: [
+              // One coarse point months ago; nothing within 5 min of now.
+              { ts: now - 30 * 24 * 3600_000, collector: 20, tank_top: 25, tank_bottom: 22, greenhouse: 18, outdoor: 5 },
+            ],
+            events: [],
+          })
+        : JSON.stringify({
+            range: '24h',
+            points: fineGrained,
+            events: [{ ts: now - 3600_000, type: 'mode', id: 'controller', from: 'idle', to: 'solar_charging' }],
+          });
+      route.fulfill({ status: 200, contentType: 'application/json', body });
+    });
+
+    await installMockWs(page, {
+      temps: { collector: 56, tank_top: 35, tank_bottom: 31, greenhouse: 21, outdoor: 11 },
+    });
+    await page.goto('/playground/#status', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    // Trend should populate from the seeded high-resolution history.
+    await expect(page.locator('#tank-temp-status')).toHaveText('RISING', { timeout: 5000 });
+
+    // Click the 4mo pill — triggers a fresh fetchLiveHistory(10368000)
+    // that returns the sparse downsampled response. timeSeriesStore is
+    // reset by loadLiveHistoryIntoStore; trendStore must NOT be.
+    const longResponse = page.waitForResponse((r) => r.url().includes('range=4mo'));
+    await page.locator('button.time-range-slider-step[data-range="10368000"]').click({ force: true });
+    await longResponse;
+
+    // Wait for applyLiveHistory to actually land — the sparse 4mo
+    // payload reduces __getHistoryPointCount well below the seeded 7
+    // (typically to 1–2 after the rerender pipeline appends the cached
+    // live WS frame). Without this guard the assertion below could
+    // fire before the rerender, masking the bug.
+    await page.waitForFunction(() => window.__getHistoryPointCount() <= 2, null, { timeout: 5000 });
+
+    // Trend label must still read RISING — proves trendStore survived
+    // the timeframe change. Before this fix, trendFor read from
+    // timeSeriesStore, so reducing it to 1 point would force the trend
+    // back to STABLE (the null-trend fallback).
+    await expect(page.locator('#tank-temp-status')).toHaveText('RISING');
+  });
+});

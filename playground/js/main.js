@@ -40,7 +40,7 @@ window.__triggerVersionCheck = triggerVersionCheck;
 // siblings don't have to import back from main.js (which would cycle).
 import {
   model, controller, running, showAllSensors,
-  params, timeSeriesStore,
+  params, timeSeriesStore, trendStore,
   setModel, setController, setRunning,
   setSimSpeed, setShowAllSensors,
 } from './main/state.js';
@@ -319,6 +319,7 @@ function resetSim() {
   });
   controller.reset();
   timeSeriesStore.reset();
+  trendStore.reset();
   transitionLog.length = 0;
   resetChartZoom();
   resetYesterdayTracking();
@@ -371,6 +372,11 @@ function restoreBootstrapSnapshot(snapshot) {
   for (let i = 0; i < snapshot.points.length; i++) {
     const p = snapshot.points[i];
     timeSeriesStore.addPoint(p.time, p.values);
+    // Seed trendStore so rising/falling arrows show on the first
+    // render after auto-bootstrap (GitHub Pages deploy) instead of
+    // staying blank for the first ~5 min of sim time. trendStore's
+    // age-based pruning keeps only the trailing window.
+    trendStore.addPoint(p.time, p.values);
   }
   // Reconstruct mode-events from the bootstrap log: each transition
   // entry encodes the mode the controller switched INTO at sim time

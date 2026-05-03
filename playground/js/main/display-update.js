@@ -4,7 +4,7 @@
 
 import { store } from '../app-state.js';
 import { tankStoredEnergyKwh } from '../physics.js';
-import { timeSeriesStore, MODE_INFO, running, setLastLiveFrame } from './state.js';
+import { timeSeriesStore, trendStore, MODE_INFO, running, setLastLiveFrame } from './state.js';
 import { detectLiveTransition, renderLogsList } from './logs.js';
 import { drawHistoryGraph, toSchematicState } from './history-graph.js';
 import { appendBalanceLivePoint, getLiveYesterdayHigh } from './balance-card.js';
@@ -19,28 +19,31 @@ function fmtTemp(v, digits) {
   return isNum(v) ? v.toFixed(digits) : TEMP_PLACEHOLDER;
 }
 
-// 15-minute rolling window, 1 °C/hr threshold → ≥0.25 °C per 15 min
-// counts as rising/falling. Window is long enough to populate from
-// the first page-load history fetch, short enough that weather +
-// charging-state changes surface within a minute.
-const TREND_WINDOW_S = 900;
-const TREND_THRESHOLD = 0.25;
+// 5-minute rolling window, ~1 °C/hr threshold → ≥0.083 °C per 5 min
+// counts as rising/falling. Reads from trendStore (not timeSeriesStore)
+// so the user picking a longer graph range — which resets timeSeriesStore
+// and reloads downsampled history — does not blow away the high-resolution
+// recent samples the trend computation needs. The trend is an "is it
+// changing right now?" indicator and is intentionally decoupled from
+// the graph card's timeframe selector.
+const TREND_WINDOW_S = 300;
+const TREND_THRESHOLD = 0.083;
 
 function trendFor(resolver) {
-  if (timeSeriesStore.times.length < 2) return null;
-  const now = timeSeriesStore.times[timeSeriesStore.times.length - 1];
+  if (trendStore.times.length < 2) return null;
+  const now = trendStore.times[trendStore.times.length - 1];
   const windowStart = now - TREND_WINDOW_S;
-  let startIdx = timeSeriesStore.times.length - 1;
-  for (let i = timeSeriesStore.times.length - 2; i >= 0; i--) {
-    if (timeSeriesStore.times[i] < windowStart) break;
+  let startIdx = trendStore.times.length - 1;
+  for (let i = trendStore.times.length - 2; i >= 0; i--) {
+    if (trendStore.times[i] < windowStart) break;
     startIdx = i;
   }
-  if (startIdx >= timeSeriesStore.times.length - 1) return null;
+  if (startIdx >= trendStore.times.length - 1) return null;
   const fn = typeof resolver === 'function'
     ? resolver
     : (entry) => entry[resolver];
-  const latest = fn(timeSeriesStore.values[timeSeriesStore.values.length - 1]);
-  const earlier = fn(timeSeriesStore.values[startIdx]);
+  const latest = fn(trendStore.values[trendStore.values.length - 1]);
+  const earlier = fn(trendStore.values[startIdx]);
   if (!isNum(latest) || !isNum(earlier)) return null;
   const delta = latest - earlier;
   if (delta >= TREND_THRESHOLD) return 'rising';
@@ -484,15 +487,20 @@ function recordLiveHistoryPoint(state, result) {
   // mode-events store, so this function only persists the temperatures.
   void result;
   const tSec = Math.floor(Date.now() / 1000);
-  const last = timeSeriesStore.times.length - 1;
-  if (last >= 0 && (tSec - timeSeriesStore.times[last]) < 5) return;
-  timeSeriesStore.addPoint(tSec, {
+  const vals = {
     t_tank_top: state.t_tank_top,
     t_tank_bottom: state.t_tank_bottom,
     t_collector: state.t_collector,
     t_greenhouse: state.t_greenhouse,
     t_outdoor: state.t_outdoor,
-  });
+  };
+  // trendStore has its own dedup-by-timestamp + age-based pruning, so
+  // we feed it every frame — trendFor wants the freshest sample
+  // available regardless of the graph cadence.
+  trendStore.addPoint(tSec, vals);
+  const last = timeSeriesStore.times.length - 1;
+  if (last >= 0 && (tSec - timeSeriesStore.times[last]) < 5) return;
+  timeSeriesStore.addPoint(tSec, vals);
 }
 
 // Re-render the Status/Components views after something refills the
