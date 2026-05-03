@@ -19,7 +19,7 @@ import {
 } from './logs.js';
 import {
   fetchBalanceHistory, renderBalanceCard,
-  resetLiveYesterdayHigh, resetBalanceState,
+  resetBalanceState,
   registerBalanceHistorySource,
 } from './balance-card.js';
 import {
@@ -409,8 +409,6 @@ function clearLiveDisplay() {
   const ghTrendResetEl = document.getElementById('tank-stat-greenhouse-trend');
   if (ghTrendResetEl) ghTrendResetEl.innerHTML = '';
   document.getElementById('inactive-modes').innerHTML = '';
-  resetLiveYesterdayHigh();
-  document.getElementById('graph-peak-label').textContent = "Yesterday's High: --";
   const arc = document.getElementById('tank-gauge-arc');
   if (arc) arc.setAttribute('stroke-dashoffset', '628');
   // Clear component statuses

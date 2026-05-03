@@ -29,7 +29,7 @@ import { setupChartPinchZoom, resetChartZoom } from './main/chart-pinch-zoom.js'
 import { setupTimeRangeSlider } from './main/time-range-slider.js';
 import {
   updateDisplay, rerenderWithHistoryFallback,
-  setSchematicHandle, getLastFrame, resetYesterdayTracking,
+  setSchematicHandle, getLastFrame,
 } from './main/display-update.js';
 import {
   initConnection, initModeToggle, updateSidebarSubtitle, getLiveSource,
@@ -322,7 +322,6 @@ function resetSim() {
   trendStore.reset();
   transitionLog.length = 0;
   resetChartZoom();
-  resetYesterdayTracking();
   setRunning(false);
   resetSimulationTime();
   updateFABIcon();

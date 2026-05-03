@@ -7,7 +7,7 @@ import { tankStoredEnergyKwh } from '../physics.js';
 import { timeSeriesStore, trendStore, MODE_INFO, running, setLastLiveFrame } from './state.js';
 import { detectLiveTransition, renderLogsList } from './logs.js';
 import { drawHistoryGraph, toSchematicState } from './history-graph.js';
-import { appendBalanceLivePoint, getLiveYesterdayHigh } from './balance-card.js';
+import { appendBalanceLivePoint } from './balance-card.js';
 import { modeAt } from './mode-events.js';
 import { formatHeldLines } from './logs-clipboard.js';
 
@@ -99,10 +99,6 @@ let lastResult = null;
 // live mode).
 let liveFrameSeen = false;
 
-let yesterdayHigh = 0;
-let confirmedYesterdayHigh = 0;
-let lastDay = 0;
-
 export function setSchematicHandle(h) { schematicHandle = h; }
 export function getLastFrame() { return { state: lastState, result: lastResult }; }
 export function setLiveFrameSeen(v) { liveFrameSeen = v; }
@@ -110,11 +106,6 @@ export function setLiveFrameSeen(v) { liveFrameSeen = v; }
 // onResyncStart hook actually clears the flag, which is the seam
 // that fixes the Android wrong-direction-arrow bug.
 window.__getLiveFrameSeen = function () { return liveFrameSeen; };
-export function resetYesterdayTracking() {
-  yesterdayHigh = 0;
-  confirmedYesterdayHigh = 0;
-  lastDay = 0;
-}
 
 export function updateDisplay(state, result) {
   const mode = result.mode;
@@ -232,18 +223,6 @@ export function updateDisplay(state, result) {
   const ghTrendEl = document.getElementById('tank-stat-greenhouse-trend');
   if (ghTrendEl) ghTrendEl.innerHTML = renderTrendIcon(trendFor('t_greenhouse'));
 
-  // Track yesterday's high (peak from previous 24h simulated day)
-  // using the tank average so it stays consistent with the gauge.
-  if (isNum(tankAvg)) {
-    if (tankAvg > yesterdayHigh) yesterdayHigh = tankAvg;
-    const simDay = Math.floor(state.simTime / 86400);
-    if (simDay > lastDay) {
-      confirmedYesterdayHigh = yesterdayHigh;
-      yesterdayHigh = tankAvg;
-      lastDay = simDay;
-    }
-  }
-
   // Gauge arc: 0°C = empty, 100°C = full circle (628 circumference)
   const arc = document.getElementById('tank-gauge-arc');
   if (arc) {
@@ -275,13 +254,6 @@ export function updateDisplay(state, result) {
   else if (tankAvg > 50) msgEl.textContent = 'Tank is well charged.';
   else if (tankAvg > 25) msgEl.textContent = 'Moderate thermal storage.';
   else msgEl.textContent = 'Tank is cold — waiting for solar gain.';
-
-  // Graph yesterday's high label. Simulation tracks a per-sim-day
-  // peak via confirmedYesterdayHigh; live mode derives it from the
-  // 48h history fetch since state.simTime does not tick.
-  const peakVal = store.get('phase') === 'live' ? getLiveYesterdayHigh() : confirmedYesterdayHigh;
-  document.getElementById('graph-peak-label').textContent =
-    isNum(peakVal) && peakVal > 0 ? `Yesterday's High: ${peakVal.toFixed(0)}°C` : 'Yesterday\'s High: --';
 
   // Critical components
   updateComponent('comp-pump', result.actuators.pump, 'ACTIVE', 'OFF');
