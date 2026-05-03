@@ -43,6 +43,8 @@ const WB_PERMANENT_SENTINEL = 9999999999;
 const TUNING_RANGES = {
   geT: { min: 0,  max: 25,  step: 0.5, label: 'Greenhouse heat enter (°C)' },
   gxT: { min: 1,  max: 30,  step: 0.5, label: 'Greenhouse heat exit (°C)' },
+  gmD: { min: 1,  max: 20,  step: 0.5, label: 'Greenhouse min tank delta (K)' },
+  gxD: { min: 0,  max: 15,  step: 0.5, label: 'Greenhouse exit tank delta (K)' },
   ehE: { min: 0,  max: 20,  step: 0.5, label: 'Emergency heater enter (°C)' },
   ehX: { min: 1,  max: 25,  step: 0.5, label: 'Emergency heater exit (°C)' },
   fcE: { min: 20, max: 50,  step: 0.5, label: 'Fan-cool enter (°C)' },
@@ -275,6 +277,13 @@ function updateConfig(newConfig, callback) {
         callback(validationError(
           'tu invariant violated: fan-cool enter (' + effective.fcE +
           ') must be greater than exit (' + effective.fcX + ')'
+        ));
+        return;
+      }
+      if (effective.gmD <= effective.gxD) {
+        callback(validationError(
+          'tu invariant violated: greenhouse min tank delta (' + effective.gmD +
+          ') must be greater than exit tank delta (' + effective.gxD + ')'
         ));
         return;
       }

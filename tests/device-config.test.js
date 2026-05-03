@@ -334,6 +334,18 @@ describe('device-config', () => {
     });
   });
 
+  it('tu rejects greenhouse min-tank-delta <= exit-tank-delta (invariant)', (t, done) => {
+    deviceConfig.load(function (err) {
+      assert.ifError(err);
+      // Default gxD = 2. Setting gmD = 1 violates gmD > gxD.
+      deviceConfig.updateConfig({ tu: { gmD: 1 } }, function (err2) {
+        assert.ok(err2);
+        assert.match(err2.message, /greenhouse min tank delta/);
+        done();
+      });
+    });
+  });
+
   it('tu rejects emergency heater exit <= enter (invariant)', (t, done) => {
     deviceConfig.load(function (err) {
       assert.ifError(err);

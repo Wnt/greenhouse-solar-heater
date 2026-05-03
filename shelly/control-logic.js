@@ -185,6 +185,8 @@ var WB_PERMANENT_SENTINEL = 9999999999;
 var TUNING_KEYS = {
   geT: "greenhouseEnterTemp",
   gxT: "greenhouseExitTemp",
+  gmD: "greenhouseMinTankDelta",
+  gxD: "greenhouseExitTankDelta",
   ehE: "emergencyEnterTemp",
   ehX: "emergencyExitTemp",
   fcE: "greenhouseFanCoolEnter",
