@@ -138,6 +138,8 @@ const EA_BIT_LABELS = {
 const TUNING_LABELS = {
   geT: 'greenhouse heat enter',
   gxT: 'greenhouse heat exit',
+  ehE: 'emergency heater enter',
+  ehX: 'emergency heater exit',
   fcE: 'fan-cool enter',
   fcX: 'fan-cool exit',
   frT: 'freeze drain',

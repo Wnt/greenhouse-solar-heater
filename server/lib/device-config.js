@@ -43,6 +43,8 @@ const WB_PERMANENT_SENTINEL = 9999999999;
 const TUNING_RANGES = {
   geT: { min: 0,  max: 25,  step: 0.5, label: 'Greenhouse heat enter (°C)' },
   gxT: { min: 1,  max: 30,  step: 0.5, label: 'Greenhouse heat exit (°C)' },
+  ehE: { min: 0,  max: 20,  step: 0.5, label: 'Emergency heater enter (°C)' },
+  ehX: { min: 1,  max: 25,  step: 0.5, label: 'Emergency heater exit (°C)' },
   fcE: { min: 20, max: 50,  step: 0.5, label: 'Fan-cool enter (°C)' },
   fcX: { min: 15, max: 50,  step: 0.5, label: 'Fan-cool exit (°C)' },
   frT: { min: 0,  max: 10,  step: 0.5, label: 'Freeze drain (°C)' },
@@ -259,6 +261,13 @@ function updateConfig(newConfig, callback) {
         callback(validationError(
           'tu invariant violated: greenhouse heat exit (' + effective.gxT +
           ') must be greater than enter (' + effective.geT + ')'
+        ));
+        return;
+      }
+      if (effective.ehX <= effective.ehE) {
+        callback(validationError(
+          'tu invariant violated: emergency heater exit (' + effective.ehX +
+          ') must be greater than enter (' + effective.ehE + ')'
         ));
         return;
       }

@@ -198,6 +198,23 @@ describe('tu (tuning) overrides via deviceConfig', () => {
     assert.strictEqual(withTu.nextMode, MODES.IDLE);
   });
 
+  // Default emergencyEnterTemp = 9. With tu.ehE = 11 the heater
+  // overlay must engage when greenhouse is 10 (where the default
+  // would NOT have triggered).
+  it('cfg.tu.ehE raises the emergency-heater enter threshold', () => {
+    const noTu = evaluate(makeState({
+      temps: { collector: 5, tank_top: 12, tank_bottom: 10, greenhouse: 10, outdoor: -5 },
+      collectorsDrained: true
+    }), null, {});
+    assert.strictEqual(noTu.flags.emergencyHeatingActive, false);
+
+    const withTu = evaluate(makeState({
+      temps: { collector: 5, tank_top: 12, tank_bottom: 10, greenhouse: 10, outdoor: -5 },
+      collectorsDrained: true
+    }), null, { tu: { ehE: 11 } });
+    assert.strictEqual(withTu.flags.emergencyHeatingActive, true);
+  });
+
   // Sparse tu — keys omitted MUST fall back to DEFAULT_CONFIG. Setting
   // only fcE leaves freeze, overheat, greenhouse heating untouched.
   it('keys omitted from tu fall back to DEFAULT_CONFIG', () => {
