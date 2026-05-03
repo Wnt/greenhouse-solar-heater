@@ -43,5 +43,6 @@
   "ignoreUnresolved": [
     "/playground/js/app-state.js",
     "/playground/js/main/display-update.js"
-  ]
+  ],
+  "ignoreExportsUsedInFile": true
 }
