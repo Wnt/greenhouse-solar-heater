@@ -9,6 +9,7 @@ import { detectLiveTransition, renderLogsList } from './logs.js';
 import { drawHistoryGraph, toSchematicState } from './history-graph.js';
 import { appendBalanceLivePoint, getLiveYesterdayHigh } from './balance-card.js';
 import { modeAt } from './mode-events.js';
+import { formatHeldLines } from './logs-clipboard.js';
 
 // Live data may have null sensors when a role is unassigned — show "—".
 const TEMP_PLACEHOLDER = '—';
@@ -170,6 +171,27 @@ export function updateDisplay(state, result) {
   bgIcon.style.fontVariationSettings = info.iconFill
     ? "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 48"
     : "'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 48";
+
+  // Held-by banner — populated from result.held when a guard suppresses
+  // the evaluator's preferred decision (refill cooldown, wb-ban, ea-mask,
+  // …). Hidden when nothing is held this tick. Reuses formatHeldLines
+  // so the live banner and the System Logs export render identically.
+  const heldBannerEl = document.getElementById('mode-held-banner');
+  const heldListEl = document.getElementById('mode-held-list');
+  if (heldBannerEl && heldListEl) {
+    const heldLines = formatHeldLines(result && result.held, Math.floor(Date.now() / 1000));
+    if (heldLines.length === 0) {
+      heldBannerEl.style.display = 'none';
+      heldListEl.innerHTML = '';
+    } else {
+      heldBannerEl.style.display = '';
+      heldListEl.replaceChildren(...heldLines.map(l => {
+        const li = document.createElement('li');
+        li.textContent = l;
+        return li;
+      }));
+    }
+  }
 
   // Inactive modes
   const inactiveEl = document.getElementById('inactive-modes');
