@@ -142,7 +142,7 @@ export function renderForecastCard(data) {
   const status = document.getElementById('forecast-status');
   if (status) {
     status.textContent = fc
-      ? 'Toggle "Forecast" above the chart to overlay the next 12 h.'
+      ? 'Toggle "Forecast" above the chart to overlay the next 48 h.'
       : '';
   }
 

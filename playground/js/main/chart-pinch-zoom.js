@@ -15,7 +15,10 @@
 // Desktop hover uses mousemove via setupInspector and bypasses this
 // disambiguator entirely.
 
-import { graphRange, chartZoom, setChartZoom, timeSeriesStore } from './state.js';
+import {
+  graphRange, chartZoom, setChartZoom, timeSeriesStore,
+  showForecast, FORECAST_OVERLAY_SEC,
+} from './state.js';
 import { drawHistoryGraph, getChartWindow } from './history-graph.js';
 import { showInspector, hideInspector } from './graph-inspector.js';
 import { store } from '../app-state.js';
@@ -75,13 +78,30 @@ export function resetChartZoom() {
   if (chartZoom) setChartZoom(null);
 }
 
+// Pure: compute the pannable/scrollable bound for the chart in seconds.
+// When showForecast is true and the chart is in live mode, the right edge
+// extends by forecastSec so a zoomed user can pan into the projected
+// region. tMin always sits graphRange seconds before the historical right
+// edge so the historical span never grows just because the forecast is on.
+export function computeDefaultBound({ isLive, latestSampleT, nowSec, graphRange, showForecast, forecastSec }) {
+  const baseRight = isLive ? nowSec : Math.max(graphRange, latestSampleT || 0);
+  const tMax = (isLive && showForecast) ? baseRight + forecastSec : baseRight;
+  return { tMin: baseRight - graphRange, tMax };
+}
+
 function defaultBound() {
   const isLive = store.get('phase') === 'live';
   const latest = timeSeriesStore.times.length > 0
     ? timeSeriesStore.times[timeSeriesStore.times.length - 1]
     : 0;
-  const tMax = isLive ? Math.floor(Date.now() / 1000) : Math.max(graphRange, latest);
-  return { tMin: tMax - graphRange, tMax };
+  return computeDefaultBound({
+    isLive,
+    latestSampleT: latest,
+    nowSec: Math.floor(Date.now() / 1000),
+    graphRange,
+    showForecast,
+    forecastSec: FORECAST_OVERLAY_SEC,
+  });
 }
 
 export function setupChartPinchZoom() {
@@ -130,12 +150,17 @@ export function setupChartPinchZoom() {
     const d = Math.abs(pts[0].x - pts[1].x);
     if (d < 1) return;
     e.preventDefault();
+    const bound = defaultBound();
     const next = pinchZoomWindow({
       initialRange: pinch.range0,
       initialFracOfPinchCenter: pinch.f0,
       initialTimeAtPinchCenter: pinch.tMid,
       distanceRatio: d / pinch.d0,
-      maxRange: graphRange,
+      // maxRange = the full default window (history + forecast horizon when
+      // the overlay is on). Without this, pinch-out would snap back the
+      // moment the zoom width grew past graphRange — even if the user is
+      // still inside the chart's visible span.
+      maxRange: bound.tMax - bound.tMin,
       minRange: MIN_RANGE_SEC,
     });
     setChartZoom(next);

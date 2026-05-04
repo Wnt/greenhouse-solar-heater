@@ -9,7 +9,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { pinchZoomWindow, panZoomWindow } from '../playground/js/main/chart-pinch-zoom.js';
+import { pinchZoomWindow, panZoomWindow, computeDefaultBound } from '../playground/js/main/chart-pinch-zoom.js';
 
 const HOUR = 3600;
 
@@ -119,5 +119,37 @@ describe('panZoomWindow', () => {
     const r = panZoomWindow({ tMin: 5 * HOUR, tMax: 9 * HOUR }, 0, BOUND);
     assert.equal(r.tMin, 5 * HOUR);
     assert.equal(r.tMax, 9 * HOUR);
+  });
+});
+
+describe('computeDefaultBound', () => {
+  const NOW = 1000 * HOUR;
+
+  it('clamps right edge at "now" in live mode without forecast', () => {
+    const b = computeDefaultBound({
+      isLive: true, latestSampleT: NOW - 60, nowSec: NOW,
+      graphRange: 24 * HOUR, showForecast: false, forecastSec: 48 * HOUR,
+    });
+    assert.equal(b.tMax, NOW);
+    assert.equal(b.tMin, NOW - 24 * HOUR);
+  });
+
+  it('extends right edge by forecastSec when forecast overlay is on (live mode)', () => {
+    const b = computeDefaultBound({
+      isLive: true, latestSampleT: NOW - 60, nowSec: NOW,
+      graphRange: 24 * HOUR, showForecast: true, forecastSec: 48 * HOUR,
+    });
+    assert.equal(b.tMax, NOW + 48 * HOUR,
+      'pannable area must include the projected horizon so users can pan into it');
+    assert.equal(b.tMin, NOW - 24 * HOUR,
+      'historical left edge stays anchored to graphRange — turning forecast on does not stretch history');
+  });
+
+  it('ignores forecast in sim mode (forecast overlay is live-only)', () => {
+    const b = computeDefaultBound({
+      isLive: false, latestSampleT: 36 * HOUR, nowSec: NOW,
+      graphRange: 24 * HOUR, showForecast: true, forecastSec: 48 * HOUR,
+    });
+    assert.equal(b.tMax, 36 * HOUR);
   });
 });

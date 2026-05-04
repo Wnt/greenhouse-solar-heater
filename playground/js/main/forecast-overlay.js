@@ -8,21 +8,23 @@
 
 import { pickBucketSize } from '../ui.js';
 
-// Forecast overlay rendering: tank avg + greenhouse trajectories (dashed)
-// past "now", predicted mode bands (charging/heating/emergency) past
-// "now", and a vertical "now" divider line. All clipped to
+// Forecast overlay rendering: tank avg + greenhouse + outdoor trajectories
+// (dashed) past "now", predicted mode bands (charging/heating/emergency)
+// past "now", and a vertical "now" divider line. All clipped to
 // [now, cutoffSec] AND the visible chart window.
 export function drawForecastOverlay(ctx, data, nowSec, cutoffSec, tMin, tMax, visibleRange, barAreaH, barY0, pad, pw, ph, yMin, yMax) {
   const fc = data && data.forecast;
   if (!fc) return;
 
-  // Trajectory points come from the engine as ISO strings; convert to
+  // Trajectory points come from the engine as ISO strings (`ts` for
+  // engine output, `validAt` for the raw weather array). Convert to
   // seconds and clip to [nowSec, cutoffSec] AND the chart window.
-  function toPts(traj, valOf) {
+  function toPts(traj, valOf, tsKey) {
     if (!Array.isArray(traj)) return [];
+    const key = tsKey || 'ts';
     const pts = [];
     for (let i = 0; i < traj.length; i++) {
-      const t = Math.floor(new Date(traj[i].ts).getTime() / 1000);
+      const t = Math.floor(new Date(traj[i][key]).getTime() / 1000);
       if (t < nowSec || t > cutoffSec) continue;
       if (t < tMin || t > tMax) continue;
       const v = valOf(traj[i]);
@@ -47,9 +49,13 @@ export function drawForecastOverlay(ctx, data, nowSec, cutoffSec, tMin, tMax, vi
     ctx.restore();
   }
 
-  // Tank avg + greenhouse — match historical line colours, dashed.
+  // Tank avg + greenhouse + outdoor — match historical line colours, dashed.
+  // Outdoor lives in the raw weather array (top-level of the response,
+  // alongside `forecast`), not in the engine's projection — the engine
+  // consumes it as an input to compute tank/greenhouse cooling.
   drawDashed(toPts(fc.tankTrajectory, p => (typeof p.avg === 'number' ? p.avg : (p.top + p.bottom) / 2)), '#e9c349', 1.5);
   drawDashed(toPts(fc.greenhouseTrajectory, p => p.temp), '#69d0c5', 1.5);
+  drawDashed(toPts(data.weather, p => p.temperature, 'validAt'), '#42a5f5', 1);
 
   // Predicted mode bands (charging / heating / emergency) past "now",
   // bucketed at the same bucketSec as the historical duty bars on the

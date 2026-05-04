@@ -98,12 +98,13 @@ export function getChartWindow() {
   return { tMin: baseRight - graphRange, tMax };
 }
 
-// Forecast horizon for the current view: capped at FORECAST_OVERLAY_SEC
-// (12 h) but never larger than the historical range. At narrow ranges
-// (1 h, 6 h) this keeps history and forecast at equal width so the
-// detail you zoomed in for doesn't get squished into a tiny strip.
+// Forecast horizon for the current view: the full FORECAST_OVERLAY_SEC
+// (48 h). Independent of graphRange — when the user turns the overlay on
+// they want the entire projected window visible at once, even if it makes
+// the historical pane narrow. To regain historical detail, either widen
+// graphRange or turn the overlay off.
 function effectiveForecastSec() {
-  return Math.min(FORECAST_OVERLAY_SEC, graphRange);
+  return FORECAST_OVERLAY_SEC;
 }
 
 // Wall-clock "now" in chart-x-axis units (Unix seconds in live mode).
@@ -308,7 +309,7 @@ export function drawHistoryGraph() {
   // ── Outside line (blue) ──
   drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_outdoor', '#42a5f5', 1);
 
-  // ── Forecast overlay (next 12 h, dashed, only with the "Forecast" toggle) ──
+  // ── Forecast overlay (next 48 h, dashed, only with the "Forecast" toggle) ──
   // Live-only (chartNowSec returns null in sim mode → overlay no-ops).
   if (showForecast && forecastData) {
     const nowSec = chartNowSec();
