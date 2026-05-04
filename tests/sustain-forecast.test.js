@@ -367,6 +367,56 @@ describe('computeSustainForecast — FMI cloud factor', () => {
   });
 });
 
+// Regression: when the controller has cycled emergency_heating in the
+// past hour, the tank is functionally exhausted right now — not in 4 h
+// per simulation. The card showing "Tank lasts ~4 h" while the user is
+// watching the heater cycle is misleading. emergencyRecentlyActive
+// short-circuits hoursUntilBackupNeeded to 0 and the note reflects it.
+describe('computeSustainForecast — emergencyRecentlyActive', () => {
+  it('reports hoursUntilBackupNeeded=0 when emergency cycled recently', () => {
+    const result = computeSustainForecast({
+      now:            Date.now(),
+      tankTop:        14, tankBottom: 14, greenhouseTemp: 13,
+      currentMode:    'idle',
+      emergencyRecentlyActive: true,
+      weather48h:     makeWeather48h({ temperature: 6, radiationGlobal: 0 }),
+      prices48h:      makePrices48h(10),
+      coefficients:   {},
+      config: {
+        spaceHeaterKw: 1, transferFeeCKwh: 5,
+        emergencyEnterC: 11, emergencyExitC: 13,
+      },
+    });
+    assert.equal(result.hoursUntilBackupNeeded, 0,
+      'expected 0 (backup engaged) when emergencyRecentlyActive=true');
+    const exhaustedNote = result.notes.find(function (n) {
+      return /too cold to drive the radiator/.test(n);
+    });
+    assert.ok(exhaustedNote,
+      'expected note explaining the tank is functionally exhausted; got: ' + JSON.stringify(result.notes));
+  });
+
+  it('does NOT short-circuit when emergencyRecentlyActive=false', () => {
+    const result = computeSustainForecast({
+      now:            Date.now(),
+      tankTop:        50, tankBottom: 50, greenhouseTemp: 14,
+      currentMode:    'idle',
+      emergencyRecentlyActive: false,
+      weather48h:     makeWeather48h({ temperature: 6, radiationGlobal: 0 }),
+      prices48h:      makePrices48h(10),
+      coefficients:   {},
+      config: {
+        spaceHeaterKw: 1, transferFeeCKwh: 5,
+        greenhouseEnterC: 13, greenhouseExitC: 14,
+        emergencyEnterC: 11, emergencyExitC: 13,
+      },
+    });
+    // Warm tank (50 °C), gh comfortably above geT — no backup expected.
+    assert.notEqual(result.hoursUntilBackupNeeded, 0,
+      'expected null/positive hoursUntilBackupNeeded with warm tank, got 0');
+  });
+});
+
 // Regression: heater duty cycle in emergency mode. Old code charged
 // 1 kWh per emergency hour unconditionally; the user observed the
 // engine projecting 45 kWh of backup over 48 h (≈95% duty cycle) when

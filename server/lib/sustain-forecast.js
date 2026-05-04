@@ -92,6 +92,13 @@ function computeSustainForecast(opts) {
   const tankBottom   = Number(opts.tankBottom   || 18);
   const ghTemp       = Number(opts.greenhouseTemp || 10);
   const currentMode  = String(opts.currentMode || 'idle');
+  // True when the controller has fired emergency_heating in the past
+  // hour. The simulation by itself only sees the greenhouse temp NOW
+  // and projects forward, so it can report "Tank lasts 4 h" even
+  // though the device has been cycling backup all morning. The flag
+  // short-circuits hoursUntilBackupNeeded to 0 in that case so the
+  // card honestly says "Tank exhausted" instead of "4 h until backup".
+  const emergencyRecentlyActive = !!opts.emergencyRecentlyActive;
   const weather      = opts.weather48h  || [];
   const prices       = opts.prices48h   || [];
   const coeff        = opts.coefficients || {};
@@ -164,7 +171,10 @@ function computeSustainForecast(opts) {
   // (avg ≤ floor + 5°C) before it actually crosses the floor. This is the
   // metric that matters operationally: it's when the space heater starts
   // taking over, not when stored heat is fully exhausted.
-  let hoursUntilBackupNeeded = null;
+  // Backup is already engaged in real life if it cycled in the last
+  // hour — the tank is functionally exhausted regardless of any
+  // "above-floor stored energy" arithmetic.
+  let hoursUntilBackupNeeded = emergencyRecentlyActive ? 0 : null;
   const costBreakdown          = [];
   const tankTrajectory         = [];
   const ghTrajectory           = [];
@@ -494,7 +504,16 @@ function buildNotes(ctx) {
   //    across surfaces and the user doesn't see contradictory numbers.
   if (ctx.tankStoredKwhNow !== undefined && notes.length < 3) {
     const stored = ctx.tankStoredKwhNow.toFixed(1);
-    if (ctx.hoursUntilBackupNeeded !== null) {
+    if (ctx.hoursUntilBackupNeeded === 0) {
+      // Either the controller is already cycling backup, or the
+      // tank-greenhouse ΔT is too small for the radiator to do useful
+      // work. Either way, calling this "covers ~0 h before the space
+      // heater kicks in" reads as broken — be explicit.
+      notes.push(
+        'Tank stores ~' + stored + ' kWh above the floor, but it’s too cold ' +
+        'to drive the radiator — the space heater is providing the heating.'
+      );
+    } else if (ctx.hoursUntilBackupNeeded !== null) {
       notes.push(
         'Tank stores ~' + stored + ' kWh above the floor — covers greenhouse heating for about ~' +
         Math.round(ctx.hoursUntilBackupNeeded) + ' h before the space heater kicks in.'

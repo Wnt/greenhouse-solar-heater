@@ -32,6 +32,10 @@ function el(tag, cls, text) {
 
 function fmtHours(h) {
   if (h === null || h === undefined) return '48+ h';
+  // 0 = backup is engaged right now (controller cycling, or tank too
+  // cold to drive the radiator). "0 h" reads as a count; "Engaged"
+  // reads as a state — closer to what the user is seeing on the device.
+  if (h === 0) return 'Engaged';
   const rounded = Math.round(h * 2) / 2; // round to 0.5
   return '~' + rounded + ' h';
 }
