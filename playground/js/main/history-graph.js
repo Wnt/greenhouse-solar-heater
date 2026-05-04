@@ -360,20 +360,15 @@ function drawForecastOverlay(ctx, data, tMin, tMax, visibleRange, barAreaH, barY
   drawDashed(toPts(fc.tankTrajectory, p => (typeof p.avg === 'number' ? p.avg : (p.top + p.bottom) / 2)), '#e9c349', 1.5);
   drawDashed(toPts(fc.greenhouseTrajectory, p => p.temp), '#69d0c5', 1.5);
 
-  // Emergency-heating ticks (red) — mark hours where the engine projects
-  // the space heater is on. costBreakdown carries one entry per such hour.
-  if (Array.isArray(fc.costBreakdown) && fc.costBreakdown.length > 0) {
-    ctx.save();
-    ctx.fillStyle = 'rgba(255, 112, 67, 0.55)';
-    const tickH = Math.min(barAreaH, 8);
-    for (let i = 0; i < fc.costBreakdown.length; i++) {
-      const t = Math.floor(new Date(fc.costBreakdown[i].ts).getTime() / 1000);
-      if (t < nowSec || t > cutoffSec || t < tMin || t > tMax) continue;
-      const x = pad.left + ((t - tMin) / visibleRange) * pw;
-      const w = Math.max(1, (3600 / visibleRange) * pw - 2);
-      ctx.fillRect(x, barY0 - tickH, w, tickH);
-    }
-    ctx.restore();
+  // Predicted mode bands (charging / heating / emergency) past "now",
+  // bucketed at the same bucketSec as the historical duty bars on the
+  // left so x-width and y-fractions visually line up across the now
+  // divider. Each predicted hour is either on (1.0) or off (0.0) for a
+  // given mode; the bucket's fraction is hours-on / bucketSec-in-hours.
+  // Same colour palette as historical bars, slightly dimmer to read as
+  // "projection".
+  if (Array.isArray(fc.modeForecast) && fc.modeForecast.length > 0) {
+    drawForecastModeBars(ctx, fc.modeForecast, nowSec, cutoffSec, tMin, tMax, visibleRange, barAreaH, barY0, pad, pw);
   }
 
   // "Now" divider — only draw when nowSec is inside the visible window.
@@ -389,6 +384,83 @@ function drawForecastOverlay(ctx, data, tMin, tMax, visibleRange, barAreaH, barY
     ctx.stroke();
     ctx.restore();
   }
+}
+
+// Render predicted mode bars past "now" using the same x-bucketing AND
+// fractional y-heights as the historical duty bars (drawHistoryGraph).
+// modeForecast is at 1-hour resolution, so a 1h bucket renders 0/1.0
+// fractions (full bar or none), a 3h bucket renders 0/1/3, 2/3, 1.0
+// fractions etc. Each bucket stacks charging (red, bottom), heating
+// (gold, middle), emergency (orange, top) — matching the historical
+// stack order, just slightly dimmer alphas so the eye reads "projection".
+function drawForecastModeBars(ctx, modeForecast, nowSec, cutoffSec, tMin, tMax, visibleRange, barAreaH, barY0, pad, pw) {
+  const bucketSec = pickBucketSize(visibleRange);
+  // Align bucket boundaries the same way dutyBucketsIn does so the right-
+  // edge of the last historical bucket and the left-edge of the first
+  // forecast bucket meet at the same hourly tick.
+  const firstBucket = Math.floor(nowSec / bucketSec);
+  const lastBucket  = Math.ceil(cutoffSec / bucketSec);
+  const HOURS = 3600;
+
+  ctx.save();
+  for (let bi = firstBucket; bi < lastBucket; bi++) {
+    const hrStart = bi * bucketSec;
+    const hrEnd   = (bi + 1) * bucketSec;
+    if (hrEnd <= tMin || hrStart >= tMax) continue;
+    if (hrEnd <= nowSec) continue;
+    if (hrStart >= cutoffSec) continue;
+    const segStart = Math.max(hrStart, nowSec);
+    const segEnd   = Math.min(hrEnd, cutoffSec);
+    if (segEnd <= segStart) continue;
+
+    let chargingHours = 0, heatingHours = 0, emergencyHours = 0;
+    for (let i = 0; i < modeForecast.length; i++) {
+      const e = modeForecast[i];
+      const t = Math.floor(new Date(e.ts).getTime() / 1000);
+      if (t < segStart || t >= segEnd) continue;
+      if (e.mode === 'solar_charging')          chargingHours  += 1;
+      else if (e.mode === 'greenhouse_heating') heatingHours   += 1;
+      else if (e.mode === 'emergency_heating')  emergencyHours += 1;
+    }
+    // Per-bucket fraction = hours-on / hours-in-the-post-now slice of this
+    // bucket. For the partial bucket straddling "now" (segStart > hrStart)
+    // we measure against segLen, not bucketSec — otherwise a bucket where
+    // only 1 hour is visible past now would compute as 1/3 even though
+    // the system is on for 100% of what we're showing.
+    const segLen      = segEnd - segStart;
+    const segHours    = Math.max(1 / 60, segLen / HOURS); // avoid div-by-0
+    const chargingFrac  = Math.min(1, chargingHours  / segHours);
+    const heatingFrac   = Math.min(1, heatingHours   / segHours);
+    const emergencyFrac = Math.min(1, emergencyHours / segHours);
+    if (chargingFrac + heatingFrac + emergencyFrac === 0) continue;
+
+    // Render the bar using segStart..segEnd (post-now slice), not the
+    // full clock-aligned bucket. Means forecast bars start exactly at
+    // the "now" divider and grow rightward — no gap. The next aligned
+    // bucket and beyond render at full bucketSec width.
+    const barX = pad.left + ((segStart - tMin) / visibleRange) * pw;
+    const barW = Math.max(1, ((segEnd - segStart) / visibleRange) * pw - 2);
+    let stackH = 0;
+
+    if (chargingFrac > 0) {
+      const bh = chargingFrac * barAreaH;
+      ctx.fillStyle = 'rgba(238, 125, 119, 0.45)';
+      ctx.fillRect(barX, barY0 - bh, barW, bh);
+      stackH += bh;
+    }
+    if (heatingFrac > 0) {
+      const bh = heatingFrac * barAreaH;
+      ctx.fillStyle = 'rgba(233, 195, 73, 0.45)';
+      ctx.fillRect(barX, barY0 - stackH - bh, barW, bh);
+      stackH += bh;
+    }
+    if (emergencyFrac > 0) {
+      const bh = emergencyFrac * barAreaH;
+      ctx.fillStyle = 'rgba(255, 112, 67, 0.55)';
+      ctx.fillRect(barX, barY0 - stackH - bh, barW, bh);
+    }
+  }
+  ctx.restore();
 }
 
 // Pure: walk the time-series store once and pull min / max / latest for
