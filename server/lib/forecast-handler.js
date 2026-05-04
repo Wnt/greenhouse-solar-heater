@@ -99,13 +99,26 @@ function createForecastHandler(opts) {
   }
 
   function queryCurrentMode(callback) {
+    // Pull the latest mode AND whether emergency_heating fired in the
+    // past hour. The engine uses the recency flag to short-circuit
+    // hoursUntilBackupNeeded — if the controller has already been
+    // cycling backup, the tank is functionally exhausted right now,
+    // not "in 4 hours when our simulation predicts emergency".
     const sql =
-      "SELECT new_value AS mode FROM state_events " +
-      "WHERE entity_type = 'mode' ORDER BY ts DESC LIMIT 1";
+      "SELECT " +
+      "  (SELECT new_value FROM state_events " +
+      "   WHERE entity_type='mode' ORDER BY ts DESC LIMIT 1) AS mode, " +
+      "  EXISTS(SELECT 1 FROM state_events " +
+      "    WHERE entity_type='mode' AND new_value='emergency_heating' " +
+      "      AND ts > NOW() - INTERVAL '1 hour'" +
+      "  ) AS emergency_recent";
     pool.query(sql, [], function (err, result) {
       if (err) { callback(err); return; }
-      const mode = (result.rows && result.rows[0]) ? result.rows[0].mode : 'idle';
-      callback(null, mode);
+      const row = (result.rows && result.rows[0]) || {};
+      callback(null, {
+        mode: row.mode || 'idle',
+        emergencyRecentlyActive: !!row.emergency_recent,
+      });
     });
   }
 
@@ -239,7 +252,7 @@ function createForecastHandler(opts) {
 
     // Gather all data in parallel where possible.
     let pending = 5;
-    let sensors, currentMode, weather, prices, coeff,
+    let sensors, modeInfo, weather, prices, coeff,
         observedTankDropKPerH, observedGhDropKPerH, fetchErr;
 
     function onPart(err) {
@@ -299,7 +312,8 @@ function createForecastHandler(opts) {
           tankTop:       tankTop !== null ? tankTop : 20,
           tankBottom:    tankBottom !== null ? tankBottom : 18,
           greenhouseTemp: ghTemp !== null ? ghTemp : 10,
-          currentMode:   currentMode || 'idle',
+          currentMode:   (modeInfo && modeInfo.mode) || 'idle',
+          emergencyRecentlyActive: !!(modeInfo && modeInfo.emergencyRecentlyActive),
           observedTankDropKPerH,
           observedGhDropKPerH,
           weather48h:    wx48,
@@ -327,7 +341,7 @@ function createForecastHandler(opts) {
       onPart(err);
     });
     queryCurrentMode(function (err, m) {
-      currentMode = m;
+      modeInfo = m;
       onPart(err);
     });
     queryWeather48h(function (err, w) {

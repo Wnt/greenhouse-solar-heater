@@ -57,6 +57,14 @@ const DEFAULT_CONFIG = {
   solarChargeMinKwh:        0.15,
   // Radiator output power (kW from tank to greenhouse air) — observed in data.
   radiatorPowerKw:          2.4,
+  // Greenhouse heat-loss coefficient (W/K). Derived from observed
+  // overnight cooldown: tank delivered ~6 kWh to the greenhouse over 10 h
+  // at avg ΔT ~5 K → 600 W → 120 W/K. Used to estimate the space-heater
+  // duty cycle during emergency mode (heater needs to cover ghLossW =
+  // greenhouseLossWPerK × (target − outdoor); duty = needed/heater_kW).
+  // Without this, the engine assumes 100% duty for every emergency hour,
+  // which over-counts backup energy by ~30-40% in spring/fall conditions.
+  greenhouseLossWPerK:      120,
   // Confidence boost: set this to a recent Date when weather was fetched
   weatherFetchedAt:         null,
   // Number of buckets used for the empirical fit (for confidence)
@@ -84,6 +92,13 @@ function computeSustainForecast(opts) {
   const tankBottom   = Number(opts.tankBottom   || 18);
   const ghTemp       = Number(opts.greenhouseTemp || 10);
   const currentMode  = String(opts.currentMode || 'idle');
+  // True when the controller has fired emergency_heating in the past
+  // hour. The simulation by itself only sees the greenhouse temp NOW
+  // and projects forward, so it can report "Tank lasts 4 h" even
+  // though the device has been cycling backup all morning. The flag
+  // short-circuits hoursUntilBackupNeeded to 0 in that case so the
+  // card honestly says "Tank exhausted" instead of "4 h until backup".
+  const emergencyRecentlyActive = !!opts.emergencyRecentlyActive;
   const weather      = opts.weather48h  || [];
   const prices       = opts.prices48h   || [];
   const coeff        = opts.coefficients || {};
@@ -156,7 +171,10 @@ function computeSustainForecast(opts) {
   // (avg ≤ floor + 5°C) before it actually crosses the floor. This is the
   // metric that matters operationally: it's when the space heater starts
   // taking over, not when stored heat is fully exhausted.
-  let hoursUntilBackupNeeded = null;
+  // Backup is already engaged in real life if it cycled in the last
+  // hour — the tank is functionally exhausted regardless of any
+  // "above-floor stored energy" arithmetic.
+  let hoursUntilBackupNeeded = emergencyRecentlyActive ? 0 : null;
   const costBreakdown          = [];
   const tankTrajectory         = [];
   const ghTrajectory           = [];
@@ -266,25 +284,38 @@ function computeSustainForecast(opts) {
       newGhTemp = curGhTemp - ghDropKpH;
       greenhouseHeatingHours += 1;
     } else if (simMode === 'emergency_heating') {
-      // Backup heater on. Tank just leaks slowly. Greenhouse holds around
-      // emergency-exit threshold (controller hysteresis maintains it).
+      // Heater duty cycle = greenhouse heat losses / heater power.
+      // The real heater is bang-bang controlled by the ehE/ehX hysteresis;
+      // averaged over the hour it produces just enough to offset losses,
+      // not always 1 kW. Old code charged 1 kWh per emergency hour
+      // unconditionally, which overcounted backup energy by 30-40%
+      // whenever outdoor wasn't drastically below the target.
+      const ghTarget = (cfg.emergencyEnterC + cfg.emergencyExitC) / 2;
+      const ghLossW  = cfg.greenhouseLossWPerK * Math.max(0, ghTarget - outdoorC);
+      const heaterW  = cfg.spaceHeaterKw * 1000;
+      const heaterDuty = Math.min(1, ghLossW / heaterW);
+      const heaterEnergyKwh = heaterDuty * cfg.spaceHeaterKw;
+      if (heaterEnergyKwh > 0) {
+        electricKwh += heaterEnergyKwh;
+        const costEur = heaterEnergyKwh * (priceCKwh + cfg.transferFeeCKwh) / 100;
+        electricCostEur += costEur;
+        costBreakdown.push({
+          ts:            hourDate,
+          kWh:           round4(heaterEnergyKwh),
+          priceCKwh,
+          eurInclTransfer: round4(costEur),
+        });
+      }
+      // Tank still leaks slowly during emergency.
       const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
       tankDeltaJ -= tankLossW * SECONDS_PER_HOUR;
-      const heaterEnergyKwh = cfg.spaceHeaterKw;
-      electricKwh += heaterEnergyKwh;
-      const costEur = heaterEnergyKwh * (priceCKwh + cfg.transferFeeCKwh) / 100;
-      electricCostEur += costEur;
-      costBreakdown.push({
-        ts:            hourDate,
-        kWh:           heaterEnergyKwh,
-        priceCKwh,
-        eurInclTransfer: round4(costEur),
-      });
-      // Drift toward the (ehE + ehX) midpoint with τ = 30 min — that's
-      // where the controller's hysteresis maintains it.
-      const ghTarget = (cfg.emergencyEnterC + cfg.emergencyExitC) / 2;
-      const alpha    = 1 - Math.exp(-1 / 0.5);
-      newGhTemp = curGhTemp + (ghTarget - curGhTemp) * alpha;
+      // Greenhouse maintained at target by the heater. If outdoor
+      // climbs above target, ghLossW = 0, heater isn't needed, gh
+      // drifts toward outdoor — once gh > ehX the mode-decision
+      // block exits emergency on the next iteration.
+      newGhTemp = heaterDuty > 0
+        ? ghTarget
+        : curGhTemp + (outdoorC - curGhTemp) * (1 - Math.exp(-1 / 8));
     } else {
       // Idle.
       const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
@@ -473,7 +504,16 @@ function buildNotes(ctx) {
   //    across surfaces and the user doesn't see contradictory numbers.
   if (ctx.tankStoredKwhNow !== undefined && notes.length < 3) {
     const stored = ctx.tankStoredKwhNow.toFixed(1);
-    if (ctx.hoursUntilBackupNeeded !== null) {
+    if (ctx.hoursUntilBackupNeeded === 0) {
+      // Either the controller is already cycling backup, or the
+      // tank-greenhouse ΔT is too small for the radiator to do useful
+      // work. Either way, calling this "covers ~0 h before the space
+      // heater kicks in" reads as broken — be explicit.
+      notes.push(
+        'Tank stores ~' + stored + ' kWh above the floor, but it’s too cold ' +
+        'to drive the radiator — the space heater is providing the heating.'
+      );
+    } else if (ctx.hoursUntilBackupNeeded !== null) {
       notes.push(
         'Tank stores ~' + stored + ' kWh above the floor — covers greenhouse heating for about ~' +
         Math.round(ctx.hoursUntilBackupNeeded) + ' h before the space heater kicks in.'
