@@ -50,8 +50,11 @@ describe('fmi-client parseWfsResponse', () => {
   });
 });
 
+// Live HTTPS call — opt-in via RUN_LIVE_NETWORK_TESTS=1. External service
+// availability and cert rotations make this flaky in CI; fixture-based
+// parsing tests above stay on by default.
 describe('fmi-client live HTTPS call', () => {
-  it('live FMI call', { skip: process.env.SKIP_NETWORK_TESTS === '1' }, async () => {
+  it('live FMI call', { skip: process.env.RUN_LIVE_NETWORK_TESTS !== '1' }, async () => {
     const rows = await fetchForecast({ lat: 60.41, lon: 22.37, hours: 3 });
     assert.ok(rows.length >= 1, 'expected at least one row');
     const first = rows[0];

@@ -66,8 +66,11 @@ describe('spot-price-client', () => {
     });
   });
 
+  // Live network call — opt-in via RUN_LIVE_NETWORK_TESTS=1. External
+  // service availability and cert rotations (CERT_NOT_YET_VALID etc.) make
+  // this flaky in CI; fixture-based parsing tests above stay on by default.
   describe('fetchPrices (live network)', () => {
-    const skip = process.env.SKIP_NETWORK_TESTS === '1';
+    const skip = process.env.RUN_LIVE_NETWORK_TESTS !== '1';
     it('returns at least 12 rows with valid structure' + (skip ? ' [SKIPPED]' : ''), { skip }, async () => {
       const rows = await fetchPrices({ horizonHours: 24 });
       assert.ok(rows.length >= 12, 'expected at least 12 rows, got ' + rows.length);
