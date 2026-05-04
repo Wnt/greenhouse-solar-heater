@@ -7,7 +7,7 @@
 
 import { store } from '../app-state.js';
 import { SIM_START_HOUR } from '../sim-bootstrap.js';
-import { timeSeriesStore, showAllSensors } from './state.js';
+import { timeSeriesStore, showAllSensors, showForecast, forecastData } from './state.js';
 import { tankAvgOf, getChartWindow } from './history-graph.js';
 import { formatClockTime } from './time-format.js';
 import { coverageInBucket } from './mode-events.js';
@@ -66,20 +66,35 @@ function updateInspectorData(x) {
   if (frac < 0 || frac > 1) { hideInspector(); return; }
   const simTime = win.tMin + frac * visibleRange;
 
-  let bestIdx = 0, bestDist = Infinity;
-  for (let i = 0; i < timeSeriesStore.times.length; i++) {
-    const d = Math.abs(timeSeriesStore.times[i] - simTime);
-    if (d < bestDist) { bestDist = d; bestIdx = i; }
-  }
+  // When the cursor is past "now" and the forecast overlay is on, read
+  // values from the forecast payload instead of the historical buffer —
+  // otherwise the nearest-neighbor search clamps to the last live sample
+  // and the tooltip lies about the future. forecastData is null in sim
+  // mode (forecast is live-only), so this branch is naturally skipped.
+  const isLivePhase = store.get('phase') === 'live';
+  const nowSec = isLivePhase ? Math.floor(Date.now() / 1000) : null;
+  const fc = forecastData && forecastData.forecast;
+  const inForecast = isLivePhase && showForecast && fc && nowSec !== null && simTime > nowSec;
 
-  const v = timeSeriesStore.values[bestIdx];
-  const t = timeSeriesStore.times[bestIdx];
+  let v, t;
+  if (inForecast) {
+    v = forecastValuesAt(fc, simTime);
+    t = simTime;
+  } else {
+    let bestIdx = 0, bestDist = Infinity;
+    for (let i = 0; i < timeSeriesStore.times.length; i++) {
+      const d = Math.abs(timeSeriesStore.times[i] - simTime);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    v = timeSeriesStore.values[bestIdx];
+    t = timeSeriesStore.times[bestIdx];
+  }
 
   // Time of day — live data stores Unix epoch seconds (shown in
   // Europe/Helsinki), simulation stores seconds since sim start +
   // SIM_START_HOUR offset.
   let label;
-  if (store.get('phase') === 'live') {
+  if (isLivePhase) {
     label = formatClockTime(t * 1000);
   } else {
     const todH = Math.floor((SIM_START_HOUR + t / 3600) % 24);
@@ -108,13 +123,77 @@ function updateInspectorData(x) {
   lastInspectorBi = bi;
   const bStart = bi * bucketSec;
   const bEnd = (bi + 1) * bucketSec;
-  const cov = coverageInBucket(bStart, bEnd);
-  const chPct = Math.round(100 * cov.charging / bucketSec);
-  const htPct = Math.round(100 * cov.heating / bucketSec);
-  const emPct = Math.round(100 * cov.emergency / bucketSec);
+  let chPct, htPct, emPct;
+  if (inForecast) {
+    // Forecast modeForecast is at 1-hour resolution; mirror
+    // drawForecastModeBars by counting slots inside the post-now slice
+    // of the bucket, so the percentages line up visually with the
+    // dashed bars under the cursor.
+    const segStart = Math.max(bStart, nowSec);
+    const segEnd = bEnd;
+    const segHours = Math.max(1 / 60, (segEnd - segStart) / 3600);
+    let chHours = 0, htHours = 0, emHours = 0;
+    const list = Array.isArray(fc.modeForecast) ? fc.modeForecast : [];
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      const ts = Math.floor(new Date(e.ts).getTime() / 1000);
+      if (ts < segStart || ts >= segEnd) continue;
+      if (e.mode === 'solar_charging') chHours += 1;
+      else if (e.mode === 'greenhouse_heating') htHours += 1;
+      else if (e.mode === 'emergency_heating') emHours += 1;
+    }
+    chPct = Math.round(100 * Math.min(1, chHours / segHours));
+    htPct = Math.round(100 * Math.min(1, htHours / segHours));
+    emPct = Math.round(100 * Math.min(1, emHours / segHours));
+  } else {
+    const cov = coverageInBucket(bStart, bEnd);
+    chPct = Math.round(100 * cov.charging / bucketSec);
+    htPct = Math.round(100 * cov.heating / bucketSec);
+    emPct = Math.round(100 * cov.emergency / bucketSec);
+  }
   document.getElementById('inspector-charging').textContent = chPct + '%';
   document.getElementById('inspector-heating').textContent = htPct + '%';
   document.getElementById('inspector-emergency').textContent = emPct + '%';
+}
+
+// Linearly interpolate a forecast trajectory at simTime (Unix seconds)
+// and return a row shaped like timeSeriesStore.values so the inspector's
+// downstream rendering doesn't branch. Collector and outdoor aren't part
+// of the forecast — they fall through as null and render as the placeholder.
+function forecastValuesAt(fc, simTime) {
+  const tank = interpTrajPoint(fc.tankTrajectory, simTime);
+  const gh   = interpTrajPoint(fc.greenhouseTrajectory, simTime);
+  return {
+    t_collector:   null,
+    t_tank_top:    tank ? tank.top : null,
+    t_tank_bottom: tank ? tank.bottom : null,
+    t_greenhouse:  gh ? gh.temp : null,
+    t_outdoor:     null,
+  };
+}
+
+function interpTrajPoint(traj, simTime) {
+  if (!Array.isArray(traj) || traj.length === 0) return null;
+  for (let i = 0; i < traj.length; i++) {
+    const t = Math.floor(new Date(traj[i].ts).getTime() / 1000);
+    if (t >= simTime) {
+      if (i === 0) return traj[0];
+      const prev = traj[i - 1];
+      const pT = Math.floor(new Date(prev.ts).getTime() / 1000);
+      if (t === pT) return traj[i];
+      const f = (simTime - pT) / (t - pT);
+      const out = { ts: traj[i].ts };
+      const keys = ['top', 'bottom', 'avg', 'temp'];
+      for (let k = 0; k < keys.length; k++) {
+        const key = keys[k];
+        if (typeof traj[i][key] === 'number' && typeof prev[key] === 'number') {
+          out[key] = prev[key] + (traj[i][key] - prev[key]) * f;
+        }
+      }
+      return out;
+    }
+  }
+  return traj[traj.length - 1];
 }
 
 export function setupInspector() {
