@@ -137,12 +137,11 @@ describe('computeSustainForecast', () => {
 
   // ── 4. Warm and sunny ──
   it('warm/sunny: solarChargingHours > 0, low electric kWh', () => {
-    // Build weather with sunny midday hours (radiation 600 W/m²).
-    const weather = makeWeather48h({ temperature: 10, radiationGlobal: 0 });
-    // Hours 10-16 of the first day are sunny.
-    for (let h = 10; h <= 16; h++) {
-      weather[h] = { temperature: 15, radiationGlobal: 600, windSpeed: 1 };
-    }
+    // Sunny radiation across the whole window — avoids a time-of-day flake
+    // where weather[h] indices land on Helsinki hours where the per-hour
+    // solar baseline is zero (the engine's solarGainKwhByHour lookup goes
+    // by Helsinki clock hour, not array index).
+    const weather = makeWeather48h({ temperature: 15, radiationGlobal: 600 });
 
     const result = computeSustainForecast({
       now:            Date.now(),
@@ -153,10 +152,11 @@ describe('computeSustainForecast', () => {
       weather48h:     weather,
       prices48h:      makePrices48h(5),
       coefficients:   {
-        // Provide a non-zero baseline so the data-driven solar credit fires.
+        // Non-zero baseline at every hour so the data-driven solar credit
+        // fires regardless of when the test runs (UTC midnight vs noon).
         solarGainKwhByHour: (function () {
           const a = new Array(24);
-          for (let h = 0; h < 24; h++) a[h] = (h >= 6 && h <= 20) ? 0.5 : 0;
+          for (let h = 0; h < 24; h++) a[h] = 0.5;
           return a;
         }()),
       },

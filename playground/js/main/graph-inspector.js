@@ -7,7 +7,7 @@
 
 import { store } from '../app-state.js';
 import { SIM_START_HOUR } from '../sim-bootstrap.js';
-import { timeSeriesStore, showAllSensors } from './state.js';
+import { timeSeriesStore, showAllSensors, showForecast, forecastData } from './state.js';
 import { tankAvgOf, getChartWindow } from './history-graph.js';
 import { formatClockTime } from './time-format.js';
 import { coverageInBucket } from './mode-events.js';
@@ -66,6 +66,18 @@ function updateInspectorData(x) {
   if (frac < 0 || frac > 1) { hideInspector(); return; }
   const simTime = win.tMin + frac * visibleRange;
 
+  // Forecast side? When the user crosses the "now" divider with the
+  // Forecast toggle on, the inspector should pull from forecastData
+  // instead of timeSeriesStore — otherwise the closest-sample search
+  // anchors to the latest live reading and the tooltip lies, showing
+  // "live" values for an hour that's actually projected.
+  const isLivePhase = store.get('phase') === 'live';
+  const nowSec = isLivePhase ? Math.floor(Date.now() / 1000) : null;
+  if (isLivePhase && showForecast && forecastData && nowSec !== null && simTime > nowSec) {
+    renderForecastInspector(simTime, visibleRange);
+    return;
+  }
+
   let bestIdx = 0, bestDist = Infinity;
   for (let i = 0; i < timeSeriesStore.times.length; i++) {
     const d = Math.abs(timeSeriesStore.times[i] - simTime);
@@ -79,7 +91,7 @@ function updateInspectorData(x) {
   // Europe/Helsinki), simulation stores seconds since sim start +
   // SIM_START_HOUR offset.
   let label;
-  if (store.get('phase') === 'live') {
+  if (isLivePhase) {
     label = formatClockTime(t * 1000);
   } else {
     const todH = Math.floor((SIM_START_HOUR + t / 3600) % 24);
@@ -115,6 +127,72 @@ function updateInspectorData(x) {
   document.getElementById('inspector-charging').textContent = chPct + '%';
   document.getElementById('inspector-heating').textContent = htPct + '%';
   document.getElementById('inspector-emergency').textContent = emPct + '%';
+}
+
+// Render the inspector against forecastData (post-now side). Picks the
+// nearest hourly trajectory point for tank / greenhouse, the nearest
+// FMI hourly forecast for outside, and aggregates modeForecast entries
+// inside the chart's bucket window for charging / heating / emergency
+// percentages — same bucketSec as the predicted bars on the canvas.
+function renderForecastInspector(simTime, visibleRange) {
+  const fc = forecastData.forecast || {};
+  const wx = forecastData.weather || [];
+  const fmtInspTemp = function (v) { return isNum(v) ? v.toFixed(1) + '°C' : TEMP_PLACEHOLDER; };
+
+  // Time label — forecast trajectory points are at hourly boundaries,
+  // so just use the cursor position directly (rounded later if needed).
+  document.getElementById('inspector-time').textContent = formatClockTime(simTime * 1000);
+
+  function nearest(arr, tsField, valFn) {
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    let best = null, bestDist = Infinity;
+    for (let i = 0; i < arr.length; i++) {
+      const t = Math.floor(new Date(arr[i][tsField]).getTime() / 1000);
+      const d = Math.abs(t - simTime);
+      if (d < bestDist) { bestDist = d; best = arr[i]; }
+    }
+    return best ? valFn(best) : null;
+  }
+
+  // Collector isn't simulated by the engine — leave blank rather than
+  // misleadingly carrying the last live reading forward.
+  document.getElementById('inspector-coll').textContent = TEMP_PLACEHOLDER;
+
+  document.getElementById('inspector-tank').textContent =
+    fmtInspTemp(nearest(fc.tankTrajectory, 'ts', function (p) { return p.avg; }));
+  if (showAllSensors) {
+    document.getElementById('inspector-tank-top').textContent =
+      fmtInspTemp(nearest(fc.tankTrajectory, 'ts', function (p) { return p.top; }));
+    document.getElementById('inspector-tank-bottom').textContent =
+      fmtInspTemp(nearest(fc.tankTrajectory, 'ts', function (p) { return p.bottom; }));
+  }
+  document.getElementById('inspector-gh').textContent =
+    fmtInspTemp(nearest(fc.greenhouseTrajectory, 'ts', function (p) { return p.temp; }));
+  document.getElementById('inspector-out').textContent =
+    fmtInspTemp(nearest(wx, 'validAt', function (p) { return p.temperature; }));
+
+  // Mode percentages from modeForecast aggregated into the same
+  // bucketSec window as the projected bars above.
+  const bucketSec = pickBucketSize(visibleRange);
+  const bi = Math.floor(simTime / bucketSec);
+  if (lastInspectorBi !== null && lastInspectorBi !== bi) hapticBucketTick();
+  lastInspectorBi = bi;
+  const bStart = bi * bucketSec;
+  const bEnd = (bi + 1) * bucketSec;
+  let chHrs = 0, htHrs = 0, emHrs = 0;
+  const modes = fc.modeForecast || [];
+  for (let i = 0; i < modes.length; i++) {
+    const t = Math.floor(new Date(modes[i].ts).getTime() / 1000);
+    if (t < bStart || t >= bEnd) continue;
+    if (modes[i].mode === 'solar_charging')          chHrs += 1;
+    else if (modes[i].mode === 'greenhouse_heating') htHrs += 1;
+    else if (modes[i].mode === 'emergency_heating')  emHrs += 1;
+  }
+  const bucketHrs = Math.max(1 / 60, bucketSec / 3600);
+  const clampPct = function (n) { return Math.min(100, Math.max(0, n)); };
+  document.getElementById('inspector-charging').textContent  = clampPct(Math.round(100 * chHrs / bucketHrs)) + '%';
+  document.getElementById('inspector-heating').textContent   = clampPct(Math.round(100 * htHrs / bucketHrs)) + '%';
+  document.getElementById('inspector-emergency').textContent = clampPct(Math.round(100 * emHrs / bucketHrs)) + '%';
 }
 
 export function setupInspector() {
