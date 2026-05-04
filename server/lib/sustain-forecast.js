@@ -235,7 +235,7 @@ function computeSustainForecast(opts) {
     const radPeakW = cfg.radiatorPowerKw * 1000;
 
     let tankDeltaJ = 0;
-    let newGhTemp  = curGhTemp;
+    let newGhTemp;
 
     if (simMode === 'greenhouse_heating') {
       const radDeliveredW = Math.min(radPeakW, radUaWPerK * radDeltaT);
