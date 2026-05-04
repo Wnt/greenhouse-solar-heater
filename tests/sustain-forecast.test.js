@@ -144,8 +144,14 @@ describe('computeSustainForecast', () => {
       weather[h] = { temperature: 15, radiationGlobal: 600, windSpeed: 1 };
     }
 
+    // Pin `now` to local midnight EEST so the weather index `h` coincides
+    // with Helsinki hour-of-day `h` for the solarGainKwhByHour mask. With
+    // Date.now() the test was time-of-day-flaky: an afternoon run shifted
+    // the sunny indexes outside the [6..20] mask and zeroed out solar gain.
+    const now = new Date('2026-05-03T21:00:00Z'); // 00:00 EEST May 4
+
     const result = computeSustainForecast({
-      now:            Date.now(),
+      now,
       tankTop:        40,
       tankBottom:     38,
       greenhouseTemp: 12,
