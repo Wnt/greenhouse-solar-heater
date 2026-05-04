@@ -7,8 +7,12 @@
 import { store } from '../app-state.js';
 import { pickTickStep, formatTick, pickBucketSize, formatBucketLabel } from '../ui.js';
 import { SIM_START_HOUR } from '../sim-bootstrap.js';
-import { timeSeriesStore, graphRange, showAllSensors, chartZoom } from './state.js';
+import {
+  timeSeriesStore, graphRange, showAllSensors, chartZoom,
+  showForecast, forecastData, FORECAST_OVERLAY_SEC,
+} from './state.js';
 import { coverageInBucket } from './mode-events.js';
+import { drawForecastOverlay } from './forecast-overlay.js';
 
 function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
 
@@ -79,14 +83,35 @@ export function dutyBucketsIn({ tMin, tMax, bucketSec, firstSampleT, lastSampleT
 // latest sample (sim) or wall-clock now (live), with width = graphRange.
 // Shared with graph-inspector so its crosshair math stays aligned with
 // what's drawn — without this, zooming would desync the two.
+//
+// Forecast overlay extends the right edge by effectiveForecastSec() so
+// the projected lines/bands have somewhere to land. The history span
+// stays at graphRange — the chart visually grows. Pinch-zoom still wins.
 export function getChartWindow() {
   if (chartZoom) return { tMin: chartZoom.tMin, tMax: chartZoom.tMax };
   const isLivePhase = store.get('phase') === 'live';
   const latestTime = timeSeriesStore.times.length > 0
     ? timeSeriesStore.times[timeSeriesStore.times.length - 1]
     : 0;
-  const tMax = isLivePhase ? Math.floor(Date.now() / 1000) : Math.max(graphRange, latestTime);
-  return { tMin: tMax - graphRange, tMax };
+  const baseRight = isLivePhase ? Math.floor(Date.now() / 1000) : Math.max(graphRange, latestTime);
+  const tMax = (isLivePhase && showForecast) ? baseRight + effectiveForecastSec() : baseRight;
+  return { tMin: baseRight - graphRange, tMax };
+}
+
+// Forecast horizon for the current view: capped at FORECAST_OVERLAY_SEC
+// (12 h) but never larger than the historical range. At narrow ranges
+// (1 h, 6 h) this keeps history and forecast at equal width so the
+// detail you zoomed in for doesn't get squished into a tiny strip.
+function effectiveForecastSec() {
+  return Math.min(FORECAST_OVERLAY_SEC, graphRange);
+}
+
+// Wall-clock "now" in chart-x-axis units (Unix seconds in live mode).
+// Returns null in sim mode (forecast overlay is live-only — no point
+// projecting against simulated time).
+function chartNowSec() {
+  if (store.get('phase') !== 'live') return null;
+  return Math.floor(Date.now() / 1000);
 }
 
 // Tank value extractor shared by the graph, inspector, and yesterday-
@@ -283,8 +308,22 @@ export function drawHistoryGraph() {
   // ── Outside line (blue) ──
   drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_outdoor', '#42a5f5', 1);
 
+  // ── Forecast overlay (next 12 h, dashed, only with the "Forecast" toggle) ──
+  // Live-only (chartNowSec returns null in sim mode → overlay no-ops).
+  if (showForecast && forecastData) {
+    const nowSec = chartNowSec();
+    if (nowSec !== null) {
+      drawForecastOverlay(
+        ctx, forecastData,
+        nowSec, nowSec + effectiveForecastSec(),
+        tMin, tMax, visibleRange, barAreaH, barY0, pad, pw, ph, yMin, yMax,
+      );
+    }
+  }
+
   updateLegendStats(tMin, tMax);
 }
+
 
 // Pure: walk the time-series store once and pull min / max / latest for
 // each requested key inside [tMin, tMax]. Returns null entries for series

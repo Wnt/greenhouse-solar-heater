@@ -694,6 +694,18 @@ select, input, textarea { max-width: 100%; }
   border-radius: 1px;
 }
 
+/* Dashed variant for forecast (projected) line legends. Uses
+ * mask-image to punch dashes out of the inline background colour set on
+ * the same element, so each legend keeps its per-series colour. */
+.graph-legend-line-dashed {
+  -webkit-mask-image: linear-gradient(to right, #000 60%, transparent 60%);
+          mask-image: linear-gradient(to right, #000 60%, transparent 60%);
+  -webkit-mask-size: 5px 2px;
+          mask-size: 5px 2px;
+  -webkit-mask-repeat: repeat-x;
+          mask-repeat: repeat-x;
+}
+
 /* Per-series stats follow each temperature label: "42° (39–62°)" where
  * the leading number is the latest in-window sample and the parenthesised
  * pair is the visible-range min/max. Updated on every drawHistoryGraph
@@ -967,18 +979,6 @@ select, input, textarea { max-width: 100%; }
   font-family: 'Manrope', sans-serif;
 }
 
-.forecast-sparkline-wrap {
-  margin-bottom: 12px;
-  min-height: 30px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.forecast-sparkline {
-  display: block;
-}
-
 .forecast-notes {
   margin-bottom: 12px;
 }
@@ -1010,36 +1010,18 @@ select, input, textarea { max-width: 100%; }
   content: '';
 }
 
-.forecast-expand-btn {
-  background: none;
-  border: none;
-  color: var(--secondary);
+.forecast-status {
   font-size: 12px;
-  cursor: pointer;
-  padding: 0;
-  font-family: 'Manrope', sans-serif;
-  letter-spacing: 0.04em;
-}
-
-.forecast-expand-btn:hover {
-  color: var(--on-surface);
-}
-
-.forecast-chart-wrap {
-  margin-top: 16px;
-  overflow: hidden;
-}
-
-.forecast-loading-text {
-  font-size: 13px;
   color: var(--on-surface-variant);
-  font-style: italic;
+  letter-spacing: 0.02em;
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .forecast-error-text {
-  font-size: 13px;
-  color: var(--on-surface-variant);
-  margin-right: 8px;
+  font-style: italic;
 }
 
 .forecast-retry-btn {

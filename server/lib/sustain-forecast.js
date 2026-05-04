@@ -160,6 +160,13 @@ function computeSustainForecast(opts) {
   const costBreakdown          = [];
   const tankTrajectory         = [];
   const ghTrajectory           = [];
+  // Per-hour mode prediction so the UI can render predicted heating /
+  // emergency / charging bands past "now" the same way the historical
+  // duty-cycle bars are drawn. mode ∈ { idle, greenhouse_heating,
+  // emergency_heating, solar_charging }. solar_charging is independent
+  // of the heating state (the device can charge while heating); when
+  // both apply the entry is duplicated with separate ts/mode pairs.
+  const modeForecast           = [];
 
   const HOURS = 48;
 
@@ -237,6 +244,10 @@ function computeSustainForecast(opts) {
     let tankDeltaJ = 0;
     let newGhTemp;
 
+    if (simMode === 'greenhouse_heating' || simMode === 'emergency_heating') {
+      modeForecast.push({ ts: hourDate, mode: simMode });
+    }
+
     if (simMode === 'greenhouse_heating') {
       const radDeliveredW = Math.min(radPeakW, radUaWPerK * radDeltaT);
       tankDeltaJ -= radDeliveredW * SECONDS_PER_HOUR;
@@ -308,6 +319,7 @@ function computeSustainForecast(opts) {
       solarChargingHours += 1;
       const dayKey = dayKeyFmt.format(new Date(hourMs));
       solarKwhByDay[dayKey] = (solarKwhByDay[dayKey] || 0) + solarGainKwh;
+      modeForecast.push({ ts: hourDate, mode: 'solar_charging' });
     }
 
     // ── 4. Update tank state ──
@@ -413,6 +425,7 @@ function computeSustainForecast(opts) {
     electricKwh:            round4(electricKwh),
     electricCostEur:        round4(electricCostEur),
     costBreakdown,
+    modeForecast,
     solarChargingHours,
     greenhouseHeatingHours,
     solarGainByDay,

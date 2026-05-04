@@ -40,10 +40,10 @@ window.__triggerVersionCheck = triggerVersionCheck;
 // Shared mutable state lives in ./main/state.js as a leaf module so
 // siblings don't have to import back from main.js (which would cycle).
 import {
-  model, controller, running, showAllSensors,
+  model, controller, running, showAllSensors, showForecast,
   params, timeSeriesStore, trendStore,
   setModel, setController, setRunning,
-  setSimSpeed, setShowAllSensors,
+  setSimSpeed, setShowAllSensors, setShowForecast,
 } from './main/state.js';
 
 let config = null;
@@ -93,6 +93,7 @@ async function init() {
   setupControls();
   setupTimeRangeSlider();
   setupAllSensorsToggle();
+  setupForecastToggle();
   setupFAB();
   resetSim();
   // Schematic view — async build, handle held in display-update module.
@@ -224,6 +225,43 @@ function setupAllSensorsToggle() {
 function applyAllSensorsVisibility() {
   const display = showAllSensors ? '' : 'none';
   document.querySelectorAll('.sensor-detail').forEach((el) => {
+    el.style.display = display;
+  });
+}
+
+// Mirror of setupAllSensorsToggle for the "Forecast" toggle. The data
+// itself is fetched by playground/js/forecast.js and stashed in state
+// (forecastData); this toggle just gates whether history-graph.js
+// renders the overlay. Hidden in sim mode via the .live-only class.
+function setupForecastToggle() {
+  const sw = document.getElementById('graph-show-forecast');
+  const container = document.getElementById('graph-show-forecast-toggle');
+  if (!sw || !container) return;
+
+  const render = () => {
+    sw.classList.toggle('active', showForecast);
+    sw.setAttribute('aria-checked', showForecast ? 'true' : 'false');
+    applyForecastLegendVisibility();
+  };
+  const toggle = () => {
+    setShowForecast(!showForecast);
+    render();
+    drawHistoryGraph();
+  };
+
+  render();
+  container.addEventListener('click', toggle);
+  sw.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      toggle();
+    }
+  });
+}
+
+function applyForecastLegendVisibility() {
+  const display = showForecast ? '' : 'none';
+  document.querySelectorAll('.forecast-legend').forEach((el) => {
     el.style.display = display;
   });
 }

@@ -280,6 +280,10 @@
               <span>All sensors</span>
               <div class="mode-toggle-switch" id="graph-show-all-sensors" role="switch" tabindex="0" aria-checked="false"></div>
             </div>
+            <div class="graph-option-toggle live-only" id="graph-show-forecast-toggle" style="display:none;">
+              <span>Forecast</span>
+              <div class="mode-toggle-switch" id="graph-show-forecast" role="switch" tabindex="0" aria-checked="false"></div>
+            </div>
           </div>
           <div class="graph-container">
             <canvas id="chart"></canvas>
@@ -311,6 +315,11 @@
             <div class="graph-legend-item sensor-detail" id="legend-tank-bottom" style="display:none;"><div class="graph-legend-line" style="background:#b088d6;"></div>Tank Bottom<span class="graph-legend-stats" id="legend-stats-tank-bottom"></span></div>
             <div class="graph-legend-item"><div class="graph-legend-line" style="background:#69d0c5;"></div>Greenhouse<span class="graph-legend-stats" id="legend-stats-greenhouse"></span></div>
             <div class="graph-legend-item"><div class="graph-legend-line" style="background:#42a5f5;"></div>Outside<span class="graph-legend-stats" id="legend-stats-outdoor"></span></div>
+            <div class="graph-legend-item forecast-legend" style="display:none;"><div class="graph-legend-line graph-legend-line-dashed" style="background:#e9c349;"></div>Tank (forecast)</div>
+            <div class="graph-legend-item forecast-legend" style="display:none;"><div class="graph-legend-line graph-legend-line-dashed" style="background:#69d0c5;"></div>Greenhouse (forecast)</div>
+            <div class="graph-legend-item forecast-legend" style="display:none;"><div class="graph-legend-dot" style="background:#ee7d77;opacity:0.45;"></div>Charging (projected)</div>
+            <div class="graph-legend-item forecast-legend" style="display:none;"><div class="graph-legend-dot" style="background:#e9c349;opacity:0.45;"></div>Heating (projected)</div>
+            <div class="graph-legend-item forecast-legend" style="display:none;"><div class="graph-legend-dot" style="background:#ff7043;opacity:0.55;"></div>Emergency (projected)</div>
           </div>
         </div>
 
