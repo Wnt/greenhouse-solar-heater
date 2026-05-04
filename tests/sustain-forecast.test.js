@@ -3,13 +3,11 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  fitSolarEffectivenessByHour,
-  fitSolarGainByHour,
   fitEmpiricalCoefficients,
   computeSustainForecast,
   _TANK_THERMAL_MASS_J_PER_K,
-  _DEFAULT_SOLAR_EFFECTIVENESS,
 } = require('../server/lib/sustain-forecast.js');
+const { fitSolarGainByHour } = require('../server/lib/sustain-forecast-fit.js');
 
 // ── Helpers ──
 
@@ -35,17 +33,15 @@ function makePrices48h(priceCKwh) {
 describe('fitEmpiricalCoefficients', () => {
   it('returns defaults for empty history', () => {
     const result = fitEmpiricalCoefficients({});
-    assert.equal(result.tankLeakageWPerK,        3.0);
-    assert.equal(result.greenhouseLossWPerKBase,  25.0);
-    assert.equal(result.windFactor,               0.05);
-    assert.equal(result.usedDefaults,             true);
+    assert.equal(result.tankLeakageWPerK, 3.0);
+    assert.equal(result.usedDefaults,     true);
+    assert.ok(Array.isArray(result.solarGainKwhByHour));
   });
 
   it('returns defaults for null history', () => {
     const result = fitEmpiricalCoefficients(null);
-    assert.equal(result.tankLeakageWPerK,        3.0);
-    assert.equal(result.greenhouseLossWPerKBase,  25.0);
-    assert.equal(result.windFactor,               0.05);
+    assert.equal(result.tankLeakageWPerK, 3.0);
+    assert.equal(result.usedDefaults,     true);
   });
 
   it('returns defaults for single-reading history', () => {
@@ -188,10 +184,8 @@ describe('computeSustainForecast', () => {
       weather48h:     makeWeather48h({ temperature: -5, radiationGlobal: 0, windSpeed: 3 }),
       prices48h:      makePrices48h(10),
       coefficients:   {
-        tankLeakageWPerK:        50,  // high leakage: tank drains fast
-        greenhouseLossWPerKBase: 25,
-        windFactor:              0.05,
-        usedDefaults:            false,
+        tankLeakageWPerK: 50,  // high leakage: tank drains fast
+        usedDefaults:     false,
       },
       config:         {
         tankFloorC:           12,
@@ -241,10 +235,8 @@ describe('computeSustainForecast', () => {
       weather48h:     makeWeather48h(),
       prices48h:      makePrices48h(10),
       coefficients:   {
-        tankLeakageWPerK:        3.0,
-        greenhouseLossWPerKBase: 25.0,
-        windFactor:              0.05,
-        usedDefaults:            false,
+        tankLeakageWPerK: 3.0,
+        usedDefaults:     false,
       },
       config:         {
         weatherFetchedAt: new Date(Date.now() - 30 * 60 * 1000), // 30 min ago
@@ -254,91 +246,6 @@ describe('computeSustainForecast', () => {
 
     assert.equal(result.modelConfidence, 'high',
       'Many buckets + fresh weather → confidence should be high');
-  });
-});
-
-// ── fitSolarEffectivenessByHour tests ──
-
-describe('fitSolarEffectivenessByHour', () => {
-
-  // Helper: build a local-time-aligned base so that ts + h * 3600 s gives local hour h.
-  function localMidnight() {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
-  }
-
-  // Build 14 days of synthetic readings.
-  // For each day, for each hour h: collector = outdoor + (shaded hours: 0, sun hours: 30).
-  // "sun hours" = hours 12..16. All others shaded (collector == outdoor).
-  function makeShadedReadings() {
-    const base = localMidnight();
-    const DAYS = 14;
-    const readings = [];
-    for (let day = 0; day < DAYS; day++) {
-      for (let h = 0; h < 24; h++) {
-        const ts = new Date(base - day * 86400000 + h * 3600000);
-        const outdoor = 10;
-        const excess = (h >= 12 && h <= 16) ? 30 : 0;
-        readings.push({
-          ts,
-          tankTop:   50,
-          tankBottom: 45,
-          greenhouse: 15,
-          outdoor,
-          collector: outdoor + excess,
-        });
-      }
-    }
-    return readings;
-  }
-
-  it('shaded morning: effectiveness 1.0 for hours 12..16, 0 elsewhere', () => {
-    const mask = fitSolarEffectivenessByHour({ readings: makeShadedReadings() });
-
-    assert.equal(mask.length, 24, 'mask must have 24 entries');
-
-    // Sun hours should be ≈ 1.0
-    for (let h = 12; h <= 16; h++) {
-      assert.ok(
-        mask[h] >= 0.95,
-        'effectiveness[' + h + '] should be ≈ 1.0, got ' + mask[h],
-      );
-    }
-
-    // Shaded hours must be 0
-    for (let h = 0; h < 12; h++) {
-      assert.equal(mask[h], 0, 'effectiveness[' + h + '] should be 0 (shaded morning)');
-    }
-    for (let h = 17; h < 24; h++) {
-      assert.equal(mask[h], 0, 'effectiveness[' + h + '] should be 0 (shaded evening)');
-    }
-  });
-
-  it('insufficient data (empty history) → returns flat 10..16 = 1 fallback mask', () => {
-    const mask = fitSolarEffectivenessByHour({ readings: [] });
-
-    assert.equal(mask.length, 24);
-    for (let h = 0; h < 24; h++) {
-      const expected = (h >= 10 && h <= 16) ? 1.0 : 0;
-      assert.equal(mask[h], expected,
-        'fallback mask[' + h + '] should be ' + expected + ', got ' + mask[h]);
-    }
-  });
-
-  it('null history → returns flat 10..16 = 1 fallback mask', () => {
-    const mask = fitSolarEffectivenessByHour(null);
-    assert.equal(mask.length, 24);
-    assert.equal(mask[10], 1.0);
-    assert.equal(mask[9],  0);
-    assert.equal(mask[17], 0);
-  });
-
-  it('fitEmpiricalCoefficients includes solarEffectivenessByHour', () => {
-    // Even with empty history the field must be present.
-    const coeff = fitEmpiricalCoefficients(null);
-    assert.ok(Array.isArray(coeff.solarEffectivenessByHour), 'field must exist');
-    assert.equal(coeff.solarEffectivenessByHour.length, 24);
   });
 });
 
@@ -391,95 +298,6 @@ describe('fitSolarGainByHour', () => {
     assert.ok(out[14] > 1.0, 'expected non-trivial gain at local hour 14, got ' + out[14]);
     assert.equal(out[3], 0,  'no gain expected outside charging hours');
     assert.equal(out[20], 0, 'no gain expected at evening');
-  });
-});
-
-// ── Solar mask integration in computeSustainForecast ──
-
-describe('computeSustainForecast — solar effectiveness mask', () => {
-
-  function localMidnight() {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
-  }
-
-  // Build weather48h: bright sun (600 W/m²) during targetHour of today, dark otherwise.
-  function makeWeatherWithSunAtHour(targetHour) {
-    const base = localMidnight();
-    return Array.from({ length: 48 }, function(_, i) {
-      const ts    = new Date(base + i * 3600000);
-      const localH = ts.getHours();
-      return {
-        ts:              ts.toISOString(),
-        temperature:     10,
-        radiationGlobal: (localH === targetHour) ? 600 : 0,
-        windSpeed:       0,
-      };
-    });
-  }
-
-  it('effectiveness = 0 for the sunny hour → zero solar charging credit', () => {
-    const SUN_HOUR = 9; // hour 09 local time
-
-    // Mask: 0 everywhere (fully shaded at all hours).
-    const noSunMask = new Array(24).fill(0);
-
-    const result = computeSustainForecast({
-      now:            localMidnight(),
-      tankTop:        50,
-      tankBottom:     48,
-      greenhouseTemp: 12,
-      currentMode:    'idle',
-      weather48h:     makeWeatherWithSunAtHour(SUN_HOUR),
-      prices48h:      Array.from({ length: 48 }, function(_, i) {
-        return { ts: new Date(localMidnight() + i * 3600000).toISOString(), priceCKwh: 10 };
-      }),
-      coefficients: {
-        tankLeakageWPerK:        3.0,
-        greenhouseLossWPerKBase: 25.0,
-        windFactor:              0.05,
-        solarEffectivenessByHour: noSunMask,
-        usedDefaults:            false,
-      },
-      config: { greenhouseTargetC: 8, spaceHeaterKw: 1, transferFeeCKwh: 5 },
-    });
-
-    assert.equal(result.solarChargingHours, 0,
-      'Zero-mask should block solar charging even with bright radiation');
-  });
-
-  it('effectiveness = 1.0 for the sunny hour → solar charging is credited', () => {
-    const SUN_HOUR = 9; // hour 09 local time
-
-    // Non-zero baseline gain at hour 09: data-driven path requires the
-    // historical baseline to be > 0 for that hour; FMI radiation alone isn't
-    // sufficient (a hour-of-day with shaded collectors stays at 0 even on a
-    // bright day).
-    const fullGain = new Array(24).fill(0.5);
-
-    const result = computeSustainForecast({
-      now:            localMidnight(),
-      tankTop:        40,
-      tankBottom:     38,
-      greenhouseTemp: 12,
-      currentMode:    'idle',
-      weather48h:     makeWeatherWithSunAtHour(SUN_HOUR),
-      prices48h:      Array.from({ length: 48 }, function(_, i) {
-        return { ts: new Date(localMidnight() + i * 3600000).toISOString(), priceCKwh: 10 };
-      }),
-      coefficients: {
-        tankLeakageWPerK:        3.0,
-        greenhouseLossWPerKBase: 25.0,
-        windFactor:              0.05,
-        solarGainKwhByHour:      fullGain,
-        usedDefaults:            false,
-      },
-      config: { greenhouseTargetC: 8, spaceHeaterKw: 1, transferFeeCKwh: 5 },
-    });
-
-    assert.ok(result.solarChargingHours > 0,
-      'Full-mask should allow solar charging when radiation is present');
   });
 });
 

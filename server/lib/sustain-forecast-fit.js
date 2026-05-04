@@ -10,25 +10,13 @@
 
 // ── Physical constants (shared with engine) ──
 const TANK_THERMAL_MASS_J_PER_K = 300 * 4186;
-const GH_THERMAL_MASS_J_PER_K   = 200 * 1.2 * 1005;
 
 // ── Fit defaults ──
 const DEFAULT_TANK_LEAKAGE_W_PER_K = 3.0;
-const DEFAULT_GH_LOSS_W_PER_K_BASE = 25.0;
-const DEFAULT_WIND_FACTOR          = 0.05;
-
-// Per-hour-of-day "no data" mask: assume sun is effective 10..16 local time.
-const DEFAULT_SOLAR_EFFECTIVENESS = (function () {
-  const mask = new Array(24);
-  for (let h = 0; h < 24; h++) mask[h] = (h >= 10 && h <= 16) ? 1.0 : 0;
-  return mask;
-}());
 
 // Fit thresholds.
 const MIN_IDLE_BUCKET_MINUTES = 20;
 const MIN_BUCKETS_FOR_FIT     = 5;
-const MIN_ROWS_PER_HOUR_FOR_SHADE = 3;
-const MIN_PEAK_EXCESS_K       = 5;
 
 // ── Helsinki TZ helpers (deterministic across server timezones) ──
 const HELSINKI_HOUR_FMT = new Intl.DateTimeFormat('en-GB', {
@@ -53,75 +41,6 @@ function slopeThruOrigin(xs, ys) {
     sumX2 += xs[i] * xs[i];
   }
   return sumX2 === 0 ? null : sumXY / sumX2;
-}
-
-// ── p-th percentile (p in [0,1]) of a numeric array ──
-function percentile(arr, p) {
-  if (arr.length === 0) return 0;
-  const sorted = arr.slice().sort(function (a, b) { return a - b; });
-  const idx = p * (sorted.length - 1);
-  const lo  = Math.floor(idx);
-  const hi  = Math.ceil(idx);
-  if (lo === hi) return sorted[lo];
-  const frac = idx - lo;
-  return sorted[lo] * (1 - frac) + sorted[hi] * frac;
-}
-
-/**
- * Derive per-hour-of-day solar effectiveness from collector history.
- *
- * Algorithm:
- *   1. Group readings by Helsinki hour-of-day.
- *   2. Per row: collectorExcess = collector − outdoor.
- *   3. Per hour: 80th-percentile of collectorExcess (sunny-day envelope).
- *   4. Normalise by global peak → values in [0, 1].
- *   5. Clamp values < 0.1 to 0 (kills pre-sunrise warm-up noise).
- *
- * Falls back to the flat 10..16 mask when:
- *   - Any hour has fewer than MIN_ROWS_PER_HOUR_FOR_SHADE rows, OR
- *   - Global peak excess < MIN_PEAK_EXCESS_K (no real sun observed).
- */
-function fitSolarEffectivenessByHour(history) {
-  if (!history || !Array.isArray(history.readings) || history.readings.length === 0) {
-    return DEFAULT_SOLAR_EFFECTIVENESS.slice();
-  }
-
-  const readings = history.readings;
-  const byHour = [];
-  for (let h = 0; h < 24; h++) byHour.push([]);
-
-  for (let i = 0; i < readings.length; i++) {
-    const r = readings[i];
-    if (typeof r.collector !== 'number' || typeof r.outdoor !== 'number') continue;
-    const ts = r.ts instanceof Date ? r.ts : new Date(r.ts);
-    const hour = helsinkiHour(ts);
-    byHour[hour].push(r.collector - r.outdoor);
-  }
-
-  for (let h = 0; h < 24; h++) {
-    if (byHour[h].length < MIN_ROWS_PER_HOUR_FOR_SHADE) {
-      return DEFAULT_SOLAR_EFFECTIVENESS.slice();
-    }
-  }
-
-  const percentile80 = new Array(24);
-  for (let h = 0; h < 24; h++) percentile80[h] = percentile(byHour[h], 0.80);
-
-  let peakExcess = percentile80[0];
-  for (let h = 1; h < 24; h++) {
-    if (percentile80[h] > peakExcess) peakExcess = percentile80[h];
-  }
-  if (peakExcess < MIN_PEAK_EXCESS_K) return DEFAULT_SOLAR_EFFECTIVENESS.slice();
-
-  const mask = new Array(24);
-  for (let h = 0; h < 24; h++) {
-    let v = percentile80[h] / peakExcess;
-    if (v < 0) v = 0;
-    if (v > 1) v = 1;
-    if (v < 0.1) v = 0;
-    mask[h] = v;
-  }
-  return mask;
 }
 
 /**
@@ -241,11 +160,8 @@ function fitSolarGainByHour(history) {
 
 function fitEmpiricalCoefficients(history) {
   const defaults = {
-    tankLeakageWPerK:         DEFAULT_TANK_LEAKAGE_W_PER_K,
-    greenhouseLossWPerKBase:  DEFAULT_GH_LOSS_W_PER_K_BASE,
-    windFactor:               DEFAULT_WIND_FACTOR,
-    solarEffectivenessByHour: DEFAULT_SOLAR_EFFECTIVENESS.slice(),
-    usedDefaults:             true,
+    tankLeakageWPerK: DEFAULT_TANK_LEAKAGE_W_PER_K,
+    usedDefaults:     true,
   };
 
   if (!history || !Array.isArray(history.readings) || history.readings.length < 2) {
@@ -279,8 +195,11 @@ function fitEmpiricalCoefficients(history) {
 
   // Bucket consecutive idle stretches and emit one (deltaK, powerW) sample per
   // consecutive reading pair within each ≥ MIN_IDLE_BUCKET_MINUTES bucket.
+  // Only the tank-leakage slope is fit here. The greenhouse-loss slope was
+  // also fit in a previous iteration but the engine never used it (the GH
+  // simulation runs from observed K/h drop rates, not first-principles loss
+  // coefficients) — removed when the data-driven model replaced it.
   const tankXs = [], tankYs = [];
-  const ghXs   = [], ghYs   = [];
 
   let bucketStart = -1;
   for (let j = 0; j <= readings.length; j++) {
@@ -315,53 +234,29 @@ function fitEmpiricalCoefficients(history) {
             tankXs.push(deltaK);
             tankYs.push(-powerW);
           }
-
-          if (r0.outdoor !== undefined && r1.outdoor !== undefined &&
-              r0.greenhouse !== undefined && r1.greenhouse !== undefined) {
-            const ghAvgPair = (r0.greenhouse + r1.greenhouse) / 2;
-            const outAvg    = (r0.outdoor + r1.outdoor) / 2;
-            const dGhAvg    = r1.greenhouse - r0.greenhouse;
-            const ghPowerW  = (dGhAvg / dtSec) * GH_THERMAL_MASS_J_PER_K;
-            const ghDeltaK  = ghAvgPair - outAvg;
-            if (ghDeltaK > 1 && isFinite(ghPowerW) && isFinite(ghDeltaK)) {
-              ghXs.push(ghDeltaK);
-              ghYs.push(-ghPowerW);
-            }
-          }
         }
       }
       bucketStart = -1;
     }
   }
 
-  if (tankXs.length < MIN_BUCKETS_FOR_FIT && ghXs.length < MIN_BUCKETS_FOR_FIT) {
-    return defaults;
-  }
-
   const tankSlope = tankXs.length >= MIN_BUCKETS_FOR_FIT ? slopeThruOrigin(tankXs, tankYs) : null;
-  const ghSlope   = ghXs.length   >= MIN_BUCKETS_FOR_FIT ? slopeThruOrigin(ghXs, ghYs)   : null;
 
   return {
-    tankLeakageWPerK:         tankSlope !== null && tankSlope > 0 ? tankSlope : DEFAULT_TANK_LEAKAGE_W_PER_K,
-    greenhouseLossWPerKBase:  ghSlope   !== null && ghSlope   > 0 ? ghSlope   : DEFAULT_GH_LOSS_W_PER_K_BASE,
-    windFactor:               DEFAULT_WIND_FACTOR,
-    solarEffectivenessByHour: fitSolarEffectivenessByHour(history),
-    solarGainKwhByHour:       fitSolarGainByHour(history),
-    usedDefaults:             (tankSlope === null && ghSlope === null),
+    tankLeakageWPerK:   tankSlope !== null && tankSlope > 0 ? tankSlope : DEFAULT_TANK_LEAKAGE_W_PER_K,
+    solarGainKwhByHour: fitSolarGainByHour(history),
+    usedDefaults:       tankSlope === null,
   };
 }
 
 module.exports = {
   // Constants the engine also needs.
   TANK_THERMAL_MASS_J_PER_K,
-  GH_THERMAL_MASS_J_PER_K,
   TANK_KWH_PER_K,
-  DEFAULT_SOLAR_EFFECTIVENESS,
   // TZ helpers.
   helsinkiHour,
   helsinkiHHMM,
   // Fit functions.
-  fitSolarEffectivenessByHour,
   fitSolarGainByHour,
   fitEmpiricalCoefficients,
 };

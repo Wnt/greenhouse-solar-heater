@@ -251,7 +251,6 @@ function buildExpandedChart(data) {
   // Backup-heater hour ticks (red marks at bottom)
   const tickH = 4;
   const tickY = PAD.top + chartH + 2;
-  const total48 = Math.max(n, nW, 48);
   for (const c of costHours) {
     const ts = c.ts ? new Date(c.ts).getTime() : null;
     if (!ts || !trajectory.length) continue;
@@ -281,8 +280,6 @@ function buildExpandedChart(data) {
     label.textContent = 'c/kWh';
     svg.appendChild(label);
   }
-
-  void total48; // suppress lint on unused local
 
   return svg;
 }

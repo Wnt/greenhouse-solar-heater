@@ -9,27 +9,20 @@
 // pods default to UTC).
 //
 // Exports:
-//   fitSolarEffectivenessByHour(history) → number[24]  (per-hour relative effectiveness)
-//   fitEmpiricalCoefficients(history) → { tankLeakageWPerK, greenhouseLossWPerKBase,
-//                                          windFactor, solarEffectivenessByHour }
+//   fitEmpiricalCoefficients(history) → { tankLeakageWPerK, solarGainKwhByHour, usedDefaults }
 //   computeSustainForecast({ now, tankTop, tankBottom, greenhouseTemp, currentMode,
 //                            weather48h, prices48h, coefficients, config }) → forecast
 
 const fit = require('./sustain-forecast-fit');
 const { tankStoredEnergyKwh } = require('./energy-balance');
 const TANK_THERMAL_MASS_J_PER_K = fit.TANK_THERMAL_MASS_J_PER_K;
-const GH_THERMAL_MASS_J_PER_K   = fit.GH_THERMAL_MASS_J_PER_K;
-const DEFAULT_SOLAR_EFFECTIVENESS = fit.DEFAULT_SOLAR_EFFECTIVENESS;
 const helsinkiHour  = fit.helsinkiHour;
 const helsinkiHHMM  = fit.helsinkiHHMM;
-const fitSolarEffectivenessByHour = fit.fitSolarEffectivenessByHour;
-const fitEmpiricalCoefficients    = fit.fitEmpiricalCoefficients;
+const fitEmpiricalCoefficients = fit.fitEmpiricalCoefficients;
 
-// Engine fallbacks: used only when a caller passes a coefficients object
-// missing a field (the fit module owns the canonical defaults).
+// Engine fallback: used only when a caller passes a coefficients object
+// missing the field (the fit module owns the canonical default).
 const DEFAULT_TANK_LEAKAGE_W_PER_K = 3.0;
-const DEFAULT_GH_LOSS_W_PER_K_BASE = 25.0;
-const DEFAULT_WIND_FACTOR          = 0.05;
 
 const SECONDS_PER_HOUR = 3600;
 
@@ -64,11 +57,6 @@ const DEFAULT_CONFIG = {
   solarChargeMinKwh:        0.15,
   // Radiator output power (kW from tank to greenhouse air) — observed in data.
   radiatorPowerKw:          2.4,
-  // Greenhouse effective thermal mass (J/K). Air alone is ~240 kJ/K but the
-  // soil + structure + plants + (sometimes) water buckets add substantially
-  // more. Empirical fit from idle-mode cooldowns suggests ~1 MJ/K — use that
-  // as the default; can be tuned per greenhouse later.
-  ghThermalMassJPerK:       1e6,
   // Confidence boost: set this to a recent Date when weather was fetched
   weatherFetchedAt:         null,
   // Number of buckets used for the empirical fit (for confidence)
@@ -136,7 +124,7 @@ function computeSustainForecast(opts) {
   // usedDefaults is true when the caller explicitly set it, OR when no real
   // coefficient values were provided (empty object or coefficients not from fit).
   const usedDefaults = coeff.usedDefaults === true ||
-    (typeof coeff.tankLeakageWPerK !== 'number' && typeof coeff.greenhouseLossWPerKBase !== 'number');
+    typeof coeff.tankLeakageWPerK !== 'number';
   const fitBuckets          = typeof cfg.fitBucketCount === 'number' ? cfg.fitBucketCount : 0;
 
   // ── Simulation state ──
@@ -521,15 +509,9 @@ function round2(v) { return Math.round(v * 100) / 100; }
 function round4(v) { return Math.round(v * 10000) / 10000; }
 
 module.exports = {
-  fitSolarEffectivenessByHour,
-  fitSolarGainByHour: fit.fitSolarGainByHour,
   fitEmpiricalCoefficients,
   computeSustainForecast,
   // Exported for tests
-  _TANK_THERMAL_MASS_J_PER_K: TANK_THERMAL_MASS_J_PER_K,
-  _GH_THERMAL_MASS_J_PER_K:   GH_THERMAL_MASS_J_PER_K,
-  _DEFAULT_TANK_LEAKAGE_W_PER_K:    DEFAULT_TANK_LEAKAGE_W_PER_K,
-  _DEFAULT_GH_LOSS_W_PER_K_BASE:    DEFAULT_GH_LOSS_W_PER_K_BASE,
-  _DEFAULT_WIND_FACTOR:             DEFAULT_WIND_FACTOR,
-  _DEFAULT_SOLAR_EFFECTIVENESS:     DEFAULT_SOLAR_EFFECTIVENESS,
+  _TANK_THERMAL_MASS_J_PER_K:    TANK_THERMAL_MASS_J_PER_K,
+  _DEFAULT_TANK_LEAKAGE_W_PER_K: DEFAULT_TANK_LEAKAGE_W_PER_K,
 };
