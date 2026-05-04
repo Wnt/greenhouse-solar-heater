@@ -24,6 +24,7 @@ import {
 } from './main/logs.js';
 import { setupCopyLogsButton } from './main/logs-clipboard.js';
 import { initBalanceCard } from './main/balance-card.js';
+import { initForecastCard } from './forecast.js';
 import { setupInspector } from './main/graph-inspector.js';
 import { setupChartPinchZoom, resetChartZoom } from './main/chart-pinch-zoom.js';
 import { setupTimeRangeSlider } from './main/time-range-slider.js';
@@ -117,6 +118,7 @@ async function init() {
   setupChartPinchZoom();
   setupLogsScrollLoader();
   setupCopyLogsButton();
+  initForecastCard();
   initBalanceCard({ onRerender: rerenderWithHistoryFallback });
   updateDisplay(model.getState(), { mode: 'idle', valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false }, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
 

@@ -11,6 +11,14 @@
 // AGGREGATE_OVERLAP re-aggregates the boundary buckets — the most
 // recent bucket may still be filling between maintenance runs. UPSERT
 // makes the overlap idempotent.
+//
+// weather_forecasts: no retention policy yet — rows accumulate indefinitely.
+// A 30-day cleanup will be added in a separate change once the fetcher lands.
+// Do NOT add a DELETE here until that change is ready.
+//
+// spot_prices: preserved indefinitely (same rule as sensor_readings_30s) —
+// cost-projection features need historical prices for back-analysis. Never add
+// a retention DELETE or TRUNCATE against spot_prices.
 
 const MAINTENANCE_INTERVAL = 30 * 60 * 1000; // 30 minutes
 const INITIAL_DELAY = 60 * 1000;             // give the boot some breathing room

@@ -22,6 +22,7 @@ const { createScriptCrashNotifier } = require('./lib/script-crash-notifier');
 const { handleWsCommand, setDb: setWsCommandHandlersDb } = require('./lib/ws-command-handlers');
 const { createHandlers, readBody, jsonResponse, parseJsonOrFail } = require('./lib/http-handlers');
 const { getNetworkAddress, printBanner } = require('./lib/banner');
+const forecastBootstrap = require('./lib/forecast-bootstrap');
 
 const log = createLogger('server');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
@@ -99,6 +100,7 @@ if (AUTH_ENABLED) {
 let db = null;
 let scriptMonitor = null;
 let handlers = null;
+let forecast = null;
 
 // ── HTTP route detection (for OTel span naming) ──
 function resolveRoute(urlPath, _method) {
@@ -111,6 +113,7 @@ function resolveRoute(urlPath, _method) {
   if (urlPath.startsWith('/api/sensor-config/')) return '/api/sensor-config/*';
   if (urlPath === '/api/sensor-discovery') return '/api/sensor-discovery';
   if (urlPath === '/api/history') return '/api/history';
+  if (urlPath === '/api/forecast') return '/api/forecast';
   if (urlPath === '/api/runtime') return '/api/runtime';
   if (urlPath === '/api/events') return '/api/events';
   if (urlPath.startsWith('/api/push/')) return '/api/push/*';
@@ -281,6 +284,9 @@ const server = http.createServer(function (req, res) {
     });
   } else if (urlPath === '/api/history') {
     handlers.handleHistoryApi(req, res);
+  } else if (urlPath === '/api/forecast' && req.method === 'GET') {
+    if (forecast) forecast.handle(req, res);
+    else jsonResponse(res, 503, { error: 'Forecast not available' });
   } else if (urlPath === '/api/events') {
     handlers.handleEventsApi(req, res);
   } else if (urlPath === '/api/watchdog/state' && req.method === 'GET') {
@@ -453,6 +459,7 @@ function initServices(callback) {
       const onDbReady = function () {
         setWsCommandHandlersDb(db);
         initAnomalyManager();
+        forecast = forecastBootstrap.start({ pool: db.getPool(), log, repoRoot: REPO_ROOT, isPreviewMode: PREVIEW_MODE });
         finish();
       };
       if (PREVIEW_MODE) {
@@ -551,6 +558,7 @@ function startServer() {
 // ── Graceful shutdown ──
 function shutdown(signal) {
   log.info('shutdown signal received', { signal });
+  if (forecast) forecast.stop();
   server.close(function () {
     log.info('server closed');
     process.exit(0);
