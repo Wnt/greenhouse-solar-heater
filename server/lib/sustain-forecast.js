@@ -262,7 +262,7 @@ function computeSustainForecast(opts) {
     let tankDeltaJ = 0;
     let newGhTemp;
 
-    if (simMode === 'greenhouse_heating' || simMode === 'emergency_heating') {
+    if (simMode === 'greenhouse_heating') {
       modeForecast.push({ ts: hourDate, mode: simMode });
     }
 
@@ -284,16 +284,23 @@ function computeSustainForecast(opts) {
       newGhTemp = curGhTemp - ghDropKpH;
       greenhouseHeatingHours += 1;
     } else if (simMode === 'emergency_heating') {
-      // Heater duty cycle = greenhouse heat losses / heater power.
-      // The real heater is bang-bang controlled by the ehE/ehX hysteresis;
-      // averaged over the hour it produces just enough to offset losses,
-      // not always 1 kW. Old code charged 1 kWh per emergency hour
-      // unconditionally, which overcounted backup energy by 30-40%
-      // whenever outdoor wasn't drastically below the target.
+      // The real device overlays the heater on the active pump mode
+      // (system.yaml overlays.emergency_heating: "the space heater is
+      // overlaid on the active pump mode"). When the tank is hot enough
+      // to drive the radiator, the radiator delivers most of the heat and
+      // the heater fills only the remaining gap. Pre-2026-05-04 the
+      // engine zero'd out the radiator during emergency, so a 40 °C tank
+      // with mild outdoor still projected near-100% heater duty for 48 h
+      // — the user-visible "continuous heater" forecast.
+      const radDeltaT = Math.max(0, tankAvg - curGhTemp);
+      const radDeliveredW = Math.min(radPeakW, radUaWPerK * radDeltaT);
       const ghTarget = (cfg.emergencyEnterC + cfg.emergencyExitC) / 2;
-      const ghLossW  = cfg.greenhouseLossWPerK * Math.max(0, ghTarget - outdoorC);
+      const ghLossAtTargetW = cfg.greenhouseLossWPerK * Math.max(0, ghTarget - outdoorC);
       const heaterW  = cfg.spaceHeaterKw * 1000;
-      const heaterDuty = Math.min(1, ghLossW / heaterW);
+      // Heater fills the gap left by the radiator. When rad ≥ loss,
+      // duty=0 and the heater stays idle.
+      const heaterNeededW = Math.max(0, ghLossAtTargetW - radDeliveredW);
+      const heaterDuty = Math.min(1, heaterNeededW / heaterW);
       const heaterEnergyKwh = heaterDuty * cfg.spaceHeaterKw;
       if (heaterEnergyKwh > 0) {
         electricKwh += heaterEnergyKwh;
@@ -306,16 +313,30 @@ function computeSustainForecast(opts) {
           eurInclTransfer: round4(costEur),
         });
       }
+      // Radiator extracts heat from the tank (mirroring the real overlay).
+      tankDeltaJ -= radDeliveredW * SECONDS_PER_HOUR;
       // Tank still leaks slowly during emergency.
       const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
       tankDeltaJ -= tankLossW * SECONDS_PER_HOUR;
-      // Greenhouse maintained at target by the heater. If outdoor
-      // climbs above target, ghLossW = 0, heater isn't needed, gh
-      // drifts toward outdoor — once gh > ehX the mode-decision
-      // block exits emergency on the next iteration.
-      newGhTemp = heaterDuty > 0
-        ? ghTarget
-        : curGhTemp + (outdoorC - curGhTemp) * (1 - Math.exp(-1 / 8));
+      // Greenhouse evolution: when the heater is filling the gap, gh
+      // sits at ghTarget. When the radiator alone exceeds losses
+      // (heater idle), gh drifts up toward equilibrium gh_eq where
+      // rad = lossWPerK·(gh_eq − outdoor) — i.e. ghTarget +
+      // (radDeliveredW − ghLossAtTarget)/lossWPerK. The mode-decision
+      // block exits emergency once gh > ehX.
+      if (heaterDuty > 0) {
+        newGhTemp = ghTarget;
+      } else {
+        const ghEq = cfg.greenhouseLossWPerK > 0
+          ? outdoorC + radDeliveredW / cfg.greenhouseLossWPerK
+          : ghTarget;
+        newGhTemp = curGhTemp + (ghEq - curGhTemp) * (1 - Math.exp(-1 / 8));
+      }
+      // Carry the duty fraction so the chart can render <100% bars instead
+      // of solid orange across hours where the heater barely cycles. The
+      // greenhouse-heating branch above pushes a binary entry (always-on
+      // radiator); only the emergency branch needs the duty field.
+      modeForecast.push({ ts: hourDate, mode: simMode, duty: round2(heaterDuty) });
     } else {
       // Idle.
       const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);

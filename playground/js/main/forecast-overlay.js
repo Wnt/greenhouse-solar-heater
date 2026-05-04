@@ -106,7 +106,13 @@ function drawForecastModeBars(ctx, modeForecast, nowSec, cutoffSec, tMin, tMax, 
       if (t < segStart || t >= segEnd) continue;
       if (e.mode === 'solar_charging')          chargingHours  += 1;
       else if (e.mode === 'greenhouse_heating') heatingHours   += 1;
-      else if (e.mode === 'emergency_heating')  emergencyHours += 1;
+      else if (e.mode === 'emergency_heating') {
+        // Emergency entries carry a `duty` field (0..1) — the fractional
+        // heater run-time in that hour. A duty of 0.30 means the bar
+        // reaches 30% of the bucket's height for that hour, matching how
+        // historical bars render observed duty cycles.
+        emergencyHours += typeof e.duty === 'number' ? e.duty : 1;
+      }
     }
     // Per-bucket fraction = hours-on / hours-in-the-post-now slice of this
     // bucket. For the partial bucket straddling "now" we measure against

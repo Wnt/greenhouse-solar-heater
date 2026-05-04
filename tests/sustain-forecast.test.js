@@ -446,6 +446,101 @@ describe('computeSustainForecast — emergency heater duty cycle', () => {
       'expected ~35 kWh of heater energy at 72% duty, got ' + result.electricKwh);
   });
 
+  // Regression: in real hardware, when the controller is in emergency the
+  // space heater is OVERLAID on whatever pump mode physics would pick
+  // (system.yaml overlays.emergency_heating: "the space heater is overlaid
+  // on the active pump mode"). So when the tank is hot enough, the radiator
+  // keeps delivering heat alongside the heater, and the heater fills only
+  // the gap. Old engine zero'd out the radiator during emergency, so a
+  // 40 °C tank with mild outdoor still projected ~40 kWh of heater, even
+  // though the radiator could carry the whole load alone.
+  it('hot tank materially reduces projected heater energy', () => {
+    // Same outdoor and thresholds — only tank temperature changes. The
+    // radiator's contribution should drag the projected heater kWh well
+    // below the cold-tank case. Pre-fix: both runs returned the same kWh
+    // because the radiator was disabled during emergency.
+    const baseOpts = {
+      now:            Date.now(),
+      greenhouseTemp: 10,
+      currentMode:    'idle',
+      weather48h:     makeWeather48h({ temperature: 7, radiationGlobal: 0 }),
+      prices48h:      makePrices48h(10),
+      coefficients:   {},
+      config: {
+        spaceHeaterKw: 1, transferFeeCKwh: 5,
+        greenhouseEnterC: 13, greenhouseExitC: 14,
+        emergencyEnterC: 11, emergencyExitC: 13,
+        greenhouseLossWPerK: 120,
+      },
+    };
+    const cold = computeSustainForecast(Object.assign({}, baseOpts, {
+      tankTop: 12, tankBottom: 12,
+    }));
+    const hot  = computeSustainForecast(Object.assign({}, baseOpts, {
+      tankTop: 40, tankBottom: 40,
+    }));
+    // ~25% reduction is the steady-state expectation: a 40 °C tank carries
+    // ~7 hours of greenhouse heating before it drops to gh temperature, then
+    // the heater takes over at the same duty as the cold-tank case.
+    assert.ok(hot.electricKwh < cold.electricKwh * 0.85,
+      'expected hot tank to materially reduce projected heater energy: cold=' +
+        cold.electricKwh.toFixed(2) + ' hot=' + hot.electricKwh.toFixed(2));
+  });
+
+  // Regression: when the user's tank is near the floor and the system has
+  // been cycling backup all morning, the engine used to project ~30 kWh of
+  // continuous emergency over the next 48 h. The forecast bar visualisation
+  // showed full-height emergency every hour even when later daytime hours
+  // would actually get strong solar gain → tank charges → radiator covers
+  // greenhouse losses and the heater barely runs.
+  it('cycles emergency duty down during sunny hours', () => {
+    // Strong solar gain at midday (Helsinki hours 10–15). Outdoor 7 °C.
+    const solarGainKwhByHour = new Array(24).fill(0);
+    for (let h = 10; h <= 15; h++) solarGainKwhByHour[h] = 1.5;
+    const weather = Array.from({ length: 48 }, function (_, i) {
+      return {
+        ts:              new Date(Date.now() + i * 3600 * 1000).toISOString(),
+        temperature:     7,
+        radiationGlobal: 500, // matches cloudReferenceWm2 → cloudFactor=1
+      };
+    });
+
+    const noFix = computeSustainForecast({
+      now:            Date.now(),
+      tankTop:        14, tankBottom: 13, greenhouseTemp: 11,
+      currentMode:    'idle',
+      emergencyRecentlyActive: true,
+      weather48h:     weather,
+      prices48h:      makePrices48h(10),
+      coefficients:   { tankLeakageWPerK: 3, solarGainKwhByHour },
+      config: {
+        spaceHeaterKw: 1, transferFeeCKwh: 5,
+        greenhouseEnterC: 13, greenhouseExitC: 14,
+        emergencyEnterC: 11, emergencyExitC: 13,
+        greenhouseLossWPerK: 120,
+      },
+    });
+
+    // Old engine: 60% duty × 48 h ≈ 29 kWh. With the radiator running
+    // alongside as it does in hardware, daytime hours drop to near-zero
+    // duty as the tank charges, dragging the 48 h total below 22 kWh.
+    assert.ok(noFix.electricKwh < 22,
+      'expected sunny days to lower projected backup energy, got ' + noFix.electricKwh);
+
+    // The mode forecast should report fractional duty for emergency hours
+    // so the chart can render <100% bars instead of solid orange. The
+    // dim-everything-orange visual was the user-facing complaint that
+    // motivated this fix.
+    const emEntries = (noFix.modeForecast || []).filter(function (e) {
+      return e.mode === 'emergency_heating';
+    });
+    assert.ok(emEntries.length > 0, 'expected at least one emergency entry');
+    assert.ok(emEntries.every(function (e) { return typeof e.duty === 'number'; }),
+      'expected every emergency entry to carry a numeric duty fraction');
+    assert.ok(emEntries.some(function (e) { return e.duty < 0.95; }),
+      'expected at least one emergency hour to project < 95% heater duty');
+  });
+
   it('zero heater kWh when outdoor is warmer than the target', () => {
     // Outdoor 15 > target 12 → no heat needed even though gh starts cold.
     const result = computeSustainForecast({
