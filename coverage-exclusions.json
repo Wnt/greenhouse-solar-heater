@@ -1,7 +1,6 @@
 {
   "_comment": "Frontend JS files that bypass the 50% coverage gate enforced by scripts/coverage-check.mjs. Paths are relative to the repo root; each key maps to a written reason. Prefer adding a test over adding an entry here. CI also fails if an excluded file has climbed above the threshold — delete stale entries when that happens.",
   "files": {
-    "playground/js/main/chart-pinch-zoom.js": "Pure helpers (pinchZoomWindow, panZoomWindow) are covered by tests/pinch-zoom.test.mjs in the unit suite. The remaining lines are the multi-finger pointer-event state machine that disambiguates tap / long-press / pan / pinch, which Playwright's frontend project can't simulate without real two-touch gestures. Verified manually on the preview deploy.",
-    "playground/js/main/forecast-overlay.js": "Pure canvas painting (drawForecastOverlay + drawForecastModeBars) — exercised only when the Forecast toggle is on, which the existing tests/frontend/forecast-card.spec.js triggers but doesn't assert pixel output for. The math (bucketing, fraction calculation, segStart clipping) is mirrored from history-graph.js's drawHistoryGraph, which IS covered, and the overlay was verified against live prod data via the local-dev tunnel before merge."
+    "playground/js/main/chart-pinch-zoom.js": "Pure helpers (pinchZoomWindow, panZoomWindow) are covered by tests/pinch-zoom.test.mjs in the unit suite. The remaining lines are the multi-finger pointer-event state machine that disambiguates tap / long-press / pan / pinch, which Playwright's frontend project can't simulate without real two-touch gestures. Verified manually on the preview deploy."
   }
 }
