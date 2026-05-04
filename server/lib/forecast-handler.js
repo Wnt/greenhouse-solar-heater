@@ -228,7 +228,12 @@ function createForecastHandler(opts) {
         callback(null, defaults);
         return;
       }
-      const coeff = fitEmpiricalCoefficients(history);
+      // Pass the heater wattage so fitGreenhouseLossWPerK can convert
+      // observed duty cycles into watts. system.yaml ships 1 kW; if the
+      // operator wires a different heater the YAML is the single source
+      // of truth and the fit must reflect it.
+      const heaterW = configFromYaml.spaceHeaterKw * 1000;
+      const coeff = fitEmpiricalCoefficients(history, { heaterW });
       coeff.fitBucketCount = history.readings ? history.readings.length : 0;
       _coeffCache    = coeff;
       _coeffCachedAt = now;

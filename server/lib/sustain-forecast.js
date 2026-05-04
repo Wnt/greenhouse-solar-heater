@@ -9,7 +9,8 @@
 // pods default to UTC).
 //
 // Exports:
-//   fitEmpiricalCoefficients(history) → { tankLeakageWPerK, solarGainKwhByHour, usedDefaults }
+//   fitEmpiricalCoefficients(history, opts) →
+//     { tankLeakageWPerK, solarGainKwhByHour, [greenhouseLossWPerK,] usedDefaults }
 //   computeSustainForecast({ now, tankTop, tankBottom, greenhouseTemp, currentMode,
 //                            weather48h, prices48h, coefficients, config }) → forecast
 
@@ -113,6 +114,13 @@ function computeSustainForecast(opts) {
     });
   }
   const cfg = Object.assign({}, DEFAULT_CONFIG, cfgOverrides);
+  // Coefficient overrides cfg, which overrides DEFAULT_CONFIG. Wired this
+  // way so a fitted greenhouseLossWPerK from sustain-forecast-fit takes
+  // precedence over the conservative warmup default; the DEFAULT_CONFIG
+  // value still seeds the engine when the fit hasn't converged yet.
+  if (typeof coeff.greenhouseLossWPerK === 'number' && coeff.greenhouseLossWPerK > 0) {
+    cfg.greenhouseLossWPerK = coeff.greenhouseLossWPerK;
+  }
 
   const tankLeakageWPerK    = typeof coeff.tankLeakageWPerK    === 'number' ? coeff.tankLeakageWPerK    : DEFAULT_TANK_LEAKAGE_W_PER_K;
   // Observed tank-drop rate during the most recent ~hour, in K/h (positive

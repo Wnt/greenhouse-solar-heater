@@ -158,7 +158,115 @@ function fitSolarGainByHour(history) {
   return out;
 }
 
-function fitEmpiricalCoefficients(history) {
+/**
+ * Empirical greenhouse heat-loss coefficient (W/K of gh-to-outdoor ΔT).
+ *
+ * Uses hourly buckets where the space heater is the SOLE heat source —
+ * no greenhouse_heating (radiator delivering tank heat) and no
+ * solar_charging (collector loop running, indirect gh warming) during
+ * the bucket. In such an hour, energy balance over the bang-bang heater
+ * cycle is just:
+ *
+ *     heaterW × duty = lossWPerK × (gh_avg − outdoor_avg)
+ *
+ * so a slope-through-origin fit on (ΔT, heaterW × duty) recovers the
+ * loss coefficient. Buckets contaminated by other heat sources are
+ * discarded — including a single 30 s sample of greenhouse_heating
+ * within the hour, since the radiator can deliver hundreds of W and
+ * skew the slope significantly.
+ *
+ * Falls back to null when fewer than MIN_BUCKETS_FOR_FIT clean buckets
+ * are available; the engine then keeps its hardcoded default.
+ *
+ * @param {object} history       { readings, modes } — same shape as fitEmpiricalCoefficients
+ * @param {object} [opts]
+ * @param {number} [opts.heaterW=1000] Space-heater rated power in watts
+ * @returns {number|null}        Fitted W/K, or null on insufficient data
+ */
+function fitGreenhouseLossWPerK(history, opts) {
+  const heaterW = (opts && typeof opts.heaterW === 'number') ? opts.heaterW : 1000;
+  if (!history || !Array.isArray(history.readings) || history.readings.length < 2 ||
+      !Array.isArray(history.modes)) {
+    return null;
+  }
+  const readings = history.readings;
+  const modes    = history.modes;
+
+  // Forward-walking mode cursor — same pattern as fitEmpiricalCoefficients.
+  const modeLabels = new Array(readings.length);
+  let cursor      = 0;
+  let currentMode = 'idle';
+  while (cursor < modes.length) {
+    const tsMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
+    const r0Ms = readings[0].ts instanceof Date ? readings[0].ts.getTime() : Number(readings[0].ts);
+    if (tsMs <= r0Ms) { currentMode = modes[cursor].mode; cursor++; }
+    else break;
+  }
+  modeLabels[0] = currentMode;
+  for (let i = 1; i < readings.length; i++) {
+    const rMs = readings[i].ts instanceof Date ? readings[i].ts.getTime() : Number(readings[i].ts);
+    while (cursor < modes.length) {
+      const mMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
+      if (mMs <= rMs) { currentMode = modes[cursor].mode; cursor++; }
+      else break;
+    }
+    modeLabels[i] = currentMode;
+  }
+
+  // Bucket consecutive reading pairs into hourly slots keyed by floor(ts/h).
+  // For each bucket we accumulate per-mode seconds plus gh and outdoor
+  // sums (averaged at the end). One reading per pair, weighted by dtSec.
+  const buckets = {};
+  for (let p = 0; p < readings.length - 1; p++) {
+    const r0 = readings[p];
+    const r1 = readings[p + 1];
+    const t0 = r0.ts instanceof Date ? r0.ts.getTime() : Number(r0.ts);
+    const t1 = r1.ts instanceof Date ? r1.ts.getTime() : Number(r1.ts);
+    const dtSec = (t1 - t0) / 1000;
+    if (dtSec <= 0 || dtSec > 600) continue;
+    if (typeof r0.greenhouse !== 'number' || typeof r0.outdoor !== 'number') continue;
+    const hourKey = Math.floor(t0 / 3600000);
+    let b = buckets[hourKey];
+    if (!b) {
+      b = { emSec: 0, ghHeatSec: 0, scSec: 0, totalSec: 0, ghSum: 0, outSum: 0, n: 0 };
+      buckets[hourKey] = b;
+    }
+    b.totalSec += dtSec;
+    if (modeLabels[p] === 'emergency_heating')          b.emSec     += dtSec;
+    else if (modeLabels[p] === 'greenhouse_heating')    b.ghHeatSec += dtSec;
+    else if (modeLabels[p] === 'solar_charging')        b.scSec     += dtSec;
+    b.ghSum  += r0.greenhouse;
+    b.outSum += r0.outdoor;
+    b.n      += 1;
+  }
+
+  // Filter clean buckets and produce slope-fit samples. A bucket is
+  // clean iff (a) covers ≥ 30 min, (b) heater fired ≥ 5% of the slot,
+  // (c) no greenhouse_heating or solar_charging contamination, and
+  // (d) gh-outdoor ΔT ≥ 1 K so a tiny ΔT doesn't dominate the fit.
+  const xs = [];
+  const ys = [];
+  const keys = Object.keys(buckets);
+  for (let k = 0; k < keys.length; k++) {
+    const bk = buckets[keys[k]];
+    if (bk.totalSec < 1800) continue;
+    if (bk.ghHeatSec > 0 || bk.scSec > 0) continue;
+    if (bk.n < 4) continue;
+    const duty = bk.emSec / bk.totalSec;
+    if (duty < 0.05) continue;
+    const ghAvg  = bk.ghSum / bk.n;
+    const outAvg = bk.outSum / bk.n;
+    const deltaK = ghAvg - outAvg;
+    if (deltaK < 1) continue;
+    xs.push(deltaK);
+    ys.push(heaterW * duty);
+  }
+  if (xs.length < MIN_BUCKETS_FOR_FIT) return null;
+  const slope = slopeThruOrigin(xs, ys);
+  return (slope !== null && slope > 0) ? slope : null;
+}
+
+function fitEmpiricalCoefficients(history, opts) {
   const defaults = {
     tankLeakageWPerK: DEFAULT_TANK_LEAKAGE_W_PER_K,
     usedDefaults:     true,
@@ -241,12 +349,19 @@ function fitEmpiricalCoefficients(history) {
   }
 
   const tankSlope = tankXs.length >= MIN_BUCKETS_FOR_FIT ? slopeThruOrigin(tankXs, tankYs) : null;
+  const ghLossSlope = fitGreenhouseLossWPerK(history, opts);
 
-  return {
+  const out = {
     tankLeakageWPerK:   tankSlope !== null && tankSlope > 0 ? tankSlope : DEFAULT_TANK_LEAKAGE_W_PER_K,
     solarGainKwhByHour: fitSolarGainByHour(history),
     usedDefaults:       tankSlope === null,
   };
+  // Only emit greenhouseLossWPerK when the fit converged. Otherwise the
+  // engine keeps using its DEFAULT_CONFIG.greenhouseLossWPerK fallback —
+  // mirroring how solarGainKwhByHour falls through to the engine's
+  // built-in low-gain mask when the fit gives up.
+  if (ghLossSlope !== null) out.greenhouseLossWPerK = ghLossSlope;
+  return out;
 }
 
 module.exports = {
@@ -258,5 +373,6 @@ module.exports = {
   helsinkiHHMM,
   // Fit functions.
   fitSolarGainByHour,
+  fitGreenhouseLossWPerK,
   fitEmpiricalCoefficients,
 };

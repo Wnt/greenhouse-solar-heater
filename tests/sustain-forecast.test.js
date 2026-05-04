@@ -7,7 +7,7 @@ const {
   computeSustainForecast,
   _TANK_THERMAL_MASS_J_PER_K,
 } = require('../server/lib/sustain-forecast.js');
-const { fitSolarGainByHour } = require('../server/lib/sustain-forecast-fit.js');
+const { fitSolarGainByHour, fitGreenhouseLossWPerK } = require('../server/lib/sustain-forecast-fit.js');
 
 // ── Helpers ──
 
@@ -730,5 +730,173 @@ describe('computeSustainForecast — undefined config thresholds fall back to de
       'expected hoursUntilBackupNeeded to be set, got null');
     assert.ok(result.electricKwh > 0,
       'expected backup heating > 0 kWh, got ' + result.electricKwh);
+  });
+});
+
+// Regression: greenhouseLossWPerK was a hardcoded 120 W/K. Live data
+// (Jonni's greenhouse, 2026-05-04) showed 23–49% heater duty at gh~12,
+// outdoor~6-7 °C — implying a real loss coefficient of ~40-100 W/K. The
+// engine over-predicted backup energy by 2-3× as a result. This suite
+// exercises the empirical fit that derives the coefficient from observed
+// emergency-only hours where the heater is the sole heat source and gh
+// is roughly steady (bang-bang cycling around the hysteresis midpoint).
+describe('fitGreenhouseLossWPerK', () => {
+  it('returns null with no usable history', () => {
+    assert.equal(fitGreenhouseLossWPerK({ readings: [], modes: [] }), null);
+    assert.equal(fitGreenhouseLossWPerK(null), null);
+  });
+
+  it('recovers a known slope from synthetic emergency-only hours', () => {
+    // Synthesise 10 days × ~3 h/day of emergency-only hours where the
+    // heater bang-bangs to hold gh ≈ 12 °C against varying outdoor temps.
+    // Pre-set duty = trueLoss * (gh - outdoor) / 1000 W so the bucketed
+    // fit recovers trueLoss.
+    const trueLossWPerK = 50;
+    const heaterW       = 1000;
+    const start         = new Date('2026-04-20T00:00:00Z').getTime();
+    const readings      = [];
+    const modes         = [];
+
+    // Modes alternate emergency_heating ↔ idle every few minutes,
+    // stamped at 30 s resolution so the bucketer can sum the seconds.
+    let modeAt = 'idle';
+    modes.push({ ts: new Date(start), mode: modeAt });
+
+    for (let day = 0; day < 10; day++) {
+      // Three emergency-only hours per day, with different outdoor
+      // temperatures to give the slope-fit useful spread.
+      const outdoorByHour = [-2, 4, 8];
+      for (let h = 0; h < 3; h++) {
+        const hourStart = start + (day * 24 + h) * 3600 * 1000;
+        const outdoor   = outdoorByHour[h];
+        const ghAvg     = 12;
+        const dutyTrue  = (trueLossWPerK * (ghAvg - outdoor)) / heaterW;
+        // Carve the hour into 60 one-minute slices; turn the heater on
+        // for the first floor(60·duty) of them, off for the rest.
+        const onMinutes = Math.round(60 * dutyTrue);
+        for (let m = 0; m < 60; m++) {
+          const ts = new Date(hourStart + m * 60 * 1000);
+          // Two 30s readings per minute.
+          for (let s = 0; s < 2; s++) {
+            const tsR = new Date(ts.getTime() + s * 30 * 1000);
+            readings.push({
+              ts:         tsR,
+              tankTop:    14, tankBottom: 14,
+              greenhouse: ghAvg + (m < onMinutes ? 0.5 : -0.5), // ±0.5 around mean
+              outdoor,
+              collector:  10,
+            });
+          }
+          const wantMode = m < onMinutes ? 'emergency_heating' : 'idle';
+          if (wantMode !== modeAt) {
+            modes.push({ ts, mode: wantMode });
+            modeAt = wantMode;
+          }
+        }
+      }
+    }
+
+    const slope = fitGreenhouseLossWPerK({ readings, modes }, { heaterW });
+    assert.ok(slope !== null, 'expected fit to converge with 10 days of data');
+    assert.ok(Math.abs(slope - trueLossWPerK) / trueLossWPerK < 0.10,
+      'expected slope within 10% of true ' + trueLossWPerK + ': got ' + slope.toFixed(1));
+  });
+
+  it('skips hours contaminated by greenhouse_heating or solar_charging', () => {
+    // Build a single hour where the heater fires but greenhouse_heating
+    // is also active (radiator delivers extra heat). The fitter should
+    // refuse the bucket — the duty cycle is no longer a clean lossWPerK
+    // signal because some of the heating came from the tank.
+    const start    = new Date('2026-04-20T00:00:00Z').getTime();
+    const readings = [];
+    const modes    = [
+      { ts: new Date(start), mode: 'greenhouse_heating' },
+      // emergency overlay starts 10 min in; 30 min later the controller
+      // exits both modes. Still entirely contaminated.
+      { ts: new Date(start + 10 * 60 * 1000), mode: 'emergency_heating' },
+      { ts: new Date(start + 40 * 60 * 1000), mode: 'idle' },
+    ];
+    for (let s = 0; s < 120; s++) {
+      readings.push({
+        ts:         new Date(start + s * 30 * 1000),
+        tankTop:    14, tankBottom: 14,
+        greenhouse: 12,
+        outdoor:    6,
+        collector:  10,
+      });
+    }
+
+    const slope = fitGreenhouseLossWPerK({ readings, modes }, { heaterW: 1000 });
+    assert.equal(slope, null,
+      'expected the contaminated bucket to be discarded → no fit possible');
+  });
+
+  it('flows through fitEmpiricalCoefficients into the engine', () => {
+    // End-to-end: a synthetic 10d history with emergency-only hours
+    // produces a fitted greenhouseLossWPerK that the engine actually uses.
+    // Reduces the projected heater energy materially compared to the old
+    // hardcoded 120 W/K default.
+    const trueLossWPerK = 40;
+    const heaterW       = 1000;
+    const start         = new Date('2026-04-20T00:00:00Z').getTime();
+    const readings      = [];
+    const modes         = [];
+
+    let modeAt = 'idle';
+    modes.push({ ts: new Date(start), mode: modeAt });
+    for (let day = 0; day < 10; day++) {
+      const outdoorByHour = [0, 5, 8];
+      for (let h = 0; h < 3; h++) {
+        const hourStart = start + (day * 24 + h) * 3600 * 1000;
+        const outdoor   = outdoorByHour[h];
+        const dutyTrue  = (trueLossWPerK * (12 - outdoor)) / heaterW;
+        const onMinutes = Math.round(60 * dutyTrue);
+        for (let m = 0; m < 60; m++) {
+          const ts = new Date(hourStart + m * 60 * 1000);
+          for (let s = 0; s < 2; s++) {
+            readings.push({
+              ts:         new Date(ts.getTime() + s * 30 * 1000),
+              tankTop:    14, tankBottom: 14,
+              greenhouse: 12,
+              outdoor,
+              collector:  10,
+            });
+          }
+          const wantMode = m < onMinutes ? 'emergency_heating' : 'idle';
+          if (wantMode !== modeAt) {
+            modes.push({ ts, mode: wantMode });
+            modeAt = wantMode;
+          }
+        }
+      }
+    }
+
+    const coeff = fitEmpiricalCoefficients({ readings, modes });
+    assert.ok(typeof coeff.greenhouseLossWPerK === 'number',
+      'fit output should expose greenhouseLossWPerK');
+    assert.ok(Math.abs(coeff.greenhouseLossWPerK - trueLossWPerK) / trueLossWPerK < 0.15,
+      'engine coefficient should track true loss within 15%: got ' +
+        coeff.greenhouseLossWPerK.toFixed(1));
+
+    // Run the engine with the fitted coefficient and with the hardcoded
+    // 120 W/K default → fitted should project materially less heater kWh.
+    const baseOpts = {
+      now:            new Date(start + 10 * 24 * 3600 * 1000),
+      tankTop:        12, tankBottom: 12, greenhouseTemp: 10,
+      currentMode:    'idle',
+      weather48h:     makeWeather48h({ temperature: 7, radiationGlobal: 0 }),
+      prices48h:      makePrices48h(10),
+      config: {
+        spaceHeaterKw: 1, transferFeeCKwh: 5,
+        emergencyEnterC: 11, emergencyExitC: 13,
+      },
+    };
+    const fitted   = computeSustainForecast(Object.assign({}, baseOpts, { coefficients: coeff }));
+    const baseline = computeSustainForecast(Object.assign({}, baseOpts, {
+      coefficients: { greenhouseLossWPerK: 120 },
+    }));
+    assert.ok(fitted.electricKwh < baseline.electricKwh * 0.6,
+      'fitted coefficient should reduce projected heater energy: baseline=' +
+        baseline.electricKwh.toFixed(2) + ' fitted=' + fitted.electricKwh.toFixed(2));
   });
 });
