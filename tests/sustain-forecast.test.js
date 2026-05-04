@@ -367,6 +367,57 @@ describe('computeSustainForecast — FMI cloud factor', () => {
   });
 });
 
+// Regression: heater duty cycle in emergency mode. Old code charged
+// 1 kWh per emergency hour unconditionally; the user observed the
+// engine projecting 45 kWh of backup over 48 h (≈95% duty cycle) when
+// outdoor was only 6 °C below the greenhouse target. Real device
+// cycles based on heat-loss demand, not full-on.
+describe('computeSustainForecast — emergency heater duty cycle', () => {
+  it('scales heater kWh by greenhouse loss when outdoor is mild', () => {
+    // Cold tank (forces emergency), mild outdoor (small ΔT to greenhouse).
+    // ehE=11 ehX=13 → target = 12. Outdoor 6 → ΔT=6K. With UA=120 W/K:
+    // ghLossW = 720W. Heater 1kW → duty ~72%. 48h × 0.72 ≈ 35 kWh,
+    // not 48 kWh.
+    const result = computeSustainForecast({
+      now:            Date.now(),
+      tankTop:        12, tankBottom: 12, greenhouseTemp: 10,
+      currentMode:    'idle',
+      weather48h:     makeWeather48h({ temperature: 6, radiationGlobal: 0 }),
+      prices48h:      makePrices48h(10),
+      coefficients:   {},
+      config: {
+        spaceHeaterKw: 1, transferFeeCKwh: 5,
+        emergencyEnterC: 11, emergencyExitC: 13,
+        greenhouseLossWPerK: 120,
+      },
+    });
+    // 48h × 0.72 duty = 34.6 kWh. Allow 30-40 range for transient hours.
+    assert.ok(result.electricKwh >= 25 && result.electricKwh <= 40,
+      'expected ~35 kWh of heater energy at 72% duty, got ' + result.electricKwh);
+  });
+
+  it('zero heater kWh when outdoor is warmer than the target', () => {
+    // Outdoor 15 > target 12 → no heat needed even though gh starts cold.
+    const result = computeSustainForecast({
+      now:            Date.now(),
+      tankTop:        12, tankBottom: 12, greenhouseTemp: 10,
+      currentMode:    'idle',
+      weather48h:     makeWeather48h({ temperature: 15, radiationGlobal: 0 }),
+      prices48h:      makePrices48h(10),
+      coefficients:   {},
+      config: {
+        spaceHeaterKw: 1, transferFeeCKwh: 5,
+        emergencyEnterC: 11, emergencyExitC: 13,
+        greenhouseLossWPerK: 120,
+      },
+    });
+    // Heater should run for at most a couple of transient hours before
+    // the warm outdoor lifts gh above ehX and emergency exits.
+    assert.ok(result.electricKwh < 5,
+      'expected near-zero kWh when outdoor (15°C) > target (12°C); got ' + result.electricKwh);
+  });
+});
+
 // Round-trip: real-shaped 14d history → fitEmpiricalCoefficients → engine.
 // Catches drift in the fit→engine interface (field name renames, shape
 // changes, anything where the fit produces a value the engine no longer

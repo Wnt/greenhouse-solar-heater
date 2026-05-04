@@ -57,6 +57,14 @@ const DEFAULT_CONFIG = {
   solarChargeMinKwh:        0.15,
   // Radiator output power (kW from tank to greenhouse air) — observed in data.
   radiatorPowerKw:          2.4,
+  // Greenhouse heat-loss coefficient (W/K). Derived from observed
+  // overnight cooldown: tank delivered ~6 kWh to the greenhouse over 10 h
+  // at avg ΔT ~5 K → 600 W → 120 W/K. Used to estimate the space-heater
+  // duty cycle during emergency mode (heater needs to cover ghLossW =
+  // greenhouseLossWPerK × (target − outdoor); duty = needed/heater_kW).
+  // Without this, the engine assumes 100% duty for every emergency hour,
+  // which over-counts backup energy by ~30-40% in spring/fall conditions.
+  greenhouseLossWPerK:      120,
   // Confidence boost: set this to a recent Date when weather was fetched
   weatherFetchedAt:         null,
   // Number of buckets used for the empirical fit (for confidence)
@@ -266,25 +274,38 @@ function computeSustainForecast(opts) {
       newGhTemp = curGhTemp - ghDropKpH;
       greenhouseHeatingHours += 1;
     } else if (simMode === 'emergency_heating') {
-      // Backup heater on. Tank just leaks slowly. Greenhouse holds around
-      // emergency-exit threshold (controller hysteresis maintains it).
+      // Heater duty cycle = greenhouse heat losses / heater power.
+      // The real heater is bang-bang controlled by the ehE/ehX hysteresis;
+      // averaged over the hour it produces just enough to offset losses,
+      // not always 1 kW. Old code charged 1 kWh per emergency hour
+      // unconditionally, which overcounted backup energy by 30-40%
+      // whenever outdoor wasn't drastically below the target.
+      const ghTarget = (cfg.emergencyEnterC + cfg.emergencyExitC) / 2;
+      const ghLossW  = cfg.greenhouseLossWPerK * Math.max(0, ghTarget - outdoorC);
+      const heaterW  = cfg.spaceHeaterKw * 1000;
+      const heaterDuty = Math.min(1, ghLossW / heaterW);
+      const heaterEnergyKwh = heaterDuty * cfg.spaceHeaterKw;
+      if (heaterEnergyKwh > 0) {
+        electricKwh += heaterEnergyKwh;
+        const costEur = heaterEnergyKwh * (priceCKwh + cfg.transferFeeCKwh) / 100;
+        electricCostEur += costEur;
+        costBreakdown.push({
+          ts:            hourDate,
+          kWh:           round4(heaterEnergyKwh),
+          priceCKwh,
+          eurInclTransfer: round4(costEur),
+        });
+      }
+      // Tank still leaks slowly during emergency.
       const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
       tankDeltaJ -= tankLossW * SECONDS_PER_HOUR;
-      const heaterEnergyKwh = cfg.spaceHeaterKw;
-      electricKwh += heaterEnergyKwh;
-      const costEur = heaterEnergyKwh * (priceCKwh + cfg.transferFeeCKwh) / 100;
-      electricCostEur += costEur;
-      costBreakdown.push({
-        ts:            hourDate,
-        kWh:           heaterEnergyKwh,
-        priceCKwh,
-        eurInclTransfer: round4(costEur),
-      });
-      // Drift toward the (ehE + ehX) midpoint with τ = 30 min — that's
-      // where the controller's hysteresis maintains it.
-      const ghTarget = (cfg.emergencyEnterC + cfg.emergencyExitC) / 2;
-      const alpha    = 1 - Math.exp(-1 / 0.5);
-      newGhTemp = curGhTemp + (ghTarget - curGhTemp) * alpha;
+      // Greenhouse maintained at target by the heater. If outdoor
+      // climbs above target, ghLossW = 0, heater isn't needed, gh
+      // drifts toward outdoor — once gh > ehX the mode-decision
+      // block exits emergency on the next iteration.
+      newGhTemp = heaterDuty > 0
+        ? ghTarget
+        : curGhTemp + (outdoorC - curGhTemp) * (1 - Math.exp(-1 / 8));
     } else {
       // Idle.
       const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
