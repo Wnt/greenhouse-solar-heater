@@ -7,7 +7,10 @@
 import { store } from '../app-state.js';
 import { pickTickStep, formatTick, pickBucketSize, formatBucketLabel } from '../ui.js';
 import { SIM_START_HOUR } from '../sim-bootstrap.js';
-import { timeSeriesStore, graphRange, showAllSensors, chartZoom } from './state.js';
+import {
+  timeSeriesStore, graphRange, showAllSensors, chartZoom,
+  showForecast, forecastData, FORECAST_OVERLAY_SEC,
+} from './state.js';
 import { coverageInBucket } from './mode-events.js';
 
 function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
@@ -79,14 +82,28 @@ export function dutyBucketsIn({ tMin, tMax, bucketSec, firstSampleT, lastSampleT
 // latest sample (sim) or wall-clock now (live), with width = graphRange.
 // Shared with graph-inspector so its crosshair math stays aligned with
 // what's drawn — without this, zooming would desync the two.
+//
+// Forecast overlay extends the right edge by FORECAST_OVERLAY_SEC (12 h)
+// so the projected lines/bands have somewhere to land. We deliberately
+// keep the historical span at graphRange (don't shrink history to make
+// room) — instead the chart visually grows. Pinch-zoom still wins.
 export function getChartWindow() {
   if (chartZoom) return { tMin: chartZoom.tMin, tMax: chartZoom.tMax };
   const isLivePhase = store.get('phase') === 'live';
   const latestTime = timeSeriesStore.times.length > 0
     ? timeSeriesStore.times[timeSeriesStore.times.length - 1]
     : 0;
-  const tMax = isLivePhase ? Math.floor(Date.now() / 1000) : Math.max(graphRange, latestTime);
-  return { tMin: tMax - graphRange, tMax };
+  const baseRight = isLivePhase ? Math.floor(Date.now() / 1000) : Math.max(graphRange, latestTime);
+  const tMax = (isLivePhase && showForecast) ? baseRight + FORECAST_OVERLAY_SEC : baseRight;
+  return { tMin: baseRight - graphRange, tMax };
+}
+
+// Wall-clock "now" in chart-x-axis units (Unix seconds in live mode).
+// Used by the forecast overlay as the cutoff between historical and
+// projected data. Returns null in sim mode (forecast overlay is live-only).
+function chartNowSec() {
+  if (store.get('phase') !== 'live') return null;
+  return Math.floor(Date.now() / 1000);
 }
 
 // Tank value extractor shared by the graph, inspector, and yesterday-
@@ -283,7 +300,88 @@ export function drawHistoryGraph() {
   // ── Outside line (blue) ──
   drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_outdoor', '#42a5f5', 1);
 
+  // ── Forecast overlay (next 12 h, dashed, only with the "Forecast" toggle) ──
+  if (showForecast && forecastData) {
+    drawForecastOverlay(ctx, forecastData, tMin, tMax, visibleRange, barAreaH, barY0, pad, pw, ph, yMin, yMax);
+  }
+
   updateLegendStats(tMin, tMax);
+}
+
+// Forecast overlay rendering: tank avg + greenhouse trajectories (dashed)
+// past "now", emergency-heating mode ticks (red) past "now", and a vertical
+// "now" divider line. All clipped to [now, now+FORECAST_OVERLAY_SEC].
+function drawForecastOverlay(ctx, data, tMin, tMax, visibleRange, barAreaH, barY0, pad, pw, ph, yMin, yMax) {
+  const fc = data && data.forecast;
+  if (!fc) return;
+  const nowSec = chartNowSec();
+  if (nowSec === null) return;
+  const cutoffSec = nowSec + FORECAST_OVERLAY_SEC;
+
+  // Trajectory points come from the engine as ISO strings; convert to
+  // seconds and clip to [nowSec, cutoffSec] AND the chart window.
+  function toPts(traj, valOf) {
+    if (!Array.isArray(traj)) return [];
+    const pts = [];
+    for (let i = 0; i < traj.length; i++) {
+      const t = Math.floor(new Date(traj[i].ts).getTime() / 1000);
+      if (t < nowSec || t > cutoffSec) continue;
+      if (t < tMin || t > tMax) continue;
+      const v = valOf(traj[i]);
+      if (typeof v !== 'number' || !isFinite(v)) continue;
+      const x = pad.left + ((t - tMin) / visibleRange) * pw;
+      const y = pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph;
+      pts.push({ x, y });
+    }
+    return pts;
+  }
+
+  function drawDashed(pts, color, lineWidth) {
+    if (pts.length < 2) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.setLineDash([4, 3]);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Tank avg + greenhouse — match historical line colours, dashed.
+  drawDashed(toPts(fc.tankTrajectory, p => (typeof p.avg === 'number' ? p.avg : (p.top + p.bottom) / 2)), '#e9c349', 1.5);
+  drawDashed(toPts(fc.greenhouseTrajectory, p => p.temp), '#69d0c5', 1.5);
+
+  // Emergency-heating ticks (red) — mark hours where the engine projects
+  // the space heater is on. costBreakdown carries one entry per such hour.
+  if (Array.isArray(fc.costBreakdown) && fc.costBreakdown.length > 0) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 112, 67, 0.55)';
+    const tickH = Math.min(barAreaH, 8);
+    for (let i = 0; i < fc.costBreakdown.length; i++) {
+      const t = Math.floor(new Date(fc.costBreakdown[i].ts).getTime() / 1000);
+      if (t < nowSec || t > cutoffSec || t < tMin || t > tMax) continue;
+      const x = pad.left + ((t - tMin) / visibleRange) * pw;
+      const w = Math.max(1, (3600 / visibleRange) * pw - 2);
+      ctx.fillRect(x, barY0 - tickH, w, tickH);
+    }
+    ctx.restore();
+  }
+
+  // "Now" divider — only draw when nowSec is inside the visible window.
+  if (nowSec >= tMin && nowSec <= tMax) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    const x = pad.left + ((nowSec - tMin) / visibleRange) * pw;
+    ctx.beginPath();
+    ctx.moveTo(x, pad.top);
+    ctx.lineTo(x, pad.top + ph);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 // Pure: walk the time-series store once and pull min / max / latest for

@@ -46,6 +46,23 @@ export function setChartZoom(v) { chartZoom = v; }
 export let showAllSensors = false;
 export function setShowAllSensors(v) { showAllSensors = v; }
 
+// When true the history graph extends its right edge by FORECAST_OVERLAY_SEC
+// and overlays the engine's projected tank, greenhouse and mode bands past
+// "now" (rendered with a dashed stroke + a vertical now divider). Off by
+// default. The forecast payload itself lives in forecastData below — set by
+// playground/js/forecast.js whenever it gets a fresh /api/forecast response.
+export let showForecast = false;
+export function setShowForecast(v) { showForecast = v; }
+
+export let forecastData = null;
+export function setForecastData(v) { forecastData = v; }
+
+// 12 hours, shown when the forecast overlay is on. The engine itself returns
+// 48 h, but for the at-a-glance status overlay 12 h is the operationally
+// useful horizon (covers the upcoming night without making historical detail
+// shrink too far).
+export const FORECAST_OVERLAY_SEC = 12 * 3600;
+
 // Input parameters for the simulation. Mutated by slider
 // callbacks in setupControls — properties change, but the object
 // reference stays put so all importers see the updates.

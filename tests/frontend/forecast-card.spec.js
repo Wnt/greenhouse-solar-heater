@@ -174,19 +174,6 @@ test.describe('Forecast card — basic rendering', () => {
     await expect(val).toHaveText('€1.21');
   });
 
-  test('renders sparkline SVG', async ({ page }) => {
-    await scaffold(page);
-    await page.goto('/playground/');
-    await page.waitForFunction(() => window.__initComplete === true);
-    await page.waitForFunction(() => {
-      const wrap = document.getElementById('forecast-sparkline-wrap');
-      return wrap && wrap.querySelector('svg') !== null;
-    }, { timeout: 5000 });
-
-    const svg = page.locator('#forecast-sparkline-wrap svg');
-    await expect(svg).toBeAttached();
-  });
-
   test('renders forecast notes', async ({ page }) => {
     await scaffold(page);
     await page.goto('/playground/');
@@ -220,8 +207,8 @@ test.describe('Forecast card — "48+ h" when no backup needed', () => {
   });
 });
 
-test.describe('Forecast card — expand/collapse', () => {
-  test('tap expands the detail chart', async ({ page }) => {
+test.describe('Forecast card — chart overlay handoff', () => {
+  test('exposes Forecast toggle on the history graph in live mode', async ({ page }) => {
     await scaffold(page);
     await page.goto('/playground/');
     await page.waitForFunction(() => window.__initComplete === true);
@@ -230,36 +217,9 @@ test.describe('Forecast card — expand/collapse', () => {
       return el && el.textContent && el.textContent !== '—';
     }, { timeout: 5000 });
 
-    // Initially collapsed
-    const chartWrap = page.locator('#forecast-chart-wrap');
-    await expect(chartWrap).toBeHidden();
-
-    // Click expand
-    await page.locator('#forecast-expand-btn').click();
-    await expect(chartWrap).toBeVisible();
-
-    // Expanded chart SVG should be present
-    const svg = page.locator('#forecast-chart-wrap svg');
-    await expect(svg).toBeAttached();
-  });
-
-  test('tap again collapses the chart', async ({ page }) => {
-    await scaffold(page);
-    await page.goto('/playground/');
-    await page.waitForFunction(() => window.__initComplete === true);
-    await page.waitForFunction(() => {
-      const el = document.getElementById('forecast-val-hours');
-      return el && el.textContent && el.textContent !== '—';
-    }, { timeout: 5000 });
-
-    const btn = page.locator('#forecast-expand-btn');
-    const chartWrap = page.locator('#forecast-chart-wrap');
-
-    await btn.click();
-    await expect(chartWrap).toBeVisible();
-
-    await btn.click();
-    await expect(chartWrap).toBeHidden();
+    const toggle = page.locator('#graph-show-forecast-toggle');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toContainText('Forecast');
   });
 });
 
@@ -270,12 +230,12 @@ test.describe('Forecast card — error state', () => {
     await page.waitForFunction(() => window.__initComplete === true);
     // Wait for the error text to appear
     await page.waitForFunction(() => {
-      const wrap = document.getElementById('forecast-sparkline-wrap');
-      return wrap && wrap.textContent && wrap.textContent.includes('Forecast unavailable');
+      const status = document.getElementById('forecast-status');
+      return status && status.textContent && status.textContent.includes('Forecast unavailable');
     }, { timeout: 5000 });
 
-    const sparkWrap = page.locator('#forecast-sparkline-wrap');
-    await expect(sparkWrap).toContainText('Forecast unavailable');
+    const status = page.locator('#forecast-status');
+    await expect(status).toContainText('Forecast unavailable');
   });
 
   test('retry button is present on error', async ({ page }) => {
