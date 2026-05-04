@@ -83,10 +83,9 @@ export function dutyBucketsIn({ tMin, tMax, bucketSec, firstSampleT, lastSampleT
 // Shared with graph-inspector so its crosshair math stays aligned with
 // what's drawn — without this, zooming would desync the two.
 //
-// Forecast overlay extends the right edge by FORECAST_OVERLAY_SEC (12 h)
-// so the projected lines/bands have somewhere to land. We deliberately
-// keep the historical span at graphRange (don't shrink history to make
-// room) — instead the chart visually grows. Pinch-zoom still wins.
+// Forecast overlay extends the right edge by effectiveForecastSec() so
+// the projected lines/bands have somewhere to land. The history span
+// stays at graphRange — the chart visually grows. Pinch-zoom still wins.
 export function getChartWindow() {
   if (chartZoom) return { tMin: chartZoom.tMin, tMax: chartZoom.tMax };
   const isLivePhase = store.get('phase') === 'live';
@@ -94,8 +93,16 @@ export function getChartWindow() {
     ? timeSeriesStore.times[timeSeriesStore.times.length - 1]
     : 0;
   const baseRight = isLivePhase ? Math.floor(Date.now() / 1000) : Math.max(graphRange, latestTime);
-  const tMax = (isLivePhase && showForecast) ? baseRight + FORECAST_OVERLAY_SEC : baseRight;
+  const tMax = (isLivePhase && showForecast) ? baseRight + effectiveForecastSec() : baseRight;
   return { tMin: baseRight - graphRange, tMax };
+}
+
+// Forecast horizon for the current view: capped at FORECAST_OVERLAY_SEC
+// (12 h) but never larger than the historical range. At narrow ranges
+// (1 h, 6 h) this keeps history and forecast at equal width so the
+// detail you zoomed in for doesn't get squished into a tiny strip.
+function effectiveForecastSec() {
+  return Math.min(FORECAST_OVERLAY_SEC, graphRange);
 }
 
 // Wall-clock "now" in chart-x-axis units (Unix seconds in live mode).
@@ -310,13 +317,13 @@ export function drawHistoryGraph() {
 
 // Forecast overlay rendering: tank avg + greenhouse trajectories (dashed)
 // past "now", emergency-heating mode ticks (red) past "now", and a vertical
-// "now" divider line. All clipped to [now, now+FORECAST_OVERLAY_SEC].
+// "now" divider line. All clipped to [now, now+effectiveForecastSec()].
 function drawForecastOverlay(ctx, data, tMin, tMax, visibleRange, barAreaH, barY0, pad, pw, ph, yMin, yMax) {
   const fc = data && data.forecast;
   if (!fc) return;
   const nowSec = chartNowSec();
   if (nowSec === null) return;
-  const cutoffSec = nowSec + FORECAST_OVERLAY_SEC;
+  const cutoffSec = nowSec + effectiveForecastSec();
 
   // Trajectory points come from the engine as ISO strings; convert to
   // seconds and clip to [nowSec, cutoffSec] AND the chart window.
