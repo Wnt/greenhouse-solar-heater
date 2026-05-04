@@ -367,6 +367,78 @@ describe('computeSustainForecast — FMI cloud factor', () => {
   });
 });
 
+// Round-trip: real-shaped 14d history → fitEmpiricalCoefficients → engine.
+// Catches drift in the fit→engine interface (field name renames, shape
+// changes, anything where the fit produces a value the engine no longer
+// consumes or vice versa).
+describe('fit → engine round-trip', () => {
+  it('synthetic 14d history flows through fit and engine without warmup-warning', () => {
+    // Synthesise 14 days of 30-min readings: idle most of the time with a
+    // mild cooldown (so tank-leakage fit converges), and a 3 h solar_charging
+    // window each midday (so solarGainKwhByHour fits a non-zero peak).
+    const readings = [];
+    const modes    = [];
+    const dayMs   = 24 * 3600 * 1000;
+    const stepMs  = 30 * 60 * 1000;
+    const start   = new Date('2026-04-01T00:00:00Z').getTime();
+
+    modes.push({ ts: new Date(start), mode: 'idle' });
+
+    for (let d = 0; d < 14; d++) {
+      const dayStart = start + d * dayMs;
+      // Solar-charging window: 09:00 – 12:00 UTC (= 12 – 15 EEST). Toggle
+      // mode events at the boundary so the fit attributes the gain
+      // correctly.
+      modes.push({ ts: new Date(dayStart + 9 * 3600 * 1000),  mode: 'solar_charging' });
+      modes.push({ ts: new Date(dayStart + 12 * 3600 * 1000), mode: 'idle' });
+
+      let tank = 30 - 0.05 * d; // slow background drift over 14 days
+      for (let s = 0; s < 48; s++) {
+        const ts    = new Date(dayStart + s * stepMs);
+        const utcH  = ts.getUTCHours();
+        if (utcH >= 9 && utcH < 12) {
+          tank += 0.5;       // gain during charging window
+        } else {
+          tank -= 0.005;     // mild leakage in idle
+        }
+        readings.push({
+          ts,
+          tankTop:    tank + 1,
+          tankBottom: tank - 1,
+          greenhouse: 12,
+          outdoor:    8,
+          collector:  utcH >= 9 && utcH < 16 ? 60 : 8,
+        });
+      }
+    }
+
+    const coeff = fitEmpiricalCoefficients({ readings, modes });
+
+    // Fit must produce live-shape coefficients (not the warmup defaults).
+    assert.equal(coeff.usedDefaults, false,
+      'expected fit to converge with 14 days of synthetic data');
+    assert.ok(typeof coeff.tankLeakageWPerK === 'number',
+      'tankLeakageWPerK must be a number');
+    assert.ok(Array.isArray(coeff.solarGainKwhByHour) && coeff.solarGainKwhByHour.length === 24,
+      'solarGainKwhByHour must be a 24-entry array');
+
+    // Engine must accept the coefficients and produce a complete forecast.
+    const result = computeSustainForecast({
+      now:            new Date(start + 14 * dayMs),
+      tankTop:        25, tankBottom: 23, greenhouseTemp: 12,
+      currentMode:    'idle',
+      weather48h:     makeWeather48h({ temperature: 5, radiationGlobal: 200 }),
+      prices48h:      makePrices48h(8),
+      coefficients:   coeff,
+      config:         { fitBucketCount: readings.length },
+    });
+
+    assert.equal(result.horizonHours, 48);
+    assert.ok(!result.notes.some(function (n) { return /default coefficients/.test(n); }),
+      'expected no "warming up" note when fit converged; got: ' + JSON.stringify(result.notes));
+  });
+});
+
 // Regression: the engine's stored-kWh figure must match the shared
 // tankStoredEnergyKwh() formula used by the gauge tile, balance card and
 // push notifications. Past divergence: engine subtracted an extra 5 K
