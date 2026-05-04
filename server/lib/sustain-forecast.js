@@ -16,6 +16,7 @@
 //                            weather48h, prices48h, coefficients, config }) → forecast
 
 const fit = require('./sustain-forecast-fit');
+const { tankStoredEnergyKwh } = require('./energy-balance');
 const TANK_THERMAL_MASS_J_PER_K = fit.TANK_THERMAL_MASS_J_PER_K;
 const GH_THERMAL_MASS_J_PER_K   = fit.GH_THERMAL_MASS_J_PER_K;
 const DEFAULT_SOLAR_EFFECTIVENESS = fit.DEFAULT_SOLAR_EFFECTIVENESS;
@@ -41,10 +42,12 @@ const DEFAULT_CONFIG = {
   // defaults match shelly/control-logic.js when no user tuning is set.
   greenhouseEnterC:         10,   // controller enters heating when gh < this
   greenhouseExitC:          12,   // controller exits heating when gh > this
-  // Emergency heating (space heater) trigger — when gh drops below this we
-  // expect the controller to turn the space heater on. Matches the real
-  // device's behaviour driven by tu.ehE / tu.ehX.
-  emergencyEnterC:          8,
+  // Emergency heating (space heater) thresholds — gh < emergencyEnterC turns
+  // the space heater on; gh > emergencyExitC turns it off. The real device
+  // is driven by tu.ehE / tu.ehX; defaults here mirror control-logic.js
+  // DEFAULT_CONFIG.emergencyEnterTemp (9) / .emergencyExitTemp (12).
+  emergencyEnterC:          9,
+  emergencyExitC:           12,
   spaceHeaterKw:            1,    // from system.yaml space_heater.assumed_continuous_power_kw
   transferFeeCKwh:          5,    // from system.yaml electricity.transfer_fee_c_kwh
   // Reference FMI RadiationGlobal that maps to "cloudFactor = 1" in the data-
@@ -215,8 +218,8 @@ function computeSustainForecast(opts) {
         hoursUntilBackupNeeded = h;
       }
       simMode = 'emergency_heating';
-    } else if (simMode === 'emergency_heating' && curGhTemp > cfg.emergencyEnterC + 2) {
-      // Backup exits when gh recovers (matches device's ehX).
+    } else if (simMode === 'emergency_heating' && curGhTemp > cfg.emergencyExitC) {
+      // Backup exits when gh > ehX (matches the device's exit hysteresis).
       simMode = curGhTemp < cfg.greenhouseEnterC ? 'greenhouse_heating' : 'idle';
     } else if (curGhTemp < cfg.greenhouseEnterC && simMode === 'idle') {
       simMode = 'greenhouse_heating';
@@ -278,8 +281,9 @@ function computeSustainForecast(opts) {
         priceCKwh,
         eurInclTransfer: round4(costEur),
       });
-      // Drift toward (ehE + ehX) midpoint with τ = 30 min.
-      const ghTarget = cfg.emergencyEnterC + 1;
+      // Drift toward the (ehE + ehX) midpoint with τ = 30 min — that's
+      // where the controller's hysteresis maintains it.
+      const ghTarget = (cfg.emergencyEnterC + cfg.emergencyExitC) / 2;
       const alpha    = 1 - Math.exp(-1 / 0.5);
       newGhTemp = curGhTemp + (ghTarget - curGhTemp) * alpha;
     } else {
@@ -386,10 +390,11 @@ function computeSustainForecast(opts) {
   const tankAvgs       = tankTrajectory.map(function (p) { return p.avg; });
   const tankMin        = Math.min.apply(null, tankAvgs);
   const tankAvgNow     = tankAvgs[0];
-  // "Useful" tank energy = above the floor temp the operator considers warm
-  // enough to sustain heating (floor + 5 K). Below that the radiator can't
-  // really heat the greenhouse.
-  const usefulTankKwhNow = Math.max(0, (tankAvgNow - cfg.tankFloorC - 5)) * 0.349;
+  // Tank energy stored above the floor — same formula the gauge tile,
+  // balance card and push notifications use (server/lib/energy-balance.js
+  // tankStoredEnergyKwh). Keeping a single source of truth means every
+  // surface reports the same kWh figure for the same tank state.
+  const tankStoredKwhNow = tankStoredEnergyKwh(tankAvgNow);
 
   const notes = buildNotes({
     now,
@@ -407,7 +412,7 @@ function computeSustainForecast(opts) {
     ghMinIdx,
     tankMin,
     tankAvgNow,
-    usefulTankKwhNow,
+    tankStoredKwhNow,
   });
 
   return {
@@ -461,22 +466,25 @@ function buildNotes(ctx) {
     }
   }
 
-  // 2. Tank storage + how long it sustains greenhouse heating.
-  if (ctx.usefulTankKwhNow !== undefined && notes.length < 3) {
-    const stored = ctx.usefulTankKwhNow.toFixed(1);
+  // 2. Tank storage + how long it sustains greenhouse heating. Phrasing
+  //    matches the gauge tile / balance card / push notifications, which all
+  //    use the same tankStoredEnergyKwh formula — so the kWh figure agrees
+  //    across surfaces and the user doesn't see contradictory numbers.
+  if (ctx.tankStoredKwhNow !== undefined && notes.length < 3) {
+    const stored = ctx.tankStoredKwhNow.toFixed(1);
     if (ctx.hoursUntilBackupNeeded !== null) {
       notes.push(
-        'Tank stores ~' + stored + ' kWh of useful heat — covers greenhouse heating for about ~' +
+        'Tank stores ~' + stored + ' kWh above the floor — covers greenhouse heating for about ~' +
         Math.round(ctx.hoursUntilBackupNeeded) + ' h before the space heater kicks in.'
       );
     } else if (ctx.electricKwh > 0) {
       notes.push(
-        'Tank stores ~' + stored + ' kWh; heating bridges most of the night, with ~' +
+        'Tank stores ~' + stored + ' kWh above the floor; heating bridges most of the night, with ~' +
         Math.round(ctx.electricKwh) + ' h of space-heater backup mixed in.'
       );
     } else {
       notes.push(
-        'Tank stores ~' + stored + ' kWh of useful heat — enough for the whole window with no backup needed.'
+        'Tank stores ~' + stored + ' kWh above the floor — enough for the whole window with no backup needed.'
       );
     }
   }

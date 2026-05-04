@@ -275,6 +275,7 @@ function createForecastHandler(opts) {
           greenhouseEnterC: tuning.geT,
           greenhouseExitC:  tuning.gxT,
           emergencyEnterC:  tuning.ehE,
+          emergencyExitC:   tuning.ehX,
           fitBucketCount: coeff.fitBucketCount || 0,
           weatherFetchedAt: weather.length > 0 ? new Date() : null,
         };

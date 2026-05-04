@@ -549,6 +549,61 @@ describe('computeSustainForecast — FMI cloud factor', () => {
   });
 });
 
+// Regression: the engine's stored-kWh figure must match the shared
+// tankStoredEnergyKwh() formula used by the gauge tile, balance card and
+// push notifications. Past divergence: engine subtracted an extra 5 K
+// margin, so the same tank state read 1.1 kWh on the forecast card and
+// 2.9 kWh on the gauge — the user noticed and asked which one was right.
+describe('computeSustainForecast — stored-kWh consistency', () => {
+  it('Note 2 reports the same kWh as tankStoredEnergyKwh(avg)', () => {
+    const { tankStoredEnergyKwh } = require('../server/lib/energy-balance.js');
+    const result = computeSustainForecast({
+      now:            Date.now(),
+      tankTop:        21,
+      tankBottom:     19,   // avg = 20
+      greenhouseTemp: 14,   // above geT, no heating triggered
+      currentMode:    'idle',
+      weather48h:     makeWeather48h({ temperature: 12, radiationGlobal: 0 }),
+      prices48h:      makePrices48h(10),
+      coefficients:   {},
+      config: { greenhouseEnterC: 10, greenhouseExitC: 12, emergencyEnterC: 8, emergencyExitC: 11 },
+    });
+    const tankNote = result.notes.find(function (n) { return /kWh above the floor/.test(n); });
+    assert.ok(tankNote, 'expected a tank-stored note: ' + JSON.stringify(result.notes));
+    const expectedKwh = tankStoredEnergyKwh(20).toFixed(1);
+    assert.ok(tankNote.indexOf(expectedKwh) >= 0,
+      'expected note to contain "' + expectedKwh + '" kWh; got: ' + tankNote);
+  });
+});
+
+// Regression: emergencyExitC (ehX) must be threaded through. Old code
+// hardcoded `emergencyEnterC + 2` for the exit hysteresis, so a user
+// who set ehX to anything other than ehE+2 would see the engine ignore
+// their exit threshold.
+describe('computeSustainForecast — ehX threading', () => {
+  it('uses cfg.emergencyExitC, not emergencyEnterC + 2', () => {
+    // Pick non-trivial values: ehE=8, ehX=15 (much higher than ehE+2=10).
+    // Cold outdoor + cold tank → backup triggers and gh drifts toward
+    // (8+15)/2 = 11.5 °C, not the old (8+1) = 9 °C target.
+    const result = computeSustainForecast({
+      now:            Date.now(),
+      tankTop:        14, tankBottom: 14, greenhouseTemp: 7,
+      currentMode:    'idle',
+      weather48h:     makeWeather48h({ temperature: -5, radiationGlobal: 0 }),
+      prices48h:      makePrices48h(10),
+      coefficients:   {},
+      config: {
+        greenhouseEnterC: 10, greenhouseExitC: 12,
+        emergencyEnterC: 8, emergencyExitC: 15,
+      },
+    });
+    // After several backup-mode hours, gh should reach the (8+15)/2=11.5 midpoint.
+    const lateGh = result.greenhouseTrajectory[10].temp;
+    assert.ok(Math.abs(lateGh - 11.5) < 1,
+      'expected gh ≈ 11.5 °C after backup hysteresis settles; got ' + lateGh);
+  });
+});
+
 // Regression test for the undefined-threshold bug. The forecast handler used to
 // pass `tuning.greenhouseEnterTemp` etc. where `effectiveTuning` actually
 // returns `tuning.geT` — so all three thresholds were undefined. With the
