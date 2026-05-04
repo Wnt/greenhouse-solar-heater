@@ -271,4 +271,49 @@ describe('GET /api/forecast handler', () => {
     }
     setImmediate(waitForResponse);
   });
+
+  it('prewarm() populates the coefficient cache so the next request skips the 14d fit', function (t, done) {
+    const log = makeLog();
+    let historyQueries = 0;
+    const pool = {
+      query: function (sql, _params, cb) {
+        if (sql.includes("INTERVAL '14 days'") && sql.includes('sensor_readings_30s')) {
+          historyQueries += 1;
+        }
+        cb(null, { rows: [] });
+      },
+    };
+
+    const handler = createForecastHandler({ pool, log, systemYaml: {} });
+    handler.prewarm();
+
+    setTimeout(function () {
+      const beforeRequest = historyQueries;
+      assert.equal(beforeRequest, 1, 'prewarm should have run the 14d query exactly once');
+
+      const req = fakeReq();
+      const res = fakeRes();
+      handler.handle(req, res);
+
+      const deadline = Date.now() + 1500;
+      function waitForResponse() {
+        if (res.written.status !== null) {
+          assert.equal(historyQueries, beforeRequest,
+            '14d query must NOT run again — coefficient cache should be warm');
+          done();
+        } else if (Date.now() < deadline) {
+          setImmediate(waitForResponse);
+        } else {
+          done(new Error('handler did not respond'));
+        }
+      }
+      setImmediate(waitForResponse);
+    }, 50);
+  });
+
+  it('prewarm() is a no-op when pool is null (test/bootstrap safety)', function () {
+    const log = makeLog();
+    const handler = createForecastHandler({ pool: null, log, systemYaml: {} });
+    handler.prewarm();
+  });
 });

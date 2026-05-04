@@ -346,7 +346,23 @@ function createForecastHandler(opts) {
     });
   }
 
-  return { handle };
+  // Pre-warm the coefficient cache. The 14d history fit is the dominant
+  // cold-start cost (~1.5s, ~185k rows on prod). Running it eagerly at
+  // bootstrap means the first user request hits a warm cache and feels
+  // snappy. Soft-failure: errors are logged but never propagated, since
+  // bootstrap must succeed even when the pool isn't ready (e.g. tests).
+  function prewarm() {
+    if (!pool) return;
+    getCoefficients(function (err) {
+      if (err) {
+        log.warn('forecast-handler: prewarm failed', { error: err.message });
+      } else {
+        log.info('forecast-handler: coefficient cache prewarmed');
+      }
+    });
+  }
+
+  return { handle, prewarm };
 }
 
 module.exports = { createForecastHandler };

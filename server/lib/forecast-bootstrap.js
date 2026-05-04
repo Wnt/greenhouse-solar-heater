@@ -49,6 +49,10 @@ function start({ pool, log, repoRoot, isPreviewMode: _isPreviewMode }) {
     spotPriceClient,
   });
   refresher.start();
+  // Eagerly populate the engine's 14d coefficient cache so the first user
+  // request after pod restart doesn't pay the ~1.5s history-fit cost.
+  // Skip in tests (no real DB / pg-mem missing the hypertable structure).
+  if (!isTestEnv) handler.prewarm();
   return {
     handle: function (req, res) { handler.handle(req, res); },
     stop:   function () { refresher.stop(); },
