@@ -57,11 +57,12 @@ export function setShowForecast(v) { showForecast = v; }
 export let forecastData = null;
 export function setForecastData(v) { forecastData = v; }
 
-// 12 hours, shown when the forecast overlay is on. The engine itself returns
-// 48 h, but for the at-a-glance status overlay 12 h is the operationally
-// useful horizon (covers the upcoming night without making historical detail
-// shrink too far).
-export const FORECAST_OVERLAY_SEC = 12 * 3600;
+// Full engine horizon, shown when the forecast overlay is on. The
+// physics/cost engine returns 48 h of trajectory + weather, and the
+// overlay surfaces all of it so the user can see the entire projected
+// window without having to reason about which slice is being displayed.
+// The historical pane shrinks to make room — the trade-off is intentional.
+export const FORECAST_OVERLAY_SEC = 48 * 3600;
 
 // Input parameters for the simulation. Mutated by slider
 // callbacks in setupControls — properties change, but the object

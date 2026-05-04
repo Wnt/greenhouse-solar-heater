@@ -78,7 +78,7 @@ function updateInspectorData(x) {
 
   let v, t;
   if (inForecast) {
-    v = forecastValuesAt(fc, simTime);
+    v = forecastValuesAt(fc, simTime, forecastData && forecastData.weather);
     t = simTime;
   } else {
     let bestIdx = 0, bestDist = Infinity;
@@ -158,36 +158,40 @@ function updateInspectorData(x) {
 
 // Linearly interpolate a forecast trajectory at simTime (Unix seconds)
 // and return a row shaped like timeSeriesStore.values so the inspector's
-// downstream rendering doesn't branch. Collector and outdoor aren't part
-// of the forecast — they fall through as null and render as the placeholder.
-function forecastValuesAt(fc, simTime) {
-  const tank = interpTrajPoint(fc.tankTrajectory, simTime);
-  const gh   = interpTrajPoint(fc.greenhouseTrajectory, simTime);
+// downstream rendering doesn't branch. Outdoor is interpolated from the
+// weather array (top-level of the API response). Collector isn't part of
+// the forecast — it stays null and renders as the placeholder.
+function forecastValuesAt(fc, simTime, weather) {
+  const tank = interpTrajPoint(fc.tankTrajectory, simTime, 'ts');
+  const gh   = interpTrajPoint(fc.greenhouseTrajectory, simTime, 'ts');
+  const wx   = interpTrajPoint(weather, simTime, 'validAt');
   return {
     t_collector:   null,
     t_tank_top:    tank ? tank.top : null,
     t_tank_bottom: tank ? tank.bottom : null,
     t_greenhouse:  gh ? gh.temp : null,
-    t_outdoor:     null,
+    t_outdoor:     wx ? wx.temperature : null,
   };
 }
 
-function interpTrajPoint(traj, simTime) {
+function interpTrajPoint(traj, simTime, tsKey) {
   if (!Array.isArray(traj) || traj.length === 0) return null;
+  const key = tsKey || 'ts';
   for (let i = 0; i < traj.length; i++) {
-    const t = Math.floor(new Date(traj[i].ts).getTime() / 1000);
+    const t = Math.floor(new Date(traj[i][key]).getTime() / 1000);
     if (t >= simTime) {
       if (i === 0) return traj[0];
       const prev = traj[i - 1];
-      const pT = Math.floor(new Date(prev.ts).getTime() / 1000);
+      const pT = Math.floor(new Date(prev[key]).getTime() / 1000);
       if (t === pT) return traj[i];
       const f = (simTime - pT) / (t - pT);
-      const out = { ts: traj[i].ts };
-      const keys = ['top', 'bottom', 'avg', 'temp'];
-      for (let k = 0; k < keys.length; k++) {
-        const key = keys[k];
-        if (typeof traj[i][key] === 'number' && typeof prev[key] === 'number') {
-          out[key] = prev[key] + (traj[i][key] - prev[key]) * f;
+      const out = {};
+      out[key] = traj[i][key];
+      const valKeys = ['top', 'bottom', 'avg', 'temp', 'temperature'];
+      for (let k = 0; k < valKeys.length; k++) {
+        const vk = valKeys[k];
+        if (typeof traj[i][vk] === 'number' && typeof prev[vk] === 'number') {
+          out[vk] = prev[vk] + (traj[i][vk] - prev[vk]) * f;
         }
       }
       return out;
