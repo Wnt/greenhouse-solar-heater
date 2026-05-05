@@ -67,7 +67,7 @@ describe('spot-price-client', () => {
   });
 
   describe('fetchPrices (live network)', () => {
-    const skip = process.env.SKIP_NETWORK_TESTS === '1';
+    const skip = process.env.RUN_LIVE_NETWORK_TESTS !== '1';
     it('returns at least 12 rows with valid structure' + (skip ? ' [SKIPPED]' : ''), { skip }, async () => {
       const rows = await fetchPrices({ horizonHours: 24 });
       assert.ok(rows.length >= 12, 'expected at least 12 rows, got ' + rows.length);
