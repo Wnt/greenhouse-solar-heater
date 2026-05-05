@@ -117,6 +117,14 @@ When adding a new mutating endpoint, add the same guard.
 
 The original bug (PR #64): aggregate was a MATERIALIZED VIEW refreshed from raw, so each refresh silently discarded everything older than 48 h and long-range graphs only ever showed ~2 days.
 
+### Data freshness in long-lived PWA sessions
+
+The PWA stays open for days; users (especially on mobile, where Add-to-Home turns it into a long-lived window) won't reload between visits. Every full-stack feature whose backend data updates over time MUST refresh on the client without a page reload, and the System Logs export MUST reflect the freshest data when the user copies it.
+
+The data-sync framework in `playground/js/sync/` handles `visibilitychange` / `pageshow` / `online` events, and runs a periodic resync timer (5 min by default — every active source's `fetch(signal)` re-runs in parallel and `applyToStore` writes the result). Both knobs together cover (a) the "phone resumed after being asleep all night" case and (b) the "tab has been visible the whole time but the operator hasn't interacted" case. Visibility alone is NOT sufficient — it doesn't fire when the tab was already in the foreground.
+
+When you add a new full-stack feature: register a source in the sync framework (see `playground/js/sync/README.md`). No new feature-local timers — the coordinator handles cadence centrally.
+
 ## Testing Policy
 
 **Bug fixes and behavior changes follow test-first:**
