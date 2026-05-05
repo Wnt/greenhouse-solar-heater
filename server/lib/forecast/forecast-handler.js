@@ -11,8 +11,9 @@
  */
 
 const { fitEmpiricalCoefficients, computeSustainForecast } = require('./sustain-forecast');
-const deviceConfig = require('./device-config');
-const { jsonResponse } = require('./http-handlers');
+const { ALGORITHM_VERSION } = require('./version');
+const deviceConfig = require('../device-config');
+const { jsonResponse } = require('../http-handlers');
 
 const CACHE_TTL_MS         = 60 * 1000;     // 60 s response cache
 const COEFF_CACHE_TTL_MS   = 60 * 60 * 1000; // 1 h coefficient cache
@@ -21,6 +22,14 @@ function createForecastHandler(opts) {
   const pool       = opts.pool;
   const log        = opts.log;
   const systemYaml = opts.systemYaml || {};
+  // Optional callback that produces { rows } of historical predictions
+  // to attach to the response. Plumbed via createForecastHandler so the
+  // module stays unaware of forecast-predictions itself (no circular
+  // dep: the bootstrap creates predictions, then the handler).
+  // Signature: listRecentPredictions(limit, cb)
+  const listRecentPredictions = typeof opts.listRecentPredictions === 'function'
+    ? opts.listRecentPredictions : null;
+  const PREDICTIONS_LIMIT = 48;
 
   // ── Per-instance caches (so tests don't share state across handlers) ──
   let _responseCache    = null;
@@ -243,15 +252,16 @@ function createForecastHandler(opts) {
 
   // ── Handle ──
 
-  function handle(req, res) {
-    if (!pool) {
-      jsonResponse(res, 503, { error: 'Database not available' });
-      return;
-    }
+  // Programmatic entry point: computes (or returns from cache) the
+  // forecast response object and hands it to callback(err, response).
+  // The HTTP handler `handle()` and the prediction-capture scheduler
+  // share this path so they always see the same numbers.
+  function compute(callback) {
+    if (!pool) { callback(new Error('Database not available')); return; }
 
     const now = Date.now();
     if (_responseCache && (now - _responseCachedAt) < CACHE_TTL_MS) {
-      jsonResponse(res, 200, _responseCache);
+      callback(null, _responseCache);
       return;
     }
 
@@ -271,7 +281,7 @@ function createForecastHandler(opts) {
 
         if (fetchErr) {
           log.error('forecast-handler: query failed', { error: fetchErr.message });
-          jsonResponse(res, 500, { error: 'Forecast query failed' });
+          callback(fetchErr);
           return;
         }
 
@@ -332,17 +342,40 @@ function createForecastHandler(opts) {
           config:        forecastConfig,
         });
 
-        const response = {
+        const baseResponse = {
           generatedAt: new Date().toISOString(),
+          // Algorithm version + active tu ride on the top-level response
+          // so the predictions scheduler can stamp them on each captured
+          // row, and the System Logs export can show which code version
+          // produced the live forecast right now.
+          algorithmVersion: ALGORITHM_VERSION,
+          tu:               dcfg.tu || {},
           weather,
           prices,
           forecast,
         };
 
-        _responseCache    = response;
-        _responseCachedAt = Date.now();
+        // Attach the recent-predictions history when wired. Soft-fail:
+        // missing service or DB read failure ships without it — the
+        // rest of the forecast is still useful.
+        attachPredictions(baseResponse, function (response) {
+          _responseCache    = response;
+          _responseCachedAt = Date.now();
+          callback(null, response);
+        });
+      });
+    }
 
-        jsonResponse(res, 200, response);
+    function attachPredictions(response, done) {
+      if (!listRecentPredictions) { done(response); return; }
+      listRecentPredictions(PREDICTIONS_LIMIT, function (err, rows) {
+        if (err) {
+          log.warn('forecast-handler: predictions query failed', { error: err.message });
+          done(response);
+          return;
+        }
+        response.predictions = rows || [];
+        done(response);
       });
     }
 
@@ -371,6 +404,20 @@ function createForecastHandler(opts) {
     });
   }
 
+  // HTTP wrapper around compute(). Translates compute's callback shape
+  // into the response codes /api/forecast already promises.
+  function handle(req, res) {
+    compute(function (err, response) {
+      if (err) {
+        const status = /Database not available/i.test(err.message) ? 503 : 500;
+        const body   = status === 503 ? { error: 'Database not available' } : { error: 'Forecast query failed' };
+        jsonResponse(res, status, body);
+        return;
+      }
+      jsonResponse(res, 200, response);
+    });
+  }
+
   // Pre-warm the coefficient cache. The 14d history fit is the dominant
   // cold-start cost (~1.5s, ~185k rows on prod). Running it eagerly at
   // bootstrap means the first user request hits a warm cache and feels
@@ -387,7 +434,7 @@ function createForecastHandler(opts) {
     });
   }
 
-  return { handle, prewarm };
+  return { handle, compute, prewarm };
 }
 
 module.exports = { createForecastHandler };

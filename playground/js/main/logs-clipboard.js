@@ -11,6 +11,8 @@ import {
 import { model, params, MODE_INFO, timeSeriesStore, transitionLog, lastLiveFrame, forecastData } from './state.js';
 import { getWatchdogSnapshot } from './watchdog-ui.js';
 import { modeAt } from './mode-events.js';
+import { appendPredictionHistory } from './logs-predictions.js';
+import { appendTuningsHistory } from './logs-tunings-history.js';
 
 export function setupCopyLogsButton() {
   const btn = document.getElementById('copy-logs-btn');
@@ -101,7 +103,7 @@ function buildLogsClipboardText() {
   }
 
   lines.push('');
-
+  appendTuningsHistory(lines, transitionLog);
   lines.push('--- Transition Log ---');
   if (transitionLog.length === 0) {
     lines.push('(no transitions recorded)');
@@ -564,6 +566,7 @@ function appendForecast(lines) {
   }
 
   lines.push('');
+  appendPredictionHistory(lines, forecastData.predictions, forecastData.algorithmVersion);
 }
 
 // Down-sample timeSeriesStore to a given interval (in seconds). Mode is

@@ -22,7 +22,7 @@ const { createScriptCrashNotifier } = require('./lib/script-crash-notifier');
 const { handleWsCommand, setDb: setWsCommandHandlersDb } = require('./lib/ws-command-handlers');
 const { createHandlers, readBody, jsonResponse, parseJsonOrFail } = require('./lib/http-handlers');
 const { getNetworkAddress, printBanner } = require('./lib/banner');
-const forecastBootstrap = require('./lib/forecast-bootstrap');
+const forecastBootstrap = require('./lib/forecast/forecast-bootstrap');
 
 const log = createLogger('server');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);

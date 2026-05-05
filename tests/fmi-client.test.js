@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { parseWfsResponse, fetchForecast } = require('../server/lib/fmi-client.js');
+const { parseWfsResponse, fetchForecast } = require('../server/lib/forecast/fmi-client.js');
 
 const FIXTURE_PATH = path.join(__dirname, 'fixtures/forecast/fmi-harmonie-sample.xml');
 

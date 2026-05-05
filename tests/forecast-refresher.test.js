@@ -2,7 +2,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { create } = require('../server/lib/forecast-refresher.js');
+const { create } = require('../server/lib/forecast/forecast-refresher.js');
 
 // ── Minimal pool stub ──
 

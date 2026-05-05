@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const client = require('../server/lib/spot-price-client.js');
+const client = require('../server/lib/forecast/spot-price-client.js');
 const { parseSahkotinCsv, parseNordpoolPredict, mergePrices, fetchPrices } = client;
 
 const FIXTURES = path.join(__dirname, 'fixtures', 'forecast');

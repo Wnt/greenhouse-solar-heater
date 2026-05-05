@@ -15,7 +15,7 @@
 //                            weather48h, prices48h, coefficients, config }) → forecast
 
 const fit = require('./sustain-forecast-fit');
-const { tankStoredEnergyKwh } = require('./energy-balance');
+const { tankStoredEnergyKwh } = require('../energy-balance');
 const TANK_THERMAL_MASS_J_PER_K = fit.TANK_THERMAL_MASS_J_PER_K;
 const helsinkiHour  = fit.helsinkiHour;
 const helsinkiHHMM  = fit.helsinkiHHMM;

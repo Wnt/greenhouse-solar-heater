@@ -739,6 +739,199 @@ test.describe('Copy System Logs — live mode', () => {
     expect(hour2).toMatch(/11\.7/);
   });
 
+  test('logs export includes a Prediction History section when /api/forecast returns predictions', async ({ page }) => {
+    // The server captures the next-hour prediction once per hour
+    // (HH:30 scheduler) so an operator can compare what the engine
+    // projected against what actually happened. /api/forecast carries
+    // the recent rows on the response under .predictions; the export
+    // surfaces them as a dedicated section so a copy-pasted log carries
+    // the tuning data without a separate fetch.
+    const generatedAt = '2026-05-05T08:00:00.000Z';
+    const forecastPayload = {
+      generatedAt,
+      weather: [],
+      prices: [],
+      forecast: {
+        generatedAt, horizonHours: 48,
+        modelConfidence: 'medium', electricKwh: 0, electricCostEur: 0.0,
+        modeForecast: [], tankTrajectory: [], greenhouseTrajectory: [],
+      },
+      algorithmVersion: 'cafef00d',
+      predictions: [
+        {
+          forHour: '2026-05-05T07:00:00.000Z', generatedAt: '2026-05-05T06:30:00.000Z',
+          mode: 'greenhouse_heating', hasSolarOverlay: false, duty: null,
+          tankAvgC: 14.2, greenhouseC: 12.0, outdoorC: 6.5, radiationWm2: 410, priceCKwh: 11.5,
+          algorithmVersion: 'cafef00d', tu: { geT: 13, gxT: 14 },
+        },
+        {
+          forHour: '2026-05-05T08:00:00.000Z', generatedAt: '2026-05-05T07:30:00.000Z',
+          mode: 'emergency_heating', hasSolarOverlay: true, duty: 0.42,
+          tankAvgC: 13.8, greenhouseC: 11.6, outdoorC: 6.0, radiationWm2: 380, priceCKwh: 12.0,
+          algorithmVersion: 'deadbeef', tu: { geT: 13, gxT: 14, ehE: 11 },
+        },
+      ],
+    };
+
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, []);
+    await mockForecastApi(page, forecastPayload);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#forecast-val-eur')).toHaveText('€0.00', { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+
+    expect(text).toContain('--- Prediction History ---');
+    expect(text).toContain('Algorithm version (current): cafef00d');
+    expect(text).toMatch(/For hour\s+Predicted at\s+Mode\s+Solar\s+Duty\s+Tank-avg\s+GH\s+Outdoor\s+Rad\s+Price\s+Algo\s+Tu/);
+
+    const lines = text.split('\n');
+    // Each prediction renders as one row carrying every field. We don't pin
+    // wall-clock formatting (TZ-dependent) but every value must show up.
+    const ghRow = lines.find(l => l.includes('greenhouse_heating') && l.includes('14.2'));
+    expect(ghRow).toBeTruthy();
+    expect(ghRow).toMatch(/12\.0/);
+    expect(ghRow).toMatch(/\b6\.5\b/);
+    expect(ghRow).toMatch(/\b410\b/);
+    expect(ghRow).toMatch(/11\.50/);
+    expect(ghRow).not.toMatch(/\+SC/);
+    // Same algorithm version as current → no "*" marker.
+    expect(ghRow).toMatch(/\scafef00d\s/);
+    expect(ghRow).not.toMatch(/\*cafef00d/);
+    // Tu rendered compactly.
+    expect(ghRow).toMatch(/geT=13 gxT=14/);
+
+    const emRow = lines.find(l => l.includes('emergency_heating') && l.includes('13.8'));
+    expect(emRow).toBeTruthy();
+    expect(emRow).toMatch(/\+SC/);   // overlay flag rendered
+    expect(emRow).toMatch(/0\.42/);  // duty
+    // Different algorithm version than current → "*" prefix flags it for
+    // the operator's eye when they scroll through versions.
+    expect(emRow).toMatch(/\*deadbeef/);
+    // ehE captured even though it's not part of the previous row.
+    expect(emRow).toMatch(/ehE=11/);
+  });
+
+  test('logs export omits the Prediction History section when no predictions are returned', async ({ page }) => {
+    const generatedAt = '2026-05-05T08:00:00.000Z';
+    const forecastPayload = {
+      generatedAt,
+      weather: [], prices: [],
+      forecast: {
+        generatedAt, horizonHours: 48, modelConfidence: 'medium',
+        electricKwh: 0, electricCostEur: 0,
+        modeForecast: [], tankTrajectory: [], greenhouseTrajectory: [],
+      },
+      // predictions field deliberately absent (server skipped — preview mode,
+      // schema not yet migrated, etc.)
+    };
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, []);
+    await mockForecastApi(page, forecastPayload);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#forecast-val-eur')).toHaveText('€0.00', { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+    // No empty section header; the section should disappear entirely so a
+    // reader doesn't see "(no predictions)" noise on every export.
+    expect(text).not.toContain('--- Prediction History ---');
+  });
+
+  test('logs export renders a dedicated Tunable Values History section for tu config events', async ({ page }) => {
+    // tu changes already appear in the Transition Log mixed with mode +
+    // overlay + wb / ea / mo events. The dedicated section pulls them
+    // out into a clean timeline so an operator scanning for threshold
+    // tweaks doesn't have to scroll past unrelated rows.
+    const now = Date.now();
+    const rows = [
+      makeEvent(now - 30_000, 'idle', 'solar_charging'),
+      {
+        ts: now - 90_000, type: 'config', kind: 'tu', key: 'gxT',
+        from: '15', to: '14', source: 'api', actor: 'jonni',
+      },
+      {
+        ts: now - 180_000, type: 'config', kind: 'tu', key: 'geT',
+        from: null, to: '13', source: 'api', actor: 'jonni',
+      },
+      {
+        ts: now - 240_000, type: 'config', kind: 'wb', key: 'GH',
+        from: null, to: '9999999999', source: 'api', actor: 'jonni',
+      },
+    ];
+
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, rows);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(4, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+
+    expect(text).toContain('--- Tunable Values History ---');
+    const lines = text.split('\n');
+    const tunIdx = lines.findIndex(l => l.includes('--- Tunable Values History ---'));
+    const tlIdx  = lines.findIndex(l => l.includes('--- Transition Log ---'));
+    // Section sits BEFORE the Transition Log (curated timeline first).
+    expect(tunIdx).toBeGreaterThan(-1);
+    expect(tlIdx).toBeGreaterThan(tunIdx);
+
+    // Slice the section's body (between header and the next "---" divider).
+    const sectionLines = lines.slice(tunIdx + 1, tlIdx).filter(Boolean);
+
+    // Two tu changes should appear (newest first), gxT 15 → 14 and
+    // geT default → 13. wb is filtered out — it belongs to the
+    // Transition Log section.
+    const gxtRow = sectionLines.find(l => l.includes('gxT'));
+    expect(gxtRow).toBeTruthy();
+    expect(gxtRow).toMatch(/greenhouse heat exit/);
+    expect(gxtRow).toMatch(/15.*→.*14/);
+    expect(gxtRow).toMatch(/jonni/);
+
+    const getRow = sectionLines.find(l => l.includes('geT'));
+    expect(getRow).toBeTruthy();
+    expect(getRow).toMatch(/greenhouse heat enter/);
+    expect(getRow).toMatch(/default.*→.*13/);
+
+    // wb row should NOT show up here.
+    expect(sectionLines.every(l => !/Greenhouse Heating|wb/.test(l))).toBe(true);
+
+    // Newest-first ordering inside the section.
+    expect(sectionLines.indexOf(gxtRow)).toBeLessThan(sectionLines.indexOf(getRow));
+  });
+
+  test('Tunable Values History section is omitted when there are no tu changes', async ({ page }) => {
+    const now = Date.now();
+    const rows = [
+      makeEvent(now - 30_000, 'idle', 'solar_charging'),
+      {
+        ts: now - 60_000, type: 'config', kind: 'wb', key: 'GH',
+        from: null, to: '9999999999', source: 'api', actor: 'alice',
+      },
+    ];
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, rows);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(2, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+    expect(text).not.toContain('--- Tunable Values History ---');
+  });
+
   test('forecast section renders graceful fallback when forecast unavailable', async ({ page }) => {
     await installMockWs(page);
     await mockHistoryApi(page);
