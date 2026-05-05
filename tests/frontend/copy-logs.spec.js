@@ -299,6 +299,91 @@ test.describe('Copy System Logs — live mode', () => {
     expect(text).toContain('Heating Greenhouse');
   });
 
+  // Hybrid heating (greenhouse_heating + space heater overlay) was
+  // invisible in the export — Mode column showed "greenhouse_heating"
+  // and the transition log only carried mode rows, so an operator
+  // copying logs at 02:00 couldn't tell the heater was firing. Same
+  // story for the System Logs feed (covered by live-logs.spec.js).
+  test('Sensor Readings table annotates rows where the space heater was on', async ({ page }) => {
+    const now = Date.now();
+    const historyPoints = makeHistoryPoints(3, 20 * 60 * 1000, now - 60 * 60 * 1000);
+    // Mode events: greenhouse_heating throughout the window.
+    const historyEvents = [
+      { ts: now - 90 * 60 * 1000, type: 'mode', from: 'idle', to: 'greenhouse_heating' },
+    ];
+    // Space heater on across the window so every reading row should be
+    // annotated.
+    const spaceHeaterEvents = [
+      { ts: now - 90 * 60 * 1000, type: 'actuator', id: 'space_heater', from: 'off', to: 'on' },
+    ];
+
+    await installMockWs(page);
+    await page.route('**/api/history**', route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        range: '24h', points: historyPoints, events: historyEvents,
+        spaceHeaterEvents,
+      }),
+    }));
+    await mockEventsApi(page, []);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+    // Header carries the new SH column.
+    expect(text).toContain('Mode                SH');
+    // Sensor reading rows carry an SH marker when the heater was on.
+    expect(text).toMatch(/greenhouse_heating {2}on/);
+  });
+
+  test('Sensor Readings SH column is blank when the space heater was off', async ({ page }) => {
+    const now = Date.now();
+    const historyPoints = makeHistoryPoints(3, 20 * 60 * 1000, now - 60 * 60 * 1000);
+
+    await installMockWs(page);
+    await page.route('**/api/history**', route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        range: '24h', points: historyPoints, events: [], spaceHeaterEvents: [],
+      }),
+    }));
+    await mockEventsApi(page, []);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+    // Default mode is 'idle' (no events) and SH should be blank for
+    // every row, not 'on'.
+    expect(text).not.toMatch(/idle\s+on\b/);
+  });
+
+  test('Transition Log includes space-heater on/off entries', async ({ page }) => {
+    const now = Date.now();
+    const rows = [
+      // newest first
+      { ts: now - 30_000, type: 'actuator', id: 'space_heater', from: 'off', to: 'on' },
+      makeEvent(now - 60_000, 'idle', 'greenhouse_heating'),
+    ];
+
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, rows);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(2, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+    // The actuator row appears in the export's Transition Log section.
+    expect(text).toMatch(/Space heater on/);
+    expect(text).toMatch(/\[actuator: space_heater\]/);
+  });
+
   test('sensor readings table has data rows from history', async ({ page }) => {
     const now = Date.now();
     const historyPoints = makeHistoryPoints(3, 20 * 60 * 1000, now - 60 * 60 * 1000);

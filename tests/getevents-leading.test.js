@@ -75,4 +75,19 @@ describe('db.getEvents — leading event', () => {
       done();
     });
   });
+
+  // Allows /api/history to fetch space-heater on/off events specifically
+  // (one of many actuators) without pulling pump/fan/immersion_heater
+  // rows that the EMERGENCY band doesn't care about.
+  it('accepts an optional entity_id filter alongside entity_type', (t, done) => {
+    db.getEvents('6h', 'actuator', 'space_heater', function (err) {
+      assert.ifError(err);
+      const eventsQ = capturedQueries.find(q => q.sql && q.sql.includes('state_events'));
+      assert.ok(eventsQ);
+      assert.match(eventsQ.sql, /entity_id = \$/, 'expected an entity_id filter in the query');
+      assert.ok(eventsQ.params.includes('actuator'), 'entity_type bound');
+      assert.ok(eventsQ.params.includes('space_heater'), 'entity_id bound');
+      done();
+    });
+  });
 });

@@ -18,7 +18,7 @@ import { timeSeriesStore, trendStore } from './state.js';
 import { drawHistoryGraph } from './history-graph.js';
 import { rerenderWithHistoryFallback } from './display-update.js';
 import { registerDataSource } from '../sync/registry.js';
-import { populateModeEvents } from './mode-events.js';
+import { populateModeEvents, populateSpaceHeaterEvents } from './mode-events.js';
 
 const RANGE_MAP = {
   3600: '1h', 21600: '6h', 43200: '12h', 86400: '24h',
@@ -94,6 +94,15 @@ function loadLiveHistoryIntoStore(data) {
     ts: typeof e.ts === 'number' ? Math.floor(e.ts / 1000) : e.ts,
   }));
   populateModeEvents(eventsSec);
+  // Space-heater on/off transitions feed the EMERGENCY band overlay
+  // and the clipboard SH annotation. The server returns them on every
+  // /api/history call (with leading edge), so the band is correct from
+  // the first paint without waiting for a separate fetch.
+  const rawShEvents = (data && Array.isArray(data.spaceHeaterEvents)) ? data.spaceHeaterEvents : [];
+  const shEventsSec = rawShEvents.map(e => Object.assign({}, e, {
+    ts: typeof e.ts === 'number' ? Math.floor(e.ts / 1000) : e.ts,
+  }));
+  populateSpaceHeaterEvents(shEventsSec);
   if (!data || !Array.isArray(data.points)) return;
 
   for (let i = 0; i < data.points.length; i++) {

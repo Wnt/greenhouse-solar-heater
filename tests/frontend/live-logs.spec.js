@@ -317,6 +317,82 @@ test.describe('System Logs card is backed by live state events', () => {
     await expect(items.nth(3)).toContainText('Idle');
   });
 
+  test('space-heater actuator on/off renders in the System Logs feed', async ({ page }) => {
+    // The space heater fires as an OVERLAY on top of greenhouse_heating
+    // when the tank is too cold to drive the radiator. The mode-only
+    // log feed previously hid that — operators saw "Heating Greenhouse"
+    // for hours with no indication that the resistive heater was
+    // actually doing the work. /api/events?type=actuator carries the
+    // on/off transitions; the System Logs feed must fetch and render
+    // them alongside mode rows.
+    const now = Date.now();
+    const rows = [
+      {
+        ts: now - 30_000, type: 'actuator', id: 'space_heater',
+        from: 'off', to: 'on',
+      },
+      makeEvent(now - 60_000, 'idle', 'greenhouse_heating'),
+      {
+        ts: now - 90_000, type: 'actuator', id: 'space_heater',
+        from: 'on', to: 'off',
+      },
+    ];
+
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, rows);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+
+    const items = page.locator('#logs-list .log-item');
+    await expect(items).toHaveCount(3, { timeout: 3000 });
+
+    // Newest first — the heater turning on lands at the top.
+    await expect(items.nth(0)).toContainText('Space heater on');
+    await expect(items.nth(1)).toContainText('Heating Greenhouse');
+    await expect(items.nth(2)).toContainText('Space heater off');
+  });
+
+  test('detects live space-heater transitions from WS state frames', async ({ page }) => {
+    // Same eager-prepend pattern as fan-cool overlay flips: if the
+    // controller toggles the heater between mode transitions, the row
+    // should appear immediately without a /api/events round-trip.
+    // Initial WS frame is already in greenhouse_heating with the heater
+    // off; only the heater flip should generate a new entry.
+    const now = Date.now();
+    await installMockWs(page, {
+      mode: 'greenhouse_heating',
+      actuators: { pump: true, fan: true, space_heater: false },
+    });
+    await mockHistoryApi(page);
+    await mockEventsApi(page, [makeEvent(now - 60_000, 'idle', 'greenhouse_heating')]);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 3000 });
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(1, { timeout: 3000 });
+
+    await page.evaluate(() => {
+      // @ts-ignore
+      const ws = window.__mockWs;
+      ws.onmessage({
+        data: JSON.stringify({
+          type: 'state',
+          data: {
+            mode: 'greenhouse_heating',
+            temps: { collector: 5, tank_top: 18, tank_bottom: 17, greenhouse: 9, outdoor: 1 },
+            valves: {}, actuators: { pump: true, fan: true, space_heater: true },
+            controls_enabled: true, manual_override: null,
+          },
+        }),
+      });
+    });
+
+    const items = page.locator('#logs-list .log-item');
+    await expect(items).toHaveCount(2, { timeout: 3000 });
+    await expect(items.first()).toContainText('Space heater on');
+  });
+
   test('ea bit-flip renders as "Enabled actuator: <name>"', async ({ page }) => {
     // A user toggling Fan on via Controller settings should appear in
     // the System Logs card as a config_events row with the friendly

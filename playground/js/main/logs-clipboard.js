@@ -5,12 +5,12 @@
 
 import { store } from '../app-state.js';
 import {
-  formatTimeOfDay, formatFullTimeHelsinki, formatConfigEntry,
-  formatConfigSourceLabel, formatReasonLabel, formatOverlayEntry,
+  formatTimeOfDay, formatFullTimeHelsinki, formatConfigEntry, formatConfigSourceLabel,
+  formatReasonLabel, formatOverlayEntry, formatActuatorEntry,
 } from './time-format.js';
 import { model, params, MODE_INFO, timeSeriesStore, transitionLog, lastLiveFrame, forecastData } from './state.js';
 import { getWatchdogSnapshot } from './watchdog-ui.js';
-import { modeAt } from './mode-events.js';
+import { modeAt, spaceHeaterAt } from './mode-events.js';
 import { appendPredictionHistory } from './logs-predictions.js';
 import { appendTuningsHistory } from './logs-tunings-history.js';
 
@@ -51,19 +51,16 @@ function buildLogsClipboardText() {
 
   if (isLive) {
     lines.push('--- Sensor Readings (24h, 20-min resolution) ---');
-    lines.push('Time                  Collector  Tank Top  Tank Btm  Greenhouse  Outdoor  Mode');
+    lines.push('Time                  Collector  Tank Top  Tank Btm  Greenhouse  Outdoor  Mode                SH');
     const readings = downsampleHistory(1200);
     for (let i = 0; i < readings.length; i++) {
       const r = readings[i];
-      lines.push(
-        formatFullTimeHelsinki(r.time * 1000) + '  ' +
-        fmtTempCol(r.t_collector) + '  ' +
-        fmtTempCol(r.t_tank_top) + '  ' +
-        fmtTempCol(r.t_tank_bottom) + '  ' +
-        fmtTempCol(r.t_greenhouse) + '  ' +
+      lines.push(formatFullTimeHelsinki(r.time * 1000) + '  ' +
+        fmtTempCol(r.t_collector) + '  ' + fmtTempCol(r.t_tank_top) + '  ' +
+        fmtTempCol(r.t_tank_bottom) + '  ' + fmtTempCol(r.t_greenhouse) + '  ' +
         fmtTempCol(r.t_outdoor) + '  ' +
-        (r.mode || 'idle')
-      );
+        (r.mode || 'idle').padEnd(18) + '  ' +
+        (r.space_heater === 'on' ? 'on' : '  '));
     }
     if (readings.length === 0) lines.push('(no history data available)');
   } else {
@@ -127,9 +124,11 @@ function buildLogsClipboardText() {
         continue;
       }
 
-      if (t.eventType === 'overlay') {
-        const fmt = formatOverlayEntry(t);
-        lines.push(timeLabel + '  Overlay  ' + fmt.title + '  [overlay: ' + (t.overlayId || 'unknown') + ']');
+      if (t.eventType === 'overlay' || t.eventType === 'actuator') {
+        const ov = t.eventType === 'overlay';
+        const fmt = ov ? formatOverlayEntry(t) : formatActuatorEntry(t);
+        const id = (ov ? t.overlayId : t.actuatorId) || 'unknown';
+        lines.push(timeLabel + '  ' + (ov ? 'Overlay' : 'Actuator') + '  ' + fmt.title + '  [' + t.eventType + ': ' + id + ']');
         lines.push('    detail: ' + fmt.desc);
         continue;
       }
@@ -589,6 +588,7 @@ function downsampleHistory(intervalSec) {
         t_greenhouse: v.t_greenhouse,
         t_outdoor: v.t_outdoor,
         mode: modeAt(t),
+        space_heater: spaceHeaterAt(t),
       });
       nextBucket = t + intervalSec;
     }

@@ -120,7 +120,19 @@ function createHandlers(deps) {
           log.error('events query failed', { error: evErr.message });
           events = [];
         }
-        jsonResponse(res, 200, { range, points, events });
+        // Space-heater on/off intervals feed the EMERGENCY band on the
+        // history graph (OR-unioned with `mode === 'emergency_heating'`)
+        // and the SH annotation in the clipboard export. Fetched here
+        // alongside mode events so a single /api/history round-trip
+        // gives the client everything the bar chart and the readings
+        // table need.
+        db.getEvents(range, 'actuator', 'space_heater', function (shErr, spaceHeaterEvents) {
+          if (shErr) {
+            log.error('space-heater events query failed', { error: shErr.message });
+            spaceHeaterEvents = [];
+          }
+          jsonResponse(res, 200, { range, points, events, spaceHeaterEvents });
+        });
       });
     });
   }
