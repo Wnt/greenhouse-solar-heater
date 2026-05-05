@@ -8,7 +8,7 @@ import {
   formatTimeOfDay, formatFullTimeHelsinki, formatConfigEntry,
   formatConfigSourceLabel, formatReasonLabel, formatOverlayEntry,
 } from './time-format.js';
-import { model, params, MODE_INFO, timeSeriesStore, transitionLog, lastLiveFrame } from './state.js';
+import { model, params, MODE_INFO, timeSeriesStore, transitionLog, lastLiveFrame, forecastData } from './state.js';
 import { getWatchdogSnapshot } from './watchdog-ui.js';
 import { modeAt } from './mode-events.js';
 
@@ -41,6 +41,11 @@ function buildLogsClipboardText() {
   // Controller-state snapshot (live mode only — captures the evaluator-
   // visible flags / device config that gate mode transitions).
   if (isLive) appendControllerState(lines);
+
+  // Forecast snapshot (live mode only — sim mode never fetches forecast).
+  // Included so an exported log captures what the algorithm "thought" the
+  // next 48 h looked like at copy time, for offline algorithm tuning.
+  if (isLive) appendForecast(lines);
 
   if (isLive) {
     lines.push('--- Sensor Readings (24h, 20-min resolution) ---');
@@ -370,6 +375,114 @@ function appendControllerState(lines) {
 function fmtTempCol(v) {
   if (typeof v !== 'number' || Number.isNaN(v)) return '    —   ';
   return String(v.toFixed(1)).padStart(8);
+}
+
+function fmtNum(v, digits, width) {
+  if (typeof v !== 'number' || Number.isNaN(v)) return '—'.padStart(width);
+  return v.toFixed(digits).padStart(width);
+}
+
+function fmtHoursLabel(h) {
+  if (h === null || h === undefined) return '48+ h (no backup needed)';
+  if (h === 0) return 'Engaged now';
+  const rounded = Math.round(h * 2) / 2;
+  return '~' + rounded + ' h';
+}
+
+// Build a key→row map from an ISO-timestamp list so the hourly projection
+// table can join weather, prices, mode, and trajectory rows even when the
+// arrays disagree on length (e.g. weather DB hasn't fetched yet).
+function indexByIso(rows, key) {
+  const out = {};
+  if (!Array.isArray(rows)) return out;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const ts = r && r[key];
+    if (typeof ts === 'string') out[ts] = r;
+  }
+  return out;
+}
+
+function appendForecast(lines) {
+  lines.push('--- Forecast (Next 48 h) ---');
+  if (!forecastData || !forecastData.forecast) {
+    lines.push('(forecast not loaded)');
+    lines.push('');
+    return;
+  }
+
+  const fc = forecastData.forecast;
+  lines.push('Generated:          ' + (forecastData.generatedAt || '(unknown)'));
+  lines.push('Model confidence:   ' + (fc.modelConfidence || '(unknown)'));
+  lines.push('Tank lasts:         ' + fmtHoursLabel(fc.hoursUntilBackupNeeded));
+  if (typeof fc.hoursUntilFloor === 'number') {
+    lines.push('Hours until floor:  ' + fc.hoursUntilFloor.toFixed(1) + ' h');
+  }
+  if (typeof fc.electricKwh === 'number') {
+    lines.push('Backup heat:        ' + fc.electricKwh.toFixed(2) + ' kWh');
+  }
+  if (typeof fc.electricCostEur === 'number') {
+    lines.push('Backup cost:        €' + fc.electricCostEur.toFixed(2));
+  }
+  if (typeof fc.solarChargingHours === 'number') {
+    lines.push('Solar charging:     ' + fc.solarChargingHours + ' h');
+  }
+  if (typeof fc.greenhouseHeatingHours === 'number') {
+    lines.push('Greenhouse heating: ' + fc.greenhouseHeatingHours + ' h');
+  }
+
+  if (Array.isArray(fc.solarGainByDay) && fc.solarGainByDay.length) {
+    lines.push('Solar gain by day:');
+    for (let i = 0; i < fc.solarGainByDay.length; i++) {
+      const d = fc.solarGainByDay[i];
+      lines.push('  ' + d.date + ': ' + (typeof d.kWh === 'number' ? d.kWh.toFixed(1) : '—') + ' kWh');
+    }
+  }
+
+  if (Array.isArray(fc.notes) && fc.notes.length) {
+    lines.push('Notes:');
+    for (let i = 0; i < fc.notes.length; i++) {
+      lines.push('  - ' + fc.notes[i]);
+    }
+  }
+
+  // Hourly projection — joins weather + price + projected mode + projected
+  // tank/greenhouse on the modeForecast timestamps (one row per forecast
+  // hour). The trajectory arrays have an extra leading "now" row that the
+  // mode list doesn't, so iterating modeForecast is the right axis.
+  const modes = Array.isArray(fc.modeForecast) ? fc.modeForecast : [];
+  if (modes.length) {
+    const wxByTs   = indexByIso(forecastData.weather, 'validAt');
+    const pxByTs   = indexByIso(forecastData.prices, 'validAt');
+    const tankByTs = indexByIso(fc.tankTrajectory, 'ts');
+    const ghByTs   = indexByIso(fc.greenhouseTrajectory, 'ts');
+
+    lines.push('');
+    lines.push('Hourly projection:');
+    lines.push('Time                  TempOut    Rad   Wind  Precip   Price  Mode               Duty  TankAvg     GH');
+    for (let i = 0; i < modes.length; i++) {
+      const m = modes[i];
+      const ts = m.ts;
+      const wx = wxByTs[ts] || {};
+      const px = pxByTs[ts] || {};
+      const tk = tankByTs[ts] || {};
+      const gh = ghByTs[ts] || {};
+      lines.push(
+        formatFullTimeHelsinki(new Date(ts).getTime()) + '  ' +
+        fmtNum(wx.temperature, 1, 6) + '°C  ' +
+        fmtNum(wx.radiationGlobal, 0, 5) + '  ' +
+        fmtNum(wx.windSpeed, 1, 4) + '  ' +
+        fmtNum(wx.precipitation, 1, 5) + '  ' +
+        fmtNum(px.priceCKwh, 2, 6) + 'c  ' +
+        (m.mode || 'idle').padEnd(17) + '  ' +
+        (typeof m.duty === 'number' ? m.duty.toFixed(2) : '   —') + '  ' +
+        fmtNum(tk.avg, 1, 6) + '  ' +
+        fmtNum(gh.temp, 1, 6)
+      );
+    }
+  }
+
+  lines.push('');
 }
 
 // Down-sample timeSeriesStore to a given interval (in seconds). Mode is
