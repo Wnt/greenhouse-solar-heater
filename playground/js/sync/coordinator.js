@@ -37,10 +37,18 @@
 import { _registeredSources } from './registry.js';
 import { store } from '../app-state.js';
 
+// Default cadence for the periodic resync timer. 5 min strikes a
+// reasonable balance for the long-lived PWA case: short enough that
+// data on screen stays close to the server's view, long enough that an
+// idle tab doesn't waste battery. Server-side caches (forecast = 60 s,
+// history endpoints = unlimited) absorb the request rate.
+const DEFAULT_PERIODIC_MS = 5 * 60 * 1000;
+
 let currentController = null;
 let _onResyncStart = function () {};
 let _onResyncComplete = function () {};
 let _listeners = null;
+let _periodicHandle = null;
 
 export function initSyncCoordinator(opts) {
   const { onResyncStart, onResyncComplete } = opts || {};
@@ -67,6 +75,28 @@ export function initSyncCoordinator(opts) {
   window.addEventListener('online', onOnline);
 
   _listeners = { onVisibility, onPageShow, onOnline };
+
+  // Periodic timer. Takes opts.periodicIntervalMs if supplied (lets
+  // tests force a tighter cadence and tests-or-config disable by
+  // passing 0); production gets the default.
+  const periodicMs = (opts && typeof opts.periodicIntervalMs === 'number')
+    ? opts.periodicIntervalMs : DEFAULT_PERIODIC_MS;
+  if (periodicMs > 0) startPeriodicResync(periodicMs);
+}
+
+export function startPeriodicResync(intervalMs) {
+  stopPeriodicResync();
+  const ms = (typeof intervalMs === 'number' && intervalMs > 0) ? intervalMs : DEFAULT_PERIODIC_MS;
+  _periodicHandle = setInterval(function () {
+    triggerResync('periodic');
+  }, ms);
+}
+
+export function stopPeriodicResync() {
+  if (_periodicHandle !== null) {
+    clearInterval(_periodicHandle);
+    _periodicHandle = null;
+  }
 }
 
 function triggerResync(reason) {
@@ -128,6 +158,7 @@ function finishResync(controller) {
 function _resetForTests() {
   if (currentController) currentController.abort();
   currentController = null;
+  stopPeriodicResync();
   store.set('syncing', false);
   store.set('syncReason', null);
   if (_listeners) {
@@ -147,4 +178,6 @@ if (typeof window !== 'undefined') {
   window.__sync = window.__sync || {};
   window.__sync.triggerResync = triggerResync;
   window.__sync._resetForTests = _resetForTests;
+  window.__sync._startPeriodicResync = startPeriodicResync;
+  window.__sync._stopPeriodicResync = stopPeriodicResync;
 }

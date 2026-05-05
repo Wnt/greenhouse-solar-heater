@@ -51,9 +51,16 @@ function makeForecastResponse(opts) {
 describe('forecast-predictions._buildRow', () => {
   const svc = forecastPredictions.create({ pool: null, log: makeLog() });
 
-  it('extracts the first-hour prediction with end-of-hour trajectory anchor', () => {
+  it('sets forHour to the END of the predicted hour (= time the actual reading will be taken)', () => {
+    // PRE-FIX: forHour was modeForecast[0].ts (= generation time). That
+    // made the export show the same timestamp in both "Predicted at" and
+    // "For hour" columns and forced the operator to mentally add 1 h to
+    // know which actual reading to compare against. forHour should be
+    // trajectory[1].ts — the wall clock when the predicted state will
+    // actually exist, so a row reads "for hour HOUR1, predicted X" and
+    // the operator can directly look up the sensor value at HOUR1.
     const row = svc._buildRow(makeForecastResponse());
-    assert.equal(row.forHour, HOUR0);
+    assert.equal(row.forHour, HOUR1);
     assert.equal(row.mode, 'greenhouse_heating');
     assert.equal(row.hasSolarOverlay, false);
     assert.equal(row.duty, null);
@@ -173,12 +180,15 @@ describe('forecast-predictions.captureFromForecast', () => {
       assert.ok(captured.sql.includes('ON CONFLICT (for_hour) DO UPDATE'));
       assert.ok(captured.sql.includes('algorithm_version'));
       assert.ok(captured.sql.includes('tu'));
-      assert.equal(captured.params[0], HOUR0);   // for_hour
+      // for_hour points at the END of the predicted hour (the wall-
+      // clock when the predicted state will actually exist), so a
+      // capture at HOUR0 carries for_hour=HOUR1.
+      assert.equal(captured.params[0], HOUR1);
       assert.equal(captured.params[2], 'greenhouse_heating'); // mode
       assert.equal(captured.params[10], 'cafef00d');          // algorithm_version
       // tu is JSON.stringified for the JSONB column.
       assert.deepStrictEqual(JSON.parse(captured.params[11]), tu);
-      assert.equal(row.forHour, HOUR0);
+      assert.equal(row.forHour, HOUR1);
       done();
     });
   });

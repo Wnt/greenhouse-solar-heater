@@ -207,4 +207,35 @@ test.describe('sync registry + coordinator contract', () => {
     expect(result.bad).toBe(0);
     expect(result.good).toBe(1);
   });
+
+  test('startPeriodicResync re-runs sources at the configured interval', async ({ page }) => {
+    // Long-lived PWA sessions: visibility/focus/network events alone
+    // miss the "tab was foreground the whole time" case. The coordinator
+    // therefore offers a periodic timer; each tick calls triggerResync,
+    // which in turn invokes every active source's fetch.
+    const result = await page.evaluate(async () => {
+      let fetchCalls = 0;
+      window.__sync.registerDataSource({
+        id: 'periodic-src',
+        isActive: () => true,
+        fetch: () => { fetchCalls++; return Promise.resolve('ok'); },
+        applyToStore: () => {},
+      });
+      // 30 ms cadence: tight for the test, well above setInterval's
+      // ~4 ms minimum so we get distinct ticks.
+      window.__sync._startPeriodicResync(30);
+      // Wait long enough for ≥3 ticks plus the in-flight resync to settle.
+      await new Promise(r => setTimeout(r, 150));
+      const duringTick = fetchCalls;
+      window.__sync._stopPeriodicResync();
+      // Wait again — should NOT keep firing after stop.
+      await new Promise(r => setTimeout(r, 150));
+      const afterStop = fetchCalls;
+      return { duringTick, afterStop };
+    });
+    expect(result.duringTick).toBeGreaterThanOrEqual(3);
+    // After stop, no new ticks (small tolerance for any in-flight resync
+    // that may have already started just before stop fired).
+    expect(result.afterStop).toBeLessThanOrEqual(result.duringTick + 1);
+  });
 });

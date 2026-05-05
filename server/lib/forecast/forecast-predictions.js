@@ -73,6 +73,14 @@ function create(opts) {
       ? fc.tankTrajectory[1] : null;
     const gh   = Array.isArray(fc.greenhouseTrajectory) && fc.greenhouseTrajectory.length > 1
       ? fc.greenhouseTrajectory[1] : null;
+    // for_hour names the wall clock when the predicted state will
+    // actually exist — i.e. trajectory[1].ts (one hour after generation).
+    // Pre-fix this carried modeForecast[0].ts (= generation time), which
+    // forced the operator to mentally add an hour to know which actual
+    // sensor reading to compare against. Falls back to firstTs if the
+    // trajectory is shorter than expected (engine bug / incomplete data),
+    // so we never write a NULL into the PK column.
+    const forHourTs = (tank && tank.ts) ? tank.ts : firstTs;
     // Weather rows are hour-aligned but firstTs carries a sub-hour offset
     // (now + h*3600s). Pick the closest row within ±90 min — same window
     // the export uses, same justification.
@@ -84,7 +92,7 @@ function create(opts) {
     // been wired to attach it (older tests, etc.).
     const tu = response.tu && typeof response.tu === 'object' ? response.tu : null;
     return {
-      forHour:        firstTs,
+      forHour:        forHourTs,
       generatedAt:    response.generatedAt || new Date().toISOString(),
       mode:           primary || 'idle',
       hasSolarOverlay: hasSolar,
