@@ -191,6 +191,26 @@ function formatWatchdogEnabled(we) {
   return on.length ? on.join(', ') : 'none';
 }
 
+// Canonical render order — mirrors TUNING_FIELDS in device-config.js
+// (grouped greenhouse → emergency → fan-cool → safety). Hardcoded to
+// avoid an import cycle and pin the export's column order.
+const TUNING_DISPLAY_ORDER = ['geT', 'gxT', 'gmD', 'gxD', 'ehE', 'ehX', 'fcE', 'fcX', 'frT', 'ohT'];
+
+function formatTunings(tu) {
+  if (!tu) return '(firmware defaults)';
+  const parts = [];
+  const known = new Set(TUNING_DISPLAY_ORDER);
+  for (let i = 0; i < TUNING_DISPLAY_ORDER.length; i++) {
+    const k = TUNING_DISPLAY_ORDER[i];
+    if (typeof tu[k] === 'number') parts.push(k + '=' + tu[k]);
+  }
+  // Any future tunable shows up at the end before TUNING_DISPLAY_ORDER catches up.
+  Object.keys(tu).forEach(k => {
+    if (!known.has(k) && typeof tu[k] === 'number') parts.push(k + '=' + tu[k]);
+  });
+  return parts.length ? parts.join(' ') : '(firmware defaults)';
+}
+
 function formatWatchdogSnoozed(wz, nowSec) {
   const out = [];
   Object.keys(wz || {}).forEach(id => {
@@ -372,6 +392,10 @@ function appendControllerState(lines) {
   lines.push('Watchdogs enabled:  ' + formatWatchdogEnabled(snap.we));
   lines.push('Watchdogs snoozed:  ' + formatWatchdogSnoozed(snap.wz, nowSec));
   lines.push('Mode bans (wb):     ' + formatBanList(snap.wb, nowSec));
+  // User-tuned thresholds gate every mode decision; surfacing them here
+  // means a reader doesn't have to open the device-config UI to compare
+  // sensor values against the active hysteresis bounds.
+  lines.push('Tunings:            ' + formatTunings(snap.tu));
   lines.push('Config version:     ' + (typeof snap.v === 'number' ? snap.v : '(unknown)'));
   const heldLines = formatHeldLines(result && result.held, nowSec);
   if (heldLines.length) {
@@ -477,27 +501,48 @@ function appendForecast(lines) {
     }
   }
 
-  // Hourly projection — joins weather + price + projected mode + projected
-  // tank/greenhouse on the modeForecast timestamps (one row per forecast
-  // hour). The trajectory arrays have an extra leading "now" row that the
-  // mode list doesn't, so iterating modeForecast is the right axis.
+  // Hourly projection — joins weather + price + mode + trajectory on the
+  // modeForecast timestamps. The engine emits a separate solar_charging
+  // entry when charging overlays a pump mode, so multiple entries can
+  // share a ts; we collapse them into one row per hour with "+SC" in
+  // the Solar column when the overlay applies (pre-collapse the export
+  // emitted duplicate adjacent rows the reader had to pair manually).
   const modes = Array.isArray(fc.modeForecast) ? fc.modeForecast : [];
   if (modes.length) {
-    // Trajectory rows share their timestamps with modeForecast (built in
-    // the same loop), so exact-key indexing works. Weather/prices come
-    // from the database aligned to the hour boundary while modeForecast
-    // carries the request-time minute offset — match by nearest-within-
-    // 90 min instead.
+    // Trajectory rows share modeForecast timestamps (built in the same
+    // loop) so exact-key works; weather/prices are hour-aligned while
+    // modeForecast carries the request-time offset, so match by nearest.
     const tankByTs = indexByIso(fc.tankTrajectory, 'ts');
     const ghByTs   = indexByIso(fc.greenhouseTrajectory, 'ts');
     const NEAREST_WINDOW_MS = 90 * 60 * 1000;
 
-    lines.push('');
-    lines.push('Hourly projection:');
-    lines.push('Time                  TempOut    Rad   Wind  Precip   Price  Mode               Duty  TankAvg     GH');
+    // Group modeForecast entries by ts (first-seen order). Each group's
+    // primary is the pump mode if present, else the standalone solar.
+    const order = [];
+    const groups = {};
     for (let i = 0; i < modes.length; i++) {
       const m = modes[i];
       const ts = m.ts;
+      if (!groups[ts]) { groups[ts] = { ts, primary: null, hasSolar: false, duty: null }; order.push(ts); }
+      const g = groups[ts];
+      if (m.mode === 'solar_charging') {
+        if (g.primary === null) g.primary = 'solar_charging';
+        else g.hasSolar = true;
+      } else {
+        // A pump-mode entry overrides a previously-seen solar_charging
+        // primary (engine emits in either order; pump mode wins).
+        if (g.primary === 'solar_charging') g.hasSolar = true;
+        g.primary = m.mode || 'idle';
+        if (typeof m.duty === 'number') g.duty = m.duty;
+      }
+    }
+
+    lines.push('');
+    lines.push('Hourly projection:');
+    lines.push('Time                  TempOut    Rad   Wind  Precip   Price  Mode                Solar  Duty  TankAvg     GH');
+    for (let i = 0; i < order.length; i++) {
+      const g = groups[order[i]];
+      const ts = g.ts;
       const wx = nearestRow(forecastData.weather, ts, 'validAt', NEAREST_WINDOW_MS) || {};
       const px = nearestRow(forecastData.prices,  ts, 'validAt', NEAREST_WINDOW_MS) || {};
       const tk = tankByTs[ts] || {};
@@ -509,8 +554,9 @@ function appendForecast(lines) {
         fmtNum(wx.windSpeed, 1, 4) + '  ' +
         fmtNum(wx.precipitation, 1, 5) + '  ' +
         fmtNum(px.priceCKwh, 2, 6) + 'c  ' +
-        (m.mode || 'idle').padEnd(17) + '  ' +
-        (typeof m.duty === 'number' ? m.duty.toFixed(2) : '   —') + '  ' +
+        (g.primary || 'idle').padEnd(18) + '  ' +
+        (g.hasSolar ? '+SC  ' : '     ') + '  ' +
+        (typeof g.duty === 'number' ? g.duty.toFixed(2) : '   —') + '  ' +
         fmtNum(tk.avg, 1, 6) + '  ' +
         fmtNum(gh.temp, 1, 6)
       );

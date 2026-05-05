@@ -396,6 +396,7 @@ describe('anomaly-manager setEnabled / getState / getHistory', () => {
       we: { ggr: 1, sng: 1, scs: 1 },
       wz: { ggr: 1840003600 },
       wb: { GH: 1840014400 },
+      tu: { geT: 13, gxT: 14, ehE: 11, ehX: 13 },
       v: 42,
     });
 
@@ -407,5 +408,10 @@ describe('anomaly-manager setEnabled / getState / getHistory', () => {
     assert.deepStrictEqual(state.snapshot.we, { ggr: 1, sng: 1, scs: 1 });
     assert.deepStrictEqual(state.snapshot.wz, { ggr: 1840003600 });
     assert.deepStrictEqual(state.snapshot.wb, { GH: 1840014400 });
+    // tu (sparse user-tunable thresholds) is mirrored too — the System
+    // Logs export reads it to render the active control thresholds, which
+    // an operator needs to compare sensor values against to figure out
+    // why the device is in its current mode.
+    assert.deepStrictEqual(state.snapshot.tu, { geT: 13, gxT: 14, ehE: 11, ehX: 13 });
   });
 });

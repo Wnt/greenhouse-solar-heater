@@ -97,6 +97,11 @@ function updateSnapshot(cfg) {
     we: cfg.we || {},
     wz: cfg.wz || {},
     wb: cfg.wb || {},
+    // Sparse map of user-tuned thresholds (geT/gxT/gmD/gxD/ehE/ehX/…).
+    // Mirrored so the System Logs export can render the active control
+    // thresholds — an operator comparing live sensor values against the
+    // hysteresis bounds the device is using needs them in one place.
+    tu: cfg.tu || {},
     v: typeof cfg.v === 'number' ? cfg.v : null,
   };
 }
