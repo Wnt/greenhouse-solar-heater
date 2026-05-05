@@ -334,6 +334,18 @@ function appendControllerState(lines) {
 
   const flags = (result && result.flags) || {};
   lines.push('Mode:               ' + ((result && result.mode) || 'idle'));
+  // Snapshot what the controller is actually seeing right now. Mirrors
+  // the transition-log "sensors:" row format so a reader can compare
+  // current values against the values at the most recent transition
+  // without skimming the 24 h history table.
+  if (result && result.temps) {
+    const t = result.temps;
+    const fmt = (v) => (typeof v === 'number' ? v.toFixed(1) + '°C' : '—');
+    lines.push('Current sensors:    collector=' + fmt(t.collector) +
+               ' tank=' + fmt(t.tank_top) + '/' + fmt(t.tank_bottom) +
+               ' greenhouse=' + fmt(t.greenhouse) +
+               ' outdoor=' + fmt(t.outdoor));
+  }
   // Live evaluator reason — refreshed every tick, distinct from the
   // transition-tied reason on transition log rows. Surfaces the same
   // sentence the mode-card status line shows ("Greenhouse still cold")
@@ -403,6 +415,25 @@ function indexByIso(rows, key) {
   return out;
 }
 
+// Find the row in `rows` whose ISO `key` is closest to `targetIso`, within
+// `maxDeltaMs`. Returns null when nothing is in range. Used to join
+// modeForecast (timestamps at `now + h*3600s`, e.g. 09:21:08.459Z) against
+// weather rows aligned to the hour boundary (09:00:00.000Z) — the strict-
+// equality `indexByIso` lookup misses every hour in that case.
+function nearestRow(rows, targetIso, key, maxDeltaMs) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const target = new Date(targetIso).getTime();
+  let best = null;
+  let bestDelta = Infinity;
+  for (let i = 0; i < rows.length; i++) {
+    const ts = rows[i] && rows[i][key];
+    if (typeof ts !== 'string') continue;
+    const delta = Math.abs(new Date(ts).getTime() - target);
+    if (delta < bestDelta) { bestDelta = delta; best = rows[i]; }
+  }
+  return bestDelta <= maxDeltaMs ? best : null;
+}
+
 function appendForecast(lines) {
   lines.push('--- Forecast (Next 48 h) ---');
   if (!forecastData || !forecastData.forecast) {
@@ -452,10 +483,14 @@ function appendForecast(lines) {
   // mode list doesn't, so iterating modeForecast is the right axis.
   const modes = Array.isArray(fc.modeForecast) ? fc.modeForecast : [];
   if (modes.length) {
-    const wxByTs   = indexByIso(forecastData.weather, 'validAt');
-    const pxByTs   = indexByIso(forecastData.prices, 'validAt');
+    // Trajectory rows share their timestamps with modeForecast (built in
+    // the same loop), so exact-key indexing works. Weather/prices come
+    // from the database aligned to the hour boundary while modeForecast
+    // carries the request-time minute offset — match by nearest-within-
+    // 90 min instead.
     const tankByTs = indexByIso(fc.tankTrajectory, 'ts');
     const ghByTs   = indexByIso(fc.greenhouseTrajectory, 'ts');
+    const NEAREST_WINDOW_MS = 90 * 60 * 1000;
 
     lines.push('');
     lines.push('Hourly projection:');
@@ -463,8 +498,8 @@ function appendForecast(lines) {
     for (let i = 0; i < modes.length; i++) {
       const m = modes[i];
       const ts = m.ts;
-      const wx = wxByTs[ts] || {};
-      const px = pxByTs[ts] || {};
+      const wx = nearestRow(forecastData.weather, ts, 'validAt', NEAREST_WINDOW_MS) || {};
+      const px = nearestRow(forecastData.prices,  ts, 'validAt', NEAREST_WINDOW_MS) || {};
       const tk = tankByTs[ts] || {};
       const gh = ghByTs[ts] || {};
       lines.push(
