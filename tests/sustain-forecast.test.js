@@ -6,8 +6,8 @@ const {
   fitEmpiricalCoefficients,
   computeSustainForecast,
   _TANK_THERMAL_MASS_J_PER_K,
-} = require('../server/lib/sustain-forecast.js');
-const { fitSolarGainByHour, fitGreenhouseLossWPerK } = require('../server/lib/sustain-forecast-fit.js');
+} = require('../server/lib/forecast/sustain-forecast.js');
+const { fitSolarGainByHour, fitGreenhouseLossWPerK } = require('../server/lib/forecast/sustain-forecast-fit.js');
 
 // ── Helpers ──
 

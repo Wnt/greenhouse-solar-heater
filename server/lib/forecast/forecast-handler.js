@@ -11,8 +11,9 @@
  */
 
 const { fitEmpiricalCoefficients, computeSustainForecast } = require('./sustain-forecast');
-const deviceConfig = require('./device-config');
-const { jsonResponse } = require('./http-handlers');
+const { ALGORITHM_VERSION } = require('./version');
+const deviceConfig = require('../device-config');
+const { jsonResponse } = require('../http-handlers');
 
 const CACHE_TTL_MS         = 60 * 1000;     // 60 s response cache
 const COEFF_CACHE_TTL_MS   = 60 * 60 * 1000; // 1 h coefficient cache
@@ -343,6 +344,12 @@ function createForecastHandler(opts) {
 
         const baseResponse = {
           generatedAt: new Date().toISOString(),
+          // Algorithm version + active tu ride on the top-level response
+          // so the predictions scheduler can stamp them on each captured
+          // row, and the System Logs export can show which code version
+          // produced the live forecast right now.
+          algorithmVersion: ALGORITHM_VERSION,
+          tu:               dcfg.tu || {},
           weather,
           prices,
           forecast,

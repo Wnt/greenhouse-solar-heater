@@ -756,16 +756,19 @@ test.describe('Copy System Logs — live mode', () => {
         modelConfidence: 'medium', electricKwh: 0, electricCostEur: 0.0,
         modeForecast: [], tankTrajectory: [], greenhouseTrajectory: [],
       },
+      algorithmVersion: 'cafef00d',
       predictions: [
         {
           forHour: '2026-05-05T07:00:00.000Z', generatedAt: '2026-05-05T06:30:00.000Z',
           mode: 'greenhouse_heating', hasSolarOverlay: false, duty: null,
           tankAvgC: 14.2, greenhouseC: 12.0, outdoorC: 6.5, radiationWm2: 410, priceCKwh: 11.5,
+          algorithmVersion: 'cafef00d', tu: { geT: 13, gxT: 14 },
         },
         {
           forHour: '2026-05-05T08:00:00.000Z', generatedAt: '2026-05-05T07:30:00.000Z',
           mode: 'emergency_heating', hasSolarOverlay: true, duty: 0.42,
           tankAvgC: 13.8, greenhouseC: 11.6, outdoorC: 6.0, radiationWm2: 380, priceCKwh: 12.0,
+          algorithmVersion: 'deadbeef', tu: { geT: 13, gxT: 14, ehE: 11 },
         },
       ],
     };
@@ -783,7 +786,8 @@ test.describe('Copy System Logs — live mode', () => {
     const text = await getClipboardText(page);
 
     expect(text).toContain('--- Prediction History ---');
-    expect(text).toMatch(/For hour\s+Predicted at\s+Mode\s+Solar\s+Duty\s+Tank-avg\s+GH\s+Outdoor\s+Rad\s+Price/);
+    expect(text).toContain('Algorithm version (current): cafef00d');
+    expect(text).toMatch(/For hour\s+Predicted at\s+Mode\s+Solar\s+Duty\s+Tank-avg\s+GH\s+Outdoor\s+Rad\s+Price\s+Algo\s+Tu/);
 
     const lines = text.split('\n');
     // Each prediction renders as one row carrying every field. We don't pin
@@ -795,11 +799,21 @@ test.describe('Copy System Logs — live mode', () => {
     expect(ghRow).toMatch(/\b410\b/);
     expect(ghRow).toMatch(/11\.50/);
     expect(ghRow).not.toMatch(/\+SC/);
+    // Same algorithm version as current → no "*" marker.
+    expect(ghRow).toMatch(/\scafef00d\s/);
+    expect(ghRow).not.toMatch(/\*cafef00d/);
+    // Tu rendered compactly.
+    expect(ghRow).toMatch(/geT=13 gxT=14/);
 
     const emRow = lines.find(l => l.includes('emergency_heating') && l.includes('13.8'));
     expect(emRow).toBeTruthy();
     expect(emRow).toMatch(/\+SC/);   // overlay flag rendered
     expect(emRow).toMatch(/0\.42/);  // duty
+    // Different algorithm version than current → "*" prefix flags it for
+    // the operator's eye when they scroll through versions.
+    expect(emRow).toMatch(/\*deadbeef/);
+    // ehE captured even though it's not part of the previous row.
+    expect(emRow).toMatch(/ehE=11/);
   });
 
   test('logs export omits the Prediction History section when no predictions are returned', async ({ page }) => {

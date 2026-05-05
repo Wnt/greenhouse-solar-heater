@@ -131,6 +131,14 @@ const SCHEMA_SQL = [
   "  outdoor_c         DOUBLE PRECISION,\n" +
   "  radiation_w_m2    DOUBLE PRECISION,\n" +
   "  price_c_kwh       DOUBLE PRECISION,\n" +
+  // Algorithm version — sha256[:8] of forecast/* + extra sources.
+  // Lets an operator tell which code version produced a given row.
+  "  algorithm_version TEXT,\n" +
+  // Live tuning overrides (sparse map of geT/gxT/gmD/…) at capture
+  // time. Shared with the watchdog snapshot's tu shape; an operator
+  // changing thresholds mid-day can correlate predictions to the
+  // gates that drove them without cross-referencing config_events.
+  "  tu                JSONB,\n" +
   "  PRIMARY KEY (for_hour)\n" +
   ")",
 

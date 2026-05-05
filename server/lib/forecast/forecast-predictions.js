@@ -27,6 +27,7 @@
 
 const SECONDS_PER_HOUR = 3600;
 const RECENT_DEFAULT_LIMIT = 48;
+const { ALGORITHM_VERSION } = require('./version');
 
 function create(opts) {
   const pool          = opts.pool;
@@ -35,6 +36,9 @@ function create(opts) {
   // Optional injection so tests can drive the scheduler with a mock clock
   // and a synchronous capture trigger.
   const scheduleNow   = typeof opts.scheduleNow === 'function' ? opts.scheduleNow : null;
+  // Override the version (tests pin a known value to assert persistence
+  // shape). Production reads the live module-load digest.
+  const algorithmVersion = opts.algorithmVersion || ALGORITHM_VERSION;
 
   let _timeoutHandle = null;
 
@@ -74,6 +78,11 @@ function create(opts) {
     // the export uses, same justification.
     const wx = nearestRow(response.weather, firstTs, 'validAt', 90 * 60 * 1000);
     const px = nearestRow(response.prices,  firstTs, 'validAt', 90 * 60 * 1000);
+    // Live tuning overrides at capture time. Sourced from the response
+    // (handler attaches it) so the row reflects the same `tu` snapshot
+    // the engine just used. Falls back to null when the handler hasn't
+    // been wired to attach it (older tests, etc.).
+    const tu = response.tu && typeof response.tu === 'object' ? response.tu : null;
     return {
       forHour:        firstTs,
       generatedAt:    response.generatedAt || new Date().toISOString(),
@@ -85,6 +94,8 @@ function create(opts) {
       outdoorC:       wx && typeof wx.temperature     === 'number' ? wx.temperature     : null,
       radiationWm2:   wx && typeof wx.radiationGlobal === 'number' ? wx.radiationGlobal : null,
       priceCKwh:      px && typeof px.priceCKwh       === 'number' ? px.priceCKwh       : null,
+      algorithmVersion,
+      tu,
     };
   }
 
@@ -92,8 +103,9 @@ function create(opts) {
     const sql =
       'INSERT INTO forecast_predictions ' +
       '(for_hour, generated_at, mode, has_solar_overlay, duty, ' +
-      ' tank_avg_c, greenhouse_c, outdoor_c, radiation_w_m2, price_c_kwh) ' +
-      'VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ' +
+      ' tank_avg_c, greenhouse_c, outdoor_c, radiation_w_m2, price_c_kwh, ' +
+      ' algorithm_version, tu) ' +
+      'VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) ' +
       'ON CONFLICT (for_hour) DO UPDATE SET ' +
       '  generated_at = EXCLUDED.generated_at, ' +
       '  mode = EXCLUDED.mode, ' +
@@ -103,10 +115,13 @@ function create(opts) {
       '  greenhouse_c = EXCLUDED.greenhouse_c, ' +
       '  outdoor_c = EXCLUDED.outdoor_c, ' +
       '  radiation_w_m2 = EXCLUDED.radiation_w_m2, ' +
-      '  price_c_kwh = EXCLUDED.price_c_kwh';
+      '  price_c_kwh = EXCLUDED.price_c_kwh, ' +
+      '  algorithm_version = EXCLUDED.algorithm_version, ' +
+      '  tu = EXCLUDED.tu';
     pool.query(sql, [
       row.forHour, row.generatedAt, row.mode, row.hasSolarOverlay, row.duty,
       row.tankAvgC, row.greenhouseC, row.outdoorC, row.radiationWm2, row.priceCKwh,
+      row.algorithmVersion, row.tu ? JSON.stringify(row.tu) : null,
     ], callback);
   }
 
@@ -130,7 +145,8 @@ function create(opts) {
     const n = Math.max(1, Math.min(parseInt(limit, 10) || RECENT_DEFAULT_LIMIT, 500));
     const sql =
       'SELECT for_hour, generated_at, mode, has_solar_overlay, duty, ' +
-      '  tank_avg_c, greenhouse_c, outdoor_c, radiation_w_m2, price_c_kwh ' +
+      '  tank_avg_c, greenhouse_c, outdoor_c, radiation_w_m2, price_c_kwh, ' +
+      '  algorithm_version, tu ' +
       'FROM forecast_predictions ORDER BY for_hour DESC LIMIT $1';
     pool.query(sql, [n], function (err, result) {
       if (err) return callback(err);
@@ -146,6 +162,10 @@ function create(opts) {
           outdoorC:        r.outdoor_c,
           radiationWm2:    r.radiation_w_m2,
           priceCKwh:       r.price_c_kwh,
+          algorithmVersion: r.algorithm_version,
+          // node-postgres returns JSONB as a parsed object directly; pg-mem
+          // sometimes returns the raw string, hence the defensive parse.
+          tu: typeof r.tu === 'string' ? safeParseJson(r.tu) : (r.tu || null),
         };
       });
       callback(null, rows);
@@ -221,5 +241,9 @@ function nearestRow(rows, targetIso, key, maxDeltaMs) {
 }
 
 function round2(v) { return typeof v === 'number' ? Math.round(v * 100) / 100 : v; }
+
+function safeParseJson(s) {
+  try { return JSON.parse(s); } catch (_e) { return null; }
+}
 
 module.exports = { create, _SECONDS_PER_HOUR: SECONDS_PER_HOUR };

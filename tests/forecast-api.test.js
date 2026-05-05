@@ -2,7 +2,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { createForecastHandler } = require('../server/lib/forecast-handler.js');
+const { createForecastHandler } = require('../server/lib/forecast/forecast-handler.js');
 
 // ── Stubs ──
 

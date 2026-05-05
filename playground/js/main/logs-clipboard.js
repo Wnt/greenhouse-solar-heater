@@ -565,7 +565,7 @@ function appendForecast(lines) {
   }
 
   lines.push('');
-  appendPredictionHistory(lines, forecastData.predictions);
+  appendPredictionHistory(lines, forecastData.predictions, forecastData.algorithmVersion);
 }
 
 // Down-sample timeSeriesStore to a given interval (in seconds). Mode is

@@ -2,7 +2,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const forecastPredictions = require('../server/lib/forecast-predictions.js');
+const forecastPredictions = require('../server/lib/forecast/forecast-predictions.js');
 
 function makeLog() {
   return { info: () => {}, warn: () => {}, error: () => {} };
@@ -116,6 +116,24 @@ describe('forecast-predictions._buildRow', () => {
     assert.equal(row.priceCKwh, null);
   });
 
+  it('stamps the algorithm_version provided to create()', () => {
+    const pinned = forecastPredictions.create({
+      pool: null, log: makeLog(), algorithmVersion: 'cafef00d',
+    });
+    const row = pinned._buildRow(makeForecastResponse());
+    assert.equal(row.algorithmVersion, 'cafef00d');
+  });
+
+  it('captures the live tu (sparse threshold overrides) from the response', () => {
+    const tu = { geT: 13, gxT: 14, ehE: 11 };
+    const row = svc._buildRow(makeForecastResponse({ generatedAt: '2026-05-05T07:30:00.000Z' }));
+    // Default fixture has no tu — should be null.
+    assert.equal(row.tu, null);
+    // With tu attached on the response, the row carries it through.
+    const withTu = svc._buildRow(Object.assign(makeForecastResponse(), { tu }));
+    assert.deepStrictEqual(withTu.tu, tu);
+  });
+
   it('joins weather rows that are hour-aligned even when modeForecast.ts has a sub-hour offset', () => {
     // Real-world: modeForecast.ts = now + h*3600 (carries minute offset),
     // weather.validAt = top of the hour. The capture must still join.
@@ -138,19 +156,28 @@ describe('forecast-predictions._buildRow', () => {
 });
 
 describe('forecast-predictions.captureFromForecast', () => {
-  it('inserts a row using INSERT … ON CONFLICT DO UPDATE', (t, done) => {
+  it('inserts a row using INSERT … ON CONFLICT DO UPDATE, including algorithm_version and tu', (t, done) => {
     let captured = null;
     const pool = makePool((sql, params, cb) => {
       captured = { sql, params };
       cb(null, { rowCount: 1 });
     });
-    const svc = forecastPredictions.create({ pool, log: makeLog() });
-    svc.captureFromForecast(makeForecastResponse(), function (err, row) {
+    const svc = forecastPredictions.create({
+      pool, log: makeLog(), algorithmVersion: 'cafef00d',
+    });
+    const tu = { geT: 13, gxT: 14 };
+    const response = Object.assign(makeForecastResponse(), { tu });
+    svc.captureFromForecast(response, function (err, row) {
       assert.ifError(err);
       assert.ok(captured.sql.includes('INSERT INTO forecast_predictions'));
       assert.ok(captured.sql.includes('ON CONFLICT (for_hour) DO UPDATE'));
+      assert.ok(captured.sql.includes('algorithm_version'));
+      assert.ok(captured.sql.includes('tu'));
       assert.equal(captured.params[0], HOUR0);   // for_hour
       assert.equal(captured.params[2], 'greenhouse_heating'); // mode
+      assert.equal(captured.params[10], 'cafef00d');          // algorithm_version
+      // tu is JSON.stringified for the JSONB column.
+      assert.deepStrictEqual(JSON.parse(captured.params[11]), tu);
       assert.equal(row.forHour, HOUR0);
       done();
     });

@@ -11,7 +11,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { load: loadYaml } = require('../../scripts/lib/yaml-load');
+const { load: loadYaml } = require('../../../scripts/lib/yaml-load');
 const { create: createForecastRefresher } = require('./forecast-refresher');
 const { createForecastHandler } = require('./forecast-handler');
 const { create: createForecastPredictions } = require('./forecast-predictions');
