@@ -36,6 +36,10 @@ const DEFAULT_CONFIG = {
   // defaults match shelly/control-logic.js when no user tuning is set.
   greenhouseEnterC:         10,   // controller enters heating when gh < this
   greenhouseExitC:          12,   // controller exits heating when gh > this
+  // Tank-side gates: enter requires tank_top > gh + gmD, stay requires
+  // tank_top >= gh + gxD (mirrors control-logic.js; tu.gmD / tu.gxD).
+  greenhouseMinTankDeltaC:  5,
+  greenhouseExitTankDeltaC: 2,
   // Emergency heating (space heater) thresholds — gh < emergencyEnterC turns
   // the space heater on; gh > emergencyExitC turns it off. The real device
   // is driven by tu.ehE / tu.ehX; defaults here mirror control-logic.js
@@ -224,16 +228,13 @@ function computeSustainForecast(opts) {
     const priceCKwh = typeof px.priceCKwh === 'number' ? px.priceCKwh : 10;
 
     // ── 1. Decide simulation mode for this hour ──
-    // Mirror the real device's hysteresis exactly:
-    //   greenhouse_heating  enters when gh < geT, exits when gh > gxT
-    //   emergency_heating   enters when gh < ehE, exits when gh > ehX
-    // Critically, the device triggers emergency_heating on the GREENHOUSE
-    // temperature (gh < ehE), NOT on tank state. Tank getting cold doesn't
-    // immediately turn the space heater on — the greenhouse first has to
-    // cool because the radiator stops being able to deliver useful heat.
-    // The radiator-effectiveness model below makes the greenhouse cool
-    // realistically when the tank gets too close to greenhouse temp, so
-    // this hits the right hour for backup.
+    // Mirror control-logic.js hysteresis: greenhouse_heating needs both
+    // gh < geT AND tank_top > gh + gmD; emergency triggers on gh < ehE
+    // alone. The tank gates suppress "heating" projection when the tank
+    // can't drive the radiator, so gh cools naturally and emergency
+    // fires at the right hour instead of behind painted heating bars.
+    const tankCanEnter   = tankTopC >  curGhTemp + cfg.greenhouseMinTankDeltaC;
+    const tankCanSustain = tankTopC >= curGhTemp + cfg.greenhouseExitTankDeltaC;
     if (curGhTemp < cfg.emergencyEnterC) {
       if (simMode !== 'emergency_heating' && hoursUntilBackupNeeded === null) {
         hoursUntilBackupNeeded = h;
@@ -241,10 +242,12 @@ function computeSustainForecast(opts) {
       simMode = 'emergency_heating';
     } else if (simMode === 'emergency_heating' && curGhTemp > cfg.emergencyExitC) {
       // Backup exits when gh > ehX (matches the device's exit hysteresis).
-      simMode = curGhTemp < cfg.greenhouseEnterC ? 'greenhouse_heating' : 'idle';
-    } else if (curGhTemp < cfg.greenhouseEnterC && simMode === 'idle') {
+      simMode = (curGhTemp < cfg.greenhouseEnterC && tankCanEnter)
+        ? 'greenhouse_heating' : 'idle';
+    } else if (curGhTemp < cfg.greenhouseEnterC && simMode === 'idle' && tankCanEnter) {
       simMode = 'greenhouse_heating';
-    } else if (curGhTemp > cfg.greenhouseExitC && simMode === 'greenhouse_heating') {
+    } else if (simMode === 'greenhouse_heating' &&
+               (curGhTemp > cfg.greenhouseExitC || !tankCanSustain)) {
       simMode = 'idle';
     }
 
@@ -272,9 +275,6 @@ function computeSustainForecast(opts) {
 
     if (simMode === 'greenhouse_heating') {
       modeForecast.push({ ts: hourDate, mode: simMode });
-    }
-
-    if (simMode === 'greenhouse_heating') {
       const radDeliveredW = Math.min(radPeakW, radUaWPerK * radDeltaT);
       tankDeltaJ -= radDeliveredW * SECONDS_PER_HOUR;
       // Greenhouse evolution: when the radiator's delivered W matches the
