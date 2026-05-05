@@ -337,6 +337,7 @@ test.describe('Copy System Logs — live mode', () => {
       we: { sng: 1, scs: 1, ggr: 1 },
       wz: {},
       wb: { GH: banUntil },
+      tu: { geT: 13, gxT: 14, ehE: 11, ehX: 13 },
       v: 42,
     });
 
@@ -360,6 +361,29 @@ test.describe('Copy System Logs — live mode', () => {
     // Current sensor readings — answers "what does the controller see right
     // now?" without forcing the reader to skim the 24 h history table.
     expect(text).toContain('Current sensors:    collector=25.0°C tank=40.0°C/35.0°C greenhouse=18.0°C outdoor=10.0°C');
+    // Tunings line — compact list of user-tuned thresholds (sparse: only
+    // values the operator has overridden, in canonical order).
+    expect(text).toContain('Tunings:            geT=13 gxT=14 ehE=11 ehX=13');
+  });
+
+  test('Tunings line shows "(defaults)" when no thresholds are tuned', async ({ page }) => {
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, []);
+    await mockWatchdogStateApi(page, {
+      ce: true, ea: 31, mo: null,
+      we: {}, wz: {}, wb: {}, tu: {}, v: 1,
+    });
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+    // Empty tu → operator hasn't overridden anything → firmware defaults
+    // are in effect. Rendered explicitly so the line never silently
+    // disappears (a missing line reads as "feature broken, not deployed").
+    expect(text).toContain('Tunings:            (firmware defaults)');
   });
 
   test('clipboard export renders config events (ea / wb) with friendly labels', async ({ page }) => {
@@ -524,6 +548,117 @@ test.describe('Copy System Logs — live mode', () => {
     expect(hour1Lines.some(l => l.includes('12.3') && l.includes('650') && l.includes('8.21') && l.includes('62.5') && l.includes('18.2'))).toBe(true);
     const hour2Lines = lines.filter(l => /\bgreenhouse_heating\b/.test(l));
     expect(hour2Lines.some(l => l.includes('0.45') && l.includes('11.8') && l.includes('61.5') && l.includes('17.8'))).toBe(true);
+  });
+
+  test('forecast hourly projection collapses overlay rows into a single line per hour', async ({ page }) => {
+    // The engine emits a separate modeForecast entry when solar_charging
+    // overlays a pump mode (greenhouse_heating, emergency_heating). Pre-
+    // reshape the export rendered two rows with the same timestamp:
+    //
+    //   2026-05-05 10:21:08  …  greenhouse_heating
+    //   2026-05-05 10:21:08  …  solar_charging
+    //
+    // which forced the reader to mentally pair adjacent rows by timestamp.
+    // After reshape the export emits one row per hour with the pump mode
+    // in the Mode column and "+SC" in a dedicated Solar column when the
+    // overlay applies.
+    const generatedAt = '2026-05-05T07:00:00.000Z';
+    const hour0 = '2026-05-05T08:00:00.000Z';   // greenhouse_heating + solar overlay
+    const hour1 = '2026-05-05T09:00:00.000Z';   // emergency_heating  + solar overlay
+    const hour2 = '2026-05-05T10:00:00.000Z';   // solar_charging only (no pump mode)
+    const hour3 = '2026-05-05T11:00:00.000Z';   // greenhouse_heating only (no overlay)
+
+    const forecastPayload = {
+      generatedAt,
+      weather: [
+        { validAt: hour0, temperature: 5, radiationGlobal: 200, windSpeed: 1, precipitation: 0 },
+        { validAt: hour1, temperature: 6, radiationGlobal: 300, windSpeed: 1, precipitation: 0 },
+        { validAt: hour2, temperature: 7, radiationGlobal: 500, windSpeed: 1, precipitation: 0 },
+        { validAt: hour3, temperature: 8, radiationGlobal: 100, windSpeed: 1, precipitation: 0 },
+      ],
+      prices: [
+        { validAt: hour0, priceCKwh: 10, source: 'sahkotin' },
+        { validAt: hour1, priceCKwh: 11, source: 'sahkotin' },
+        { validAt: hour2, priceCKwh: 12, source: 'sahkotin' },
+        { validAt: hour3, priceCKwh: 13, source: 'sahkotin' },
+      ],
+      forecast: {
+        generatedAt, horizonHours: 48,
+        hoursUntilBackupNeeded: 1, electricKwh: 1.5, electricCostEur: 0.30,
+        modelConfidence: 'medium',
+        modeForecast: [
+          { ts: hour0, mode: 'greenhouse_heating' },
+          { ts: hour0, mode: 'solar_charging' },
+          { ts: hour1, mode: 'emergency_heating', duty: 0.55 },
+          { ts: hour1, mode: 'solar_charging' },
+          { ts: hour2, mode: 'solar_charging' },
+          { ts: hour3, mode: 'greenhouse_heating' },
+        ],
+        tankTrajectory: [
+          { ts: hour0, top: 30, bottom: 28, avg: 29 },
+          { ts: hour1, top: 28, bottom: 26, avg: 27 },
+          { ts: hour2, top: 32, bottom: 29, avg: 30.5 },
+          { ts: hour3, top: 31, bottom: 28, avg: 29.5 },
+        ],
+        greenhouseTrajectory: [
+          { ts: hour0, temp: 12 }, { ts: hour1, temp: 11 },
+          { ts: hour2, temp: 13 }, { ts: hour3, temp: 12 },
+        ],
+      },
+    };
+
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, []);
+    await mockForecastApi(page, forecastPayload);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#forecast-val-eur')).toHaveText('€0.30', { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+    const lines = text.split('\n');
+
+    // Header should have a dedicated Solar column.
+    const headerIdx = lines.findIndex(l => l.includes('Hourly projection:'));
+    expect(headerIdx).toBeGreaterThan(-1);
+    expect(lines[headerIdx + 1]).toMatch(/Mode\s+Solar\s+Duty/);
+
+    // Find rows by tank-avg (unique per hour) so timestamp formatting
+    // doesn't matter.
+    const ghHeatRow      = lines.find(l => l.includes('greenhouse_heating') && l.includes('29.0'));
+    const emergencyRow   = lines.find(l => l.includes('emergency_heating')  && l.includes('27.0'));
+    const solarOnlyRow   = lines.find(l => l.includes('solar_charging')     && l.includes('30.5'));
+    const ghHeatNoOvl    = lines.find(l => l.includes('greenhouse_heating') && l.includes('29.5'));
+
+    expect(ghHeatRow).toBeTruthy();
+    expect(emergencyRow).toBeTruthy();
+    expect(solarOnlyRow).toBeTruthy();
+    expect(ghHeatNoOvl).toBeTruthy();
+
+    // Hours with overlay carry "+SC"; the solar-only hour and the
+    // heating-without-overlay hour do NOT (the overlay marker exists to
+    // distinguish concurrent solar charging from the primary mode).
+    expect(ghHeatRow).toMatch(/\+SC/);
+    expect(emergencyRow).toMatch(/\+SC/);
+    expect(solarOnlyRow).not.toMatch(/\+SC/);
+    expect(ghHeatNoOvl).not.toMatch(/\+SC/);
+
+    // Emergency row keeps its duty fraction in the Duty column.
+    expect(emergencyRow).toMatch(/0\.55/);
+
+    // Critically: no two projection rows share the same wall-clock
+    // timestamp (the duplicate-timestamp pattern is what the reshape
+    // exists to remove).
+    const projStart = headerIdx + 2;
+    const projLines = [];
+    for (let i = projStart; i < lines.length && lines[i] !== ''; i++) projLines.push(lines[i]);
+    const tsCol = projLines
+      .map(l => (l.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/) || [])[1])
+      .filter(Boolean);
+    const dupes = tsCol.filter((t, i) => tsCol.indexOf(t) !== i);
+    expect(dupes).toEqual([]);
   });
 
   test('forecast hourly projection joins weather/price even when modeForecast ts is offset from hour boundary', async ({ page }) => {
