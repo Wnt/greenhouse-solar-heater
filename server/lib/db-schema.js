@@ -143,6 +143,18 @@ const SCHEMA_SQL = [
   ")",
 
   "CREATE INDEX IF NOT EXISTS forecast_predictions_for_hour ON forecast_predictions (for_hour DESC)",
+
+  // One-time data migration for the for_hour off-by-one (PR #158). Pre-fix
+  // captures set for_hour = generation time; post-fix sets it to the
+  // predicted state's wall clock (= generation + 1 h). This UPDATE shifts
+  // pre-fix rows forward by an hour so they line up with the new
+  // semantics. Idempotent: once a row has been shifted its for_hour is
+  // ~1 h ahead of generated_at and the WHERE clause no longer matches it,
+  // so re-running on every server start is a no-op after the first time.
+  // Safe to leave in SCHEMA_SQL permanently; can be removed in a future
+  // pass once we're confident no pre-fix rows linger anywhere.
+  "UPDATE forecast_predictions SET for_hour = for_hour + INTERVAL '1 hour' " +
+  "WHERE for_hour < generated_at + INTERVAL '30 minutes'",
 ];
 
 // Pre-aggregated 30-second buckets, used by getHistory for ranges ≥ 24 h.
