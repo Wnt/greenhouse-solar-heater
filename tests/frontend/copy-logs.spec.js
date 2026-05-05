@@ -357,6 +357,9 @@ test.describe('Copy System Logs — live mode', () => {
     expect(text).toContain('Watchdogs snoozed:  none');
     expect(text).toMatch(/Mode bans \(wb\): {5}GH=[34]h\d{2}m/);
     expect(text).toContain('Config version:     42');
+    // Current sensor readings — answers "what does the controller see right
+    // now?" without forcing the reader to skim the 24 h history table.
+    expect(text).toContain('Current sensors:    collector=25.0°C tank=40.0°C/35.0°C greenhouse=18.0°C outdoor=10.0°C');
   });
 
   test('clipboard export renders config events (ea / wb) with friendly labels', async ({ page }) => {
@@ -521,6 +524,84 @@ test.describe('Copy System Logs — live mode', () => {
     expect(hour1Lines.some(l => l.includes('12.3') && l.includes('650') && l.includes('8.21') && l.includes('62.5') && l.includes('18.2'))).toBe(true);
     const hour2Lines = lines.filter(l => /\bgreenhouse_heating\b/.test(l));
     expect(hour2Lines.some(l => l.includes('0.45') && l.includes('11.8') && l.includes('61.5') && l.includes('17.8'))).toBe(true);
+  });
+
+  test('forecast hourly projection joins weather/price even when modeForecast ts is offset from hour boundary', async ({ page }) => {
+    // Real-world data: weather DB rows are aligned to the hour
+    // (12:00:00.000Z) while modeForecast timestamps come from
+    // `now + h*3600s` — the request-time minute offset survives the loop
+    // (12:21:08.459Z, 13:21:08.459Z, …). With strict ISO-equality joins
+    // every weather/price/trajectory column came out as "—" in the
+    // export and the projection was unusable for debugging. Match by
+    // nearest timestamp instead.
+    const generatedAt = '2026-05-05T08:21:08.459Z';
+    const modeTs0 = '2026-05-05T09:21:08.459Z';   // sub-hour offset
+    const modeTs1 = '2026-05-05T10:21:08.459Z';
+    const wxTs0   = '2026-05-05T09:00:00.000Z';   // hour-aligned
+    const wxTs1   = '2026-05-05T10:00:00.000Z';
+
+    const forecastPayload = {
+      generatedAt,
+      weather: [
+        { validAt: wxTs0, temperature: 7.4, radiationGlobal: 410, windSpeed: 2.1, precipitation: 0 },
+        { validAt: wxTs1, temperature: 8.2, radiationGlobal: 530, windSpeed: 2.8, precipitation: 0 },
+      ],
+      prices: [
+        { validAt: wxTs0, priceCKwh: 11.50, source: 'sahkotin' },
+        { validAt: wxTs1, priceCKwh: 12.75, source: 'sahkotin' },
+      ],
+      forecast: {
+        generatedAt,
+        horizonHours: 48,
+        hoursUntilBackupNeeded: 0,
+        electricKwh: 19.7,
+        electricCostEur: 2.52,
+        modelConfidence: 'high',
+        modeForecast: [
+          { ts: modeTs0, mode: 'greenhouse_heating' },
+          { ts: modeTs1, mode: 'emergency_heating', duty: 0.38 },
+        ],
+        tankTrajectory: [
+          { ts: modeTs0, top: 14.3, bottom: 11.8, avg: 13.05 },
+          { ts: modeTs1, top: 14.0, bottom: 11.5, avg: 12.75 },
+        ],
+        greenhouseTrajectory: [
+          { ts: modeTs0, temp: 12.4 },
+          { ts: modeTs1, temp: 11.7 },
+        ],
+      },
+    };
+
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, []);
+    await mockForecastApi(page, forecastPayload);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#forecast-val-eur')).toHaveText('€2.52', { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+    const lines = text.split('\n');
+
+    // Hour 1: greenhouse_heating row should carry weather (7.4°C, 410 W/m²),
+    // price (11.50 c), tank avg (13.0/13.1) and gh (12.4) — no "—" placeholders
+    // for the joined fields.
+    const hour1 = lines.find(l => l.includes('greenhouse_heating'));
+    expect(hour1).toBeTruthy();
+    expect(hour1).toMatch(/7\.4°C/);
+    expect(hour1).toMatch(/\b410\b/);
+    expect(hour1).toMatch(/11\.50c/);
+    expect(hour1).toMatch(/12\.4/);
+
+    // Hour 2: emergency_heating with duty 0.38, weather 8.2°C, price 12.75 c.
+    const hour2 = lines.find(l => l.includes('emergency_heating'));
+    expect(hour2).toBeTruthy();
+    expect(hour2).toMatch(/8\.2°C/);
+    expect(hour2).toMatch(/12\.75c/);
+    expect(hour2).toMatch(/0\.38/);
+    expect(hour2).toMatch(/11\.7/);
   });
 
   test('forecast section renders graceful fallback when forecast unavailable', async ({ page }) => {
