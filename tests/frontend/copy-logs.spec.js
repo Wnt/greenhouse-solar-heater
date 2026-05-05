@@ -230,6 +230,14 @@ async function mockHistoryApi(page, points, events) {
   }));
 }
 
+async function mockForecastApi(page, payload) {
+  await page.route('**/api/forecast', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(payload),
+  }));
+}
+
 async function mockWatchdogStateApi(page, snapshot) {
   await page.route('**/api/watchdog/state', route => route.fulfill({
     status: 200,
@@ -426,6 +434,109 @@ test.describe('Copy System Logs — live mode', () => {
     expect(text).toContain('Watchdogs enabled:  ggr');
     expect(text).toMatch(/Watchdogs snoozed: {2}ggr=\d+m/);
     expect(text).toContain('Mode bans (wb):     SC=disabled');
+  });
+
+  test('forecast section is included in live mode export', async ({ page }) => {
+    // The forecast section captures what the algorithm "thought" the next
+    // 48 h looked like at copy time, so an exported log can be replayed
+    // offline against algorithm changes.
+    const generatedAt = '2026-05-05T10:00:00.000Z';
+    const hour0 = '2026-05-05T11:00:00.000Z';
+    const hour1 = '2026-05-05T12:00:00.000Z';
+
+    const forecastPayload = {
+      generatedAt,
+      weather: [
+        { validAt: hour0, temperature: 12.3, radiationGlobal: 650, windSpeed: 3.5, precipitation: 0 },
+        { validAt: hour1, temperature: 11.8, radiationGlobal: 620, windSpeed: 4.0, precipitation: 0.2 },
+      ],
+      prices: [
+        { validAt: hour0, priceCKwh: 8.21, source: 'sahkotin' },
+        { validAt: hour1, priceCKwh: 9.45, source: 'sahkotin' },
+      ],
+      forecast: {
+        generatedAt,
+        horizonHours: 48,
+        hoursUntilBackupNeeded: 12.5,
+        hoursUntilFloor: 24.0,
+        electricKwh: 4.2,
+        electricCostEur: 0.83,
+        solarChargingHours: 8,
+        greenhouseHeatingHours: 14,
+        modelConfidence: 'medium',
+        notes: ['Greenhouse stays above 10 °C through tomorrow morning.', 'Tank coasts ~12 h before backup engages.'],
+        solarGainByDay: [
+          { date: '2026-05-05', kWh: 12.3 },
+          { date: '2026-05-06', kWh: 14.5 },
+        ],
+        modeForecast: [
+          { ts: hour0, mode: 'solar_charging' },
+          { ts: hour1, mode: 'greenhouse_heating', duty: 0.45 },
+        ],
+        tankTrajectory: [
+          { ts: hour0, top: 65.0, bottom: 60.0, avg: 62.5 },
+          { ts: hour1, top: 64.0, bottom: 59.0, avg: 61.5 },
+        ],
+        greenhouseTrajectory: [
+          { ts: hour0, temp: 18.2 },
+          { ts: hour1, temp: 17.8 },
+        ],
+      },
+    };
+
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, []);
+    await mockForecastApi(page, forecastPayload);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    // Wait for forecast card to populate so forecastData is in shared state.
+    await expect(page.locator('#forecast-val-eur')).toHaveText('€0.83', { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+
+    expect(text).toContain('--- Forecast (Next 48 h) ---');
+    expect(text).toContain('Generated:          ' + generatedAt);
+    expect(text).toContain('Model confidence:   medium');
+    expect(text).toContain('Tank lasts:         ~12.5 h');
+    expect(text).toContain('Hours until floor:  24.0 h');
+    expect(text).toContain('Backup heat:        4.20 kWh');
+    expect(text).toContain('Backup cost:        €0.83');
+    expect(text).toContain('Solar charging:     8 h');
+    expect(text).toContain('Greenhouse heating: 14 h');
+    expect(text).toContain('Solar gain by day:');
+    expect(text).toContain('  2026-05-05: 12.3 kWh');
+    expect(text).toContain('  2026-05-06: 14.5 kWh');
+    expect(text).toContain('Notes:');
+    expect(text).toContain('  - Greenhouse stays above 10 °C through tomorrow morning.');
+    expect(text).toContain('Hourly projection:');
+    // The hourly row should join weather + price + mode + trajectory on
+    // the same timestamp. We don't pin the wall-clock format (TZ-dependent)
+    // but every projection field must show up on the same line.
+    const lines = text.split('\n');
+    const hour1Lines = lines.filter(l => /\bsolar_charging\b/.test(l));
+    expect(hour1Lines.length).toBeGreaterThan(0);
+    expect(hour1Lines.some(l => l.includes('12.3') && l.includes('650') && l.includes('8.21') && l.includes('62.5') && l.includes('18.2'))).toBe(true);
+    const hour2Lines = lines.filter(l => /\bgreenhouse_heating\b/.test(l));
+    expect(hour2Lines.some(l => l.includes('0.45') && l.includes('11.8') && l.includes('61.5') && l.includes('17.8'))).toBe(true);
+  });
+
+  test('forecast section renders graceful fallback when forecast unavailable', async ({ page }) => {
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, []);
+    // 500 → forecast.js _showError, forecastData stays null.
+    await page.route('**/api/forecast', route => route.fulfill({ status: 500, body: '' }));
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+    expect(text).toContain('--- Forecast (Next 48 h) ---');
+    expect(text).toContain('(forecast not loaded)');
   });
 
   test('fan-cool overlay flips render in transition log + controller state', async ({ page }) => {
