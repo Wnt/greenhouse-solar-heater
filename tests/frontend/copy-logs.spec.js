@@ -739,6 +739,98 @@ test.describe('Copy System Logs — live mode', () => {
     expect(hour2).toMatch(/11\.7/);
   });
 
+  test('logs export includes a Prediction History section when /api/forecast returns predictions', async ({ page }) => {
+    // The server captures the next-hour prediction once per hour
+    // (HH:30 scheduler) so an operator can compare what the engine
+    // projected against what actually happened. /api/forecast carries
+    // the recent rows on the response under .predictions; the export
+    // surfaces them as a dedicated section so a copy-pasted log carries
+    // the tuning data without a separate fetch.
+    const generatedAt = '2026-05-05T08:00:00.000Z';
+    const forecastPayload = {
+      generatedAt,
+      weather: [],
+      prices: [],
+      forecast: {
+        generatedAt, horizonHours: 48,
+        modelConfidence: 'medium', electricKwh: 0, electricCostEur: 0.0,
+        modeForecast: [], tankTrajectory: [], greenhouseTrajectory: [],
+      },
+      predictions: [
+        {
+          forHour: '2026-05-05T07:00:00.000Z', generatedAt: '2026-05-05T06:30:00.000Z',
+          mode: 'greenhouse_heating', hasSolarOverlay: false, duty: null,
+          tankAvgC: 14.2, greenhouseC: 12.0, outdoorC: 6.5, radiationWm2: 410, priceCKwh: 11.5,
+        },
+        {
+          forHour: '2026-05-05T08:00:00.000Z', generatedAt: '2026-05-05T07:30:00.000Z',
+          mode: 'emergency_heating', hasSolarOverlay: true, duty: 0.42,
+          tankAvgC: 13.8, greenhouseC: 11.6, outdoorC: 6.0, radiationWm2: 380, priceCKwh: 12.0,
+        },
+      ],
+    };
+
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, []);
+    await mockForecastApi(page, forecastPayload);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#forecast-val-eur')).toHaveText('€0.00', { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+
+    expect(text).toContain('--- Prediction History ---');
+    expect(text).toMatch(/For hour\s+Predicted at\s+Mode\s+Solar\s+Duty\s+Tank-avg\s+GH\s+Outdoor\s+Rad\s+Price/);
+
+    const lines = text.split('\n');
+    // Each prediction renders as one row carrying every field. We don't pin
+    // wall-clock formatting (TZ-dependent) but every value must show up.
+    const ghRow = lines.find(l => l.includes('greenhouse_heating') && l.includes('14.2'));
+    expect(ghRow).toBeTruthy();
+    expect(ghRow).toMatch(/12\.0/);
+    expect(ghRow).toMatch(/\b6\.5\b/);
+    expect(ghRow).toMatch(/\b410\b/);
+    expect(ghRow).toMatch(/11\.50/);
+    expect(ghRow).not.toMatch(/\+SC/);
+
+    const emRow = lines.find(l => l.includes('emergency_heating') && l.includes('13.8'));
+    expect(emRow).toBeTruthy();
+    expect(emRow).toMatch(/\+SC/);   // overlay flag rendered
+    expect(emRow).toMatch(/0\.42/);  // duty
+  });
+
+  test('logs export omits the Prediction History section when no predictions are returned', async ({ page }) => {
+    const generatedAt = '2026-05-05T08:00:00.000Z';
+    const forecastPayload = {
+      generatedAt,
+      weather: [], prices: [],
+      forecast: {
+        generatedAt, horizonHours: 48, modelConfidence: 'medium',
+        electricKwh: 0, electricCostEur: 0,
+        modeForecast: [], tankTrajectory: [], greenhouseTrajectory: [],
+      },
+      // predictions field deliberately absent (server skipped — preview mode,
+      // schema not yet migrated, etc.)
+    };
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, []);
+    await mockForecastApi(page, forecastPayload);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#forecast-val-eur')).toHaveText('€0.00', { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+    // No empty section header; the section should disappear entirely so a
+    // reader doesn't see "(no predictions)" noise on every export.
+    expect(text).not.toContain('--- Prediction History ---');
+  });
+
   test('forecast section renders graceful fallback when forecast unavailable', async ({ page }) => {
     await installMockWs(page);
     await mockHistoryApi(page);

@@ -11,6 +11,7 @@ import {
 import { model, params, MODE_INFO, timeSeriesStore, transitionLog, lastLiveFrame, forecastData } from './state.js';
 import { getWatchdogSnapshot } from './watchdog-ui.js';
 import { modeAt } from './mode-events.js';
+import { appendPredictionHistory } from './logs-predictions.js';
 
 export function setupCopyLogsButton() {
   const btn = document.getElementById('copy-logs-btn');
@@ -564,6 +565,7 @@ function appendForecast(lines) {
   }
 
   lines.push('');
+  appendPredictionHistory(lines, forecastData.predictions);
 }
 
 // Down-sample timeSeriesStore to a given interval (in seconds). Mode is

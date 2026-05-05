@@ -110,6 +110,31 @@ const SCHEMA_SQL = [
   "SELECT create_hypertable('spot_prices', 'valid_at', if_not_exists => true)",
 
   "CREATE INDEX IF NOT EXISTS spot_prices_valid_at ON spot_prices (valid_at DESC)",
+
+  // Captured forecast predictions — one row per "next hour" prediction,
+  // emitted by the HH:30 scheduler in forecast-predictions.js. Stored so
+  // an operator (or future tuning script) can compare what the forecast
+  // engine predicted N hours ago against what actually happened — the
+  // sensor_readings_30s aggregate retains the ground-truth side.
+  // PK on for_hour: each hour gets exactly one prediction (the most
+  // recent capture wins via ON CONFLICT DO UPDATE). No retention policy
+  // — at one row per hour the table grows ~9 k rows/year, which is
+  // negligible, and longer history = better tuning data.
+  "CREATE TABLE IF NOT EXISTS forecast_predictions (\n" +
+  "  for_hour          TIMESTAMPTZ NOT NULL,\n" +
+  "  generated_at      TIMESTAMPTZ NOT NULL,\n" +
+  "  mode              TEXT        NOT NULL,\n" +
+  "  has_solar_overlay BOOLEAN     NOT NULL DEFAULT FALSE,\n" +
+  "  duty              DOUBLE PRECISION,\n" +
+  "  tank_avg_c        DOUBLE PRECISION,\n" +
+  "  greenhouse_c      DOUBLE PRECISION,\n" +
+  "  outdoor_c         DOUBLE PRECISION,\n" +
+  "  radiation_w_m2    DOUBLE PRECISION,\n" +
+  "  price_c_kwh       DOUBLE PRECISION,\n" +
+  "  PRIMARY KEY (for_hour)\n" +
+  ")",
+
+  "CREATE INDEX IF NOT EXISTS forecast_predictions_for_hour ON forecast_predictions (for_hour DESC)",
 ];
 
 // Pre-aggregated 30-second buckets, used by getHistory for ranges ≥ 24 h.
