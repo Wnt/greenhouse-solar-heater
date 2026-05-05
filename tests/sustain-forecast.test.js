@@ -547,6 +547,74 @@ describe('computeSustainForecast — emergency heater duty cycle', () => {
       'expected at least one emergency hour to project < 95% heater duty');
   });
 
+  // Regression: cold tank shouldn't project greenhouse_heating mode.
+  // Field report 2026-05-05: tank top 14.3 / bottom 11.8 (avg ~13), greenhouse
+  // 12.4, geT/gxT=13/14, ehE/ehX=11/13. Forecast painted 1–2 hours of yellow
+  // "heating (projected)" bars before the emergency took over. The real
+  // device requires tank_top > greenhouse + greenhouseMinTankDelta (default 5K)
+  // to enter, and tank_top >= greenhouse + greenhouseExitTankDelta (default 2K)
+  // to stay — so with that tank state the controller would never run the
+  // pump, and emergency would kick in directly when gh crossed ehE.
+  it('skips greenhouse_heating projection when tank is too cold to drive the radiator', () => {
+    const result = computeSustainForecast({
+      now:            Date.now(),
+      tankTop:        14.3, tankBottom: 11.8, greenhouseTemp: 12.4,
+      currentMode:    'idle',
+      emergencyRecentlyActive: true,
+      weather48h:     makeWeather48h({ temperature: 6, radiationGlobal: 0 }),
+      prices48h:      makePrices48h(10),
+      coefficients:   {},
+      config: {
+        spaceHeaterKw: 1, transferFeeCKwh: 5,
+        greenhouseEnterC: 13, greenhouseExitC: 14,
+        emergencyEnterC: 11, emergencyExitC: 13,
+        greenhouseMinTankDeltaC: 5, greenhouseExitTankDeltaC: 2,
+        greenhouseLossWPerK: 120,
+      },
+    });
+    const heatingEntries = (result.modeForecast || []).filter(function (e) {
+      return e.mode === 'greenhouse_heating';
+    });
+    assert.equal(heatingEntries.length, 0,
+      'expected no greenhouse_heating projection with tank avg 13°C and gh 12.4°C; got ' +
+        heatingEntries.length + ' entries: ' +
+        JSON.stringify(heatingEntries.slice(0, 3)));
+    // And emergency_heating must take over (gh will drift below ehE without
+    // the radiator running).
+    const emergencyEntries = (result.modeForecast || []).filter(function (e) {
+      return e.mode === 'emergency_heating';
+    });
+    assert.ok(emergencyEntries.length > 0,
+      'expected emergency_heating to cover the cold-tank shortfall; got 0 entries');
+  });
+
+  // Once the tank is hot enough to deliver useful radiator power the
+  // forecast must STILL project greenhouse_heating — the gating only
+  // suppresses the mode when the tank-greenhouse delta is below the
+  // device's entry threshold.
+  it('projects greenhouse_heating when tank is hot enough', () => {
+    const result = computeSustainForecast({
+      now:            Date.now(),
+      tankTop:        25, tankBottom: 22, greenhouseTemp: 12,
+      currentMode:    'idle',
+      weather48h:     makeWeather48h({ temperature: 4, radiationGlobal: 0 }),
+      prices48h:      makePrices48h(10),
+      coefficients:   {},
+      config: {
+        spaceHeaterKw: 1, transferFeeCKwh: 5,
+        greenhouseEnterC: 13, greenhouseExitC: 14,
+        emergencyEnterC: 11, emergencyExitC: 13,
+        greenhouseMinTankDeltaC: 5, greenhouseExitTankDeltaC: 2,
+        greenhouseLossWPerK: 120,
+      },
+    });
+    const heatingEntries = (result.modeForecast || []).filter(function (e) {
+      return e.mode === 'greenhouse_heating';
+    });
+    assert.ok(heatingEntries.length > 0,
+      'expected at least one greenhouse_heating projection with hot tank; got 0');
+  });
+
   it('zero heater kWh when outdoor is warmer than the target', () => {
     // Outdoor 15 > target 12 → no heat needed even though gh starts cold.
     const result = computeSustainForecast({

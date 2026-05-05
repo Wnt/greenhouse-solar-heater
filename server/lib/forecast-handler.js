@@ -292,6 +292,11 @@ function createForecastHandler(opts) {
           transferFeeCKwh: configFromYaml.transferFeeCKwh,
           greenhouseEnterC: tuning.geT,
           greenhouseExitC:  tuning.gxT,
+          // Tank-vs-greenhouse delta gates so the projection skips
+          // greenhouse_heating bars when the tank is too cold to drive
+          // the radiator (matches control-logic.js entry/exit checks).
+          greenhouseMinTankDeltaC:  tuning.gmD,
+          greenhouseExitTankDeltaC: tuning.gxD,
           emergencyEnterC:  tuning.ehE,
           emergencyExitC:   tuning.ehX,
           fitBucketCount: coeff.fitBucketCount || 0,
