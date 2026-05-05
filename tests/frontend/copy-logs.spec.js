@@ -845,6 +845,93 @@ test.describe('Copy System Logs — live mode', () => {
     expect(text).not.toContain('--- Prediction History ---');
   });
 
+  test('logs export renders a dedicated Tunable Values History section for tu config events', async ({ page }) => {
+    // tu changes already appear in the Transition Log mixed with mode +
+    // overlay + wb / ea / mo events. The dedicated section pulls them
+    // out into a clean timeline so an operator scanning for threshold
+    // tweaks doesn't have to scroll past unrelated rows.
+    const now = Date.now();
+    const rows = [
+      makeEvent(now - 30_000, 'idle', 'solar_charging'),
+      {
+        ts: now - 90_000, type: 'config', kind: 'tu', key: 'gxT',
+        from: '15', to: '14', source: 'api', actor: 'jonni',
+      },
+      {
+        ts: now - 180_000, type: 'config', kind: 'tu', key: 'geT',
+        from: null, to: '13', source: 'api', actor: 'jonni',
+      },
+      {
+        ts: now - 240_000, type: 'config', kind: 'wb', key: 'GH',
+        from: null, to: '9999999999', source: 'api', actor: 'jonni',
+      },
+    ];
+
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, rows);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(4, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+
+    expect(text).toContain('--- Tunable Values History ---');
+    const lines = text.split('\n');
+    const tunIdx = lines.findIndex(l => l.includes('--- Tunable Values History ---'));
+    const tlIdx  = lines.findIndex(l => l.includes('--- Transition Log ---'));
+    // Section sits BEFORE the Transition Log (curated timeline first).
+    expect(tunIdx).toBeGreaterThan(-1);
+    expect(tlIdx).toBeGreaterThan(tunIdx);
+
+    // Slice the section's body (between header and the next "---" divider).
+    const sectionLines = lines.slice(tunIdx + 1, tlIdx).filter(Boolean);
+
+    // Two tu changes should appear (newest first), gxT 15 → 14 and
+    // geT default → 13. wb is filtered out — it belongs to the
+    // Transition Log section.
+    const gxtRow = sectionLines.find(l => l.includes('gxT'));
+    expect(gxtRow).toBeTruthy();
+    expect(gxtRow).toMatch(/greenhouse heat exit/);
+    expect(gxtRow).toMatch(/15.*→.*14/);
+    expect(gxtRow).toMatch(/jonni/);
+
+    const getRow = sectionLines.find(l => l.includes('geT'));
+    expect(getRow).toBeTruthy();
+    expect(getRow).toMatch(/greenhouse heat enter/);
+    expect(getRow).toMatch(/default.*→.*13/);
+
+    // wb row should NOT show up here.
+    expect(sectionLines.every(l => !/Greenhouse Heating|wb/.test(l))).toBe(true);
+
+    // Newest-first ordering inside the section.
+    expect(sectionLines.indexOf(gxtRow)).toBeLessThan(sectionLines.indexOf(getRow));
+  });
+
+  test('Tunable Values History section is omitted when there are no tu changes', async ({ page }) => {
+    const now = Date.now();
+    const rows = [
+      makeEvent(now - 30_000, 'idle', 'solar_charging'),
+      {
+        ts: now - 60_000, type: 'config', kind: 'wb', key: 'GH',
+        from: null, to: '9999999999', source: 'api', actor: 'alice',
+      },
+    ];
+    await installMockWs(page);
+    await mockHistoryApi(page);
+    await mockEventsApi(page, rows);
+
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });
+    await expect(page.locator('#logs-list .log-item')).toHaveCount(2, { timeout: 5000 });
+    await waitForTestHook(page);
+
+    const text = await getClipboardText(page);
+    expect(text).not.toContain('--- Tunable Values History ---');
+  });
+
   test('forecast section renders graceful fallback when forecast unavailable', async ({ page }) => {
     await installMockWs(page);
     await mockHistoryApi(page);
