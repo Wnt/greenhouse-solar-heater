@@ -231,7 +231,6 @@ export function drawHistoryGraph() {
       const htBh = heatingFrac * barAreaH;
       ctx.fillStyle = 'rgba(233, 195, 73, 0.6)';
       ctx.fillRect(barX, barY0 - stackH - htBh, barW, htBh);
-      stackH += htBh;
     }
 
     if (emergencyFrac > 0) {

@@ -150,7 +150,6 @@ function drawForecastModeBars(ctx, modeForecast, nowSec, cutoffSec, tMin, tMax, 
       const bh = heatingFrac * barAreaH;
       ctx.fillStyle = 'rgba(233, 195, 73, 0.45)';
       ctx.fillRect(barX, barY0 - stackH - bh, barW, bh);
-      stackH += bh;
     }
     if (emergencyFrac > 0) {
       const bh = emergencyFrac * barAreaH;
