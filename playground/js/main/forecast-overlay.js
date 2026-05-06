@@ -154,7 +154,9 @@ function drawForecastModeBars(ctx, modeForecast, nowSec, cutoffSec, tMin, tMax, 
     }
     if (emergencyFrac > 0) {
       const bh = emergencyFrac * barAreaH;
-      drawEmergencyStripes(ctx, barX, barY0 - stackH - bh, barW, bh, 'rgba(255, 112, 67, 0.7)');
+      // Mirror the historical band: anchor at baseline so the stripes
+      // overlay the underlying charging/heating bar at the same X.
+      drawEmergencyStripes(ctx, barX, barY0 - bh, barW, bh, 'rgba(255, 112, 67, 0.7)');
     }
   }
   ctx.restore();

@@ -237,7 +237,11 @@ export function drawHistoryGraph() {
     if (emergencyFrac > 0) {
       hasEmergency = true;
       const emBh = emergencyFrac * barAreaH;
-      drawEmergencyStripes(ctx, barX, barY0 - stackH - emBh, barW, emBh, 'rgba(255, 112, 67, 0.85)');
+      // Anchor the EMERGENCY band at the baseline (Y-zero), not stacked
+      // on top of charging+heating. The stripes are transparent between
+      // lines so the underlying mode bar's true height stays readable
+      // through the gaps — matches the overlay semantics.
+      drawEmergencyStripes(ctx, barX, barY0 - emBh, barW, emBh, 'rgba(255, 112, 67, 0.85)');
     }
   }
   document.getElementById('legend-emergency').style.display = hasEmergency ? 'flex' : 'none';
