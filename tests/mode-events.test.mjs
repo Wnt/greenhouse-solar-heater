@@ -24,12 +24,17 @@ import {
   appendModeEvent,
   modeAt,
   coverageInBucket,
+  spaceHeaterEventsStore,
+  resetSpaceHeaterEvents,
+  populateSpaceHeaterEvents,
+  appendSpaceHeaterEvent,
+  spaceHeaterAt,
 } from '../playground/js/main/mode-events.js';
 
 const SEC = 1000;
 
 describe('mode-events store', () => {
-  beforeEach(() => resetModeEvents());
+  beforeEach(() => { resetModeEvents(); resetSpaceHeaterEvents(); });
 
   it('modeAt defaults to idle when the store is empty', () => {
     assert.equal(modeAt(0), 'idle');
@@ -149,6 +154,104 @@ describe('mode-events store', () => {
       assert.equal(c.emergency, 60 * SEC);
       assert.equal(c.charging, 0);
       assert.equal(c.heating, 0);
+    });
+
+    // Space-heater is a separate actuator that can run AS AN OVERLAY on
+    // top of greenhouse_heating (the radiator circuit handles the
+    // primary heat, space heater fills in when the tank is too cold to
+    // drive the radiator). The EMERGENCY band on the history graph
+    // should fill whenever the heater is firing, regardless of which
+    // pump-mode is active — otherwise hybrid heating is invisible.
+    it('OR-unions space-heater intervals into emergency coverage', () => {
+      populateModeEvents([
+        { ts: 0, type: 'mode', from: 'idle', to: 'greenhouse_heating' },
+      ]);
+      populateSpaceHeaterEvents([
+        { ts: 20 * SEC, type: 'actuator', id: 'space_heater', from: 'off', to: 'on' },
+        { ts: 50 * SEC, type: 'actuator', id: 'space_heater', from: 'on', to: 'off' },
+      ]);
+      // Bucket [0, 60): heating mode for full 60s, but space heater on
+      // for [20, 50) = 30s. Heating coverage stays at 60s; emergency
+      // coverage rises to 30s.
+      const c = coverageInBucket(0, 60 * SEC);
+      assert.equal(c.heating, 60 * SEC, 'heating coverage covers the full bucket');
+      assert.equal(c.emergency, 30 * SEC, 'space-heater overlay paints emergency for 30s');
+    });
+
+    it('does not double-count emergency_heating mode + space-heater on', () => {
+      // Belt-and-braces: when the device IS in emergency_heating mode
+      // AND the heater relay is on (the typical case), the emergency
+      // band should still cover the actual on-time, not 2x it.
+      populateModeEvents([
+        { ts: 0, type: 'mode', from: 'idle', to: 'emergency_heating' },
+        { ts: 60 * SEC, type: 'mode', from: 'emergency_heating', to: 'idle' },
+      ]);
+      populateSpaceHeaterEvents([
+        { ts: 0, type: 'actuator', id: 'space_heater', from: 'off', to: 'on' },
+        { ts: 60 * SEC, type: 'actuator', id: 'space_heater', from: 'on', to: 'off' },
+      ]);
+      const c = coverageInBucket(0, 60 * SEC);
+      assert.equal(c.emergency, 60 * SEC, 'OR-union must not exceed bucket length');
+    });
+
+    it('space-heater on with no mode events still paints emergency', () => {
+      // Mode events may be missing in the very early seconds of a fresh
+      // install, but if the heater is firing the band should reflect it.
+      populateSpaceHeaterEvents([
+        { ts: 10 * SEC, type: 'actuator', id: 'space_heater', from: 'off', to: 'on' },
+        { ts: 40 * SEC, type: 'actuator', id: 'space_heater', from: 'on', to: 'off' },
+      ]);
+      const c = coverageInBucket(0, 60 * SEC);
+      assert.equal(c.emergency, 30 * SEC);
+      assert.equal(c.heating, 0);
+      assert.equal(c.charging, 0);
+    });
+  });
+
+  describe('space-heater events store', () => {
+    it('spaceHeaterAt defaults to off when the store is empty', () => {
+      assert.equal(spaceHeaterAt(0), 'off');
+      assert.equal(spaceHeaterAt(Date.now()), 'off');
+    });
+
+    it('populateSpaceHeaterEvents sorts by ts and dedupes via append', () => {
+      populateSpaceHeaterEvents([
+        { ts: 200 * SEC, type: 'actuator', id: 'space_heater', from: 'on', to: 'off' },
+        { ts: 100 * SEC, type: 'actuator', id: 'space_heater', from: 'off', to: 'on' },
+      ]);
+      assert.equal(spaceHeaterEventsStore.events.length, 2);
+      assert.equal(spaceHeaterEventsStore.events[0].ts, 100 * SEC);
+      assert.equal(spaceHeaterEventsStore.events[1].ts, 200 * SEC);
+
+      // Same (ts, to) ignored; new (ts, to) appended in chronological order.
+      appendSpaceHeaterEvent({ ts: 100 * SEC, type: 'actuator', id: 'space_heater', from: 'off', to: 'on' });
+      assert.equal(spaceHeaterEventsStore.events.length, 2);
+      appendSpaceHeaterEvent({ ts: 300 * SEC, type: 'actuator', id: 'space_heater', from: 'off', to: 'on' });
+      assert.equal(spaceHeaterEventsStore.events.length, 3);
+    });
+
+    it('spaceHeaterAt walks events forward', () => {
+      populateSpaceHeaterEvents([
+        { ts: 100 * SEC, type: 'actuator', id: 'space_heater', from: 'off', to: 'on' },
+        { ts: 200 * SEC, type: 'actuator', id: 'space_heater', from: 'on', to: 'off' },
+      ]);
+      assert.equal(spaceHeaterAt(50 * SEC), 'off');
+      assert.equal(spaceHeaterAt(100 * SEC), 'on');
+      assert.equal(spaceHeaterAt(150 * SEC), 'on');
+      assert.equal(spaceHeaterAt(200 * SEC), 'off');
+    });
+
+    it('populateSpaceHeaterEvents ignores non-space_heater actuator events', () => {
+      // /api/events?type=actuator returns ALL actuator transitions
+      // (pump, fan, immersion_heater); this store only cares about
+      // space_heater, so the filter happens at the store boundary.
+      populateSpaceHeaterEvents([
+        { ts: 100 * SEC, type: 'actuator', id: 'pump', from: 'off', to: 'on' },
+        { ts: 150 * SEC, type: 'actuator', id: 'space_heater', from: 'off', to: 'on' },
+        { ts: 200 * SEC, type: 'actuator', id: 'fan', from: 'off', to: 'on' },
+      ]);
+      assert.equal(spaceHeaterEventsStore.events.length, 1);
+      assert.equal(spaceHeaterEventsStore.events[0].id, 'space_heater');
     });
   });
 });

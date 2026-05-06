@@ -246,6 +246,23 @@ export function formatOverlayEntry(t) {
   return { title: 'Overlay ' + (t.overlayId || ''), desc: (t.from || '?') + ' → ' + (t.to || '?') };
 }
 
+// Actuator on/off rows. Today only space_heater surfaces in the System
+// Logs feed (pump/fan flips are mode-driven and the operator already
+// reads them off the mode rows). Phrasing is symmetric with the overlay
+// entry so the muted-dot rows read consistently in the list.
+export function formatActuatorEntry(t) {
+  if (t.actuatorId === 'space_heater') {
+    return t.to === 'on'
+      ? { title: 'Space heater on', desc: 'Resistive heater started' }
+      : { title: 'Space heater off', desc: 'Resistive heater stopped' };
+  }
+  const label = EA_BIT_LABELS[t.actuatorId] || t.actuatorId || 'actuator';
+  return {
+    title: label + ' ' + (t.to === 'on' ? 'on' : 'off'),
+    desc: (t.from || '?') + ' → ' + (t.to || '?'),
+  };
+}
+
 // Render the temp snapshot as "coll 62.3° · tank 41/29° · gh 12° · out 8°"
 export function formatSensorsLine(sensors) {
   if (!sensors) return '';

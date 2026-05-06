@@ -384,33 +384,41 @@ function getEventsPaginated(entityType, limit, before, callback) {
   });
 }
 
-function getEvents(range, entityType, callback) {
+// getEvents(range, entityType, [entityId,] callback). entityId narrows
+// to a single entity (e.g. just `space_heater`) for the /api/history
+// EMERGENCY-band feed.
+function getEvents(range, entityType, entityIdOrCallback, maybeCallback) {
+  const entityId = typeof entityIdOrCallback === 'function' ? null : (entityIdOrCallback || null);
+  const callback = typeof entityIdOrCallback === 'function' ? entityIdOrCallback : maybeCallback;
+
   const p = getPool();
   const interval = RANGE_INTERVALS[range];
   const hasWindow = !!interval && range !== 'all';
   const whereTime = hasWindow ? " WHERE ts > NOW() - INTERVAL '" + interval + "'" : '';
 
   const params = [];
-  let whereType = '';
-  if (entityType) {
-    whereType = (whereTime ? ' AND' : ' WHERE') + ' entity_type = $1';
-    params.push(entityType);
-  }
+  let filter = '';
+  const addClause = (col, val) => {
+    if (!val) return;
+    filter += (whereTime || filter ? ' AND' : ' WHERE') + ' ' + col + ' = $' + (params.length + 1);
+    params.push(val);
+  };
+  addClause('entity_type', entityType);
+  addClause('entity_id', entityId);
 
   const cols = 'ts, entity_type, entity_id, old_value, new_value';
-  const windowSql = 'SELECT ' + cols + ' FROM state_events' + whereTime + whereType;
+  const windowSql = 'SELECT ' + cols + ' FROM state_events' + whereTime + filter;
 
-  // Leading edge: the single most recent event of this entity type from
-  // before the window. Without it the client cannot resolve "what mode
-  // was active at window-start" — it would default to idle and mislabel
-  // the bar chart and clipboard table when the controller was already
-  // in another mode at the time.
+  // Leading edge: the single most recent event from before the window.
+  // Without it the client can't resolve "what mode was active at
+  // window-start" and defaults to idle, mislabelling the bar chart and
+  // clipboard table.
   let sql;
   if (hasWindow) {
-    let leadingType = '';
-    if (entityType) leadingType = ' AND entity_type = $1';
+    // Same filter clauses but anchored to the pre-window range.
+    const leading = filter.replace(/^ WHERE/, ' AND');
     const leadingSql = 'SELECT ' + cols + ' FROM state_events' +
-      " WHERE ts <= NOW() - INTERVAL '" + interval + "'" + leadingType +
+      " WHERE ts <= NOW() - INTERVAL '" + interval + "'" + leading +
       ' ORDER BY ts DESC LIMIT 1';
     sql = '(' + leadingSql + ') UNION ALL (' + windowSql + ') ORDER BY ts';
   } else {

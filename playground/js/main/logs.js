@@ -8,24 +8,30 @@ import { registerDataSource } from '../sync/registry.js';
 import {
   formatClockTime, formatCauseLabel, formatReasonLabel, formatSensorsLine,
   escapeHtml, formatTimeOfDay, formatConfigEntry, formatOverlayEntry,
+  formatActuatorEntry,
 } from './time-format.js';
 import { MODE_INFO, transitionLog } from './state.js';
-import { appendModeEvent } from './mode-events.js';
+import { appendModeEvent, appendSpaceHeaterEvent } from './mode-events.js';
 
 export { transitionLog };
 
 const EVENTS_PAGE_SIZE = 10;
-// Parallel cursors so the three feeds scroll independently. Overlay
+// Parallel cursors so the four feeds scroll independently. Overlay
 // events are fan-cool / future overlay flips written by mqtt-bridge.
+// Actuator events surface space-heater on/off so hybrid heating
+// (greenhouse_heating + heater overlay) shows up alongside the mode rows.
 let modeCursor = null;
 let modeHasMore = false;
 let configCursor = null;
 let configHasMore = false;
 let overlayCursor = null;
 let overlayHasMore = false;
+let actuatorCursor = null;
+let actuatorHasMore = false;
 let eventsLoading = false;
 let lastLiveMode = null;
 let lastLiveFanCool = null;
+let lastLiveSpaceHeater = null;
 
 // Drop pagination + mode-change state. fetchLiveEvents(null) repopulates.
 export function resetEventsState() {
@@ -35,8 +41,11 @@ export function resetEventsState() {
   configHasMore = false;
   overlayCursor = null;
   overlayHasMore = false;
+  actuatorCursor = null;
+  actuatorHasMore = false;
   lastLiveMode = null;
   lastLiveFanCool = null;
+  lastLiveSpaceHeater = null;
 }
 
 function fetchEventPage(type, before, signal) {
@@ -94,17 +103,39 @@ function overlayRowToLogEntry(e) {
   };
 }
 
+function actuatorRowToLogEntry(e) {
+  return {
+    kind: 'live',
+    eventType: 'actuator',
+    ts: e.ts,
+    actuatorId: e.id,
+    from: e.from,
+    to: e.to,
+  };
+}
+
+// Only space-heater on/off rows surface in the System Logs feed today.
+// Pump and fan transitions are mode-driven and the operator already
+// reads them from the mode rows; immersion_heater is unused. Filtering
+// at the render boundary keeps the database write-side untouched (still
+// records every actuator) while the UI stays focused on the events the
+// operator actually needs to see.
+function isUserVisibleActuator(id) {
+  return id === 'space_heater';
+}
+
 // Apply a paged fetch result into transitionLog + cursor state. Pulled
 // out of fetchLiveEvents so the sync-coordinator data source can reuse
 // the same write path on Android resume. `_skipped` data carries no
 // fresh rows or pagination info, so its cursor branch no-ops.
-function applyEventPages(modeData, configData, overlayData, isReset) {
+function applyEventPages(modeData, configData, overlayData, actuatorData, isReset) {
   // Only apply to the current phase — the user may have switched back
   // to simulation while the requests were in flight.
   if (store.get('phase') !== 'live') return;
   const modeEvents = (modeData && Array.isArray(modeData.events)) ? modeData.events : [];
   const configEvents = (configData && Array.isArray(configData.events)) ? configData.events : [];
   const overlayEvents = (overlayData && Array.isArray(overlayData.events)) ? overlayData.events : [];
+  const actuatorEvents = (actuatorData && Array.isArray(actuatorData.events)) ? actuatorData.events : [];
 
   if (isReset) transitionLog.length = 0;
 
@@ -116,6 +147,10 @@ function applyEventPages(modeData, configData, overlayData, isReset) {
   }
   for (let i = 0; i < overlayEvents.length; i++) {
     transitionLog.push(overlayRowToLogEntry(overlayEvents[i]));
+  }
+  for (let i = 0; i < actuatorEvents.length; i++) {
+    if (!isUserVisibleActuator(actuatorEvents[i].id)) continue;
+    transitionLog.push(actuatorRowToLogEntry(actuatorEvents[i]));
   }
   // Re-sort the merged list newest-first. Stable enough for our N (~30).
   transitionLog.sort((a, b) => (b.ts || 0) - (a.ts || 0));
@@ -131,6 +166,10 @@ function applyEventPages(modeData, configData, overlayData, isReset) {
   if (!overlayData._skipped) {
     if (overlayEvents.length > 0) overlayCursor = overlayEvents[overlayEvents.length - 1].ts;
     overlayHasMore = !!(overlayData && overlayData.hasMore);
+  }
+  if (!actuatorData._skipped) {
+    if (actuatorEvents.length > 0) actuatorCursor = actuatorEvents[actuatorEvents.length - 1].ts;
+    actuatorHasMore = !!(actuatorData && actuatorData.hasMore);
   }
 
   renderLogsList();
@@ -149,6 +188,7 @@ export function fetchLiveEvents(reset) {
   const modeBefore = isReset ? null : (modeHasMore ? modeCursor : null);
   const configBefore = isReset ? null : (configHasMore ? configCursor : null);
   const overlayBefore = isReset ? null : (overlayHasMore ? overlayCursor : null);
+  const actuatorBefore = isReset ? null : (actuatorHasMore ? actuatorCursor : null);
 
   // Skip a side that has no more rows AND it isn't a reset, to avoid
   // re-fetching identical pages.
@@ -161,10 +201,13 @@ export function fetchLiveEvents(reset) {
   const overlayPromise = (isReset || overlayHasMore)
     ? fetchEventPage('overlay', overlayBefore)
     : Promise.resolve({ events: [], hasMore: false, _skipped: true });
+  const actuatorPromise = (isReset || actuatorHasMore)
+    ? fetchEventPage('actuator', actuatorBefore)
+    : Promise.resolve({ events: [], hasMore: false, _skipped: true });
 
-  Promise.all([modePromise, configPromise, overlayPromise])
-    .then(([modeData, configData, overlayData]) =>
-      applyEventPages(modeData, configData, overlayData, isReset))
+  Promise.all([modePromise, configPromise, overlayPromise, actuatorPromise])
+    .then(([modeData, configData, overlayData, actuatorData]) =>
+      applyEventPages(modeData, configData, overlayData, actuatorData, isReset))
     .then(() => { eventsLoading = false; });
 }
 
@@ -253,6 +296,38 @@ export function detectLiveTransition(result) {
     }
   }
 
+  // Space-heater on/off — surfaces hybrid heating in real time so the
+  // operator doesn't have to wait for the next /api/events refresh.
+  // Mirrors the fan-cool logic above; the on-disk record still flows
+  // through mqtt-bridge → state_events.
+  const actuators = (result && result.actuators) || {};
+  if (typeof actuators.space_heater === 'boolean') {
+    const cur = actuators.space_heater;
+    if (lastLiveSpaceHeater === null) {
+      lastLiveSpaceHeater = cur;
+    } else if (lastLiveSpaceHeater !== cur) {
+      const tsMs = Date.now();
+      transitionLog.unshift({
+        kind: 'live', eventType: 'actuator', ts: tsMs,
+        actuatorId: 'space_heater',
+        from: lastLiveSpaceHeater ? 'on' : 'off',
+        to: cur ? 'on' : 'off',
+      });
+      // Mirror into the space-heater store so the EMERGENCY band on
+      // the bar chart updates without waiting for the next /api/history
+      // refresh (matches the appendModeEvent call above).
+      appendSpaceHeaterEvent({
+        ts: Math.floor(tsMs / 1000),
+        type: 'actuator',
+        id: 'space_heater',
+        from: lastLiveSpaceHeater ? 'on' : 'off',
+        to: cur ? 'on' : 'off',
+      });
+      lastLiveSpaceHeater = cur;
+      dirty = true;
+    }
+  }
+
   if (dirty) renderLogsList();
 }
 
@@ -290,6 +365,10 @@ export function renderLogsList() {
       html += renderMutedEntry(formatOverlayEntry(t), timeLabel);
       continue;
     }
+    if (t.eventType === 'actuator') {
+      html += renderMutedEntry(formatActuatorEntry(t), timeLabel);
+      continue;
+    }
 
     const mi = MODE_INFO[t.mode] || MODE_INFO.idle;
     const dotClass = t.mode === 'solar_charging' || t.mode === 'active_drain' ? 'log-dot-charging'
@@ -314,7 +393,7 @@ export function renderLogsList() {
     '</div>';
   }
 
-  if (isLive && (modeHasMore || configHasMore || overlayHasMore)) {
+  if (isLive && (modeHasMore || configHasMore || overlayHasMore || actuatorHasMore)) {
     html += '<div class="log-loading" data-log-loading="true" style="color:var(--on-surface-variant);font-size:12px;text-align:center;padding:8px 0;">' +
       (eventsLoading ? 'Loading older transitions…' : 'Scroll to load older transitions') +
     '</div>';
@@ -337,9 +416,11 @@ export function registerLogsSource() {
       fetchEventPage('mode', null, signal),
       fetchEventPage('config', null, signal),
       fetchEventPage('overlay', null, signal),
-    ]).then(([modeData, configData, overlayData]) => ({ modeData, configData, overlayData })),
-    applyToStore: ({ modeData, configData, overlayData }) =>
-      applyEventPages(modeData, configData, overlayData, true),
+      fetchEventPage('actuator', null, signal),
+    ]).then(([modeData, configData, overlayData, actuatorData]) =>
+      ({ modeData, configData, overlayData, actuatorData })),
+    applyToStore: ({ modeData, configData, overlayData, actuatorData }) =>
+      applyEventPages(modeData, configData, overlayData, actuatorData, true),
   });
 }
 
@@ -352,7 +433,7 @@ export function setupLogsScrollLoader() {
   container.addEventListener('scroll', function () {
     if (store.get('phase') !== 'live') return;
     if (eventsLoading) return;
-    if (!modeHasMore && !configHasMore && !overlayHasMore) return;
+    if (!modeHasMore && !configHasMore && !overlayHasMore && !actuatorHasMore) return;
     // Trigger when the scroll reaches within 40px of the bottom
     const remaining = container.scrollHeight - container.scrollTop - container.clientHeight;
     if (remaining < 40) {
