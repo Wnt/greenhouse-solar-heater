@@ -85,8 +85,8 @@ export function dutyBucketsIn({ tMin, tMax, bucketSec, firstSampleT, lastSampleT
 // Shared with graph-inspector so its crosshair math stays aligned with
 // what's drawn — without this, zooming would desync the two.
 //
-// Forecast overlay extends the right edge by effectiveForecastSec() so
-// the projected lines/bands have somewhere to land. The history span
+// Forecast overlay extends the right edge by defaultVisibleForecastSec()
+// so the projected lines/bands have somewhere to land. The history span
 // stays at graphRange — the chart visually grows. Pinch-zoom still wins.
 export function getChartWindow() {
   if (chartZoom) return { tMin: chartZoom.tMin, tMax: chartZoom.tMax };
@@ -95,15 +95,24 @@ export function getChartWindow() {
     ? timeSeriesStore.times[timeSeriesStore.times.length - 1]
     : 0;
   const baseRight = isLivePhase ? Math.floor(Date.now() / 1000) : Math.max(graphRange, latestTime);
-  const tMax = (isLivePhase && showForecast) ? baseRight + effectiveForecastSec() : baseRight;
+  const tMax = (isLivePhase && showForecast) ? baseRight + defaultVisibleForecastSec(graphRange) : baseRight;
   return { tMin: baseRight - graphRange, tMax };
 }
 
-// Forecast horizon for the current view: the full FORECAST_OVERLAY_SEC
-// (48 h). Independent of graphRange — when the user turns the overlay on
-// they want the entire projected window visible at once, even if it makes
-// the historical pane narrow. To regain historical detail, either widen
-// graphRange or turn the overlay off.
+// How much forecast the *default* (non-zoomed) view shows when the
+// overlay toggle is on: half the current range, capped at the full
+// FORECAST_OVERLAY_SEC horizon. So 24h → +12h forecast, 12h → +6h,
+// 7d → +48h (cap), etc. Users can pinch / scroll past this to reveal
+// the rest of the projected window — see computeDefaultBound below,
+// which still uses the full horizon as the pannable bound.
+export function defaultVisibleForecastSec(rangeSec) {
+  return Math.min(Math.round(rangeSec / 2), FORECAST_OVERLAY_SEC);
+}
+
+// Forecast drawing horizon — independent of the visible default. The
+// overlay function paints lines and bars from "now" up to this point,
+// so the data exists in the canvas when a user pans/zooms past the
+// default visible right-edge into the projected region.
 function effectiveForecastSec() {
   return FORECAST_OVERLAY_SEC;
 }

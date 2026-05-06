@@ -179,31 +179,32 @@ test.describe('Inspector tooltip on the forecast side of the history graph', () 
     await page.locator('#graph-show-forecast-toggle').click();
     await expect(page.locator('#graph-show-forecast')).toHaveAttribute('aria-checked', 'true');
 
-    // Hover ~21.6 h into the forecast region. The window spans 24 h of
-    // history + 48 h of forecast (72 h total); 0.625 of the width lands
-    // around now + 21.6 h. Picked to fall well past hour 8 (the last
-    // greenhouse_heating slot) and well before hour 48 (last sample), so
-    // none of the trajectory edges interfere with the assertions.
-    await hoverChartAt(page, 0.625);
+    // Hover ~9 h into the forecast region. With the forecast preset
+    // zoom, the visible window at the default 24 h range spans 24 h of
+    // history + 12 h of forecast (36 h total). frac 0.917 ≈ now + 9 h.
+    // Picked to fall well past hour 8 (the last greenhouse_heating
+    // slot) and well before the right edge so trajectory tail effects
+    // don't interfere.
+    await hoverChartAt(page, 0.917);
 
     const tankText = await page.locator('#inspector-tank').textContent();
     // Last live tank avg is (44+36)/2 = 40.0°C. Forecast tank avg at
-    // hour ~21.6 is 30 - 21.6*0.25 ≈ 24.6°C. Anything > 30°C means we're
+    // hour ~9 is 30 - 9*0.25 ≈ 27.75°C. Anything > 30°C means we're
     // still reading the live nearest-neighbor — fail loudly.
     const tankNum = parseFloat((tankText || '').replace('°C', ''));
     expect(tankNum).toBeGreaterThan(0);
     expect(tankNum).toBeLessThan(30); // forecast value, not the 40°C live
     expect(tankNum).toBeGreaterThan(18); // sanity: within forecast range
 
-    // Greenhouse forecast at hour 21.6 ≈ 14 - 21.6*0.16 = 10.5°C; live is
+    // Greenhouse forecast at hour 9 ≈ 14 - 9*0.16 = 12.6°C; live is
     // 19°C. Same shape of assertion.
     const ghText = await page.locator('#inspector-gh').textContent();
     const ghNum = parseFloat((ghText || '').replace('°C', ''));
     expect(ghNum).toBeLessThan(15);
     expect(ghNum).toBeGreaterThan(7);
 
-    // Outdoor IS part of the forecast (weather array). At hour ~21.6 the
-    // forecast outdoor is 11 - 21.6*0.2 ≈ 6.7°C — well below the last
+    // Outdoor IS part of the forecast (weather array). At hour ~9 the
+    // forecast outdoor is 11 - 9*0.2 ≈ 9.2°C — below the last
     // live sample of 11°C, so a live-fallback would assert >10.
     const outText = await page.locator('#inspector-out').textContent();
     const outNum = parseFloat((outText || '').replace('°C', ''));
@@ -225,14 +226,14 @@ test.describe('Inspector tooltip on the forecast side of the history graph', () 
 
     await page.locator('#graph-show-forecast-toggle').click();
 
-    // Hover at frac 0.43 — visible window spans 72 h (24 h history +
-    // 48 h forecast), so simTime ≈ tMin + 0.43·72h = now + ~7 h. With
-    // pickBucketSize for a 72 h range stepping up to 6-h buckets, the
-    // bucket containing hour 7 always overlaps at least one of the
-    // greenhouse_heating slots at hours 6/7/8. Charging (hours 0/1/2)
-    // and emergency (hour 10) may also share a bucket depending on
-    // alignment, so we only assert heating > 0 here.
-    await hoverChartAt(page, 0.43);
+    // Hover at frac 0.861 — with the forecast preset zoom, visible
+    // window spans 36 h (24 h history + 12 h forecast), so simTime ≈
+    // tMin + 0.861·36h = now + ~7 h. Whatever pickBucketSize lands on
+    // for a 36 h range, the bucket containing hour 7 always overlaps
+    // at least one of the greenhouse_heating slots at hours 6/7/8.
+    // Charging (hours 0/1/2) and emergency (hour 10) may also share a
+    // bucket depending on alignment, so we only assert heating > 0.
+    await hoverChartAt(page, 0.861);
 
     const ht = await page.locator('#inspector-heating').textContent();
     expect(parseInt(ht, 10)).toBeGreaterThan(0);
