@@ -78,12 +78,6 @@ async function scaffold(page) {
   }));
 }
 
-async function chartBox(page) {
-  const box = await page.locator('#chart').boundingBox();
-  if (!box) throw new Error('canvas not laid out');
-  return box;
-}
-
 test.describe('History-graph desktop mouse interactions', () => {
   test('shift + drag selects a time range and zooms the chart to it', async ({ page }) => {
     await scaffold(page);
