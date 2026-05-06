@@ -42,7 +42,9 @@
   ],
   "ignoreUnresolved": [
     "/playground/js/app-state.js",
-    "/playground/js/main/display-update.js"
+    "/playground/js/main/display-update.js",
+    "/playground/js/main/history-graph.js",
+    "/playground/js/main/state.js"
   ],
   "ignoreExportsUsedInFile": true
 }
