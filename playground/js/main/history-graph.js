@@ -13,6 +13,7 @@ import {
 } from './state.js';
 import { coverageInBucket } from './mode-events.js';
 import { drawForecastOverlay } from './forecast-overlay.js';
+import { drawEmergencyStripes } from './emergency-stripes.js';
 
 function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
 
@@ -236,8 +237,7 @@ export function drawHistoryGraph() {
     if (emergencyFrac > 0) {
       hasEmergency = true;
       const emBh = emergencyFrac * barAreaH;
-      ctx.fillStyle = 'rgba(255, 112, 67, 0.7)';
-      ctx.fillRect(barX, barY0 - stackH - emBh, barW, emBh);
+      drawEmergencyStripes(ctx, barX, barY0 - stackH - emBh, barW, emBh, 'rgba(255, 112, 67, 0.85)');
     }
   }
   document.getElementById('legend-emergency').style.display = hasEmergency ? 'flex' : 'none';

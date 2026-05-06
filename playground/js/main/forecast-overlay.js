@@ -7,6 +7,7 @@
 // no DOM lookups beyond what's passed in.
 
 import { pickBucketSize } from '../ui.js';
+import { drawEmergencyStripes } from './emergency-stripes.js';
 
 // Forecast overlay rendering: tank avg + greenhouse + outdoor trajectories
 // (dashed) past "now", predicted mode bands (charging/heating/emergency)
@@ -153,8 +154,7 @@ function drawForecastModeBars(ctx, modeForecast, nowSec, cutoffSec, tMin, tMax, 
     }
     if (emergencyFrac > 0) {
       const bh = emergencyFrac * barAreaH;
-      ctx.fillStyle = 'rgba(255, 112, 67, 0.55)';
-      ctx.fillRect(barX, barY0 - stackH - bh, barW, bh);
+      drawEmergencyStripes(ctx, barX, barY0 - stackH - bh, barW, bh, 'rgba(255, 112, 67, 0.7)');
     }
   }
   ctx.restore();
