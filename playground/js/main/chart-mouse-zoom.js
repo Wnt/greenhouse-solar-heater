@@ -29,6 +29,9 @@ const PAD_LEFT = 8;
 const PAD_RIGHT = 16;
 const MIN_RANGE_SEC = 60;
 const MIN_SELECT_PX = 4;
+// Below this many pixels of movement, a pointerup is treated as a
+// click — used by the click-to-reset-zoom path.
+const CLICK_MAX_PX = 4;
 const SELECTION_CLASS = 'graph-selection';
 
 // Pure: convert two canvas-relative x coords (e.g. mousedown x and
@@ -109,6 +112,18 @@ export function setupChartMouseZoom() {
     if (overlay) overlay.style.display = 'none';
   }
 
+  // Pan is available whenever the pannable bound is wider than the
+  // currently-visible window — i.e. there's somewhere to pan to.
+  // Covers two cases: chartZoom set (window is narrower than bound),
+  // and the forecast-toggle preset where the default visible shows
+  // graphRange + range/2 forecast but the bound extends to the full
+  // 48 h forecast horizon.
+  function canPan() {
+    const win = getChartWindow();
+    const bound = defaultBound();
+    return (bound.tMax - bound.tMin) > (win.tMax - win.tMin) + 1;
+  }
+
   function refreshCursor() {
     if (drag && drag.mode === 'pan') {
       canvas.style.cursor = 'grabbing';
@@ -122,7 +137,7 @@ export function setupChartMouseZoom() {
       canvas.style.cursor = 'col-resize';
       return;
     }
-    canvas.style.cursor = chartZoom ? 'grab' : 'default';
+    canvas.style.cursor = canPan() ? 'grab' : 'default';
   }
 
   function startSelect(e) {
@@ -144,6 +159,7 @@ export function setupChartMouseZoom() {
     drag = {
       mode: 'pan',
       startX: e.clientX,
+      maxAbsDx: 0,
       pointerId: e.pointerId,
       anchorWindow: getChartWindow(),
     };
@@ -155,6 +171,7 @@ export function setupChartMouseZoom() {
     if (!drag || e.pointerId !== drag.pointerId) return;
     if (drag.mode === 'pan') {
       const dx = e.clientX - drag.startX;
+      if (Math.abs(dx) > drag.maxAbsDx) drag.maxAbsDx = Math.abs(dx);
       const win = drag.anchorWindow;
       const range = win.tMax - win.tMin;
       const dt = -(dx / plotWidth()) * range;
@@ -193,6 +210,14 @@ export function setupChartMouseZoom() {
           drawHistoryGraph();
         }
       }
+    } else if (drag.mode === 'pan' && drag.maxAbsDx < CLICK_MAX_PX) {
+      // A pan that never moved past CLICK_MAX_PX is a click — reset
+      // the chart zoom back to the default window so users can escape
+      // a deep zoom without hunting for a separate "reset" control.
+      // updateDrag may have nudged chartZoom by a sub-pixel amount; a
+      // straight setChartZoom(null) snaps it cleanly back to default.
+      setChartZoom(null);
+      drawHistoryGraph();
     }
     drag = null;
     refreshCursor();
@@ -209,7 +234,12 @@ export function setupChartMouseZoom() {
     if (e.button !== 0) return;
     if (e.shiftKey) {
       startSelect(e);
-    } else if (chartZoom) {
+    } else if (canPan() || chartZoom) {
+      // canPan() covers the "default view but pannable" case (forecast
+      // on with the range/2 preset — the bound extends to +48 h while
+      // the visible window only shows +range/2). chartZoom covers the
+      // "user has zoomed in" case. Both also enable click-to-reset so
+      // the cancel-the-zoom click path works even at full default.
       startPan(e);
     }
   });

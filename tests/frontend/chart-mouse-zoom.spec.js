@@ -171,4 +171,46 @@ test.describe('History-graph desktop mouse interactions', () => {
     // Window width preserved across the pan.
     expect(after.tMax - after.tMin).toBeCloseTo(before.tMax - before.tMin, 0);
   });
+
+  test('click on a zoomed chart resets the zoom back to default', async ({ page }) => {
+    await scaffold(page);
+    await page.goto('/playground/');
+    await page.waitForFunction(() => window.__initComplete === true);
+
+    // Pre-zoom programmatically so the click has something to reset.
+    await page.evaluate(async () => {
+      const stateMod = await import('/playground/js/main/state.js');
+      const graphMod = await import('/playground/js/main/history-graph.js');
+      const win = graphMod.getChartWindow();
+      const quarter = (win.tMax - win.tMin) / 4;
+      stateMod.setChartZoom({ tMin: win.tMin + quarter, tMax: win.tMax - quarter });
+      graphMod.drawHistoryGraph();
+    });
+
+    const beforeZoom = await page.evaluate(async () => {
+      const mod = await import('/playground/js/main/state.js');
+      return mod.chartZoom;
+    });
+    expect(beforeZoom).not.toBeNull();
+
+    // pointerdown / pointerup at the same x — no movement = a click.
+    await page.evaluate(() => {
+      const canvas = document.getElementById('chart');
+      const rect = canvas.getBoundingClientRect();
+      const y = rect.top + rect.height / 2;
+      const x = rect.left + rect.width * 0.5;
+      const fire = (type, opts = {}) => canvas.dispatchEvent(new PointerEvent(type, {
+        pointerId: 3, pointerType: 'mouse', clientX: x, clientY: y,
+        button: 0, buttons: 1, bubbles: true, ...opts,
+      }));
+      fire('pointerdown');
+      fire('pointerup', { buttons: 0 });
+    });
+
+    const afterZoom = await page.evaluate(async () => {
+      const mod = await import('/playground/js/main/state.js');
+      return mod.chartZoom;
+    });
+    expect(afterZoom).toBeNull();
+  });
 });
