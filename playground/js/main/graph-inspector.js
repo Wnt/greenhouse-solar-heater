@@ -11,6 +11,7 @@ import { timeSeriesStore, showAllSensors, showForecast, forecastData } from './s
 import { tankAvgOf, getChartWindow } from './history-graph.js';
 import { formatClockTime } from './time-format.js';
 import { coverageInBucket } from './mode-events.js';
+import { aggregateForecastBucket } from './forecast-overlay.js';
 import { pickBucketSize } from '../ui.js';
 
 function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
@@ -125,26 +126,18 @@ function updateInspectorData(x) {
   const bEnd = (bi + 1) * bucketSec;
   let chPct, htPct, emPct;
   if (inForecast) {
-    // Forecast modeForecast is at 1-hour resolution; mirror
-    // drawForecastModeBars by counting slots inside the post-now slice
-    // of the bucket, so the percentages line up visually with the
-    // dashed bars under the cursor.
+    // Forecast percentages share the bar renderer's aggregator so
+    // the tooltip values always agree with the visible bar heights —
+    // including the < 1 h zoom levels where each hourly forecast
+    // entry has to be split across multiple buckets.
     const segStart = Math.max(bStart, nowSec);
     const segEnd = bEnd;
     const segHours = Math.max(1 / 60, (segEnd - segStart) / 3600);
-    let chHours = 0, htHours = 0, emHours = 0;
     const list = Array.isArray(fc.modeForecast) ? fc.modeForecast : [];
-    for (let i = 0; i < list.length; i++) {
-      const e = list[i];
-      const ts = Math.floor(new Date(e.ts).getTime() / 1000);
-      if (ts < segStart || ts >= segEnd) continue;
-      if (e.mode === 'solar_charging') chHours += 1;
-      else if (e.mode === 'greenhouse_heating') htHours += 1;
-      else if (e.mode === 'emergency_heating') emHours += 1;
-    }
-    chPct = Math.round(100 * Math.min(1, chHours / segHours));
-    htPct = Math.round(100 * Math.min(1, htHours / segHours));
-    emPct = Math.round(100 * Math.min(1, emHours / segHours));
+    const agg = aggregateForecastBucket(list, segStart, segEnd);
+    chPct = Math.round(100 * Math.min(1, agg.chargingHours / segHours));
+    htPct = Math.round(100 * Math.min(1, agg.heatingHours  / segHours));
+    emPct = Math.round(100 * Math.min(1, agg.emergencyHours / segHours));
   } else {
     const cov = coverageInBucket(bStart, bEnd);
     chPct = Math.round(100 * cov.charging / bucketSec);
