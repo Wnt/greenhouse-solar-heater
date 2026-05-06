@@ -27,6 +27,7 @@ import { initBalanceCard } from './main/balance-card.js';
 import { initForecastCard } from './forecast.js';
 import { setupInspector } from './main/graph-inspector.js';
 import { setupChartPinchZoom, resetChartZoom } from './main/chart-pinch-zoom.js';
+import { setupChartMouseZoom } from './main/chart-mouse-zoom.js';
 import { setupTimeRangeSlider } from './main/time-range-slider.js';
 import {
   updateDisplay, rerenderWithHistoryFallback,
@@ -117,6 +118,7 @@ async function init() {
   })();
   setupInspector();
   setupChartPinchZoom();
+  setupChartMouseZoom();
   setupLogsScrollLoader();
   setupCopyLogsButton();
   initForecastCard();
@@ -245,6 +247,11 @@ function setupForecastToggle() {
   };
   const toggle = () => {
     setShowForecast(!showForecast);
+    // Snap the visible window back to the new default so toggling on
+    // immediately reveals "past graphRange + min(graphRange/2, 48h)
+    // forecast" — and toggling off snaps back to "past graphRange".
+    // Otherwise a previously-set chartZoom would mask the change.
+    resetChartZoom();
     render();
     drawHistoryGraph();
   };
