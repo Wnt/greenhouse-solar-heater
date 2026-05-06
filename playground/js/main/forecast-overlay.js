@@ -20,19 +20,41 @@ export function drawForecastOverlay(ctx, data, nowSec, cutoffSec, tMin, tMax, vi
   // Trajectory points come from the engine as ISO strings (`ts` for
   // engine output, `validAt` for the raw weather array). Convert to
   // seconds and clip to [nowSec, cutoffSec] AND the chart window.
+  // When the visible window falls between two forecast samples, the
+  // trailing edge gets a synthesized interpolated point at tMax so
+  // the line reaches the right edge of the chart instead of stopping
+  // at the last in-window sample (which can be visibly far short of
+  // the edge in zoomed-in views — e.g. 24h-range with forecast on
+  // shows hourly samples but the 1h granularity puts the last
+  // sample well before tMax).
   function toPts(traj, valOf, tsKey) {
     if (!Array.isArray(traj)) return [];
     const key = tsKey || 'ts';
     const pts = [];
+    let lastT = null, lastV = null;
     for (let i = 0; i < traj.length; i++) {
       const t = Math.floor(new Date(traj[i][key]).getTime() / 1000);
       if (t < nowSec || t > cutoffSec) continue;
-      if (t < tMin || t > tMax) continue;
       const v = valOf(traj[i]);
       if (typeof v !== 'number' || !isFinite(v)) continue;
-      const x = pad.left + ((t - tMin) / visibleRange) * pw;
-      const y = pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph;
-      pts.push({ x, y });
+      if (t < tMin) { lastT = t; lastV = v; continue; }
+      if (t > tMax) {
+        // First post-window sample — interpolate to tMax and stop.
+        if (lastT !== null) {
+          const frac = (tMax - lastT) / (t - lastT);
+          const vAtMax = lastV + (v - lastV) * frac;
+          pts.push({
+            x: pad.left + ((tMax - tMin) / visibleRange) * pw,
+            y: pad.top + ph - ((vAtMax - yMin) / (yMax - yMin)) * ph,
+          });
+        }
+        return pts;
+      }
+      pts.push({
+        x: pad.left + ((t - tMin) / visibleRange) * pw,
+        y: pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph,
+      });
+      lastT = t; lastV = v;
     }
     return pts;
   }
@@ -81,11 +103,45 @@ export function drawForecastOverlay(ctx, data, nowSec, cutoffSec, tMin, tMax, vi
   }
 }
 
+// Pure: aggregate the modeForecast hourly entries into bucket totals
+// for [segStart, segEnd). Each entry carries a single timestamp and
+// represents the mode active for the full [t, t+1h) interval, so a
+// bucket smaller than 1 h gets its overlap-fraction-of-an-hour rather
+// than 1.0 if the entry's timestamp happens to land inside it. The
+// previous "+1 if t is in bucket" math left every other 30-min bucket
+// empty when the forecast was at 1-hour resolution — see PR for the
+// 15min/30min-bar zoom screenshots that motivated the fix.
+//
+// emergency entries carry an optional `duty` (0..1); a partial duty
+// scales the per-hour contribution proportionally. So a 30-min bucket
+// fully inside an "emergency_heating duty 0.4" hour contributes
+// 0.4 × 0.5 h = 0.2 h of emergency, which divided by segHours = 0.5
+// renders as a 40%-tall bar — matching the underlying duty cycle.
+export function aggregateForecastBucket(modeForecast, segStart, segEnd) {
+  const HOUR_SEC = 3600;
+  let chargingHours = 0, heatingHours = 0, emergencyHours = 0;
+  for (let i = 0; i < modeForecast.length; i++) {
+    const e = modeForecast[i];
+    const t = Math.floor(new Date(e.ts).getTime() / 1000);
+    const eEnd = t + HOUR_SEC;
+    const overlap = Math.max(0, Math.min(eEnd, segEnd) - Math.max(t, segStart));
+    if (overlap <= 0) continue;
+    const oh = overlap / HOUR_SEC;
+    if (e.mode === 'solar_charging')          chargingHours += oh;
+    else if (e.mode === 'greenhouse_heating') heatingHours  += oh;
+    else if (e.mode === 'emergency_heating') {
+      const duty = typeof e.duty === 'number' ? e.duty : 1;
+      emergencyHours += duty * oh;
+    }
+  }
+  return { chargingHours, heatingHours, emergencyHours };
+}
+
 // Render predicted mode bars past "now" using the same x-bucketing AND
-// fractional y-heights as the historical duty bars. modeForecast is at
-// 1-hour resolution; bars stack charging (red, bottom), heating (gold,
-// middle), emergency (orange, top) — matching the historical stack
-// order, with slightly dimmer alphas so the eye reads "projection".
+// fractional y-heights as the historical duty bars. Bars stack
+// charging (red, bottom), heating (gold, middle), emergency (orange,
+// top) — matching the historical stack order, with slightly dimmer
+// alphas so the eye reads "projection".
 function drawForecastModeBars(ctx, modeForecast, nowSec, cutoffSec, tMin, tMax, visibleRange, barAreaH, barY0, pad, pw) {
   const bucketSec = pickBucketSize(visibleRange);
   // Align bucket boundaries the same way dutyBucketsIn does so the right-
@@ -106,21 +162,8 @@ function drawForecastModeBars(ctx, modeForecast, nowSec, cutoffSec, tMin, tMax, 
     const segEnd   = Math.min(hrEnd, cutoffSec);
     if (segEnd <= segStart) continue;
 
-    let chargingHours = 0, heatingHours = 0, emergencyHours = 0;
-    for (let i = 0; i < modeForecast.length; i++) {
-      const e = modeForecast[i];
-      const t = Math.floor(new Date(e.ts).getTime() / 1000);
-      if (t < segStart || t >= segEnd) continue;
-      if (e.mode === 'solar_charging')          chargingHours  += 1;
-      else if (e.mode === 'greenhouse_heating') heatingHours   += 1;
-      else if (e.mode === 'emergency_heating') {
-        // Emergency entries carry a `duty` field (0..1) — the fractional
-        // heater run-time in that hour. A duty of 0.30 means the bar
-        // reaches 30% of the bucket's height for that hour, matching how
-        // historical bars render observed duty cycles.
-        emergencyHours += typeof e.duty === 'number' ? e.duty : 1;
-      }
-    }
+    const { chargingHours, heatingHours, emergencyHours } =
+      aggregateForecastBucket(modeForecast, segStart, segEnd);
     // Per-bucket fraction = hours-on / hours-in-the-post-now slice of this
     // bucket. For the partial bucket straddling "now" we measure against
     // segLen (not bucketSec) — otherwise a single predicted hour in a 25-
