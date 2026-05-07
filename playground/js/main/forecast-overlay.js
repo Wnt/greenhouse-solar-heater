@@ -8,6 +8,7 @@
 
 import { pickBucketSize } from '../ui.js';
 import { drawEmergencyStripes } from './emergency-stripes.js';
+import { hiddenSeries } from './state.js';
 
 // Forecast overlay rendering: tank avg + greenhouse + outdoor trajectories
 // (dashed) past "now", predicted mode bands (charging/heating/emergency)
@@ -76,9 +77,9 @@ export function drawForecastOverlay(ctx, data, nowSec, cutoffSec, tMin, tMax, vi
   // Outdoor lives in the raw weather array (top-level of the response,
   // alongside `forecast`), not in the engine's projection — the engine
   // consumes it as an input to compute tank/greenhouse cooling.
-  drawDashed(toPts(fc.tankTrajectory, p => (typeof p.avg === 'number' ? p.avg : (p.top + p.bottom) / 2)), '#e9c349', 1.5);
-  drawDashed(toPts(fc.greenhouseTrajectory, p => p.temp), '#69d0c5', 1.5);
-  drawDashed(toPts(data.weather, p => p.temperature, 'validAt'), '#42a5f5', 1);
+  if (!hiddenSeries.has('forecast_tank'))       drawDashed(toPts(fc.tankTrajectory, p => (typeof p.avg === 'number' ? p.avg : (p.top + p.bottom) / 2)), '#e9c349', 1.5);
+  if (!hiddenSeries.has('forecast_greenhouse')) drawDashed(toPts(fc.greenhouseTrajectory, p => p.temp), '#69d0c5', 1.5);
+  if (!hiddenSeries.has('forecast_outdoor'))    drawDashed(toPts(data.weather, p => p.temperature, 'validAt'), '#42a5f5', 1);
 
   // Predicted mode bands (charging / heating / emergency) past "now",
   // bucketed at the same bucketSec as the historical duty bars on the
@@ -183,18 +184,18 @@ function drawForecastModeBars(ctx, modeForecast, nowSec, cutoffSec, tMin, tMax, 
     const barW = Math.max(1, ((segEnd - segStart) / visibleRange) * pw - 2);
     let stackH = 0;
 
-    if (chargingFrac > 0) {
+    if (chargingFrac > 0 && !hiddenSeries.has('forecast_charging')) {
       const bh = chargingFrac * barAreaH;
       ctx.fillStyle = 'rgba(238, 125, 119, 0.45)';
       ctx.fillRect(barX, barY0 - bh, barW, bh);
       stackH += bh;
     }
-    if (heatingFrac > 0) {
+    if (heatingFrac > 0 && !hiddenSeries.has('forecast_heating')) {
       const bh = heatingFrac * barAreaH;
       ctx.fillStyle = 'rgba(233, 195, 73, 0.45)';
       ctx.fillRect(barX, barY0 - stackH - bh, barW, bh);
     }
-    if (emergencyFrac > 0) {
+    if (emergencyFrac > 0 && !hiddenSeries.has('forecast_emergency')) {
       const bh = emergencyFrac * barAreaH;
       // Mirror the historical band: anchor at baseline so the stripes
       // overlay the underlying charging/heating bar at the same X.

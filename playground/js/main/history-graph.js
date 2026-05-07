@@ -10,6 +10,7 @@ import { SIM_START_HOUR } from '../sim-bootstrap.js';
 import {
   timeSeriesStore, graphRange, showAllSensors, chartZoom,
   showForecast, forecastData, FORECAST_OVERLAY_SEC,
+  hiddenSeries,
 } from './state.js';
 import { coverageInBucket } from './mode-events.js';
 import { drawForecastOverlay } from './forecast-overlay.js';
@@ -229,14 +230,14 @@ export function drawHistoryGraph() {
 
     let stackH = 0;
 
-    if (chargingFrac > 0) {
+    if (chargingFrac > 0 && !hiddenSeries.has('charging')) {
       const bh = chargingFrac * barAreaH;
       ctx.fillStyle = 'rgba(238, 125, 119, 0.6)';
       ctx.fillRect(barX, barY0 - bh, barW, bh);
       stackH += bh;
     }
 
-    if (heatingFrac > 0) {
+    if (heatingFrac > 0 && !hiddenSeries.has('heating')) {
       const htBh = heatingFrac * barAreaH;
       ctx.fillStyle = 'rgba(233, 195, 73, 0.6)';
       ctx.fillRect(barX, barY0 - stackH - htBh, barW, htBh);
@@ -244,14 +245,18 @@ export function drawHistoryGraph() {
 
     if (emergencyFrac > 0) {
       hasEmergency = true;
-      const emBh = emergencyFrac * barAreaH;
-      // Anchor the EMERGENCY band at the baseline (Y-zero), not stacked
-      // on top of charging+heating. The stripes are transparent between
-      // lines so the underlying mode bar's true height stays readable
-      // through the gaps — matches the overlay semantics.
-      drawEmergencyStripes(ctx, barX, barY0 - emBh, barW, emBh, 'rgba(255, 112, 67, 0.85)');
+      if (!hiddenSeries.has('emergency')) {
+        const emBh = emergencyFrac * barAreaH;
+        // Anchor the EMERGENCY band at the baseline (Y-zero), not stacked
+        // on top of charging+heating. The stripes are transparent between
+        // lines so the underlying mode bar's true height stays readable
+        // through the gaps — matches the overlay semantics.
+        drawEmergencyStripes(ctx, barX, barY0 - emBh, barW, emBh, 'rgba(255, 112, 67, 0.85)');
+      }
     }
   }
+  // The legend slot stays visible whenever emergency activity exists in
+  // the window so the user can click it back on after hiding it.
   document.getElementById('legend-emergency').style.display = hasEmergency ? 'flex' : 'none';
 
   // ── Temperature line (gold, matching Stitch design) ──
@@ -260,7 +265,7 @@ export function drawHistoryGraph() {
   // interpolated point at tMin so the line meets the chart's left edge
   // even when a real sensor-reading gap straddles the boundary.
   const smoothW = lineSmoothingWindow(visibleRange);
-  const pts = smoothPoints(
+  const pts = hiddenSeries.has('tank') ? [] : smoothPoints(
     collectSeriesPts(timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, tankAvgOf),
     smoothW,
   );
@@ -308,18 +313,18 @@ export function drawHistoryGraph() {
 
   // ── Tank sub-sensor lines (only with the "All sensors" toggle) ──
   if (showAllSensors) {
-    drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_tank_top', '#ff9f43', 1);
-    drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_tank_bottom', '#b088d6', 1);
+    if (!hiddenSeries.has('t_tank_top'))    drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_tank_top', '#ff9f43', 1);
+    if (!hiddenSeries.has('t_tank_bottom')) drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_tank_bottom', '#b088d6', 1);
   }
 
   // ── Collector line (red) ──
-  drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_collector', '#ef5350', 1.5);
+  if (!hiddenSeries.has('t_collector')) drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_collector', '#ef5350', 1.5);
 
   // ── Greenhouse line (green) ──
-  drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_greenhouse', '#69d0c5', 1);
+  if (!hiddenSeries.has('t_greenhouse')) drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_greenhouse', '#69d0c5', 1);
 
   // ── Outside line (blue) ──
-  drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_outdoor', '#42a5f5', 1);
+  if (!hiddenSeries.has('t_outdoor')) drawTempLine(ctx, timeSeriesStore, tMin, tMax, visibleRange, pad, pw, ph, yMin, yMax, 't_outdoor', '#42a5f5', 1);
 
   // ── Forecast overlay (next 48 h, dashed, only with the "Forecast" toggle) ──
   // Live-only (chartNowSec returns null in sim mode → overlay no-ops).
