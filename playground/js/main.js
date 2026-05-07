@@ -45,6 +45,7 @@ import {
   params, timeSeriesStore, trendStore,
   setModel, setController, setRunning,
   setSimSpeed, setShowAllSensors, setShowForecast,
+  hiddenSeries, toggleSeriesHidden,
 } from './main/state.js';
 
 let config = null;
@@ -95,6 +96,7 @@ async function init() {
   setupTimeRangeSlider();
   setupAllSensorsToggle();
   setupForecastToggle();
+  setupLegendToggles();
   setupFAB();
   resetSim();
   // Schematic view — async build, handle held in display-update module.
@@ -270,6 +272,33 @@ function applyForecastLegendVisibility() {
   const display = showForecast ? '' : 'none';
   document.querySelectorAll('.forecast-legend').forEach((el) => {
     el.style.display = display;
+  });
+}
+
+// Click/keyboard handlers on each `.graph-legend-item[data-series]` toggle
+// the matching series in `hiddenSeries`. The drawing code reads the set
+// directly, so a redraw reflects the change. aria-pressed mirrors the
+// hidden state — the inactive CSS hangs off that attribute selector so
+// state, a11y, and visuals all stay aligned.
+function setupLegendToggles() {
+  const items = document.querySelectorAll('.graph-legend-item[data-series]');
+  items.forEach((el) => {
+    const id = el.getAttribute('data-series');
+    if (!id) return;
+    const sync = () => el.setAttribute('aria-pressed', hiddenSeries.has(id) ? 'true' : 'false');
+    sync();
+    const toggle = () => {
+      toggleSeriesHidden(id);
+      sync();
+      drawHistoryGraph();
+    };
+    el.addEventListener('click', toggle);
+    el.addEventListener('keydown', (e) => {
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        toggle();
+      }
+    });
   });
 }
 

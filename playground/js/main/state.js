@@ -57,6 +57,17 @@ export function setShowForecast(v) { showForecast = v; }
 export let forecastData = null;
 export function setForecastData(v) { forecastData = v; }
 
+// Per-series hide flags driven by clicks on the chart legend. Each
+// id matches a `data-series` attribute on a legend item and the
+// corresponding skip-check in history-graph.js / forecast-overlay.js.
+// In-memory only (matches showAllSensors / showForecast).
+export const hiddenSeries = new Set();
+export function toggleSeriesHidden(id) {
+  if (hiddenSeries.has(id)) hiddenSeries.delete(id);
+  else hiddenSeries.add(id);
+  return hiddenSeries.has(id);
+}
+
 // Full engine horizon, shown when the forecast overlay is on. The
 // physics/cost engine returns 48 h of trajectory + weather, and the
 // overlay surfaces all of it so the user can see the entire projected

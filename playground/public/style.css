@@ -679,6 +679,28 @@ select, input, textarea { max-width: 100%; }
   letter-spacing: 0.1em;
   color: var(--on-surface-variant);
   font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s ease;
+}
+
+.graph-legend-item:focus-visible {
+  outline: 2px solid var(--on-surface-variant);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Inactive style — applied when the user clicks a legend label to hide
+ * its series in the graph. Dim the whole row and strike through the text
+ * so the marker stays color-identifiable but reads as "off". */
+.graph-legend-item[aria-pressed="true"] {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.graph-legend-item[aria-pressed="true"] .graph-legend-stats {
+  text-decoration: line-through;
 }
 
 .graph-legend-dot {
