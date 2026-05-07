@@ -46,6 +46,7 @@ import {
   setModel, setController, setRunning,
   setSimSpeed, setShowAllSensors, setShowForecast,
   hiddenSeries, toggleSeriesHidden,
+  setChartFullscreen,
 } from './main/state.js';
 
 let config = null;
@@ -97,6 +98,7 @@ async function init() {
   setupAllSensorsToggle();
   setupForecastToggle();
   setupLegendToggles();
+  setupFullscreenToggle();
   setupFAB();
   resetSim();
   // Schematic view — async build, handle held in display-update module.
@@ -273,6 +275,52 @@ function applyForecastLegendVisibility() {
   document.querySelectorAll('.forecast-legend').forEach((el) => {
     el.style.display = display;
   });
+}
+
+// Fullscreen toggle for the chart card. Uses the native Fullscreen API
+// on the same .graph-card element so the existing toggles, legend, WS
+// data updates, and chartZoom state all stay live — no duplicate DOM,
+// no parallel state to keep in sync. The icon flips on
+// fullscreenchange (also covers ESC and the browser's own exit gesture)
+// and a redraw fires so the autoscale + Y-axis labels re-evaluate
+// against the new dimensions. A window resize listener keeps the
+// canvas sharp during the enter/exit animation on browsers that fire
+// resize before fullscreenchange.
+function setupFullscreenToggle() {
+  const btn = document.getElementById('graph-fullscreen-btn');
+  const icon = document.getElementById('graph-fullscreen-icon');
+  const card = document.querySelector('.graph-card');
+  if (!btn || !card || !icon) return;
+
+  const reqFs = card.requestFullscreen || card.webkitRequestFullscreen;
+  const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+  // Hide the affordance entirely on browsers without the API rather
+  // than show a button that does nothing when tapped.
+  if (!reqFs || !exitFs) { btn.style.display = 'none'; return; }
+
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+
+  btn.addEventListener('click', () => {
+    if (fsElement() === card) {
+      const r = exitFs.call(document);
+      if (r && typeof r.catch === 'function') r.catch(() => {});
+    } else {
+      const r = reqFs.call(card);
+      if (r && typeof r.catch === 'function') r.catch(() => {});
+    }
+  });
+
+  const sync = () => {
+    const active = fsElement() === card;
+    setChartFullscreen(active);
+    icon.textContent = active ? 'fullscreen_exit' : 'fullscreen';
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    btn.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Toggle fullscreen');
+    drawHistoryGraph();
+  };
+  document.addEventListener('fullscreenchange', sync);
+  document.addEventListener('webkitfullscreenchange', sync);
+  window.addEventListener('resize', () => drawHistoryGraph());
 }
 
 // Click/keyboard handlers on each `.graph-legend-item[data-series]` toggle

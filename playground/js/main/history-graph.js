@@ -10,7 +10,7 @@ import { SIM_START_HOUR } from '../sim-bootstrap.js';
 import {
   timeSeriesStore, graphRange, showAllSensors, chartZoom,
   showForecast, forecastData, FORECAST_OVERLAY_SEC,
-  hiddenSeries,
+  hiddenSeries, chartFullscreen,
 } from './state.js';
 import { coverageInBucket } from './mode-events.js';
 import { drawForecastOverlay } from './forecast-overlay.js';
@@ -135,6 +135,47 @@ export function tankAvgOf(row) {
   return (row.t_tank_top + row.t_tank_bottom) / 2;
 }
 
+// Pure: scan visible non-hidden temperature samples and return a Y
+// range that fits them with 10% headroom, snapped to multiples of 5°
+// for tidy axis labels. Falls back to the embedded-card default
+// [0,100] when no in-window samples exist (boot before /api/history
+// has resolved). The 5° floor on the data span keeps a flat line from
+// rendering as a paper-thin slice when readings barely move.
+export function autoYRange(timeSeriesStore, tMin, tMax, hidden, allSensors) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  const baseKeys = ['t_collector', 't_greenhouse', 't_outdoor'];
+  const detailKeys = allSensors ? ['t_tank_top', 't_tank_bottom'] : [];
+  for (let i = 0; i < timeSeriesStore.times.length; i++) {
+    const t = timeSeriesStore.times[i];
+    if (t < tMin || t > tMax) continue;
+    const row = timeSeriesStore.values[i];
+    if (!hidden.has('tank')) {
+      const a = tankAvgOf(row);
+      if (a !== null) { if (a < lo) lo = a; if (a > hi) hi = a; }
+    }
+    for (let k = 0; k < baseKeys.length; k++) {
+      const key = baseKeys[k];
+      if (hidden.has(key)) continue;
+      const v = row[key];
+      if (isNum(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    }
+    for (let k = 0; k < detailKeys.length; k++) {
+      const key = detailKeys[k];
+      if (hidden.has(key)) continue;
+      const v = row[key];
+      if (isNum(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    }
+  }
+  if (!isFinite(lo) || !isFinite(hi)) return { yMin: 0, yMax: 100 };
+  if (hi - lo < 5) hi = lo + 5;
+  const range = hi - lo;
+  return {
+    yMin: Math.floor((lo - range * 0.1) / 5) * 5,
+    yMax: Math.ceil((hi + range * 0.1) / 5) * 5,
+  };
+}
+
 export function drawHistoryGraph() {
   const canvas = document.getElementById('chart');
   const ctx = canvas.getContext('2d');
@@ -149,7 +190,9 @@ export function drawHistoryGraph() {
   const dh = canvas.offsetHeight;
   ctx.clearRect(0, 0, dw, dh);
 
-  const pad = { top: 16, right: 16, bottom: 24, left: 8 };
+  // Fullscreen mode adds a left-side gutter for the Y-axis labels.
+  // Otherwise the chart hugs the card edge as before.
+  const pad = { top: 16, right: 16, bottom: 24, left: chartFullscreen ? 36 : 8 };
   const pw = dw - pad.left - pad.right;
   const ph = dh - pad.top - pad.bottom;
 
@@ -158,10 +201,15 @@ export function drawHistoryGraph() {
   const { tMin, tMax } = getChartWindow();
   const visibleRange = tMax - tMin;
 
-  // Y range for temperature
-  const yMin = 0, yMax = 100;
+  // Y range — fullscreen mode autoscales to the visible non-hidden
+  // series (with 10% padding, snapped to multiples of 5°). The default
+  // [0,100] keeps the embedded card view stable across data.
+  const { yMin, yMax } = chartFullscreen
+    ? autoYRange(timeSeriesStore, tMin, tMax, hiddenSeries, showAllSensors)
+    : { yMin: 0, yMax: 100 };
 
-  // Grid lines
+  // Grid lines (4 segments → 5 lines counting both edges; the inner
+  // 3 are the "interior" lines drawn here).
   ctx.strokeStyle = 'rgba(255,255,255,0.05)';
   ctx.lineWidth = 1;
   for (let i = 1; i < 4; i++) {
@@ -170,6 +218,23 @@ export function drawHistoryGraph() {
     ctx.moveTo(pad.left, y);
     ctx.lineTo(pad.left + pw, y);
     ctx.stroke();
+  }
+
+  // Y-axis labels — fullscreen only. Five labels at the gridline
+  // positions (0, 1/4, 2/4, 3/4, 4/4) so the user can read off
+  // temperatures without hovering for the inspector.
+  if (chartFullscreen) {
+    ctx.fillStyle = '#a5abb9';
+    ctx.font = '10px Manrope, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i <= 4; i++) {
+      const frac = i / 4;
+      const y = pad.top + ph - frac * ph;
+      const v = yMin + frac * (yMax - yMin);
+      ctx.fillText(Math.round(v) + '°', pad.left - 4, y);
+    }
+    ctx.textBaseline = 'alphabetic';
   }
 
   // X-axis time labels — pick a step that keeps the label count readable
