@@ -219,6 +219,13 @@ function computeSustainForecast(opts) {
   // of the heating state (the device can charge while heating); when
   // both apply the entry is duplicated with separate ts/mode pairs.
   const modeForecast           = [];
+  // Per-hour predicted components — what the simulation thinks
+  // contributed to the tank/GH state during this hour. Surfaced in
+  // forecast_predictions row capture so a future tuning pass can
+  // diagnose which sub-model went wrong (the aggregate tank/GH temp
+  // alone doesn't localise the error). One entry per simulated hour h
+  // (0..47) describing the consumption between h and h+1.
+  const componentTrajectory    = [];
 
   const HOURS = 48;
 
@@ -298,6 +305,12 @@ function computeSustainForecast(opts) {
     // to a temperature delta. Idle mode leaves both at zero.
     let radHeatToGhW = 0;
     let heaterHeatToGhW = 0;
+    // Components captured per-hour for forecast_predictions storage —
+    // populated by each branch as it computes them, pushed once at the
+    // bottom of the loop. Lets a future tuning pass decompose
+    // prediction errors into solar / radiator / heater / loss buckets.
+    let hourHeaterKwh = 0;
+    let hourTankLossW = 0;
 
     if (simMode === 'greenhouse_heating') {
       modeForecast.push({ ts: hourDate, mode: simMode });
@@ -305,6 +318,14 @@ function computeSustainForecast(opts) {
       tankDeltaJ -= radDeliveredW * SECONDS_PER_HOUR;
       radHeatToGhW = radDeliveredW;
       greenhouseHeatingHours += 1;
+      // Tank also leaks during heating (heating extracts via radiator,
+      // leakage is the residual passive loss to ambient). Track for
+      // capture even though the branch already accounts for it via
+      // tankDeltaJ above? No — tankLossW here is the LEAKAGE component
+      // only, not the radiator delivery. Leakage isn't subtracted in
+      // this branch (radiator dominates), so report 0 to keep components
+      // additive.
+      hourTankLossW = 0;
     } else if (simMode === 'emergency_heating') {
       // The real device overlays the heater on the active pump mode
       // (system.yaml overlays.emergency_heating: "the space heater is
@@ -338,6 +359,8 @@ function computeSustainForecast(opts) {
       tankDeltaJ -= tankLossW * SECONDS_PER_HOUR;
       radHeatToGhW = radDeliveredW;
       heaterHeatToGhW = heaterDuty * heaterW;
+      hourHeaterKwh = heaterEnergyKwh;
+      hourTankLossW = tankLossW;
       // Carry the duty fraction so the chart can render <100% bars instead
       // of solid orange across hours where the heater barely cycles.
       modeForecast.push({ ts: hourDate, mode: simMode, duty: round2(heaterDuty) });
@@ -346,6 +369,7 @@ function computeSustainForecast(opts) {
       // balance below handles the GH update.
       const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
       tankDeltaJ -= tankLossW * SECONDS_PER_HOUR;
+      hourTankLossW = tankLossW;
     }
 
     // ── Unified greenhouse heat balance ──
@@ -428,6 +452,16 @@ function computeSustainForecast(opts) {
     // outdoor mathematically, but a misfit α_solar < 0 could; clamp.
     if (curGhTemp < outdoorC) curGhTemp = outdoorC;
 
+    // ── 6. Capture per-hour predicted components ──
+    componentTrajectory.push({
+      ts: hourDate,
+      solarGainKwh:    round4(solarGainKwh),
+      radDeliveredW:   round2(radHeatToGhW),
+      heaterKwh:       round4(hourHeaterKwh),
+      tankLossW:       round2(hourTankLossW),
+      cloudFactor:     round2(cloudFactor),
+    });
+
     // ── Floor crossing detection (interpolated) ──
     const newTankAvg = (tankTopC + tankBotC) / 2;
     if (hoursUntilFloor === null && newTankAvg < cfg.tankFloorC && prevTankAvg >= cfg.tankFloorC) {
@@ -505,6 +539,7 @@ function computeSustainForecast(opts) {
     horizonHours:           HOURS,
     tankTrajectory,
     greenhouseTrajectory:   ghTrajectory,
+    componentTrajectory,
     hoursUntilFloor:        hoursUntilFloor !== null ? round2(hoursUntilFloor) : null,
     hoursUntilBackupNeeded: hoursUntilBackupNeeded !== null ? round2(hoursUntilBackupNeeded) : null,
     electricKwh:            round4(electricKwh),

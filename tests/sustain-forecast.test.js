@@ -1055,6 +1055,29 @@ describe('greenhouse heat balance — solar absorption', () => {
       'tau off by >20%: got ' + coeff.ghTimeConstantH);
   });
 
+  it('emits a 48-entry componentTrajectory with per-hour input/output components', () => {
+    const now = Date.UTC(2026, 5, 1);
+    const weather = []; const prices = [];
+    for (let h = 0; h < 48; h++) {
+      const ts = new Date(now + h * 3600 * 1000).toISOString();
+      weather.push({ ts, temperature: 10, radiationGlobal: 200, windSpeed: 1, precipitation: 0 });
+      prices.push({ ts, priceCKwh: 5 });
+    }
+    const fc = computeSustainForecast({
+      now, tankTop: 30, tankBottom: 25, greenhouseTemp: 12,
+      currentMode: 'idle', weather48h: weather, prices48h: prices,
+      coefficients: { tankLeakageWPerK: 3, solarGainKwhByHour: new Array(24).fill(0.3) },
+      config: {},
+    });
+    assert.equal(fc.componentTrajectory.length, 48);
+    const c0 = fc.componentTrajectory[0];
+    assert.ok('solarGainKwh' in c0);
+    assert.ok('radDeliveredW' in c0);
+    assert.ok('heaterKwh' in c0);
+    assert.ok('tankLossW' in c0);
+    assert.ok('cloudFactor' in c0);
+  });
+
   it('vent saturation holds GH below 35 C even at 700 W/m^2 + outdoor 25 C', () => {
     // Worst-case summer: hot outdoor + full sun. The new vent term
     // must keep the prediction realistic — without it the heat-balance
