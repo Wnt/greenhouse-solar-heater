@@ -288,7 +288,9 @@ function computeSustainForecast(opts) {
       tankDeltaJ -= radDeliveredW * SECONDS_PER_HOUR;
       radHeatToGhW = radDeliveredW;
       greenhouseHeatingHours += 1;
-      hourTankLossW = 0; // leakage component only; radiator dominates here.
+      // hourTankLossW stays at the loop-top default 0 here — the
+      // radiator dominates the tank side and we report leakage as 0
+      // to keep components additive.
     } else if (simMode === 'emergency_heating') {
       // The real device overlays the heater on the active pump mode
       // (system.yaml overlays.emergency_heating: "the space heater is
