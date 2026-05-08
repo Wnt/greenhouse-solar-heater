@@ -70,6 +70,16 @@ const DEFAULT_CONFIG = {
   // Without this, the engine assumes 100% duty for every emergency hour,
   // which over-counts backup energy by ~30-40% in spring/fall conditions.
   greenhouseLossWPerK:      120,
+  // Greenhouse-air heat balance (used in the unified per-hour update,
+  // active across all simulated modes — replaces the τ=8 h outdoor lerp
+  // that ignored solar gain and let the simulation hover near outdoor
+  // temperature even on bright days). All four values are normally
+  // overridden by sustain-forecast-fit; the defaults here keep the
+  // engine sane on cold start.
+  ghTimeConstantH:          2.0,   // passive cooling τ (hours), gh<vent
+  ghSolarAlphaCPerWm2:      0.025, // °C rise per W/m² of radiation
+  ghVentOpenC:              27,    // gravity vents engage above this
+  ghVentTauH:               0.3,   // cooling τ once vents open
   // Confidence boost: set this to a recent Date when weather was fetched
   weatherFetchedAt:         null,
   // Number of buckets used for the empirical fit (for confidence)
