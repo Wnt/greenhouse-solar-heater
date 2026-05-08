@@ -8,6 +8,7 @@ import { store } from './app-state.js';
 import { initSubscriptions, setViewLifecycle } from './subscriptions.js';
 import { initNavigation } from './actions/navigation.js';
 import { mountCrashesView } from './crashes-view.js';
+import { mountDiagnosticsView, registerDiagnosticsSync } from './diagnostics-view.js';
 import { initAuth } from './auth.js';
 import { captureInstallPrompt, initNotifications } from './notifications.js';
 import { buildSchematic as buildSchematicFromSvg } from './schematic.js';
@@ -84,8 +85,16 @@ async function init() {
     },
     crashes: {
       mount: () => mountCrashesView()
+    },
+    diagnostics: {
+      mount: () => mountDiagnosticsView()
     }
   });
+
+  // Diagnostics sync source — refetches on Android resume / network
+  // recovery whenever the user is on #diagnostics in live mode. Registered
+  // once at boot; the source's isActive() gates per-resync execution.
+  registerDiagnosticsSync();
 
   // Initialize store subscriptions (nav, overlays, indicators)
   initSubscriptions(store);

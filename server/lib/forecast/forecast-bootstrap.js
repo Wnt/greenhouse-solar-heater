@@ -15,6 +15,7 @@ const { load: loadYaml } = require('../../../scripts/lib/yaml-load');
 const { create: createForecastRefresher } = require('./forecast-refresher');
 const { createForecastHandler } = require('./forecast-handler');
 const { create: createForecastPredictions } = require('./forecast-predictions');
+const { create: createForecastDiagnostics } = require('./forecast-diagnostics');
 const fmiClient = require('./fmi-client');
 const spotPriceClient = require('./spot-price-client');
 
@@ -85,8 +86,14 @@ function start({ pool, log, repoRoot, isPreviewMode }) {
   // request after pod restart doesn't pay the ~1.5s history-fit cost.
   // Skip in tests (no real DB / pg-mem missing the hypertable structure).
   if (!isTestEnv) handler.prewarm();
+
+  // Diagnostics handler — read-only predicted-vs-actual analysis over
+  // the multi-horizon predictions table. Shares the pool; no state.
+  const diagnostics = createForecastDiagnostics({ pool, log });
+
   return {
     handle: function (req, res) { handler.handle(req, res); },
+    handleDiagnostics: function (req, res) { diagnostics.handle(req, res); },
     stop:   function () { refresher.stop(); predictions.stop(); },
   };
 }
