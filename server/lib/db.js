@@ -91,18 +91,49 @@ function initSchema(callback) {
     if (err) { callback(err); return; }
     client = c;
 
-    runStatements(client, SCHEMA_SQL, 0, function (schemaErr) {
-      if (schemaErr) { release(); callback(schemaErr); return; }
+    migrateLegacyForecastPredictions(client, function (migErr) {
+      if (migErr) {
+        // Non-fatal: log and continue. The CREATE below may still succeed
+        // (legacy table absent → no-op) or fail loudly with a clearer
+        // duplicate-shape error than swallowing this one would produce.
+        log.warn('forecast_predictions legacy migration probe failed', { error: migErr.message });
+      }
+      runStatements(client, SCHEMA_SQL, 0, function (schemaErr) {
+        if (schemaErr) { release(); callback(schemaErr); return; }
 
-      runStatements(client, AGGREGATE_SQL, 0, function (aggErr) {
-        if (aggErr) {
-          log.warn('aggregate creation skipped (may already exist)', { error: aggErr.message });
-        }
-        release();
-        callback(null);
+        runStatements(client, AGGREGATE_SQL, 0, function (aggErr) {
+          if (aggErr) {
+            log.warn('aggregate creation skipped (may already exist)', { error: aggErr.message });
+          }
+          release();
+          callback(null);
+        });
       });
     });
   });
+}
+
+// One-shot migration: pre-2026-05-08 forecast_predictions had a single
+// PK on for_hour and held only the +1h projection. The new shape adds
+// horizon_h to the PK and stores all 48 horizons per generation. If the
+// existing table lacks horizon_h, drop it so SCHEMA_SQL's CREATE can
+// take over. Idempotent: with the new shape in place the column check
+// finds horizon_h and the migration is a no-op.
+function migrateLegacyForecastPredictions(client, callback) {
+  client.query(
+    "SELECT 1 AS x FROM information_schema.tables WHERE table_name='forecast_predictions'",
+    function (err, exists) {
+      if (err || !exists.rows || exists.rows.length === 0) { callback(null); return; }
+      client.query(
+        "SELECT 1 AS x FROM information_schema.columns " +
+        "WHERE table_name='forecast_predictions' AND column_name='horizon_h'",
+        function (cErr, hasCol) {
+          if (cErr) { callback(null); return; } // best-effort
+          if (hasCol.rows && hasCol.rows.length > 0) { callback(null); return; }
+          log.info('forecast_predictions: dropping legacy single-PK shape for horizon_h migration');
+          client.query('DROP TABLE forecast_predictions', callback);
+        });
+    });
 }
 
 function runStatements(client, stmts, idx, callback) {

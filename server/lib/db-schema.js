@@ -111,50 +111,53 @@ const SCHEMA_SQL = [
 
   "CREATE INDEX IF NOT EXISTS spot_prices_valid_at ON spot_prices (valid_at DESC)",
 
-  // Captured forecast predictions — one row per "next hour" prediction,
-  // emitted by the HH:30 scheduler in forecast-predictions.js. Stored so
-  // an operator (or future tuning script) can compare what the forecast
-  // engine predicted N hours ago against what actually happened — the
-  // sensor_readings_30s aggregate retains the ground-truth side.
-  // PK on for_hour: each hour gets exactly one prediction (the most
-  // recent capture wins via ON CONFLICT DO UPDATE). No retention policy
-  // — at one row per hour the table grows ~9 k rows/year, which is
-  // negligible, and longer history = better tuning data.
+  // Captured forecast predictions — one row per (generated_at, horizon_h)
+  // pair, written in batches of 48 by the HH:30 scheduler so the full
+  // 48 h forecast trajectory is auditable against future ground truth.
+  //
+  // Replaces the pre-2026-05-08 single-row-per-for_hour layout, which
+  // only kept the +1 h projection — useless for verifying the 48 h
+  // trajectory the user actually reads on the forecast graph. Schema
+  // migration is JS-side (db.js initSchema): detects the legacy shape
+  // by absence of horizon_h and DROPs the table so the CREATE below
+  // takes over. Idempotent — once horizon_h exists, the migration is a
+  // no-op.
   "CREATE TABLE IF NOT EXISTS forecast_predictions (\n" +
-  "  for_hour          TIMESTAMPTZ NOT NULL,\n" +
-  "  generated_at      TIMESTAMPTZ NOT NULL,\n" +
-  "  mode              TEXT        NOT NULL,\n" +
-  "  has_solar_overlay BOOLEAN     NOT NULL DEFAULT FALSE,\n" +
-  "  duty              DOUBLE PRECISION,\n" +
-  "  tank_avg_c        DOUBLE PRECISION,\n" +
-  "  greenhouse_c      DOUBLE PRECISION,\n" +
-  "  outdoor_c         DOUBLE PRECISION,\n" +
-  "  radiation_w_m2    DOUBLE PRECISION,\n" +
-  "  price_c_kwh       DOUBLE PRECISION,\n" +
+  "  generated_at        TIMESTAMPTZ NOT NULL,\n" +
+  "  horizon_h           SMALLINT    NOT NULL,\n" +
+  "  for_hour            TIMESTAMPTZ NOT NULL,\n" +
+  "  mode                TEXT        NOT NULL,\n" +
+  "  has_solar_overlay   BOOLEAN     NOT NULL DEFAULT FALSE,\n" +
+  "  duty                DOUBLE PRECISION,\n" +
+  "  tank_top_c          DOUBLE PRECISION,\n" +
+  "  tank_bottom_c       DOUBLE PRECISION,\n" +
+  "  tank_avg_c          DOUBLE PRECISION,\n" +
+  "  greenhouse_c        DOUBLE PRECISION,\n" +
+  "  pred_solar_gain_kwh    DOUBLE PRECISION,\n" +
+  "  pred_rad_delivered_w   DOUBLE PRECISION,\n" +
+  "  pred_heater_kwh        DOUBLE PRECISION,\n" +
+  "  pred_tank_loss_w       DOUBLE PRECISION,\n" +
+  "  pred_cloud_factor      DOUBLE PRECISION,\n" +
+  "  outdoor_c           DOUBLE PRECISION,\n" +
+  "  radiation_w_m2      DOUBLE PRECISION,\n" +
+  "  wind_speed_m_s      DOUBLE PRECISION,\n" +
+  "  precipitation_mm    DOUBLE PRECISION,\n" +
+  "  price_c_kwh         DOUBLE PRECISION,\n" +
   // Algorithm version — sha256[:8] of forecast/* + extra sources.
-  // Lets an operator tell which code version produced a given row.
-  "  algorithm_version TEXT,\n" +
-  // Live tuning overrides (sparse map of geT/gxT/gmD/…) at capture
-  // time. Shared with the watchdog snapshot's tu shape; an operator
-  // changing thresholds mid-day can correlate predictions to the
-  // gates that drove them without cross-referencing config_events.
-  "  tu                JSONB,\n" +
-  "  PRIMARY KEY (for_hour)\n" +
+  "  algorithm_version   TEXT,\n" +
+  // Live tuning overrides (geT/gxT/ehE/…) and fitted coefficients used
+  // by this generation. Stored as JSONB so the schema doesn't have to
+  // chase every new fit parameter — a tuning analysis just unpacks the
+  // JSON.
+  "  tu                  JSONB,\n" +
+  "  coefficients        JSONB,\n" +
+  "  PRIMARY KEY (generated_at, horizon_h)\n" +
   ")",
 
-  "CREATE INDEX IF NOT EXISTS forecast_predictions_for_hour ON forecast_predictions (for_hour DESC)",
+  "SELECT create_hypertable('forecast_predictions', 'generated_at', if_not_exists => true)",
 
-  // One-time data migration for the for_hour off-by-one (PR #158). Pre-fix
-  // captures set for_hour = generation time; post-fix sets it to the
-  // predicted state's wall clock (= generation + 1 h). This UPDATE shifts
-  // pre-fix rows forward by an hour so they line up with the new
-  // semantics. Idempotent: once a row has been shifted its for_hour is
-  // ~1 h ahead of generated_at and the WHERE clause no longer matches it,
-  // so re-running on every server start is a no-op after the first time.
-  // Safe to leave in SCHEMA_SQL permanently; can be removed in a future
-  // pass once we're confident no pre-fix rows linger anywhere.
-  "UPDATE forecast_predictions SET for_hour = for_hour + INTERVAL '1 hour' " +
-  "WHERE for_hour < generated_at + INTERVAL '30 minutes'",
+  "CREATE INDEX IF NOT EXISTS forecast_predictions_for_hour ON forecast_predictions (for_hour DESC)",
+  "CREATE INDEX IF NOT EXISTS forecast_predictions_horizon ON forecast_predictions (horizon_h, generated_at DESC)",
 ];
 
 // Pre-aggregated 30-second buckets, used by getHistory for ranges ≥ 24 h.
