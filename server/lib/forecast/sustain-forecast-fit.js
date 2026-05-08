@@ -32,7 +32,12 @@ const MIN_BUCKETS_FOR_GH_FIT  = 3;
 // ~33 °C in sunny noon, cools to outdoor in ~2 h after vents close,
 // radiator measured at ~80–100 W/K from logged tank-drop data.
 const GH_TAU_MIN_H        = 0.5;
-const GH_TAU_MAX_H        = 8.0;
+// User's logged cooldown 27.8 → 12.1 °C in 4 h (outdoor 10 °C) implies
+// τ ≈ 1.9 h. Long-tail soil/structure thermal mass biases the 14d-
+// average fit upward toward 4 h, which makes the simulation hold gh
+// well above ehE all night (heater never fires). Cap at 3 h: above
+// this is implausible for an air-temperature-driven control loop.
+const GH_TAU_MAX_H        = 3.0;
 const GH_ALPHA_MIN        = 0.005;
 const GH_ALPHA_MAX        = 0.05;
 const RAD_UA_MIN_W_PER_K  = 40;
