@@ -281,36 +281,24 @@ function computeSustainForecast(opts) {
     const radPeakW = cfg.radiatorPowerKw * 1000;
 
     let tankDeltaJ = 0;
-    let newGhTemp;
+    // Active power injected into greenhouse air this hour. Each mode
+    // branch sets these; the unified heat balance below converts them
+    // to a temperature delta. Idle mode leaves both at zero.
+    let radHeatToGhW = 0;
+    let heaterHeatToGhW = 0;
 
     if (simMode === 'greenhouse_heating') {
       modeForecast.push({ ts: hourDate, mode: simMode });
       const radDeliveredW = Math.min(radPeakW, radUaWPerK * radDeltaT);
       tankDeltaJ -= radDeliveredW * SECONDS_PER_HOUR;
-      // Greenhouse evolution: when the radiator's delivered W matches the
-      // greenhouse's loss to outdoor, gh stays roughly stable (the case
-      // we currently observe at ΔT≈6K with gh hovering around the
-      // setpoint). When radiator falls below that, gh cools. We use the
-      // observed gh rate as a baseline anchor for the first few hours
-      // (captures whatever loss coefficient is actually achieved), then
-      // taper toward natural cooling as the radiator effectiveness falls.
-      const radEffectiveness = radPeakW > 0 ? Math.min(1, radDeliveredW / radPeakW) : 0;
-      const observedGhKpH = (observedGhDropKPerH !== null && currentMode === 'greenhouse_heating' && h < 6)
-        ? observedGhDropKPerH : 0.2;
-      const naturalCoolKpH = (curGhTemp - outdoorC) / 8;
-      const ghDropKpH = radEffectiveness * observedGhKpH + (1 - radEffectiveness) * naturalCoolKpH;
-      newGhTemp = curGhTemp - ghDropKpH;
+      radHeatToGhW = radDeliveredW;
       greenhouseHeatingHours += 1;
     } else if (simMode === 'emergency_heating') {
       // The real device overlays the heater on the active pump mode
       // (system.yaml overlays.emergency_heating: "the space heater is
       // overlaid on the active pump mode"). When the tank is hot enough
       // to drive the radiator, the radiator delivers most of the heat and
-      // the heater fills only the remaining gap. Pre-2026-05-04 the
-      // engine zero'd out the radiator during emergency, so a 40 °C tank
-      // with mild outdoor still projected near-100% heater duty for 48 h
-      // — the user-visible "continuous heater" forecast.
-      const radDeltaT = Math.max(0, tankAvg - curGhTemp);
+      // the heater fills only the remaining gap.
       const radDeliveredW = Math.min(radPeakW, radUaWPerK * radDeltaT);
       const ghTarget = (cfg.emergencyEnterC + cfg.emergencyExitC) / 2;
       const ghLossAtTargetW = cfg.greenhouseLossWPerK * Math.max(0, ghTarget - outdoorC);
@@ -336,33 +324,47 @@ function computeSustainForecast(opts) {
       // Tank still leaks slowly during emergency.
       const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
       tankDeltaJ -= tankLossW * SECONDS_PER_HOUR;
-      // Greenhouse evolution: when the heater is filling the gap, gh
-      // sits at ghTarget. When the radiator alone exceeds losses
-      // (heater idle), gh drifts up toward equilibrium gh_eq where
-      // rad = lossWPerK·(gh_eq − outdoor) — i.e. ghTarget +
-      // (radDeliveredW − ghLossAtTarget)/lossWPerK. The mode-decision
-      // block exits emergency once gh > ehX.
-      if (heaterDuty > 0) {
-        newGhTemp = ghTarget;
-      } else {
-        const ghEq = cfg.greenhouseLossWPerK > 0
-          ? outdoorC + radDeliveredW / cfg.greenhouseLossWPerK
-          : ghTarget;
-        newGhTemp = curGhTemp + (ghEq - curGhTemp) * (1 - Math.exp(-1 / 8));
-      }
+      radHeatToGhW = radDeliveredW;
+      heaterHeatToGhW = heaterDuty * heaterW;
       // Carry the duty fraction so the chart can render <100% bars instead
-      // of solid orange across hours where the heater barely cycles. The
-      // greenhouse-heating branch above pushes a binary entry (always-on
-      // radiator); only the emergency branch needs the duty field.
+      // of solid orange across hours where the heater barely cycles.
       modeForecast.push({ ts: hourDate, mode: simMode, duty: round2(heaterDuty) });
     } else {
-      // Idle.
+      // Idle: only tank leakage on the tank side; the unified heat
+      // balance below handles the GH update.
       const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
       tankDeltaJ -= tankLossW * SECONDS_PER_HOUR;
-      // Greenhouse drifts toward outdoor with τ = 8 h.
-      newGhTemp = curGhTemp + (outdoorC - curGhTemp) * (1 - Math.exp(-1 / 8));
     }
-    const ghDeltaJ = 0; void ghDeltaJ;
+
+    // ── Unified greenhouse heat balance ──
+    // dT/dt = (outdoor − gh)/τ_gh                ← passive loss
+    //       + α_solar · radiation                ← solar absorption through glazing
+    //       − max(0, gh − vent_open)/τ_vent      ← gravity-vent saturation
+    //       + (radHeat + heaterHeat) / C_gh      ← active mode contribution
+    //
+    // C_gh in J/K = 3600·τ_gh·greenhouseLossWPerK so the active term reads
+    // (W · 3600) / C_gh = W / (τ_gh · ghLoss) in K/h. At equilibrium under
+    // emergency the heater duty derived above maintains gh ≈ ghTarget,
+    // matching the device's bang-bang behaviour. Replaces the four
+    // hand-tuned per-branch newGhTemp updates with one equation that's
+    // active across every mode and hour.
+    //
+    // Substepping (60 × 1-minute steps): explicit Euler over a full hour
+    // overshoots when τ_vent ≈ 0.3 h or τ_gh ≈ 0.5 h (vent term dominates
+    // in summer; gh-outdoor delta is large in spring). 60 substeps keeps
+    // the per-step change << τ for any realistic combination.
+    const SUBSTEPS = 60;
+    const dtH = 1 / SUBSTEPS;
+    let newGhTemp = curGhTemp;
+    for (let s = 0; s < SUBSTEPS; s++) {
+      const ghPassive = (outdoorC - newGhTemp) / cfg.ghTimeConstantH;
+      const ghSolar   = cfg.ghSolarAlphaCPerWm2 * radiation;
+      const ghVent    = newGhTemp > cfg.ghVentOpenC
+        ? -(newGhTemp - cfg.ghVentOpenC) / cfg.ghVentTauH : 0;
+      const ghActive  = (cfg.ghTimeConstantH > 0 && cfg.greenhouseLossWPerK > 0)
+        ? (radHeatToGhW + heaterHeatToGhW) / (cfg.ghTimeConstantH * cfg.greenhouseLossWPerK) : 0;
+      newGhTemp += (ghPassive + ghSolar + ghVent + ghActive) * dtH;
+    }
 
     // ── 3. Solar charging credit (data-driven) ──
     // Use the historical kWh-per-clock-hour baseline (already integrates
@@ -410,7 +412,8 @@ function computeSustainForecast(opts) {
 
     // ── 5. Greenhouse temperature update ──
     curGhTemp = newGhTemp;
-    // Clamp: greenhouse can't go below outdoor (passive equilibrium).
+    // Hard floor at outdoor: the heat balance can't drive GH below
+    // outdoor mathematically, but a misfit α_solar < 0 could; clamp.
     if (curGhTemp < outdoorC) curGhTemp = outdoorC;
 
     // ── Floor crossing detection (interpolated) ──
