@@ -195,4 +195,22 @@ const AGGREGATE_SQL = [
   "CREATE INDEX IF NOT EXISTS sensor_readings_30s_bucket ON sensor_readings_30s (bucket DESC)",
 ];
 
-module.exports = { SCHEMA_SQL, AGGREGATE_SQL };
+// Drop pre-2026-05-08 forecast_predictions (single PK on for_hour) so
+// the SCHEMA_SQL CREATE recreates it with the (generated_at, horizon_h)
+// PK. Idempotent — no-op once horizon_h exists. Lives here next to the
+// SCHEMA_SQL it migrates so any future shape change touches one file.
+function migrateLegacyForecastPredictions(client, log, callback) {
+  const TBL = "table_name='forecast_predictions'";
+  client.query("SELECT 1 AS x FROM information_schema.tables WHERE " + TBL,
+    function (err, exists) {
+      if (err || !exists.rows || exists.rows.length === 0) { callback(null); return; }
+      client.query("SELECT 1 AS x FROM information_schema.columns WHERE " + TBL + " AND column_name='horizon_h'",
+        function (cErr, hasCol) {
+          if (cErr || (hasCol.rows && hasCol.rows.length > 0)) { callback(null); return; }
+          log.info('forecast_predictions: dropping legacy shape for horizon_h migration');
+          client.query('DROP TABLE forecast_predictions', callback);
+        });
+    });
+}
+
+module.exports = { SCHEMA_SQL, AGGREGATE_SQL, migrateLegacyForecastPredictions };
