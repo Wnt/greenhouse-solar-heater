@@ -184,6 +184,15 @@ function createForecastHandler(opts) {
 
   function queryHistory14d(callback) {
     // 14 days of sensor_readings_30s + mode events for coefficient fitting.
+    // Joins the closest hour-aligned weather_forecasts radiation onto each
+    // reading so the GH-model fits can mask off sunny hours, and excludes
+    // readings during maintenance intervals (manual override or mode-ban
+    // active) so the fit isn't polluted by hours where the controller
+    // wasn't free to actuate. config_events kind values: 'mo' = manual
+    // override (any new_value JSON = active), 'wb' = mode ban (new_value
+    // is the unix-second expiry; non-empty = banned). 'ea' bit-mask
+    // changes are skipped here — disabling the space heater is captured
+    // by 'wb EH' from the operator's perspective.
     const sensorSql =
       'SELECT bucket AS ts, sensor_id, avg_value AS value ' +
       'FROM sensor_readings_30s ' +
@@ -194,35 +203,28 @@ function createForecastHandler(opts) {
       'FROM state_events ' +
       "WHERE entity_type = 'mode' AND ts > NOW() - INTERVAL '14 days' " +
       'ORDER BY ts';
+    const radSql =
+      'SELECT DISTINCT ON (valid_at) valid_at, radiation_global ' +
+      'FROM weather_forecasts ' +
+      "WHERE valid_at > NOW() - INTERVAL '14 days' AND radiation_global IS NOT NULL " +
+      'ORDER BY valid_at, fetched_at DESC';
+    const maintSql =
+      "SELECT ts, kind, key, new_value FROM config_events " +
+      "WHERE ts > NOW() - INTERVAL '14 days' AND kind IN ('mo', 'wb') " +
+      "ORDER BY ts";
 
     pool.query(sensorSql, [], function (err, sensorResult) {
       if (err) { callback(err); return; }
       pool.query(modeSql, [], function (mErr, modeResult) {
         if (mErr) { callback(mErr); return; }
-
-        // Pivot sensor rows into { ts, tankTop, tankBottom, greenhouse, outdoor, collector }
-        const buckets = {};
-        (sensorResult.rows || []).forEach(function (row) {
-          const tsMs = new Date(row.ts).getTime();
-          if (!buckets[tsMs]) { buckets[tsMs] = { ts: new Date(row.ts) }; }
-          const field = {
-            tank_top:    'tankTop',
-            tank_bottom: 'tankBottom',
-            greenhouse:  'greenhouse',
-            outdoor:     'outdoor',
-            collector:   'collector',
-          }[row.sensor_id];
-          if (field) { buckets[tsMs][field] = row.value; }
+        pool.query(radSql, [], function (rErr, radResult) {
+          if (rErr) { callback(rErr); return; }
+          pool.query(maintSql, [], function (cErr, maintResult) {
+            if (cErr) { callback(cErr); return; }
+            const result = pivotHistory(sensorResult.rows, modeResult.rows, radResult.rows, maintResult.rows);
+            callback(null, result);
+          });
         });
-        const readings = Object.keys(buckets)
-          .sort(function (a, b) { return a - b; })
-          .map(function (k) { return buckets[k]; });
-
-        const modes = (modeResult.rows || []).map(function (r) {
-          return { ts: new Date(r.ts), mode: r.mode };
-        });
-
-        callback(null, { readings, modes });
       });
     });
   }
@@ -447,4 +449,133 @@ function createForecastHandler(opts) {
   return { handle, compute, prewarm };
 }
 
-module.exports = { createForecastHandler };
+// ── History pivoting / fit-input shaping ────────────────────────────────
+//
+// Hoisted out of the handler closure so it can be unit-tested and reused.
+// Pivots sensor rows into one record per timestamp, attaches the closest
+// hour-aligned forecast radiation (used by the GH-air fits to mask off
+// sunny hours), and drops readings that fall inside any maintenance
+// interval (manual-override or mode-ban active). Maintenance reasoning:
+//
+//   * `mo` (manual override) events with a non-empty new_value JSON open
+//     an interval; the next `mo` event closes it. Override leaves the
+//     controller un-free to actuate, so any greenhouse cooling/warming
+//     during the window doesn't reflect the automated dynamics we want
+//     to fit.
+//   * `wb` (mode ban) events open / close a per-mode ban. While GH or
+//     EH is banned the controller can't fire heating, so an idle hour
+//     during a ban doesn't represent the engine's "natural cooling"
+//     dynamic — drop those hours from the fit.
+//
+// In both cases the affected greenhouse data is what we DON'T want
+// driving the τ_gh / α_solar / loss fits; tank-side fits could in
+// principle keep them, but consistency wins over a marginal data gain.
+function pivotHistory(sensorRows, modeRows, radRows, maintRows) {
+  const buckets = {};
+  (sensorRows || []).forEach(function (row) {
+    const tsMs = new Date(row.ts).getTime();
+    if (!buckets[tsMs]) { buckets[tsMs] = { ts: new Date(row.ts) }; }
+    const f = { tank_top: 'tankTop', tank_bottom: 'tankBottom',
+      greenhouse: 'greenhouse', outdoor: 'outdoor', collector: 'collector' }[row.sensor_id];
+    if (f) buckets[tsMs][f] = row.value;
+  });
+
+  // Pre-sort + index radiation by hour for O(1) lookup per reading.
+  const radByHour = {};
+  (radRows || []).forEach(function (r) {
+    const k = new Date(r.valid_at).getTime();
+    radByHour[k] = r.radiation_global;
+  });
+
+  // Build maintenance intervals from config_events. Each interval is an
+  // open-close pair on the same (kind, key); we walk the rows in order
+  // and pair each "set" event (non-empty new_value) with the next event
+  // for the same key. Unpaired opens at end of window stay open
+  // through the rest of the data — match by ts >= setTs.
+  const intervals = buildMaintenanceIntervals(maintRows);
+
+  const readings = Object.keys(buckets)
+    .sort(function (a, b) { return a - b; })
+    .map(function (k) {
+      const b = buckets[k];
+      const tsMs = b.ts.getTime();
+      // Closest hour-aligned radiation (within ±1 h).
+      const hourMs = Math.floor(tsMs / 3600000) * 3600000;
+      let rad = radByHour[hourMs];
+      if (rad === undefined) rad = radByHour[hourMs + 3600000];
+      if (typeof rad === 'number') b.radiationGlobal = rad;
+      b._maintenance = intervalsCover(intervals, tsMs);
+      return b;
+    })
+    .filter(function (b) { return !b._maintenance; });
+
+  const modes = (modeRows || []).map(function (r) {
+    return { ts: new Date(r.ts), mode: r.mode };
+  });
+
+  return { readings, modes };
+}
+
+function buildMaintenanceIntervals(maintRows) {
+  if (!Array.isArray(maintRows) || maintRows.length === 0) return [];
+  // Pair each open (non-empty new_value) with the next event for the
+  // same (kind, key). Unpaired opens stay open to +Infinity. If the
+  // first event for a key is a "clear" with a non-empty old_value, the
+  // ban/override was already active when the window started — record an
+  // interval from -Infinity to the clear ts so those readings are also
+  // dropped. Otherwise a 14d window straddling a multi-day ban that was
+  // set just before the window starts would leak the entire ban into
+  // the fit input.
+  const intervals = [];
+  const open = {}; // key = kind + ':' + (key || '')
+  const sawAnyEvent = {}; // first event per key has special semantics
+  maintRows.forEach(function (r) {
+    const k = r.kind + ':' + (r.key || '');
+    const ts = new Date(r.ts).getTime();
+    const isSet = r.new_value && r.new_value !== '';
+    const isFirst = !sawAnyEvent[k];
+    sawAnyEvent[k] = true;
+    if (!isSet && isFirst && r.old_value && r.old_value !== '') {
+      intervals.push([-Infinity, ts]);
+      // No open state to update — ban is already cleared.
+      return;
+    }
+    if (isSet) {
+      if (open[k] !== undefined) intervals.push([open[k], ts]);
+      open[k] = ts;
+    } else if (open[k] !== undefined) {
+      intervals.push([open[k], ts]);
+      open[k] = undefined;
+    }
+  });
+  Object.keys(open).forEach(function (k) {
+    if (open[k] !== undefined) intervals.push([open[k], Infinity]);
+  });
+  // Sort + merge overlapping intervals so intervalsCover is a clean
+  // linear scan.
+  intervals.sort(function (a, b) { return a[0] - b[0]; });
+  const merged = [];
+  intervals.forEach(function (iv) {
+    if (merged.length === 0 || merged[merged.length - 1][1] < iv[0]) {
+      merged.push([iv[0], iv[1]]);
+    } else {
+      merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], iv[1]);
+    }
+  });
+  return merged;
+}
+
+function intervalsCover(intervals, tsMs) {
+  for (let i = 0; i < intervals.length; i++) {
+    if (tsMs >= intervals[i][0] && tsMs <= intervals[i][1]) return true;
+    if (tsMs < intervals[i][0]) return false;
+  }
+  return false;
+}
+
+module.exports = {
+  createForecastHandler,
+  // exported for tests
+  _pivotHistory: pivotHistory,
+  _buildMaintenanceIntervals: buildMaintenanceIntervals,
+};

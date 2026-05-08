@@ -74,7 +74,14 @@ const DEFAULT_CONFIG = {
   // Defaults seed the engine before sustain-forecast-fit takes over.
   ghTimeConstantH:          2.0,   // passive cooling τ (hours)
   ghSolarAlphaCPerWm2:      0.025, // °C rise per W/m² radiation
-  ghVentOpenC:              27,    // gravity vents engage above this
+  // Empirically the gravity vents engage around 33 °C — the user's
+  // operational ceiling on sunny days. Pre-2026-05-08 default of 27
+  // capped the model 5-6 K below reality and produced sunny-hour
+  // under-predictions in retro-fit prod data (clean window error
+  // analysis). The exact open point + τ_vent are fittable but sparse-
+  // data; defaults pin to user-observed reality until enough warm-
+  // weather history exists to fit them.
+  ghVentOpenC:              33,
   ghVentTauH:               0.3,   // cooling τ once vents open
   // Confidence boost: set this to a recent Date when weather was fetched
   weatherFetchedAt:         null,

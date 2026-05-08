@@ -300,26 +300,36 @@ async function fetchPricesFor(genAt, hours) {
 
 async function fetchHistoryUpTo(genAt, days) {
   const sensorsR = await pool.query(
-    'SELECT bucket AS ts, sensor_id, avg_value FROM sensor_readings_30s ' +
+    'SELECT bucket AS ts, sensor_id, avg_value AS value FROM sensor_readings_30s ' +
     'WHERE bucket BETWEEN ($1::timestamptz - INTERVAL \'' + days + ' days\') AND $1::timestamptz ' +
     'ORDER BY bucket',
     [genAt]
   );
-  const buckets = {};
-  for (const row of sensorsR.rows) {
-    const k = row.ts.getTime();
-    if (!buckets[k]) buckets[k] = { ts: row.ts };
-    const f = { tank_top: 'tankTop', tank_bottom: 'tankBottom',
-                greenhouse: 'greenhouse', outdoor: 'outdoor', collector: 'collector' }[row.sensor_id];
-    if (f) buckets[k][f] = row.avg_value;
-  }
-  const readings = Object.keys(buckets).sort().map(k => buckets[k]);
   const modesR = await pool.query(
     "SELECT ts, new_value AS mode FROM state_events " +
     "WHERE entity_type='mode' AND ts BETWEEN ($1::timestamptz - INTERVAL '" + days + " days') AND $1::timestamptz ORDER BY ts",
     [genAt]
   );
-  return { readings, modes: modesR.rows.map(r => ({ ts: r.ts, mode: r.mode })) };
+  // Pull historical hourly radiation + config_events to drive the same
+  // maintenance filter + radiation join the live forecast-handler does.
+  const radR = await pool.query(
+    'SELECT DISTINCT ON (valid_at) valid_at, radiation_global ' +
+    'FROM weather_forecasts ' +
+    'WHERE valid_at BETWEEN ($1::timestamptz - INTERVAL \'' + days + ' days\') AND $1::timestamptz ' +
+    '  AND radiation_global IS NOT NULL ' +
+    'ORDER BY valid_at, fetched_at DESC',
+    [genAt]
+  );
+  const maintR = await pool.query(
+    "SELECT ts, kind, key, new_value FROM config_events " +
+    "WHERE ts BETWEEN ($1::timestamptz - INTERVAL '" + days + " days') AND $1::timestamptz " +
+    "  AND kind IN ('mo', 'wb') ORDER BY ts",
+    [genAt]
+  );
+  // Reuse forecast-handler.pivotHistory so the backfill mirrors the
+  // production fit input shape exactly.
+  const { _pivotHistory } = await import(path.join(repoRoot, 'server/lib/forecast/forecast-handler.js'));
+  return _pivotHistory(sensorsR.rows, modesR.rows, radR.rows, maintR.rows);
 }
 
 // Same logic as forecast-predictions.js buildRows — duplicated here so
