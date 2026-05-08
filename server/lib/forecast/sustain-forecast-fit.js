@@ -298,11 +298,24 @@ function fitGhTauNight(history) {
       !Array.isArray(history.modes)) return null;
   const readings = history.readings;
   const modeLabels = labelModes(readings, history.modes);
+  // Require idle to have been stable for >= IDLE_SETTLE_MS before
+  // counting a pair — the engine's post-heating transient (radiator
+  // valves close, residual hot pipe water cools rapidly toward gh)
+  // briefly inflates the apparent cooling slope, biasing τ low. 30 min
+  // settle gives the structural thermal mass time to stabilize.
+  const IDLE_SETTLE_MS = 30 * 60 * 1000;
+  let idleSinceMs = -Infinity;
+  let prevMode = null;
   const xs = []; const ys = [];
   for (let i = 0; i < readings.length - 1; i++) {
+    const t0 = readings[i].ts instanceof Date ? readings[i].ts.getTime() : Number(readings[i].ts);
+    if (modeLabels[i] !== prevMode) {
+      idleSinceMs = modeLabels[i] === 'idle' ? t0 : Infinity;
+      prevMode = modeLabels[i];
+    }
     if (modeLabels[i] !== 'idle') continue;
+    if (t0 - idleSinceMs < IDLE_SETTLE_MS) continue;
     const r0 = readings[i]; const r1 = readings[i + 1];
-    const t0 = r0.ts instanceof Date ? r0.ts.getTime() : Number(r0.ts);
     const t1 = r1.ts instanceof Date ? r1.ts.getTime() : Number(r1.ts);
     const dtH = (t1 - t0) / 3600000;
     if (dtH <= 0 || dtH > 0.25) continue;
@@ -407,7 +420,11 @@ function fitRadiatorUaWPerK(history) {
     const tankAvg1 = (r1.tankTop + r1.tankBottom) / 2;
     const dTankK   = tankAvg0 - tankAvg1;
     const deltaT   = tankAvg0 - r0.greenhouse;
-    if (dTankK <= 0 || deltaT < 2) continue;
+    // Need a real ΔT (>5 K) for UA to be identifiable — small-ΔT
+    // samples have too much noise (a 0.1 K reading jitter at ΔT=2
+    // doubles the apparent UA). 5 K filter mirrors the operational
+    // reality: heating-mode hours sample with tank well above gh.
+    if (dTankK <= 0 || deltaT < 5) continue;
     const powerW = (dTankK / dtSec) * TANK_THERMAL_MASS_J_PER_K;
     const ua = powerW / deltaT;
     if (ua < 30 || ua > 250) continue; // drop obvious outliers
