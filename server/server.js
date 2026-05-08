@@ -113,7 +113,7 @@ function resolveRoute(urlPath, _method) {
   if (urlPath.startsWith('/api/sensor-config/')) return '/api/sensor-config/*';
   if (urlPath === '/api/sensor-discovery') return '/api/sensor-discovery';
   if (urlPath === '/api/history') return '/api/history';
-  if (urlPath === '/api/forecast') return '/api/forecast';
+  if (urlPath.startsWith('/api/forecast')) return urlPath === '/api/forecast' ? '/api/forecast' : '/api/forecast/diagnostics';
   if (urlPath === '/api/runtime') return '/api/runtime';
   if (urlPath === '/api/events') return '/api/events';
   if (urlPath.startsWith('/api/push/')) return '/api/push/*';
@@ -285,8 +285,9 @@ const server = http.createServer(function (req, res) {
   } else if (urlPath === '/api/history') {
     handlers.handleHistoryApi(req, res);
   } else if (urlPath === '/api/forecast' && req.method === 'GET') {
-    if (forecast) forecast.handle(req, res);
-    else jsonResponse(res, 503, { error: 'Forecast not available' });
+    if (forecast) forecast.handle(req, res); else jsonResponse(res, 503, { error: 'Forecast not available' });
+  } else if (urlPath === '/api/forecast/diagnostics' && req.method === 'GET') {
+    if (forecast) forecast.handleDiagnostics(req, res); else jsonResponse(res, 503, { error: 'Forecast not available' });
   } else if (urlPath === '/api/events') {
     handlers.handleEventsApi(req, res);
   } else if (urlPath === '/api/watchdog/state' && req.method === 'GET') {

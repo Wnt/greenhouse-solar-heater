@@ -77,6 +77,10 @@
         <span class="material-symbols-outlined">settings_remote</span>
         Device
       </a>
+      <a data-view="diagnostics" class="live-only" data-admin-only style="display:none;">
+        <span class="material-symbols-outlined">analytics</span>
+        Diagnostics
+      </a>
       <a data-view="crashes" class="live-only" style="display:none;">
         <span class="material-symbols-outlined">report</span>
         Crashes
@@ -677,6 +681,87 @@
       <!-- ── 4. Sensor configuration (rendered by sensors.js into #sensors-content) ── -->
       <div id="sensors-content" style="margin-top:20px;">
         <div class="card"><p style="color:var(--on-surface-variant);">Loading sensor configuration...</p></div>
+      </div>
+    </section>
+
+    <!-- ═══ FORECAST DIAGNOSTICS VIEW ═══
+         Live-only, admin-only. Predicted vs actual analysis backed by the
+         multi-horizon forecast_predictions table — read-only API, the view
+         is purely a tuning aid (see issue #169). Charts are intentionally
+         hand-rolled SVG (desktop-only by design — see the "Non-goals"
+         section in the issue) so they ship without a charting dep. -->
+    <section id="view-diagnostics" class="view" data-admin-only>
+      <div class="view-header">
+        <h2>Forecast diagnostics.</h2>
+        <p>Predicted vs actual greenhouse temperature, tank average, mode and per-day solar gain across the chosen horizon. Drill into a specific generation to see the per-component breakdown and the fitted coefficients used.</p>
+      </div>
+
+      <div class="card" id="diag-controls-card">
+        <div class="diag-controls">
+          <label class="diag-control">
+            <span>Horizon</span>
+            <select id="diag-horizon">
+              <option value="1">+1 h</option>
+              <option value="6">+6 h</option>
+              <option value="12">+12 h</option>
+              <option value="24" selected>+24 h</option>
+              <option value="48">+48 h</option>
+            </select>
+          </label>
+          <label class="diag-control">
+            <span>Range</span>
+            <select id="diag-range">
+              <option value="1">Last 24 h</option>
+              <option value="3">Last 3 d</option>
+              <option value="7" selected>Last 7 d</option>
+              <option value="14">Last 14 d</option>
+              <option value="30">Last 30 d</option>
+            </select>
+          </label>
+          <button id="diag-refresh" type="button" class="auth-btn">
+            <span class="material-symbols-outlined" style="font-size:18px;vertical-align:-3px;">refresh</span>
+            Refresh
+          </button>
+          <span id="diag-status" class="diag-status">Idle</span>
+        </div>
+      </div>
+
+      <div class="card" id="diag-series-card">
+        <h3 class="diag-section-title">Predicted vs actual — series</h3>
+        <p class="diag-section-desc">Each point is one HH:30 generation projected out to the chosen horizon. The dashed line is the algorithm's prediction; the solid line is the closest 30 s actual at the same target hour.</p>
+        <div id="diag-error-greenhouse" class="diag-error-summary"></div>
+        <div id="diag-chart-greenhouse" class="diag-chart" data-metric="greenhouse_c"></div>
+        <div id="diag-error-tank" class="diag-error-summary"></div>
+        <div id="diag-chart-tank" class="diag-chart" data-metric="tank_avg_c"></div>
+        <div id="diag-error-outdoor" class="diag-error-summary"></div>
+        <div id="diag-chart-outdoor" class="diag-chart" data-metric="outdoor_c"></div>
+        <h4 class="diag-section-subtitle">Mode classification</h4>
+        <div id="diag-chart-mode" class="diag-chart diag-chart-mode"></div>
+        <h4 class="diag-section-subtitle">Per-day solar gain (predicted)</h4>
+        <div id="diag-chart-solar" class="diag-chart diag-chart-bars"></div>
+      </div>
+
+      <div class="card" id="diag-drill-card">
+        <h3 class="diag-section-title">Drill into a generation</h3>
+        <p class="diag-section-desc">Pick a generation timestamp from the series above (click any point in a chart) or from the list to inspect its full 1..48 h trajectory next to actuals, the per-component breakdown the engine consumed, and the fitted coefficients in effect.</p>
+        <div class="diag-drill-layout">
+          <div class="diag-drill-list-wrapper">
+            <h4 class="diag-section-subtitle">Recent generations</h4>
+            <ul id="diag-drill-list" class="diag-drill-list"></ul>
+          </div>
+          <div class="diag-drill-detail-wrapper">
+            <div id="diag-drill-empty" class="diag-section-desc">Pick a generation to inspect.</div>
+            <div id="diag-drill-detail" style="display:none;">
+              <h4 id="diag-drill-title" class="diag-section-subtitle"></h4>
+              <div id="diag-drill-chart-greenhouse" class="diag-chart"></div>
+              <div id="diag-drill-chart-tank" class="diag-chart"></div>
+              <h4 class="diag-section-subtitle">Per-component breakdown</h4>
+              <div id="diag-drill-components" class="diag-components-table-wrapper"></div>
+              <h4 class="diag-section-subtitle">Fitted coefficients in effect</h4>
+              <div id="diag-drill-coefficients" class="diag-coefficients-table-wrapper"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 

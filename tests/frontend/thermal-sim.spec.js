@@ -159,8 +159,8 @@ test.describe('Thermal Simulation UI', () => {
 
     const sidebarLinks = page.locator('.sidebar-nav a');
     // status, components (merged system), controls, device (live-only),
-    // crashes (live-only), settings
-    await expect(sidebarLinks).toHaveCount(6);
+    // diagnostics (live-only), crashes (live-only), settings
+    await expect(sidebarLinks).toHaveCount(7);
     await expect(page.locator('.sidebar-nav a.active')).toContainText('Status');
   });
 });

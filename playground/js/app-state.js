@@ -90,12 +90,18 @@ export const derived = {
     const views = ['status', 'components'];
     if (phase === 'live' || phase === 'init') views.push('device');
     if (phase === 'simulation') views.push('controls');
+    // Forecast diagnostics is a live-only tuning aid — it queries the
+    // server's forecast_predictions hypertable, which doesn't exist in
+    // simulation mode.
+    if (phase === 'live' && hasSettings) views.push('diagnostics');
     if (hasSettings) views.push('crashes');
     if (hasSettings) views.push('settings');
-    // Read-only users cannot see Controls or Device — they would be useless
-    // (server enforces admin-only on every mutating endpoint).
+    // Read-only users cannot see Controls, Device, or Diagnostics — the
+    // first two would be useless (server enforces admin-only on every
+    // mutating endpoint), and Diagnostics is purely a tuning aid for the
+    // operator.
     if (role === 'readonly') {
-      return views.filter(v => v !== 'controls' && v !== 'device');
+      return views.filter(v => v !== 'controls' && v !== 'device' && v !== 'diagnostics');
     }
     return views;
   },
