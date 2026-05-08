@@ -46,10 +46,14 @@ describe('db module', () => {
     process.env.DATABASE_URL = 'postgres://test:test@localhost/test';
     db.initSchema(function (err) {
       assert.ifError(err);
-      // Should have run CREATE EXTENSION, CREATE TABLE x2, create_hypertable x2, CREATE INDEX x2
+      // Should have run CREATE EXTENSION, CREATE TABLE x2, create_hypertable x2, CREATE INDEX x2.
+      // Two information_schema probes lead the call list: forecast_predictions
+      // legacy-shape detection (drops to no-op when the table doesn't yet exist).
       assert.ok(capturedQueries.length >= 7, 'expected at least 7 schema statements, got ' + capturedQueries.length);
-      assert.ok(capturedQueries[0].sql.includes('timescaledb'));
-      assert.ok(capturedQueries[1].sql.includes('sensor_readings'));
+      assert.ok(capturedQueries.some(q => q.sql.includes('timescaledb')),
+        'expected CREATE EXTENSION timescaledb');
+      assert.ok(capturedQueries.some(q => q.sql.includes('sensor_readings')),
+        'expected sensor_readings statement');
       done();
     });
   });

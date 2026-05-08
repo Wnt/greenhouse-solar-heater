@@ -31,13 +31,19 @@ function create(opts) {
   function upsertWeather(rows, fetchedAt) {
     if (!rows || rows.length === 0) return Promise.resolve();
     const sql = 'INSERT INTO weather_forecasts ' +
-      '(fetched_at, valid_at, temperature, radiation_global, wind_speed, precipitation) ' +
-      'VALUES ($1, $2, $3, $4, $5, $6) ' +
+      '(fetched_at, valid_at, temperature, radiation_global, wind_speed, precipitation, ' +
+      ' humidity, dew_point, cloud_cover, wind_gust, pressure) ' +
+      'VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ' +
       'ON CONFLICT (fetched_at, valid_at) DO UPDATE SET ' +
       '  temperature = EXCLUDED.temperature, ' +
       '  radiation_global = EXCLUDED.radiation_global, ' +
       '  wind_speed = EXCLUDED.wind_speed, ' +
-      '  precipitation = EXCLUDED.precipitation';
+      '  precipitation = EXCLUDED.precipitation, ' +
+      '  humidity = EXCLUDED.humidity, ' +
+      '  dew_point = EXCLUDED.dew_point, ' +
+      '  cloud_cover = EXCLUDED.cloud_cover, ' +
+      '  wind_gust = EXCLUDED.wind_gust, ' +
+      '  pressure = EXCLUDED.pressure';
 
     let chain = Promise.resolve();
     rows.forEach(function (row) {
@@ -50,6 +56,11 @@ function create(opts) {
             row.radiationGlobal,
             row.windSpeed,
             row.precipitation,
+            row.humidity,
+            row.dewPoint,
+            row.cloudCover,
+            row.windGust,
+            row.pressure,
           ], function (err) {
             if (err) { reject(err); } else { resolve(); }
           });

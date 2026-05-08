@@ -66,6 +66,10 @@ require.cache[schemaPath] = {
       'CREATE VIEW sensor_readings_30s AS SELECT ts AS bucket, sensor_id, value AS avg_value, value AS min_value, value AS max_value FROM sensor_readings',
     ],
     AGGREGATE_SQL: [],
+    // No-op: the e2e harness starts with an empty pg-mem db, so there's
+    // never a legacy forecast_predictions table to migrate. Match the
+    // (client, log, callback) shape db.js expects.
+    migrateLegacyForecastPredictions: function (_client, _log, callback) { callback(null); },
   },
 };
 

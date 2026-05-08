@@ -70,6 +70,14 @@ const DEFAULT_CONFIG = {
   // Without this, the engine assumes 100% duty for every emergency hour,
   // which over-counts backup energy by ~30-40% in spring/fall conditions.
   greenhouseLossWPerK:      120,
+  // GH-air heat balance defaults; sustain-forecast-fit overrides.
+  ghTimeConstantH:          2.0,   // passive cooling τ (hours)
+  ghSolarAlphaCPerWm2:      0.025, // °C rise per W/m² radiation
+  // Vents engage at ~33 °C empirically (operational ceiling on sunny
+  // days). Pre-2026-05-08 default of 27 capped sunny predictions ~6 K
+  // low; fit-able but sparse-data, so defaults pin to user-observed.
+  ghVentOpenC:              33,
+  ghVentTauH:               0.3,   // cooling τ once vents open
   // Confidence boost: set this to a recent Date when weather was fetched
   weatherFetchedAt:         null,
   // Number of buckets used for the empirical fit (for confidence)
@@ -122,9 +130,13 @@ function computeSustainForecast(opts) {
   // way so a fitted greenhouseLossWPerK from sustain-forecast-fit takes
   // precedence over the conservative warmup default; the DEFAULT_CONFIG
   // value still seeds the engine when the fit hasn't converged yet.
-  if (typeof coeff.greenhouseLossWPerK === 'number' && coeff.greenhouseLossWPerK > 0) {
-    cfg.greenhouseLossWPerK = coeff.greenhouseLossWPerK;
-  }
+  // Coefficient overrides (each only when the fit actually emitted a
+  // sane value; falls through to DEFAULT_CONFIG otherwise).
+  applyCoeffOverride(cfg, coeff, 'greenhouseLossWPerK', v => v > 0);
+  applyCoeffOverride(cfg, coeff, 'ghTimeConstantH',     v => v > 0);
+  applyCoeffOverride(cfg, coeff, 'ghSolarAlphaCPerWm2', v => v >= 0);
+  applyCoeffOverride(cfg, coeff, 'ghVentOpenC',         v => v > 0);
+  applyCoeffOverride(cfg, coeff, 'ghVentTauH',          v => v > 0);
 
   const tankLeakageWPerK    = typeof coeff.tankLeakageWPerK    === 'number' ? coeff.tankLeakageWPerK    : DEFAULT_TANK_LEAKAGE_W_PER_K;
   // Observed tank-drop rate during the most recent ~hour, in K/h (positive
@@ -135,13 +147,6 @@ function computeSustainForecast(opts) {
   // recent observation is available.
   const observedTankDropKPerH = typeof opts.observedTankDropKPerH === 'number'
     ? opts.observedTankDropKPerH : null;
-  // Observed greenhouse-temp drop rate (K/h, positive = cooling) over the
-  // last ~hour. Used to project greenhouse evolution while in heating mode
-  // — the real greenhouse heat balance (with soil/structure thermal mass
-  // and ventilation losses) is hard to fit from sparse history, but the
-  // observed rate baked-in everything that matters for the next few hours.
-  const observedGhDropKPerH = typeof opts.observedGhDropKPerH === 'number'
-    ? opts.observedGhDropKPerH : null;
   // Empirical kWh-to-tank gain per clock hour (averaged over the historical
   // window). The forecast loop multiplies this by a cloud factor derived from
   // the FMI radiation. Falls back to a conservative low-gain mask.
@@ -197,6 +202,13 @@ function computeSustainForecast(opts) {
   // of the heating state (the device can charge while heating); when
   // both apply the entry is duplicated with separate ts/mode pairs.
   const modeForecast           = [];
+  // Per-hour predicted components — what the simulation thinks
+  // contributed to the tank/GH state during this hour. Surfaced in
+  // forecast_predictions row capture so a future tuning pass can
+  // diagnose which sub-model went wrong (the aggregate tank/GH temp
+  // alone doesn't localise the error). One entry per simulated hour h
+  // (0..47) describing the consumption between h and h+1.
+  const componentTrajectory    = [];
 
   const HOURS = 48;
 
@@ -206,33 +218,23 @@ function computeSustainForecast(opts) {
 
     const tankAvg = (tankTopC + tankBotC) / 2;
 
-    // ── Check floor crossing at start of this hour ──
-    if (hoursUntilFloor === null && tankAvg < cfg.tankFloorC) {
-      // Interpolate: how far into the previous hour did we cross?
-      // Already below — happened during the previous step.
-      // Mark as this hour (we'll refine below when we detect the crossing).
-      hoursUntilFloor = h;
-    }
+    // Floor-crossing fallback (refined to fractional hour below).
+    if (hoursUntilFloor === null && tankAvg < cfg.tankFloorC) hoursUntilFloor = h;
 
-    // Record trajectory at start of hour
     tankTrajectory.push({ ts: hourDate, top: round2(tankTopC), bottom: round2(tankBotC), avg: round2(tankAvg) });
     ghTrajectory.push({ ts: hourDate, temp: round2(curGhTemp) });
 
-    // ── Weather for this hour ──
     const wx = weather[h] || weather[weather.length - 1] || { temperature: 0, radiationGlobal: 0 };
     const outdoorC   = typeof wx.temperature     === 'number' ? wx.temperature     : 0;
     const radiation  = typeof wx.radiationGlobal === 'number' ? wx.radiationGlobal : 0;
-
-    // ── Price for this hour ──
     const px = prices[h] || prices[prices.length - 1] || { priceCKwh: 10 };
     const priceCKwh = typeof px.priceCKwh === 'number' ? px.priceCKwh : 10;
 
-    // ── 1. Decide simulation mode for this hour ──
-    // Mirror control-logic.js hysteresis: greenhouse_heating needs both
-    // gh < geT AND tank_top > gh + gmD; emergency triggers on gh < ehE
-    // alone. The tank gates suppress "heating" projection when the tank
-    // can't drive the radiator, so gh cools naturally and emergency
-    // fires at the right hour instead of behind painted heating bars.
+    // ── 1. Mode decision (mirror control-logic.js hysteresis) ──
+    // greenhouse_heating: gh < geT AND tank_top > gh + gmD; the tank
+    // gate suppresses heating bars when the tank can't drive the
+    // radiator, so emergency fires at the right hour instead of behind
+    // painted heating bars. emergency_heating: gh < ehE.
     const tankCanEnter   = tankTopC >  curGhTemp + cfg.greenhouseMinTankDeltaC;
     const tankCanSustain = tankTopC >= curGhTemp + cfg.greenhouseExitTankDeltaC;
     if (curGhTemp < cfg.emergencyEnterC) {
@@ -251,14 +253,10 @@ function computeSustainForecast(opts) {
       simMode = 'idle';
     }
 
-    // ── 2. Radiator heat transfer (this hour) ──
-    // Physics: P_radiator = U×A × (T_tank − T_greenhouse), capped by
-    // the radiator's peak power. UA is fitted from the current observation
-    // when one is available — tankDropRate × thermal_capacity / current_ΔT
-    // gives the actual UA that's currently achieving the observed transfer
-    // (typically ~80-100 W/K for this car-radiator + fan setup). Falls back
-    // to 80 W/K when no observation. The radiator obviously can't heat the
-    // greenhouse above tank temp, since that's where the heat comes from.
+    // ── 2. Radiator heat transfer ──
+    // P = UA·(T_tank−T_gh), capped at radPeakW. UA fitted from the live
+    // observation (tankDrop × C / ΔT) at h=0 when greenhouse_heating is
+    // active; falls back to 80 W/K (typical car-radiator + fan setup).
     const radDeltaT = Math.max(0, tankAvg - curGhTemp);
     const radUaWPerK = (function () {
       if (observedTankDropKPerH !== null && currentMode === 'greenhouse_heating' && h === 0) {
@@ -271,36 +269,29 @@ function computeSustainForecast(opts) {
     const radPeakW = cfg.radiatorPowerKw * 1000;
 
     let tankDeltaJ = 0;
-    let newGhTemp;
+    // Active power injected into GH air this hour. Each mode branch
+    // sets these; the unified heat balance converts to ΔT. Idle = 0.
+    let radHeatToGhW = 0;
+    let heaterHeatToGhW = 0;
+    // Components captured per-hour for forecast_predictions storage.
+    let hourHeaterKwh = 0;
+    let hourTankLossW = 0;
 
     if (simMode === 'greenhouse_heating') {
       modeForecast.push({ ts: hourDate, mode: simMode });
       const radDeliveredW = Math.min(radPeakW, radUaWPerK * radDeltaT);
       tankDeltaJ -= radDeliveredW * SECONDS_PER_HOUR;
-      // Greenhouse evolution: when the radiator's delivered W matches the
-      // greenhouse's loss to outdoor, gh stays roughly stable (the case
-      // we currently observe at ΔT≈6K with gh hovering around the
-      // setpoint). When radiator falls below that, gh cools. We use the
-      // observed gh rate as a baseline anchor for the first few hours
-      // (captures whatever loss coefficient is actually achieved), then
-      // taper toward natural cooling as the radiator effectiveness falls.
-      const radEffectiveness = radPeakW > 0 ? Math.min(1, radDeliveredW / radPeakW) : 0;
-      const observedGhKpH = (observedGhDropKPerH !== null && currentMode === 'greenhouse_heating' && h < 6)
-        ? observedGhDropKPerH : 0.2;
-      const naturalCoolKpH = (curGhTemp - outdoorC) / 8;
-      const ghDropKpH = radEffectiveness * observedGhKpH + (1 - radEffectiveness) * naturalCoolKpH;
-      newGhTemp = curGhTemp - ghDropKpH;
+      radHeatToGhW = radDeliveredW;
       greenhouseHeatingHours += 1;
+      // hourTankLossW stays at the loop-top default 0 here — the
+      // radiator dominates the tank side and we report leakage as 0
+      // to keep components additive.
     } else if (simMode === 'emergency_heating') {
       // The real device overlays the heater on the active pump mode
       // (system.yaml overlays.emergency_heating: "the space heater is
       // overlaid on the active pump mode"). When the tank is hot enough
       // to drive the radiator, the radiator delivers most of the heat and
-      // the heater fills only the remaining gap. Pre-2026-05-04 the
-      // engine zero'd out the radiator during emergency, so a 40 °C tank
-      // with mild outdoor still projected near-100% heater duty for 48 h
-      // — the user-visible "continuous heater" forecast.
-      const radDeltaT = Math.max(0, tankAvg - curGhTemp);
+      // the heater fills only the remaining gap.
       const radDeliveredW = Math.min(radPeakW, radUaWPerK * radDeltaT);
       const ghTarget = (cfg.emergencyEnterC + cfg.emergencyExitC) / 2;
       const ghLossAtTargetW = cfg.greenhouseLossWPerK * Math.max(0, ghTarget - outdoorC);
@@ -326,48 +317,50 @@ function computeSustainForecast(opts) {
       // Tank still leaks slowly during emergency.
       const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
       tankDeltaJ -= tankLossW * SECONDS_PER_HOUR;
-      // Greenhouse evolution: when the heater is filling the gap, gh
-      // sits at ghTarget. When the radiator alone exceeds losses
-      // (heater idle), gh drifts up toward equilibrium gh_eq where
-      // rad = lossWPerK·(gh_eq − outdoor) — i.e. ghTarget +
-      // (radDeliveredW − ghLossAtTarget)/lossWPerK. The mode-decision
-      // block exits emergency once gh > ehX.
-      if (heaterDuty > 0) {
-        newGhTemp = ghTarget;
-      } else {
-        const ghEq = cfg.greenhouseLossWPerK > 0
-          ? outdoorC + radDeliveredW / cfg.greenhouseLossWPerK
-          : ghTarget;
-        newGhTemp = curGhTemp + (ghEq - curGhTemp) * (1 - Math.exp(-1 / 8));
-      }
+      radHeatToGhW = radDeliveredW;
+      heaterHeatToGhW = heaterDuty * heaterW;
+      hourHeaterKwh = heaterEnergyKwh;
+      hourTankLossW = tankLossW;
       // Carry the duty fraction so the chart can render <100% bars instead
-      // of solid orange across hours where the heater barely cycles. The
-      // greenhouse-heating branch above pushes a binary entry (always-on
-      // radiator); only the emergency branch needs the duty field.
+      // of solid orange across hours where the heater barely cycles.
       modeForecast.push({ ts: hourDate, mode: simMode, duty: round2(heaterDuty) });
     } else {
-      // Idle.
+      // Idle: only tank leakage on the tank side; the unified heat
+      // balance below handles the GH update.
       const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
       tankDeltaJ -= tankLossW * SECONDS_PER_HOUR;
-      // Greenhouse drifts toward outdoor with τ = 8 h.
-      newGhTemp = curGhTemp + (outdoorC - curGhTemp) * (1 - Math.exp(-1 / 8));
+      hourTankLossW = tankLossW;
     }
-    const ghDeltaJ = 0; void ghDeltaJ;
 
-    // ── 3. Solar charging credit (data-driven) ──
-    // Use the historical kWh-per-clock-hour baseline (already integrates
-    // controller cycle probability, shading, typical conditions) and modulate
-    // by the FMI radiation forecast so cloudy/rainy hours get scaled down and
-    // sunnier-than-average hours scaled up. No raw collector physics —
-    // observed history already encodes the real system response.
+    // ── Unified greenhouse heat balance (every mode, every hour) ──
+    //   dT/dt = (outdoor−gh)/τ_gh                    ← passive loss
+    //         + α_solar · radiation                   ← solar absorption
+    //         − max(0, gh−vent_open)/τ_vent           ← vent saturation
+    //         + (radHeat + heaterHeat)/(τ_gh·ghLoss)  ← active power
     //
-    // Cap at tank near max temp (system stops charging around 60 °C).
+    // Active term derivation: C_gh ≈ 3600·τ_gh·greenhouseLossWPerK, so
+    // (W·3600)/C_gh = W/(τ·loss) in K/h. Substep with 60×1-min steps so
+    // the short τ_vent doesn't overshoot under explicit Euler.
+    const SUBSTEPS = 60;
+    const dtH = 1 / SUBSTEPS;
+    let newGhTemp = curGhTemp;
+    for (let s = 0; s < SUBSTEPS; s++) {
+      const ghPassive = (outdoorC - newGhTemp) / cfg.ghTimeConstantH;
+      const ghSolar   = cfg.ghSolarAlphaCPerWm2 * radiation;
+      const ghVent    = newGhTemp > cfg.ghVentOpenC
+        ? -(newGhTemp - cfg.ghVentOpenC) / cfg.ghVentTauH : 0;
+      const ghActive  = (cfg.ghTimeConstantH > 0 && cfg.greenhouseLossWPerK > 0)
+        ? (radHeatToGhW + heaterHeatToGhW) / (cfg.ghTimeConstantH * cfg.greenhouseLossWPerK) : 0;
+      newGhTemp += (ghPassive + ghSolar + ghVent + ghActive) * dtH;
+    }
+
+    // ── 3. Solar charging credit ──
+    // Historical kWh-per-clock-hour baseline (encodes controller cycle
+    // probability, shading, typical conditions) modulated by FMI
+    // radiation. cloudReferenceWm2 (~500) maps to cloudFactor=1.
+    // Capped at tank near max temp (system stops charging ~60 °C).
     const hourOfDay   = helsinkiHour(new Date(hourMs));
     const baseGainKwh = solarGainKwhByHour[hourOfDay];
-    // Reference radiation: ~500 W/m² is roughly the historical-average sunny
-    // hour at noon, lat 60° in spring. Forecast hours hitting this map to
-    // cloudFactor = 1; clear midday (~700) maps to ~1.4; overcast (~150)
-    // maps to ~0.3; rainy (~50) maps to ~0.1.
     let cloudFactor = radiation / cfg.cloudReferenceWm2;
     if (cloudFactor < 0)   cloudFactor = 0;
     if (cloudFactor > 1.5) cloudFactor = 1.5;
@@ -400,8 +393,19 @@ function computeSustainForecast(opts) {
 
     // ── 5. Greenhouse temperature update ──
     curGhTemp = newGhTemp;
-    // Clamp: greenhouse can't go below outdoor (passive equilibrium).
+    // Hard floor at outdoor: the heat balance can't drive GH below
+    // outdoor mathematically, but a misfit α_solar < 0 could; clamp.
     if (curGhTemp < outdoorC) curGhTemp = outdoorC;
+
+    // ── 6. Capture per-hour predicted components ──
+    componentTrajectory.push({
+      ts: hourDate,
+      solarGainKwh:    round4(solarGainKwh),
+      radDeliveredW:   round2(radHeatToGhW),
+      heaterKwh:       round4(hourHeaterKwh),
+      tankLossW:       round2(hourTankLossW),
+      cloudFactor:     round2(cloudFactor),
+    });
 
     // ── Floor crossing detection (interpolated) ──
     const newTankAvg = (tankTopC + tankBotC) / 2;
@@ -480,6 +484,7 @@ function computeSustainForecast(opts) {
     horizonHours:           HOURS,
     tankTrajectory,
     greenhouseTrajectory:   ghTrajectory,
+    componentTrajectory,
     hoursUntilFloor:        hoursUntilFloor !== null ? round2(hoursUntilFloor) : null,
     hoursUntilBackupNeeded: hoursUntilBackupNeeded !== null ? round2(hoursUntilBackupNeeded) : null,
     electricKwh:            round4(electricKwh),
@@ -494,15 +499,8 @@ function computeSustainForecast(opts) {
   };
 }
 
-// ── Note generation ──
-//
-// Notes are ordered by operational relevance:
-//   1. Greenhouse temperature trajectory (what the user cares about most).
-//   2. Tank stored energy + how long it sustains heating.
-//   3. Backup electric usage + cost.
-//   4. Solar gain context (today / tomorrow).
-//
-// Cap at 3 notes so the card stays scannable.
+// Notes are ordered by operational relevance: GH min temp, tank stored
+// kWh + sustain hours, backup electric usage, solar gain. Capped at 3.
 function buildNotes(ctx) {
   const notes = [];
 
@@ -510,8 +508,7 @@ function buildNotes(ctx) {
     notes.push('Forecast based on default coefficients — model still warming up with limited history.');
   }
 
-  // 1. Greenhouse temperature: the operator's primary concern. Surface the
-  //    minimum temperature the greenhouse will reach and when it bottoms out.
+  // 1. Greenhouse minimum temperature.
   if (ctx.ghMin !== undefined && notes.length < 3) {
     const minDate = new Date(ctx.now + ctx.ghMinIdx * 3600 * 1000);
     const hhmm    = helsinkiHHMM(minDate);
@@ -527,17 +524,13 @@ function buildNotes(ctx) {
     }
   }
 
-  // 2. Tank storage + how long it sustains greenhouse heating. Phrasing
-  //    matches the gauge tile / balance card / push notifications, which all
-  //    use the same tankStoredEnergyKwh formula — so the kWh figure agrees
-  //    across surfaces and the user doesn't see contradictory numbers.
+  // 2. Tank storage + sustain hours. Same tankStoredEnergyKwh formula
+  //    as the gauge tile / balance card / push notifications.
   if (ctx.tankStoredKwhNow !== undefined && notes.length < 3) {
     const stored = ctx.tankStoredKwhNow.toFixed(1);
     if (ctx.hoursUntilBackupNeeded === 0) {
-      // Either the controller is already cycling backup, or the
-      // tank-greenhouse ΔT is too small for the radiator to do useful
-      // work. Either way, calling this "covers ~0 h before the space
-      // heater kicks in" reads as broken — be explicit.
+      // Tank too cold for radiator OR backup already cycling — naming
+      // this "~0 h until backup" reads as broken; surface it explicitly.
       notes.push(
         'Tank stores ~' + stored + ' kWh above the floor, but it’s too cold ' +
         'to drive the radiator — the space heater is providing the heating.'
@@ -568,8 +561,7 @@ function buildNotes(ctx) {
     );
   }
 
-  // 4. Solar gain context (today / tomorrow). Only include if there's room
-  //    AND we haven't filled the slots with more pressing notes.
+  // 4. Solar gain context (today / tomorrow), if there's slot room.
   if (Array.isArray(ctx.solarGainByDay) && ctx.solarGainByDay.length > 0 && notes.length < 3) {
     const today = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Europe/Helsinki', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -589,6 +581,10 @@ function buildNotes(ctx) {
 
 function round2(v) { return Math.round(v * 100) / 100; }
 function round4(v) { return Math.round(v * 10000) / 10000; }
+
+function applyCoeffOverride(cfg, coeff, key, isValid) {
+  if (typeof coeff[key] === 'number' && isValid(coeff[key])) cfg[key] = coeff[key];
+}
 
 module.exports = {
   fitEmpiricalCoefficients,

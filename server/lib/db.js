@@ -80,7 +80,7 @@ function getPool() {
   return pool;
 }
 
-const { SCHEMA_SQL, AGGREGATE_SQL } = require('./db-schema');
+const { SCHEMA_SQL, AGGREGATE_SQL, migrateLegacyForecastPredictions } = require('./db-schema');
 const maintenance = require('./db-maintenance').create(getPool, log);
 
 function initSchema(callback) {
@@ -91,19 +91,21 @@ function initSchema(callback) {
     if (err) { callback(err); return; }
     client = c;
 
-    runStatements(client, SCHEMA_SQL, 0, function (schemaErr) {
-      if (schemaErr) { release(); callback(schemaErr); return; }
-
-      runStatements(client, AGGREGATE_SQL, 0, function (aggErr) {
-        if (aggErr) {
-          log.warn('aggregate creation skipped (may already exist)', { error: aggErr.message });
-        }
-        release();
-        callback(null);
+    migrateLegacyForecastPredictions(client, log, function (migErr) {
+      // Non-fatal: log and continue.
+      if (migErr) log.warn('forecast_predictions legacy migration probe failed', { error: migErr.message });
+      runStatements(client, SCHEMA_SQL, 0, function (schemaErr) {
+        if (schemaErr) { release(); callback(schemaErr); return; }
+        runStatements(client, AGGREGATE_SQL, 0, function (aggErr) {
+          if (aggErr) log.warn('aggregate creation skipped (may already exist)', { error: aggErr.message });
+          release();
+          callback(null);
+        });
       });
     });
   });
 }
+
 
 function runStatements(client, stmts, idx, callback) {
   if (idx >= stmts.length) { callback(null); return; }
