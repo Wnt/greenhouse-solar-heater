@@ -18,16 +18,29 @@ const https = require('node:https');
 
 const WFS_BASE = 'https://opendata.fmi.fi/wfs';
 const STORED_QUERY = 'fmi::forecast::harmonie::surface::point::simple';
-const PARAMETERS = 'Temperature,WindSpeedMS,Precipitation1h,RadiationGlobal';
+const PARAMETERS = [
+  'Temperature', 'WindSpeedMS', 'Precipitation1h', 'RadiationGlobal',
+  // 2026-05-08: extend with humidity/dew_point/cloud_cover/wind_gust/
+  // pressure. cloud_cover lets the engine drop the radiation-only
+  // cloud-factor heuristic; the rest are stored for upcoming model
+  // extensions and historical-tuning correlation.
+  'Humidity', 'DewPoint', 'TotalCloudCover', 'WindGust', 'Pressure',
+].join(',');
 const DEFAULT_HOURS = 48;
 const TIMEOUT_MS = 10000;
 
-// Map FMI ParameterName strings to output field names.
+// Map FMI ParameterName strings to output field names. Camel-case
+// matches the JSON shape the rest of the forecast pipeline uses.
 const PARAM_MAP = {
-  Temperature: 'temperature',
+  Temperature:     'temperature',
   RadiationGlobal: 'radiationGlobal',
-  WindSpeedMS: 'windSpeed',
+  WindSpeedMS:     'windSpeed',
   Precipitation1h: 'precipitation',
+  Humidity:        'humidity',
+  DewPoint:        'dewPoint',
+  TotalCloudCover: 'cloudCover',
+  WindGust:        'windGust',
+  Pressure:        'pressure',
 };
 
 /**
@@ -67,7 +80,10 @@ function parseWfsResponse(xml) {
     const coerced = isNaN(value) ? null : value;
 
     if (!rows[timeStr]) {
-      rows[timeStr] = { temperature: null, radiationGlobal: null, windSpeed: null, precipitation: null };
+      rows[timeStr] = {
+        temperature: null, radiationGlobal: null, windSpeed: null, precipitation: null,
+        humidity: null, dewPoint: null, cloudCover: null, windGust: null, pressure: null,
+      };
     }
     rows[timeStr][field] = coerced;
   }
@@ -76,10 +92,15 @@ function parseWfsResponse(xml) {
     const r = rows[ts];
     return {
       validAt: new Date(ts),
-      temperature: r.temperature,
+      temperature:     r.temperature,
       radiationGlobal: r.radiationGlobal,
-      windSpeed: r.windSpeed,
-      precipitation: r.precipitation,
+      windSpeed:       r.windSpeed,
+      precipitation:   r.precipitation,
+      humidity:        r.humidity,
+      dewPoint:        r.dewPoint,
+      cloudCover:      r.cloudCover,
+      windGust:        r.windGust,
+      pressure:        r.pressure,
     };
   });
 

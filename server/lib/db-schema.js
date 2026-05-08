@@ -97,6 +97,18 @@ const SCHEMA_SQL = [
 
   "SELECT create_hypertable('weather_forecasts', 'valid_at', if_not_exists => true)",
 
+  // 2026-05-08: enrich the forecast row with the rest of the HARMONIE
+  // simple-stored-query parameters. cloud_cover replaces the radiation-
+  // derived cloud factor; humidity/dew_point feed an upcoming greenhouse
+  // moisture model; wind_gust + pressure are kept for future fits.
+  // ALTER TABLE … ADD COLUMN IF NOT EXISTS is idempotent — pre-existing
+  // prod rows get NULLs in the new columns until the next FMI refresh.
+  "ALTER TABLE weather_forecasts ADD COLUMN IF NOT EXISTS humidity         DOUBLE PRECISION",
+  "ALTER TABLE weather_forecasts ADD COLUMN IF NOT EXISTS dew_point        DOUBLE PRECISION",
+  "ALTER TABLE weather_forecasts ADD COLUMN IF NOT EXISTS cloud_cover      DOUBLE PRECISION",
+  "ALTER TABLE weather_forecasts ADD COLUMN IF NOT EXISTS wind_gust        DOUBLE PRECISION",
+  "ALTER TABLE weather_forecasts ADD COLUMN IF NOT EXISTS pressure         DOUBLE PRECISION",
+
   "CREATE INDEX IF NOT EXISTS weather_forecasts_valid_at ON weather_forecasts (valid_at DESC)",
 
   "CREATE TABLE IF NOT EXISTS spot_prices (\n" +

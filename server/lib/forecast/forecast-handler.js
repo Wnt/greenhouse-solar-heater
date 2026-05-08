@@ -136,7 +136,9 @@ function createForecastHandler(opts) {
     const sql =
       'SELECT DISTINCT ON (valid_at) valid_at, temperature, ' +
       '  radiation_global AS "radiationGlobal", ' +
-      '  wind_speed AS "windSpeed", precipitation ' +
+      '  wind_speed AS "windSpeed", precipitation, ' +
+      '  humidity, dew_point AS "dewPoint", cloud_cover AS "cloudCover", ' +
+      '  wind_gust AS "windGust", pressure ' +
       'FROM weather_forecasts ' +
       "WHERE valid_at >= NOW() AND valid_at <= NOW() + INTERVAL '48 hours' " +
       'ORDER BY valid_at, fetched_at DESC';
@@ -149,6 +151,11 @@ function createForecastHandler(opts) {
           radiationGlobal: r.radiationGlobal,
           windSpeed:       r.windSpeed,
           precipitation:   r.precipitation,
+          humidity:        r.humidity,
+          dewPoint:        r.dewPoint,
+          cloudCover:      r.cloudCover,
+          windGust:        r.windGust,
+          pressure:        r.pressure,
         };
       });
       callback(null, rows);
