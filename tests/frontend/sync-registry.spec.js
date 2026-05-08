@@ -224,11 +224,26 @@ test.describe('sync registry + coordinator contract', () => {
       // 30 ms cadence: tight for the test, well above setInterval's
       // ~4 ms minimum so we get distinct ticks.
       window.__sync._startPeriodicResync(30);
-      // Wait long enough for ≥3 ticks plus the in-flight resync to settle.
-      await new Promise(r => setTimeout(r, 150));
+      // Poll until we observe ≥3 ticks (proves the timer is periodic,
+      // not a one-shot). Generous deadline to absorb CPU contention from
+      // parallel Playwright workers — at 30 ms cadence three ticks
+      // arrive in <100 ms on an idle box, but a loaded CI runner can
+      // throttle setInterval. If five seconds isn't enough, the timer
+      // is genuinely broken, not slow.
+      await new Promise((resolve, reject) => {
+        const deadline = Date.now() + 5000;
+        (function check() {
+          if (fetchCalls >= 3) return resolve();
+          if (Date.now() >= deadline) {
+            return reject(new Error('periodic timer fired ' + fetchCalls + ' times in 5s, expected ≥3'));
+          }
+          setTimeout(check, 15);
+        })();
+      });
       const duringTick = fetchCalls;
       window.__sync._stopPeriodicResync();
-      // Wait again — should NOT keep firing after stop.
+      // Wait an interval-grace window — should NOT keep firing after stop.
+      // 150 ms = 5× cadence, plenty for any pending tick to settle.
       await new Promise(r => setTimeout(r, 150));
       const afterStop = fetchCalls;
       return { duringTick, afterStop };
