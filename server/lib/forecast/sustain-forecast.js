@@ -254,11 +254,13 @@ function computeSustainForecast(opts) {
     }
 
     // ── 2. Radiator heat transfer ──
-    // P = UA·(T_tank−T_gh), capped at radPeakW. UA fitted from the live
-    // observation (tankDrop × C / ΔT) at h=0 when greenhouse_heating is
-    // active; falls back to 80 W/K (typical car-radiator + fan setup).
+    // P=UA·(T_tank−T_gh), capped at radPeakW. UA priority: fitted →
+    // live tankDrop at h=0 in heating → hardcoded 80 fallback.
     const radDeltaT = Math.max(0, tankAvg - curGhTemp);
     const radUaWPerK = (function () {
+      if (typeof coeff.radiatorUaWPerK === 'number' && coeff.radiatorUaWPerK > 0) {
+        return coeff.radiatorUaWPerK;
+      }
       if (observedTankDropKPerH !== null && currentMode === 'greenhouse_heating' && h === 0) {
         const observedW = observedTankDropKPerH * TANK_THERMAL_MASS_J_PER_K / SECONDS_PER_HOUR;
         const observedDeltaT = Math.max(1, tankAvg - curGhTemp);
