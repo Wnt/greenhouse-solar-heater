@@ -345,7 +345,7 @@ async function fetchHistoryUpTo(genAt, days) {
   // Pull historical hourly radiation + config_events to drive the same
   // maintenance filter + radiation join the live forecast-handler does.
   const radR = await pool.query(
-    'SELECT DISTINCT ON (valid_at) valid_at, radiation_global ' +
+    'SELECT DISTINCT ON (valid_at) valid_at, radiation_global, temperature ' +
     'FROM weather_forecasts ' +
     'WHERE valid_at BETWEEN ($1::timestamptz - INTERVAL \'' + days + ' days\') AND $1::timestamptz ' +
     '  AND radiation_global IS NOT NULL ' +
