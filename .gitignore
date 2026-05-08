@@ -41,3 +41,4 @@ monitor/device-config.json
 .env
 .env.*
 .claude/scheduled_tasks.lock
+scripts/_probe-engine.mjs
