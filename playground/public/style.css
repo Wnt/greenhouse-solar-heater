@@ -648,6 +648,35 @@ select, input, textarea { max-width: 100%; }
   user-select: none;
 }
 
+/* Fullscreen toggle — sits at the right edge of the graph header
+ * alongside the All Sensors / Forecast switches. Clicking it calls
+ * requestFullscreen on the .graph-card so the same DOM (toggles,
+ * legend, canvas) stretches to fill the viewport — every setting
+ * stays in sync because nothing is duplicated. */
+.graph-fullscreen-btn {
+  background: transparent;
+  border: none;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms ease, color 120ms ease;
+}
+.graph-fullscreen-btn:hover {
+  color: var(--on-surface);
+  background: var(--surface-container-highest);
+}
+.graph-fullscreen-btn:focus-visible {
+  outline: 2px solid var(--on-surface-variant);
+  outline-offset: 2px;
+}
+.graph-fullscreen-btn .material-symbols-outlined {
+  font-size: 20px;
+  line-height: 1;
+}
 
 .graph-container {
   position: relative;
@@ -746,6 +775,39 @@ select, input, textarea { max-width: 100%; }
   color: var(--on-surface-variant);
   font-weight: 500;
   margin-left: 4px;
+}
+
+/* ── Fullscreen chart layout ──
+ * The graph-card is the element passed to requestFullscreen, so the
+ * :fullscreen pseudo-class targets it directly. The header + legend
+ * are kept (the toggles and clickable labels stay reachable); the
+ * canvas container grows into the remaining vertical space. */
+.graph-card:fullscreen,
+.graph-card:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  padding: 16px 24px;
+  background: var(--surface);
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.graph-card:fullscreen .graph-header,
+.graph-card:-webkit-full-screen .graph-header {
+  margin-bottom: 0;
+  flex: 0 0 auto;
+}
+.graph-card:fullscreen .graph-container,
+.graph-card:-webkit-full-screen .graph-container {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+.graph-card:fullscreen .graph-legend,
+.graph-card:-webkit-full-screen .graph-legend {
+  flex: 0 0 auto;
+  margin-top: 0;
 }
 
 /* ── Graph Inspector ── */

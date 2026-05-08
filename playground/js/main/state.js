@@ -68,6 +68,15 @@ export function toggleSeriesHidden(id) {
   return hiddenSeries.has(id);
 }
 
+// True while the chart card is in browser fullscreen. Mirrors
+// `document.fullscreenElement === graphCard`, set on the
+// `fullscreenchange` event. drawHistoryGraph reads this to enable
+// y-axis autoscale + axis labels; the same DOM stays mounted, so all
+// settings (toggles, hidden series) and live-WS data updates flow
+// through unchanged.
+export let chartFullscreen = false;
+export function setChartFullscreen(v) { chartFullscreen = v; }
+
 // Full engine horizon, shown when the forecast overlay is on. The
 // physics/cost engine returns 48 h of trajectory + weather, and the
 // overlay surfaces all of it so the user can see the entire projected
