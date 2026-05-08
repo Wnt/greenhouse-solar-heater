@@ -968,3 +968,85 @@ describe('fitGreenhouseLossWPerK', () => {
         baseline.electricKwh.toFixed(2) + ' fitted=' + fitted.electricKwh.toFixed(2));
   });
 });
+
+describe('greenhouse heat balance — solar absorption', () => {
+  it('predicted GH temp rises above outdoor on a sunny day', () => {
+    // Sunny noon: outdoor 15 °C, ramp radiation 0 → 700 W/m² over the
+    // first 6 hours, hold flat. Tank starts cold so no heating overlay
+    // muddies the GH curve.
+    const now = Date.UTC(2026, 5, 1, 6, 0, 0); // Helsinki noon (UTC+3)
+    const weather = [];
+    for (let h = 0; h < 48; h++) {
+      const ts = new Date(now + h * 3600 * 1000).toISOString();
+      const rad = h < 6 ? Math.min(700, 100 * h)
+                : h < 12 ? 700
+                : h < 18 ? Math.max(0, 700 - 100 * (h - 12))
+                : 0;
+      weather.push({ ts, temperature: 15, radiationGlobal: rad, windSpeed: 1, precipitation: 0 });
+    }
+    const prices = weather.map(w => ({ ts: w.ts, priceCKwh: 5 }));
+
+    const fc = computeSustainForecast({
+      now,
+      tankTop: 14, tankBottom: 13,
+      greenhouseTemp: 15,
+      currentMode: 'idle',
+      weather48h: weather, prices48h: prices,
+      coefficients: { tankLeakageWPerK: 3, solarGainKwhByHour: new Array(24).fill(0) },
+      config: {},
+    });
+    const peakGh = Math.max.apply(null, fc.greenhouseTrajectory.map(p => p.temp));
+    assert.ok(peakGh >= 25, 'expected GH peak >= 25C from solar gain, got ' + peakGh);
+  });
+
+  it('cold overnight triggers greenhouse_heating within 4 h', () => {
+    // GH starts at 18 °C, outdoor steady at 5 °C, no sun. With the
+    // realistic τ ≈ 2 h the GH should drop below the heating threshold
+    // (geT default 10) within 4 h, which the simulation must surface
+    // as a greenhouse_heating mode entry.
+    const now = Date.UTC(2026, 5, 1, 18, 0, 0);
+    const weather = []; const prices = [];
+    for (let h = 0; h < 48; h++) {
+      const ts = new Date(now + h * 3600 * 1000).toISOString();
+      weather.push({ ts, temperature: 5, radiationGlobal: 0, windSpeed: 1, precipitation: 0 });
+      prices.push({ ts, priceCKwh: 5 });
+    }
+    const fc = computeSustainForecast({
+      now,
+      tankTop: 35, tankBottom: 30, greenhouseTemp: 18,
+      currentMode: 'idle',
+      weather48h: weather, prices48h: prices,
+      coefficients: { tankLeakageWPerK: 3, solarGainKwhByHour: new Array(24).fill(0) },
+      config: {},
+    });
+    const firstHeatingEntry = fc.modeForecast.find(m => m.mode === 'greenhouse_heating' || m.mode === 'emergency_heating');
+    assert.ok(firstHeatingEntry, 'expected a heating mode entry, got none');
+    const firstHeatingH = (new Date(firstHeatingEntry.ts).getTime() - now) / 3600000;
+    assert.ok(firstHeatingH <= 4,
+      'expected heating within 4 h, first heating at simulation hour ' + firstHeatingH);
+  });
+
+  it('vent saturation holds GH below 35 C even at 700 W/m^2 + outdoor 25 C', () => {
+    // Worst-case summer: hot outdoor + full sun. The new vent term
+    // must keep the prediction realistic — without it the heat-balance
+    // would diverge to ~50 °C.
+    const now = Date.UTC(2026, 6, 1, 9, 0, 0);
+    const weather = []; const prices = [];
+    for (let h = 0; h < 48; h++) {
+      const ts = new Date(now + h * 3600 * 1000).toISOString();
+      weather.push({ ts, temperature: 25, radiationGlobal: 700, windSpeed: 1, precipitation: 0 });
+      prices.push({ ts, priceCKwh: 5 });
+    }
+    const fc = computeSustainForecast({
+      now,
+      tankTop: 40, tankBottom: 35, greenhouseTemp: 25,
+      currentMode: 'idle',
+      weather48h: weather, prices48h: prices,
+      coefficients: { tankLeakageWPerK: 3, solarGainKwhByHour: new Array(24).fill(0) },
+      config: {},
+    });
+    const peakGh = Math.max.apply(null, fc.greenhouseTrajectory.map(p => p.temp));
+    assert.ok(peakGh <= 35, 'vent cap must hold GH below 35C; got ' + peakGh);
+    assert.ok(peakGh >= 28, 'expected non-trivial solar warming; got ' + peakGh);
+  });
+});
