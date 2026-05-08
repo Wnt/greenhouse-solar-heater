@@ -36,7 +36,13 @@ const GH_TAU_MAX_H        = 8.0;
 const GH_ALPHA_MIN        = 0.005;
 const GH_ALPHA_MAX        = 0.05;
 const RAD_UA_MIN_W_PER_K  = 40;
-const RAD_UA_MAX_W_PER_K  = 200;
+// Empirically the car-radiator + fan setup measures 80–100 W/K from
+// logged greenhouse_heating-mode tank-drop pairs. The fit's median
+// drifts higher than this — likely because heating-mode tank loss
+// includes both radiator output AND ambient leakage, and the fit
+// attributes all of it to UA. 130 caps the upward bias while leaving
+// headroom for genuinely high-flow operating points.
+const RAD_UA_MAX_W_PER_K  = 130;
 const GH_LOSS_MIN_W_PER_K = 30;
 const GH_LOSS_MAX_W_PER_K = 300;
 const TANK_LEAK_MIN_W_PER_K = 1;
@@ -298,12 +304,13 @@ function fitGhTauNight(history) {
       !Array.isArray(history.modes)) return null;
   const readings = history.readings;
   const modeLabels = labelModes(readings, history.modes);
-  // Require idle to have been stable for >= IDLE_SETTLE_MS before
-  // counting a pair — the engine's post-heating transient (radiator
-  // valves close, residual hot pipe water cools rapidly toward gh)
-  // briefly inflates the apparent cooling slope, biasing τ low. 30 min
-  // settle gives the structural thermal mass time to stabilize.
-  const IDLE_SETTLE_MS = 30 * 60 * 1000;
+  // Require idle stable for IDLE_SETTLE_MS before counting a pair —
+  // the engine's post-heating transient (radiator valves close,
+  // residual hot pipe water cools rapidly toward gh) briefly inflates
+  // the apparent cooling slope, biasing τ low. 15 min is enough to
+  // skip the transient without losing too many samples in real data
+  // where idle stretches between mode-cycles are short.
+  const IDLE_SETTLE_MS = 15 * 60 * 1000;
   let idleSinceMs = -Infinity;
   let prevMode = null;
   const xs = []; const ys = [];
