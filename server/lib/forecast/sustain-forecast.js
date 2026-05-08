@@ -70,17 +70,12 @@ const DEFAULT_CONFIG = {
   // Without this, the engine assumes 100% duty for every emergency hour,
   // which over-counts backup energy by ~30-40% in spring/fall conditions.
   greenhouseLossWPerK:      120,
-  // Greenhouse-air heat balance (unified per-hour update, every mode).
-  // Defaults seed the engine before sustain-forecast-fit takes over.
+  // GH-air heat balance defaults; sustain-forecast-fit overrides.
   ghTimeConstantH:          2.0,   // passive cooling τ (hours)
   ghSolarAlphaCPerWm2:      0.025, // °C rise per W/m² radiation
-  // Empirically the gravity vents engage around 33 °C — the user's
-  // operational ceiling on sunny days. Pre-2026-05-08 default of 27
-  // capped the model 5-6 K below reality and produced sunny-hour
-  // under-predictions in retro-fit prod data (clean window error
-  // analysis). The exact open point + τ_vent are fittable but sparse-
-  // data; defaults pin to user-observed reality until enough warm-
-  // weather history exists to fit them.
+  // Vents engage at ~33 °C empirically (operational ceiling on sunny
+  // days). Pre-2026-05-08 default of 27 capped sunny predictions ~6 K
+  // low; fit-able but sparse-data, so defaults pin to user-observed.
   ghVentOpenC:              33,
   ghVentTauH:               0.3,   // cooling τ once vents open
   // Confidence boost: set this to a recent Date when weather was fetched
@@ -359,20 +354,13 @@ function computeSustainForecast(opts) {
       newGhTemp += (ghPassive + ghSolar + ghVent + ghActive) * dtH;
     }
 
-    // ── 3. Solar charging credit (data-driven) ──
-    // Use the historical kWh-per-clock-hour baseline (already integrates
-    // controller cycle probability, shading, typical conditions) and modulate
-    // by the FMI radiation forecast so cloudy/rainy hours get scaled down and
-    // sunnier-than-average hours scaled up. No raw collector physics —
-    // observed history already encodes the real system response.
-    //
-    // Cap at tank near max temp (system stops charging around 60 °C).
+    // ── 3. Solar charging credit ──
+    // Historical kWh-per-clock-hour baseline (encodes controller cycle
+    // probability, shading, typical conditions) modulated by FMI
+    // radiation. cloudReferenceWm2 (~500) maps to cloudFactor=1.
+    // Capped at tank near max temp (system stops charging ~60 °C).
     const hourOfDay   = helsinkiHour(new Date(hourMs));
     const baseGainKwh = solarGainKwhByHour[hourOfDay];
-    // Reference radiation: ~500 W/m² is roughly the historical-average sunny
-    // hour at noon, lat 60° in spring. Forecast hours hitting this map to
-    // cloudFactor = 1; clear midday (~700) maps to ~1.4; overcast (~150)
-    // maps to ~0.3; rainy (~50) maps to ~0.1.
     let cloudFactor = radiation / cfg.cloudReferenceWm2;
     if (cloudFactor < 0)   cloudFactor = 0;
     if (cloudFactor > 1.5) cloudFactor = 1.5;
