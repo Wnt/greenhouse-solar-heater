@@ -344,12 +344,15 @@ function createForecastHandler(opts) {
 
         const baseResponse = {
           generatedAt: new Date().toISOString(),
-          // Algorithm version + active tu ride on the top-level response
-          // so the predictions scheduler can stamp them on each captured
-          // row, and the System Logs export can show which code version
-          // produced the live forecast right now.
+          // Algorithm version + active tu + fitted coefficients ride on
+          // the top-level response so the predictions scheduler can
+          // stamp them on each captured row. The System Logs export
+          // shows which code version + which fit produced the live
+          // forecast, so a tuning analysis can correlate prediction
+          // shifts with config / fit changes.
           algorithmVersion: ALGORITHM_VERSION,
           tu:               dcfg.tu || {},
+          coefficients:     coeff || null,
           weather,
           prices,
           forecast,

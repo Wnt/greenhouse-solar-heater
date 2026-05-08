@@ -3,26 +3,24 @@
 /**
  * Forecast-prediction capture + recall.
  *
- * Persists the engine's "next hour" prediction once per hour (HH:30) so
- * an operator can later compare what the algorithm projected against
- * what actually happened (sensor_readings_30s holds the ground truth).
+ * Persists the engine's full 48 h trajectory once per hour (HH:30) so an
+ * operator can later compare what the algorithm projected against what
+ * actually happened (sensor_readings_30s holds the ground truth) at any
+ * horizon — not just +1 h.
+ *
+ * Each capture writes one row per `(generated_at, horizon_h)` tuple,
+ * with the predicted state at the END of horizon hour h plus the
+ * per-hour components (predicted solar gain, radiator W, heater kWh,
+ * tank loss, cloud factor) consumed during that hour. Inputs the
+ * engine actually used (FMI weather, spot price) and the active fitted
+ * coefficients ride alongside so analyses don't have to cross-reference
+ * weather_forecasts to know what the engine saw.
  *
  * create({ pool, log, isPreviewMode, scheduleNow }) → {
  *   start, stop,
  *   captureFromForecast(response, callback)  // pure-ish; testable
- *   listRecent(limit, callback)
+ *   listRecent(limit, callback)              // returns horizon_h=1 only
  * }
- *
- * The scheduler is wired by start() — it computes the next HH:30 wall-
- * clock, fires once, then re-schedules. captureFromForecast is exposed
- * separately so server-side tests can drive it without a clock dance.
- *
- * Capture rule: take the FIRST modeForecast timestamp in the response.
- * That entry covers the hour starting "now"; trajectory[1] is the
- * predicted state at the END of that hour (= start of the next index)
- * which is what we want to compare against the actual reading an hour
- * later. When solar_charging overlays a pump mode the engine emits two
- * entries with the same ts — we collapse them like the export does.
  */
 
 const SECONDS_PER_HOUR = 3600;
@@ -33,129 +31,158 @@ function create(opts) {
   const pool          = opts.pool;
   const log           = opts.log;
   const isPreviewMode = opts.isPreviewMode || false;
-  // Optional injection so tests can drive the scheduler with a mock clock
-  // and a synchronous capture trigger.
   const scheduleNow   = typeof opts.scheduleNow === 'function' ? opts.scheduleNow : null;
-  // Override the version (tests pin a known value to assert persistence
-  // shape). Production reads the live module-load digest.
   const algorithmVersion = opts.algorithmVersion || ALGORITHM_VERSION;
 
   let _timeoutHandle = null;
 
-  // Pure: extract the prediction record from a forecast-handler response.
-  // Returns null when the response shape is missing the bits needed for a
-  // useful row (no first hour, no trajectory anchor) so the scheduler can
-  // log a "skipped" instead of writing partial data.
-  function buildRow(response) {
+  // Build one row per horizon hour from a forecast response. Returns
+  // null when the response shape is unusable (no trajectory). Each row
+  // describes the predicted state at the END of horizon hour h (= start
+  // of hour h+1) and the components consumed during that hour.
+  function buildRows(response) {
     if (!response || !response.forecast) return null;
     const fc = response.forecast;
-    const modes = Array.isArray(fc.modeForecast) ? fc.modeForecast : [];
-    if (modes.length === 0) return null;
-    const firstTs = modes[0].ts;
-    let primary = null;
-    let hasSolar = false;
-    let duty = null;
-    for (let i = 0; i < modes.length && modes[i].ts === firstTs; i++) {
-      const m = modes[i];
+    const tank = Array.isArray(fc.tankTrajectory) ? fc.tankTrajectory : [];
+    const gh   = Array.isArray(fc.greenhouseTrajectory) ? fc.greenhouseTrajectory : [];
+    const cmp  = Array.isArray(fc.componentTrajectory) ? fc.componentTrajectory : [];
+    const modeEntries = Array.isArray(fc.modeForecast) ? fc.modeForecast : [];
+    if (tank.length < 2 || gh.length < 2) return null;
+
+    // Index modeForecast by ts; collapse solar overlay by setting hasSolar
+    const modeByTs = {};
+    for (let i = 0; i < modeEntries.length; i++) {
+      const m = modeEntries[i];
+      let entry = modeByTs[m.ts];
+      if (!entry) {
+        entry = { mode: 'idle', hasSolar: false, duty: null };
+        modeByTs[m.ts] = entry;
+      }
       if (m.mode === 'solar_charging') {
-        if (primary === null) primary = 'solar_charging';
-        else hasSolar = true;
+        if (entry.mode === 'idle') entry.mode = 'solar_charging';
+        else entry.hasSolar = true;
       } else {
-        if (primary === 'solar_charging') hasSolar = true;
-        primary = m.mode;
-        if (typeof m.duty === 'number') duty = m.duty;
+        if (entry.mode === 'solar_charging') entry.hasSolar = true;
+        entry.mode = m.mode;
+        if (typeof m.duty === 'number') entry.duty = m.duty;
       }
     }
-    // Trajectory[1] is the state at the END of the first forecast hour
-    // (= start of hour 1). That's the comparable anchor a real operator
-    // wants when checking the prediction against future actuals.
-    const tank = Array.isArray(fc.tankTrajectory) && fc.tankTrajectory.length > 1
-      ? fc.tankTrajectory[1] : null;
-    const gh   = Array.isArray(fc.greenhouseTrajectory) && fc.greenhouseTrajectory.length > 1
-      ? fc.greenhouseTrajectory[1] : null;
-    // for_hour names the wall clock when the predicted state will
-    // actually exist — i.e. trajectory[1].ts (one hour after generation).
-    // Pre-fix this carried modeForecast[0].ts (= generation time), which
-    // forced the operator to mentally add an hour to know which actual
-    // sensor reading to compare against. Falls back to firstTs if the
-    // trajectory is shorter than expected (engine bug / incomplete data),
-    // so we never write a NULL into the PK column.
-    const forHourTs = (tank && tank.ts) ? tank.ts : firstTs;
-    // Weather rows are hour-aligned but firstTs carries a sub-hour offset
-    // (now + h*3600s). Pick the closest row within ±90 min — same window
-    // the export uses, same justification.
-    const wx = nearestRow(response.weather, firstTs, 'validAt', 90 * 60 * 1000);
-    const px = nearestRow(response.prices,  firstTs, 'validAt', 90 * 60 * 1000);
-    // Live tuning overrides at capture time. Sourced from the response
-    // (handler attaches it) so the row reflects the same `tu` snapshot
-    // the engine just used. Falls back to null when the handler hasn't
-    // been wired to attach it (older tests, etc.).
-    const tu = response.tu && typeof response.tu === 'object' ? response.tu : null;
-    return {
-      forHour:        forHourTs,
-      generatedAt:    response.generatedAt || new Date().toISOString(),
-      mode:           primary || 'idle',
-      hasSolarOverlay: hasSolar,
-      duty,
-      tankAvgC:       tank ? round2(tank.avg) : null,
-      greenhouseC:    gh   ? round2(gh.temp) : null,
-      outdoorC:       wx && typeof wx.temperature     === 'number' ? wx.temperature     : null,
-      radiationWm2:   wx && typeof wx.radiationGlobal === 'number' ? wx.radiationGlobal : null,
-      priceCKwh:      px && typeof px.priceCKwh       === 'number' ? px.priceCKwh       : null,
-      algorithmVersion,
-      tu,
-    };
+
+    const generatedAt = response.generatedAt || new Date().toISOString();
+    const algo = response.algorithmVersion || algorithmVersion;
+    const tu   = response.tu && typeof response.tu === 'object' ? response.tu : null;
+    const coeff = response.coefficients && typeof response.coefficients === 'object'
+      ? response.coefficients : null;
+
+    const rows = [];
+    const horizon = Math.min(tank.length - 1, gh.length - 1);
+    for (let h = 1; h <= horizon; h++) {
+      const tankAt = tank[h]; const ghAt = gh[h];
+      if (!tankAt || !ghAt) continue;
+      // The mode entry for hour-(h-1) → h is keyed by the hour-(h-1)
+      // trajectory ts (engine pushes mode entries at start-of-hour).
+      const startTs = tank[h - 1] && tank[h - 1].ts;
+      const me = (startTs && modeByTs[startTs]) || { mode: 'idle', hasSolar: false, duty: null };
+      const c  = cmp[h - 1] || {};
+      const wx = nearestRow(response.weather, ghAt.ts, 'validAt', 90 * 60 * 1000);
+      const px = nearestRow(response.prices,  ghAt.ts, 'validAt', 90 * 60 * 1000);
+      rows.push({
+        generatedAt,
+        horizonH:        h,
+        forHour:         ghAt.ts,
+        mode:            me.mode,
+        hasSolarOverlay: me.hasSolar,
+        duty:            me.duty,
+        tankTopC:        round2(tankAt.top),
+        tankBottomC:     round2(tankAt.bottom),
+        tankAvgC:        round2(tankAt.avg),
+        greenhouseC:     round2(ghAt.temp),
+        predSolarGainKwh:    typeof c.solarGainKwh  === 'number' ? c.solarGainKwh  : null,
+        predRadDeliveredW:   typeof c.radDeliveredW === 'number' ? c.radDeliveredW : null,
+        predHeaterKwh:       typeof c.heaterKwh     === 'number' ? c.heaterKwh     : null,
+        predTankLossW:       typeof c.tankLossW     === 'number' ? c.tankLossW     : null,
+        predCloudFactor:     typeof c.cloudFactor   === 'number' ? c.cloudFactor   : null,
+        outdoorC:        wx && typeof wx.temperature     === 'number' ? wx.temperature     : null,
+        radiationWm2:    wx && typeof wx.radiationGlobal === 'number' ? wx.radiationGlobal : null,
+        windSpeedMs:     wx && typeof wx.windSpeed       === 'number' ? wx.windSpeed       : null,
+        precipitationMm: wx && typeof wx.precipitation   === 'number' ? wx.precipitation   : null,
+        priceCKwh:       px && typeof px.priceCKwh       === 'number' ? px.priceCKwh       : null,
+        algorithmVersion: algo,
+        tu, coefficients: coeff,
+      });
+    }
+    return rows.length > 0 ? rows : null;
   }
 
-  function persistRow(row, callback) {
+  // Bulk INSERT … VALUES (…)·48 ON CONFLICT DO UPDATE. One round-trip
+  // per HH:30 capture; cheaper than 48 separate INSERTs. Column order
+  // mirrors db-schema.js's CREATE TABLE for grep-ability.
+  function persistRows(rows, callback) {
+    if (!rows || rows.length === 0) { callback(null); return; }
+    const cols = [
+      'generated_at', 'horizon_h', 'for_hour', 'mode', 'has_solar_overlay', 'duty',
+      'tank_top_c', 'tank_bottom_c', 'tank_avg_c', 'greenhouse_c',
+      'pred_solar_gain_kwh', 'pred_rad_delivered_w', 'pred_heater_kwh',
+      'pred_tank_loss_w', 'pred_cloud_factor',
+      'outdoor_c', 'radiation_w_m2', 'wind_speed_m_s', 'precipitation_mm',
+      'price_c_kwh', 'algorithm_version', 'tu', 'coefficients',
+    ];
+    const values = [];
+    const placeholders = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const base = i * cols.length;
+      const ph = []; for (let j = 0; j < cols.length; j++) ph.push('$' + (base + j + 1));
+      placeholders.push('(' + ph.join(',') + ')');
+      values.push(
+        r.generatedAt, r.horizonH, r.forHour, r.mode, r.hasSolarOverlay, r.duty,
+        r.tankTopC, r.tankBottomC, r.tankAvgC, r.greenhouseC,
+        r.predSolarGainKwh, r.predRadDeliveredW, r.predHeaterKwh,
+        r.predTankLossW, r.predCloudFactor,
+        r.outdoorC, r.radiationWm2, r.windSpeedMs, r.precipitationMm,
+        r.priceCKwh, r.algorithmVersion,
+        r.tu ? JSON.stringify(r.tu) : null,
+        r.coefficients ? JSON.stringify(r.coefficients) : null
+      );
+    }
+    const updateCols = cols.filter(function (c) { return c !== 'generated_at' && c !== 'horizon_h'; });
     const sql =
-      'INSERT INTO forecast_predictions ' +
-      '(for_hour, generated_at, mode, has_solar_overlay, duty, ' +
-      ' tank_avg_c, greenhouse_c, outdoor_c, radiation_w_m2, price_c_kwh, ' +
-      ' algorithm_version, tu) ' +
-      'VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) ' +
-      'ON CONFLICT (for_hour) DO UPDATE SET ' +
-      '  generated_at = EXCLUDED.generated_at, ' +
-      '  mode = EXCLUDED.mode, ' +
-      '  has_solar_overlay = EXCLUDED.has_solar_overlay, ' +
-      '  duty = EXCLUDED.duty, ' +
-      '  tank_avg_c = EXCLUDED.tank_avg_c, ' +
-      '  greenhouse_c = EXCLUDED.greenhouse_c, ' +
-      '  outdoor_c = EXCLUDED.outdoor_c, ' +
-      '  radiation_w_m2 = EXCLUDED.radiation_w_m2, ' +
-      '  price_c_kwh = EXCLUDED.price_c_kwh, ' +
-      '  algorithm_version = EXCLUDED.algorithm_version, ' +
-      '  tu = EXCLUDED.tu';
-    pool.query(sql, [
-      row.forHour, row.generatedAt, row.mode, row.hasSolarOverlay, row.duty,
-      row.tankAvgC, row.greenhouseC, row.outdoorC, row.radiationWm2, row.priceCKwh,
-      row.algorithmVersion, row.tu ? JSON.stringify(row.tu) : null,
-    ], callback);
+      'INSERT INTO forecast_predictions (' + cols.join(', ') + ') ' +
+      'VALUES ' + placeholders.join(', ') + ' ' +
+      'ON CONFLICT (generated_at, horizon_h) DO UPDATE SET ' +
+        updateCols.map(function (c) { return c + ' = EXCLUDED.' + c; }).join(', ');
+    pool.query(sql, values, callback);
   }
 
   function captureFromForecast(response, callback) {
-    const row = buildRow(response);
-    if (!row) {
+    const rows = buildRows(response);
+    if (!rows) {
       if (callback) callback(null, null);
       return;
     }
-    persistRow(row, function (err) {
+    persistRows(rows, function (err) {
       if (err) {
         log.error('forecast-predictions: insert failed', { error: err.message });
       } else {
-        log.info('forecast-predictions: captured', { for_hour: row.forHour, mode: row.mode });
+        log.info('forecast-predictions: captured', {
+          generated_at: rows[0].generatedAt, count: rows.length,
+        });
       }
-      if (callback) callback(err, err ? null : row);
+      if (callback) callback(err, err ? null : rows);
     });
   }
 
+  // Returns the most recent +1 h projections for the System Logs view.
+  // The multi-horizon table is for offline analysis; the operator-
+  // visible "Prediction History" section keeps showing one row per hour.
   function listRecent(limit, callback) {
     const n = Math.max(1, Math.min(parseInt(limit, 10) || RECENT_DEFAULT_LIMIT, 500));
     const sql =
       'SELECT for_hour, generated_at, mode, has_solar_overlay, duty, ' +
       '  tank_avg_c, greenhouse_c, outdoor_c, radiation_w_m2, price_c_kwh, ' +
-      '  algorithm_version, tu ' +
-      'FROM forecast_predictions ORDER BY for_hour DESC LIMIT $1';
+      '  algorithm_version, tu, coefficients ' +
+      'FROM forecast_predictions WHERE horizon_h = 1 ' +
+      'ORDER BY for_hour DESC LIMIT $1';
     pool.query(sql, [n], function (err, result) {
       if (err) return callback(err);
       const rows = (result.rows || []).map(function (r) {
@@ -171,19 +198,17 @@ function create(opts) {
           radiationWm2:    r.radiation_w_m2,
           priceCKwh:       r.price_c_kwh,
           algorithmVersion: r.algorithm_version,
-          // node-postgres returns JSONB as a parsed object directly; pg-mem
+          // node-postgres returns JSONB as a parsed object; pg-mem
           // sometimes returns the raw string, hence the defensive parse.
-          tu: typeof r.tu === 'string' ? safeParseJson(r.tu) : (r.tu || null),
+          tu:               typeof r.tu === 'string' ? safeParseJson(r.tu) : (r.tu || null),
+          coefficients:     typeof r.coefficients === 'string' ? safeParseJson(r.coefficients) : (r.coefficients || null),
         };
       });
       callback(null, rows);
     });
   }
 
-  // ── Scheduling ──
-  // Run at HH:30 of every hour, regardless of when the server started.
-  // setTimeout is preferred over setInterval so each invocation re-aims
-  // at the next wall-clock boundary (interval drifts under load).
+  // ── Scheduling (unchanged from pre-multi-horizon) ──
   function msUntilNextHH30(now) {
     const d = new Date(now);
     d.setMinutes(30, 0, 0);
@@ -209,7 +234,6 @@ function create(opts) {
       return;
     }
     if (scheduleNow) {
-      // Test injection: fire immediately so tests don't wait for HH:30.
       scheduleNow(captureCb);
       return;
     }
@@ -228,7 +252,7 @@ function create(opts) {
     captureFromForecast,
     listRecent,
     // exported for tests
-    _buildRow: buildRow,
+    _buildRows: buildRows,
     _msUntilNextHH30: msUntilNextHH30,
   };
 }
