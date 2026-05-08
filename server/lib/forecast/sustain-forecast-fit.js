@@ -33,6 +33,34 @@ function helsinkiHHMM(date) {
   return HELSINKI_HHMM_FMT.format(date);
 }
 
+// Shared mode-labeller: returns one mode string per reading by
+// forward-walking the modes array. Was duplicated in three fit
+// functions (fitSolarGainByHour, fitGreenhouseLossWPerK,
+// fitEmpiricalCoefficients) — consolidated here in 2026-05-08 when the
+// new GH heat-balance fits added a fourth and fifth caller.
+function labelModes(readings, modes) {
+  const labels = new Array(readings.length);
+  let cursor = 0;
+  let currentMode = 'idle';
+  while (cursor < modes.length) {
+    const tsMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
+    const r0Ms = readings[0].ts instanceof Date ? readings[0].ts.getTime() : Number(readings[0].ts);
+    if (tsMs <= r0Ms) { currentMode = modes[cursor].mode; cursor++; }
+    else break;
+  }
+  labels[0] = currentMode;
+  for (let i = 1; i < readings.length; i++) {
+    const rMs = readings[i].ts instanceof Date ? readings[i].ts.getTime() : Number(readings[i].ts);
+    while (cursor < modes.length) {
+      const mMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
+      if (mMs <= rMs) { currentMode = modes[cursor].mode; cursor++; }
+      else break;
+    }
+    labels[i] = currentMode;
+  }
+  return labels;
+}
+
 // ── Least-squares slope through origin: slope = Σ(xi·yi) / Σ(xi²) ──
 function slopeThruOrigin(xs, ys) {
   let sumXY = 0, sumX2 = 0;
@@ -87,27 +115,7 @@ function fitSolarGainByHour(history) {
 
   const readings = history.readings;
   const modes    = history.modes;
-
-  // Forward-walking mode cursor (same pattern as fitEmpiricalCoefficients).
-  const modeLabels = new Array(readings.length);
-  let cursor = 0;
-  let currentMode = 'idle';
-  while (cursor < modes.length) {
-    const tsMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
-    const r0Ms = readings[0].ts instanceof Date ? readings[0].ts.getTime() : Number(readings[0].ts);
-    if (tsMs <= r0Ms) { currentMode = modes[cursor].mode; cursor++; }
-    else break;
-  }
-  modeLabels[0] = currentMode;
-  for (let i = 1; i < readings.length; i++) {
-    const rMs = readings[i].ts instanceof Date ? readings[i].ts.getTime() : Number(readings[i].ts);
-    while (cursor < modes.length) {
-      const mMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
-      if (mMs <= rMs) { currentMode = modes[cursor].mode; cursor++; }
-      else break;
-    }
-    modeLabels[i] = currentMode;
-  }
+  const modeLabels = labelModes(readings, modes);
 
   // Sum ΔKelvin gained per hour-of-day during solar_charging mode.
   // Then convert to kWh and divide by the number of distinct days covered
@@ -191,27 +199,7 @@ function fitGreenhouseLossWPerK(history, opts) {
   }
   const readings = history.readings;
   const modes    = history.modes;
-
-  // Forward-walking mode cursor — same pattern as fitEmpiricalCoefficients.
-  const modeLabels = new Array(readings.length);
-  let cursor      = 0;
-  let currentMode = 'idle';
-  while (cursor < modes.length) {
-    const tsMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
-    const r0Ms = readings[0].ts instanceof Date ? readings[0].ts.getTime() : Number(readings[0].ts);
-    if (tsMs <= r0Ms) { currentMode = modes[cursor].mode; cursor++; }
-    else break;
-  }
-  modeLabels[0] = currentMode;
-  for (let i = 1; i < readings.length; i++) {
-    const rMs = readings[i].ts instanceof Date ? readings[i].ts.getTime() : Number(readings[i].ts);
-    while (cursor < modes.length) {
-      const mMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
-      if (mMs <= rMs) { currentMode = modes[cursor].mode; cursor++; }
-      else break;
-    }
-    modeLabels[i] = currentMode;
-  }
+  const modeLabels = labelModes(readings, modes);
 
   // Bucket consecutive reading pairs into hourly slots keyed by floor(ts/h).
   // For each bucket we accumulate per-mode seconds plus gh and outdoor
@@ -266,6 +254,85 @@ function fitGreenhouseLossWPerK(history, opts) {
   return (slope !== null && slope > 0) ? slope : null;
 }
 
+/**
+ * Fit passive greenhouse cooling τ from idle, no-radiation history.
+ *
+ * Energy balance during idle/no-sun:  d(gh)/dt = (outdoor − gh) / τ_gh.
+ * Regress -d(gh)/dt against (gh − outdoor) over clean idle pairs where
+ * radiation < 30 W/m² and no heating mode fires; the slope's reciprocal
+ * is τ_gh. Falls back to null when fewer than MIN_BUCKETS_FOR_FIT clean
+ * pairs are available — caller falls through to the engine default.
+ *
+ * @param {object} history { readings, modes }
+ * @returns {number|null} τ in hours, or null on insufficient data
+ */
+function fitGhTimeConstantH(history) {
+  if (!history || !Array.isArray(history.readings) || history.readings.length < 2 ||
+      !Array.isArray(history.modes)) return null;
+  const readings = history.readings;
+  const modes    = history.modes;
+  const modeLabels = labelModes(readings, modes);
+
+  const xs = []; const ys = [];
+  for (let i = 0; i < readings.length - 1; i++) {
+    if (modeLabels[i] !== 'idle') continue;
+    const r0 = readings[i]; const r1 = readings[i + 1];
+    const t0 = r0.ts instanceof Date ? r0.ts.getTime() : Number(r0.ts);
+    const t1 = r1.ts instanceof Date ? r1.ts.getTime() : Number(r1.ts);
+    const dtH = (t1 - t0) / 3600000;
+    if (dtH <= 0 || dtH > 0.25) continue;
+    if (typeof r0.greenhouse !== 'number' || typeof r0.outdoor !== 'number' ||
+        typeof r1.greenhouse !== 'number') continue;
+    if (typeof r0.radiationGlobal === 'number' && r0.radiationGlobal > 30) continue;
+    const ghDelta = r1.greenhouse - r0.greenhouse;
+    const dT = r0.greenhouse - r0.outdoor;
+    if (dT <= 1) continue;
+    xs.push(dT);
+    ys.push(-ghDelta / dtH);
+  }
+  if (xs.length < MIN_BUCKETS_FOR_FIT) return null;
+  const slope = slopeThruOrigin(xs, ys);
+  if (slope === null || slope <= 0) return null;
+  return 1 / slope;
+}
+
+/**
+ * Fit greenhouse solar absorption α from sunny daytime history.
+ *
+ * Steady-state daytime when no heating fires and vents are not yet open:
+ *   gh − outdoor ≈ α_solar · radiation · τ_gh
+ * so α_solar = slope of (gh − outdoor) / radiation, divided by τ_gh.
+ * Vents masked off (gh < ventOpenC) to keep the fit linear.
+ *
+ * @param {object} history
+ * @param {number} tauGhH τ_gh from fitGhTimeConstantH (hours)
+ * @param {number} ventOpenC vent threshold (°C)
+ * @returns {number|null}
+ */
+function fitGhSolarAlphaCPerWm2(history, tauGhH, ventOpenC) {
+  if (!history || !Array.isArray(history.readings) || history.readings.length < 2 ||
+      !Array.isArray(history.modes) || !(tauGhH > 0)) return null;
+  const readings = history.readings;
+  const modes    = history.modes;
+  const modeLabels = labelModes(readings, modes);
+
+  const xs = []; const ys = [];
+  for (let i = 0; i < readings.length; i++) {
+    if (modeLabels[i] === 'greenhouse_heating' || modeLabels[i] === 'emergency_heating') continue;
+    const r = readings[i];
+    if (typeof r.greenhouse !== 'number' || typeof r.outdoor !== 'number' ||
+        typeof r.radiationGlobal !== 'number') continue;
+    if (r.radiationGlobal < 100) continue;
+    if (r.greenhouse > ventOpenC) continue;
+    xs.push(r.radiationGlobal);
+    ys.push(r.greenhouse - r.outdoor);
+  }
+  if (xs.length < MIN_BUCKETS_FOR_FIT) return null;
+  const slope = slopeThruOrigin(xs, ys);
+  if (slope === null || slope <= 0) return null;
+  return slope / tauGhH;
+}
+
 function fitEmpiricalCoefficients(history, opts) {
   const defaults = {
     tankLeakageWPerK: DEFAULT_TANK_LEAKAGE_W_PER_K,
@@ -279,27 +346,7 @@ function fitEmpiricalCoefficients(history, opts) {
 
   const readings = history.readings;
   const modes    = (history.modes || []).slice();
-
-  // Forward-walking mode cursor: label each reading with its current mode.
-  const modeLabels = new Array(readings.length);
-  let cursor = 0;
-  let currentMode = 'idle';
-  while (cursor < modes.length) {
-    const tsMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
-    const r0Ms = readings[0].ts instanceof Date ? readings[0].ts.getTime() : Number(readings[0].ts);
-    if (tsMs <= r0Ms) { currentMode = modes[cursor].mode; cursor++; }
-    else break;
-  }
-  modeLabels[0] = currentMode;
-  for (let i = 1; i < readings.length; i++) {
-    const rMs = readings[i].ts instanceof Date ? readings[i].ts.getTime() : Number(readings[i].ts);
-    while (cursor < modes.length) {
-      const mMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
-      if (mMs <= rMs) { currentMode = modes[cursor].mode; cursor++; }
-      else break;
-    }
-    modeLabels[i] = currentMode;
-  }
+  const modeLabels = labelModes(readings, modes);
 
   // Bucket consecutive idle stretches and emit one (deltaK, powerW) sample per
   // consecutive reading pair within each ≥ MIN_IDLE_BUCKET_MINUTES bucket.
@@ -350,6 +397,11 @@ function fitEmpiricalCoefficients(history, opts) {
 
   const tankSlope = tankXs.length >= MIN_BUCKETS_FOR_FIT ? slopeThruOrigin(tankXs, tankYs) : null;
   const ghLossSlope = fitGreenhouseLossWPerK(history, opts);
+  const ghTau   = fitGhTimeConstantH(history);
+  // ghVentOpenC default 27 mirrors DEFAULT_CONFIG. Vent params are not
+  // fit yet — sparse data; can be added later when more history exists.
+  const ghAlpha = ghTau !== null
+    ? fitGhSolarAlphaCPerWm2(history, ghTau, 27) : null;
 
   const out = {
     tankLeakageWPerK:   tankSlope !== null && tankSlope > 0 ? tankSlope : DEFAULT_TANK_LEAKAGE_W_PER_K,
@@ -361,6 +413,8 @@ function fitEmpiricalCoefficients(history, opts) {
   // mirroring how solarGainKwhByHour falls through to the engine's
   // built-in low-gain mask when the fit gives up.
   if (ghLossSlope !== null) out.greenhouseLossWPerK = ghLossSlope;
+  if (ghTau   !== null) out.ghTimeConstantH      = ghTau;
+  if (ghAlpha !== null) out.ghSolarAlphaCPerWm2  = ghAlpha;
   return out;
 }
 
@@ -374,5 +428,7 @@ module.exports = {
   // Fit functions.
   fitSolarGainByHour,
   fitGreenhouseLossWPerK,
+  fitGhTimeConstantH,
+  fitGhSolarAlphaCPerWm2,
   fitEmpiricalCoefficients,
 };

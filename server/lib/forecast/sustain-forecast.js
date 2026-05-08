@@ -135,6 +135,18 @@ function computeSustainForecast(opts) {
   if (typeof coeff.greenhouseLossWPerK === 'number' && coeff.greenhouseLossWPerK > 0) {
     cfg.greenhouseLossWPerK = coeff.greenhouseLossWPerK;
   }
+  if (typeof coeff.ghTimeConstantH === 'number' && coeff.ghTimeConstantH > 0) {
+    cfg.ghTimeConstantH = coeff.ghTimeConstantH;
+  }
+  if (typeof coeff.ghSolarAlphaCPerWm2 === 'number' && coeff.ghSolarAlphaCPerWm2 >= 0) {
+    cfg.ghSolarAlphaCPerWm2 = coeff.ghSolarAlphaCPerWm2;
+  }
+  if (typeof coeff.ghVentOpenC === 'number' && coeff.ghVentOpenC > 0) {
+    cfg.ghVentOpenC = coeff.ghVentOpenC;
+  }
+  if (typeof coeff.ghVentTauH === 'number' && coeff.ghVentTauH > 0) {
+    cfg.ghVentTauH = coeff.ghVentTauH;
+  }
 
   const tankLeakageWPerK    = typeof coeff.tankLeakageWPerK    === 'number' ? coeff.tankLeakageWPerK    : DEFAULT_TANK_LEAKAGE_W_PER_K;
   // Observed tank-drop rate during the most recent ~hour, in K/h (positive

@@ -1037,6 +1037,24 @@ describe('greenhouse heat balance — solar absorption', () => {
       'expected heating within 4 h, first heating at simulation hour ' + firstHeatingH);
   });
 
+  it('fitGhTimeConstantH recovers tau within 20% of synthetic ground truth', () => {
+    // Synthetic readings: gh starts at 25, outdoor at 5, no sun, idle.
+    // Generated with dT/dt = (out-gh)/τ; 30 s sampling for 24 h.
+    const dtSec = 30; const tauH = 2.0;
+    const readings = [];
+    let gh = 25;
+    for (let i = 0; i < 24 * 60 * 2; i++) {
+      const ts = new Date(Date.UTC(2026, 4, 1) + i * dtSec * 1000);
+      readings.push({ ts, greenhouse: gh, outdoor: 5, tankTop: 20, tankBottom: 20, radiationGlobal: 0 });
+      gh = gh + (5 - gh) * (dtSec / 3600) / tauH;
+    }
+    const modes = [{ ts: readings[0].ts, mode: 'idle' }];
+    const coeff = fitEmpiricalCoefficients({ readings, modes });
+    assert.ok(coeff.ghTimeConstantH !== undefined, 'fit did not converge');
+    assert.ok(Math.abs(coeff.ghTimeConstantH - tauH) / tauH < 0.2,
+      'tau off by >20%: got ' + coeff.ghTimeConstantH);
+  });
+
   it('vent saturation holds GH below 35 C even at 700 W/m^2 + outdoor 25 C', () => {
     // Worst-case summer: hot outdoor + full sun. The new vent term
     // must keep the prediction realistic — without it the heat-balance
