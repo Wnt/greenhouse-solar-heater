@@ -3196,6 +3196,77 @@ body[data-role="readonly"] [data-admin-only] {
 .diag-mode-rect { cursor: pointer; opacity: 0.85; }
 .diag-mode-rect:hover { opacity: 1; stroke: var(--text); stroke-width: 1; }
 
+/* Synced cursor (long-press inspector). The line spans the chart's
+   plot area; the value pill sits at the top with predicted/actual
+   readouts for the nearest sample. */
+.diag-cursor-line {
+  stroke: var(--text);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.6;
+}
+.diag-cursor-dot-pred   { fill: var(--primary);   stroke: var(--bg); stroke-width: 1; }
+.diag-cursor-dot-actual { fill: var(--secondary); stroke: var(--bg); stroke-width: 1; }
+.diag-cursor-tip-bg {
+  fill: var(--surface-container-highest);
+  stroke: var(--surface-bright);
+  stroke-width: 0.5;
+  opacity: 0.95;
+}
+.diag-cursor-tip-text {
+  fill: var(--text);
+  font-size: 11px;
+  font-family: monospace;
+  dominant-baseline: middle;
+}
+.diag-pointer-overlay { cursor: crosshair; }
+
+/* Compact stats on the chart title row. Always rendered by
+   renderLineChart so mobile users see the summary even when the
+   verbose `.diag-error-summary` block is collapsed. */
+.diag-chart-stats {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Mobile / narrow-viewport layout. Goal: three line charts
+   (greenhouse, tank, outdoor) all visible on a Samsung S25 Ultra
+   (412 × 883 CSS px) without scrolling. Chart heights drop via
+   charts.js; everything around them is compressed here. */
+@media (max-width: 640px) {
+  /* Drop the section h2 + intro paragraph entirely — the bottom nav
+     already names the view, and the description is operator-trivia
+     once you're here. */
+  #view-diagnostics > .view-header { display: none; }
+  /* Control card: tight padding, no h2. */
+  #view-diagnostics .card { padding: 6px 10px; margin-bottom: 6px; }
+  .diag-controls { gap: 8px; }
+  .diag-control { font-size: 11px; }
+  .diag-control select { padding: 3px 6px; font-size: 13px; }
+  .diag-status { font-size: 11px; }
+  /* Series-card header + intro condensed. */
+  .diag-section-title { font-size: 14px; margin: 0 0 4px; }
+  .diag-section-subtitle { font-size: 11px; margin: 6px 0 2px; }
+  .diag-section-desc { display: none; }
+  /* Replace the verbose per-chart error block with the inline stats
+     in the chart title (rendered by charts.js). */
+  .diag-error-summary { display: none; }
+  .diag-chart { padding: 2px 4px; margin: 2px 0 4px; background: transparent; }
+  .diag-chart-title {
+    font-size: 11px;
+    margin-bottom: 1px;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .diag-chart-legend { font-size: 10px; }
+  .diag-chart-stats { font-size: 10px; }
+  .diag-chart-mode { padding-bottom: 0; }
+  .diag-pred-pt { r: 2; }
+}
+
 .diag-drill-layout {
   display: grid;
   grid-template-columns: 280px 1fr;

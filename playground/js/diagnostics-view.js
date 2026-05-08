@@ -40,6 +40,7 @@ import {
   renderLineChart, renderModeRibbon, renderSolarGainBars, renderErrorSummary,
 } from './diagnostics/charts.js';
 import { renderComponentTable, renderCoefficientsTable } from './diagnostics/tables.js';
+import { resetCursor } from './diagnostics/inspector.js';
 import { escapeHtml, formatLocal } from './diagnostics/format.js';
 
 let _activeFetchAbort  = null;
@@ -64,10 +65,25 @@ export function mountDiagnosticsView() {
     selectGeneration(li.getAttribute('data-generated-at'));
   };
 
+  // Re-render charts on viewport changes so the responsive geometry
+  // (chartGeometry in charts.js) picks up rotations or window resizes.
+  // Debounced — orientationchange fires several events in quick burst.
+  let resizeRaf = 0;
+  const onResize = () => {
+    if (resizeRaf) cancelAnimationFrame(resizeRaf);
+    resizeRaf = requestAnimationFrame(() => {
+      resizeRaf = 0;
+      if (_seriesData) renderSeries();
+      if (_generationData) renderDrill();
+    });
+  };
+
   horizonSel.addEventListener('change', onChange);
   rangeSel.addEventListener('change', onChange);
   refreshBtn.addEventListener('click', onChange);
   list.addEventListener('click', onListClick);
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
 
   fetchSeries();
 
@@ -76,10 +92,14 @@ export function mountDiagnosticsView() {
     rangeSel.removeEventListener('change', onChange);
     refreshBtn.removeEventListener('click', onChange);
     list.removeEventListener('click', onListClick);
+    window.removeEventListener('resize', onResize);
+    window.removeEventListener('orientationchange', onResize);
+    if (resizeRaf) cancelAnimationFrame(resizeRaf);
     if (_activeFetchAbort) _activeFetchAbort.abort();
     if (_activeDrillAbort) _activeDrillAbort.abort();
     _activeFetchAbort = null;
     _activeDrillAbort = null;
+    resetCursor();
   };
 }
 

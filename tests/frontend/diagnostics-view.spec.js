@@ -295,6 +295,122 @@ test.describe('#diagnostics view — drill-down', () => {
   });
 });
 
+test.describe('#diagnostics view — mobile + synced cursor', () => {
+  // Samsung S25 Ultra logical viewport (412 × 883 CSS px). The
+  // explicit goal of issue: three line charts must all be visible
+  // on this viewport without scrolling, and a synced inspector
+  // cursor drives all charts.
+  test('three line charts all fit inside the S25 Ultra viewport without scrolling', async ({ page }) => {
+    await page.setViewportSize({ width: 412, height: 883 });
+    const series = makeSeries({ count: 6 });
+    await scaffold(page, { seriesPayload: series });
+    await page.goto('/playground/');
+    await page.waitForFunction(() => window.__initComplete === true);
+    await gotoDiagnostics(page);
+    await page.waitForFunction(() => {
+      const s = window.__diag && window.__diag.getSeriesData && window.__diag.getSeriesData();
+      return s && Array.isArray(s.rows) && s.rows.length > 0;
+    }, { timeout: 5000 });
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+
+    // On regression, dump every diagnostics element's vertical
+    // position so the failure points straight at the offending block.
+    async function layoutDump() {
+      return page.evaluate(() => {
+        const ids = ['view-diagnostics', 'diag-controls-card',
+          'diag-series-card', 'diag-chart-greenhouse',
+          'diag-chart-tank', 'diag-chart-outdoor'];
+        return ids.map((id) => {
+          const el = document.getElementById(id);
+          if (!el) return { id, present: false };
+          const r = el.getBoundingClientRect();
+          return { id, top: Math.round(r.top),
+            bottom: Math.round(r.bottom), height: Math.round(r.height) };
+        });
+      });
+    }
+
+    const viewportHeight = 883;
+    const ids = ['#diag-chart-greenhouse', '#diag-chart-tank', '#diag-chart-outdoor'];
+    for (const id of ids) {
+      const box = await page.locator(id).boundingBox();
+      expect(box, `${id} should have a bounding box`).not.toBeNull();
+      const bottom = box.y + box.height;
+      if (bottom > viewportHeight) {
+        const layout = await layoutDump();
+        expect(bottom, `${id} bottom (${bottom}) outside viewport (${viewportHeight})`
+          + ` — layout=${JSON.stringify(layout)}`)
+          .toBeLessThanOrEqual(viewportHeight);
+      }
+    }
+  });
+
+  test('synced cursor: setting the cursor draws a line in every line chart', async ({ page }) => {
+    await page.setViewportSize({ width: 412, height: 883 });
+    const series = makeSeries({ count: 8 });
+    await scaffold(page, { seriesPayload: series });
+    await page.goto('/playground/');
+    await page.waitForFunction(() => window.__initComplete === true);
+    await gotoDiagnostics(page);
+    await page.waitForFunction(() => {
+      const s = window.__diag && window.__diag.getSeriesData && window.__diag.getSeriesData();
+      return s && Array.isArray(s.rows) && s.rows.length > 0;
+    }, { timeout: 5000 });
+
+    // Pick a timestamp in the middle of the rendered series and push
+    // it through the inspector. This is what the long-press handler
+    // does once it activates — the cursor groups in each chart should
+    // un-hide as a result.
+    await page.evaluate(() => {
+      const rows = window.__diag.getSeriesData().rows;
+      const ts = new Date(rows[Math.floor(rows.length / 2)].for_hour).getTime();
+      window.__diag.inspector.setCursorTs(ts);
+    });
+
+    for (const id of ['#diag-chart-greenhouse', '#diag-chart-tank', '#diag-chart-outdoor']) {
+      const cursor = page.locator(`${id} .diag-cursor-group`);
+      await expect(cursor).toBeAttached();
+      // The group flips display from 'none' to '' (visible) on
+      // setCursorTs. The mode ribbon's cursor uses a bare line, not
+      // the group, so we only assert the group on line charts.
+      const display = await cursor.evaluate((el) => el.style.display);
+      expect(display).not.toBe('none');
+    }
+  });
+
+  test('clearCursor hides the synced cursor in all charts', async ({ page }) => {
+    await page.setViewportSize({ width: 412, height: 883 });
+    const series = makeSeries({ count: 6 });
+    await scaffold(page, { seriesPayload: series });
+    await page.goto('/playground/');
+    await page.waitForFunction(() => window.__initComplete === true);
+    await gotoDiagnostics(page);
+    await page.waitForFunction(() => {
+      const s = window.__diag && window.__diag.getSeriesData && window.__diag.getSeriesData();
+      return s && Array.isArray(s.rows) && s.rows.length > 0;
+    }, { timeout: 5000 });
+
+    await page.evaluate(() => {
+      const rows = window.__diag.getSeriesData().rows;
+      const ts = new Date(rows[1].for_hour).getTime();
+      window.__diag.inspector.setCursorTs(ts);
+    });
+    // setCursorTs flips inline `style.display` from 'none' to ''.
+    // Computed display is `inline` for SVG groups, so we assert the
+    // inline-style value directly.
+    expect(await page.locator('#diag-chart-greenhouse .diag-cursor-group')
+      .evaluate((el) => el.style.display)).not.toBe('none');
+
+    await page.evaluate(() => window.__diag.inspector.clearCursor());
+    for (const id of ['#diag-chart-greenhouse', '#diag-chart-tank', '#diag-chart-outdoor']) {
+      const display = await page.locator(`${id} .diag-cursor-group`)
+        .evaluate((el) => el.style.display);
+      expect(display).toBe('none');
+    }
+  });
+});
+
 test.describe('#diagnostics view — control wiring', () => {
   test('changing the horizon triggers a fresh fetch with the new horizon param', async ({ page }) => {
     let lastHorizon = null;
