@@ -22,6 +22,26 @@ const MIN_BUCKETS_FOR_FIT     = 5;
 // lower bar lets them converge from days, not weeks, of clean history.
 const MIN_BUCKETS_FOR_GH_FIT  = 3;
 
+// Sanity bounds. Fits whose output falls outside these ranges are
+// physically implausible for this greenhouse and are rejected (return
+// null) — caller falls through to DEFAULT_CONFIG. Bounds are
+// deliberately wide; the goal is to catch garbage fits (e.g. α near
+// zero from a radiation column with no spread, or a τ that says the
+// greenhouse cools fully in 6 minutes), not to second-guess plausible
+// variations. Values seeded from operational observation: GH peaks at
+// ~33 °C in sunny noon, cools to outdoor in ~2 h after vents close,
+// radiator measured at ~80–100 W/K from logged tank-drop data.
+const GH_TAU_MIN_H        = 0.5;
+const GH_TAU_MAX_H        = 8.0;
+const GH_ALPHA_MIN        = 0.005;
+const GH_ALPHA_MAX        = 0.05;
+const RAD_UA_MIN_W_PER_K  = 40;
+const RAD_UA_MAX_W_PER_K  = 200;
+const GH_LOSS_MIN_W_PER_K = 30;
+const GH_LOSS_MAX_W_PER_K = 300;
+const TANK_LEAK_MIN_W_PER_K = 1;
+const TANK_LEAK_MAX_W_PER_K = 30;
+
 // ── Helsinki TZ helpers (deterministic across server timezones) ──
 const HELSINKI_HOUR_FMT = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Helsinki', hour12: false, hour: '2-digit',
@@ -73,24 +93,6 @@ function slopeThruOrigin(xs, ys) {
     sumX2 += xs[i] * xs[i];
   }
   return sumX2 === 0 ? null : sumXY / sumX2;
-}
-
-// 2-variable linear regression through origin: y = b1·x1 + b2·x2.
-// Solves the normal equations via Cramer's rule. Returns null when the
-// design matrix is singular (e.g. all x1=0 or x1, x2 perfectly
-// collinear). Used to co-fit τ_gh and α_solar from the GH heat balance.
-function fitTwoVarThruOrigin(x1s, x2s, ys) {
-  let s11 = 0, s12 = 0, s22 = 0, s1y = 0, s2y = 0;
-  for (let i = 0; i < ys.length; i++) {
-    s11 += x1s[i] * x1s[i];
-    s12 += x1s[i] * x2s[i];
-    s22 += x2s[i] * x2s[i];
-    s1y += x1s[i] * ys[i];
-    s2y += x2s[i] * ys[i];
-  }
-  const det = s11 * s22 - s12 * s12;
-  if (det === 0 || !isFinite(det)) return null;
-  return { b1: (s1y * s22 - s2y * s12) / det, b2: (s11 * s2y - s12 * s1y) / det };
 }
 
 /**
@@ -277,34 +279,26 @@ function fitGreenhouseLossWPerK(history, opts) {
 }
 
 /**
- * Co-fit greenhouse passive τ and solar absorption α from the heat
- * balance in idle, vents-closed hours.
+ * Fit greenhouse passive cooling τ from idle, no-radiation hours.
  *
- * The two parameters compete in the per-hour ΔT equation:
- *   d(gh)/dt = (outdoor − gh)/τ + α · radiation
- * Single-variable regressions of either alone are biased — the τ-only
- * fit collapses on sunny hours (gh rises during passive intervals);
- * the α-only fit needs τ from the broken first fit. A 2-variable
- * least-squares against the design columns x1 = (outdoor − gh) and
- * x2 = radiation recovers both at once and uses every clean idle
- * sample, sunny or dark.
+ * Energy balance during idle/no-sun: d(gh)/dt = (outdoor − gh)/τ.
+ * Regress -d(gh)/dt against (gh − outdoor) over clean idle pairs where
+ * radiation < 30 W/m² (joined from weather_forecasts upstream); slope's
+ * reciprocal is τ. Pre-2026-05-08 the joint α/τ fit collapsed α → 0
+ * because daytime idle hours dominated the radiation column with most
+ * samples in steady state (perfectly collinear with the (out-gh)
+ * column). Splitting τ from night and α from day re-establishes
+ * identifiability — each regression sees only data where its
+ * coefficient is the dominant driver.
  *
- * Returns { tauGhH, alphaCPerWm2 }. Either can be null if the fit
- * yields a non-physical sign (caller falls through to defaults).
- *
- * @param {object} history { readings, modes } — readings carry gh,
- *   outdoor, radiationGlobal (joined from weather_forecasts upstream)
- * @param {number} ventOpenC vent threshold; rows above this are
- *   excluded so the linear regime holds
+ * @returns {number|null} τ in hours within sanity bounds, else null
  */
-function fitGhPassiveAndSolar(history, ventOpenC) {
+function fitGhTauNight(history) {
   if (!history || !Array.isArray(history.readings) || history.readings.length < 2 ||
-      !Array.isArray(history.modes)) return { tauGhH: null, alphaCPerWm2: null };
+      !Array.isArray(history.modes)) return null;
   const readings = history.readings;
-  const modes    = history.modes;
-  const modeLabels = labelModes(readings, modes);
-
-  const x1 = []; const x2 = []; const ys = [];
+  const modeLabels = labelModes(readings, history.modes);
+  const xs = []; const ys = [];
   for (let i = 0; i < readings.length - 1; i++) {
     if (modeLabels[i] !== 'idle') continue;
     const r0 = readings[i]; const r1 = readings[i + 1];
@@ -314,33 +308,124 @@ function fitGhPassiveAndSolar(history, ventOpenC) {
     if (dtH <= 0 || dtH > 0.25) continue;
     if (typeof r0.greenhouse !== 'number' || typeof r0.outdoor !== 'number' ||
         typeof r1.greenhouse !== 'number') continue;
-    if (typeof r0.radiationGlobal !== 'number') continue;
-    // Stay well below the vent open point: hours close to or above
-    // ventOpenC have d(gh)/dt ≈ 0 (saturated) regardless of radiation,
-    // which collapses the regression slope toward zero α. The 3 K
-    // buffer keeps the fit in the linear regime.
+    // Hard requirement: radiation present and < 30 W/m². Without joined
+    // radiation we can't tell night from day, and a sunny idle hour
+    // collapses the slope (gh rises → -d(gh)/dt is negative).
+    if (typeof r0.radiationGlobal !== 'number' || r0.radiationGlobal > 30) continue;
+    const dT = r0.greenhouse - r0.outdoor;
+    if (dT <= 1) continue;
+    xs.push(dT);
+    ys.push(-(r1.greenhouse - r0.greenhouse) / dtH);
+  }
+  if (xs.length < MIN_BUCKETS_FOR_GH_FIT) return null;
+  const slope = slopeThruOrigin(xs, ys);
+  if (slope === null || slope <= 0) return null;
+  const tau = 1 / slope;
+  if (tau < GH_TAU_MIN_H || tau > GH_TAU_MAX_H) return null;
+  return tau;
+}
+
+/**
+ * Fit greenhouse solar absorption α from sunny daytime non-heating
+ * hours, using the differential heat balance with τ already known:
+ *
+ *     d(gh)/dt = (out-gh)/τ + α·rad
+ *  ⇒  y_residual = d(gh)/dt − (out-gh)/τ  =  α·rad
+ *
+ * Slope of y_residual vs radiation is α directly. The differential
+ * form handles transient daytime rises (gh climbing as sun heats it)
+ * better than a steady-state slope, and removes the collinearity
+ * between (out-gh) and rad that collapsed the prior joint fit.
+ *
+ * Mode filter excludes greenhouse/emergency heating (extra power into
+ * gh breaks the model), and the vent-saturation buffer keeps the fit
+ * in the linear regime. Sanity-bounded; out-of-range fits return null
+ * and the engine uses DEFAULT_CONFIG.ghSolarAlphaCPerWm2.
+ */
+function fitGhAlphaDay(history, tauGhH, ventOpenC) {
+  if (!history || !Array.isArray(history.readings) || history.readings.length < 2 ||
+      !(tauGhH > 0)) return null;
+  const readings = history.readings;
+  const modeLabels = labelModes(readings, history.modes || []);
+  const xs = []; const ys = [];
+  for (let i = 0; i < readings.length - 1; i++) {
+    if (modeLabels[i] === 'greenhouse_heating' || modeLabels[i] === 'emergency_heating') continue;
+    const r0 = readings[i]; const r1 = readings[i + 1];
+    const t0 = r0.ts instanceof Date ? r0.ts.getTime() : Number(r0.ts);
+    const t1 = r1.ts instanceof Date ? r1.ts.getTime() : Number(r1.ts);
+    const dtH = (t1 - t0) / 3600000;
+    if (dtH <= 0 || dtH > 0.25) continue;
+    if (typeof r0.greenhouse !== 'number' || typeof r0.outdoor !== 'number' ||
+        typeof r1.greenhouse !== 'number' || typeof r0.radiationGlobal !== 'number') continue;
+    if (r0.radiationGlobal < 100) continue;
     if (r0.greenhouse > ventOpenC - 3) continue;
-    x1.push(r0.outdoor - r0.greenhouse);   // (out − gh): drives 1/τ
-    x2.push(r0.radiationGlobal);            // rad: drives α
-    ys.push((r1.greenhouse - r0.greenhouse) / dtH);
+    const dGhPerH   = (r1.greenhouse - r0.greenhouse) / dtH;
+    const passive   = (r0.outdoor - r0.greenhouse) / tauGhH;
+    xs.push(r0.radiationGlobal);
+    ys.push(dGhPerH - passive);
   }
-  if (ys.length < MIN_BUCKETS_FOR_GH_FIT) return { tauGhH: null, alphaCPerWm2: null };
-  const fit = fitTwoVarThruOrigin(x1, x2, ys);
-  if (fit) {
-    // b1 = 1/τ (note y = (out-gh)/τ + α·rad, so b1 fits 1/τ directly).
-    // b2 = α. Reject non-physical results so the engine falls through to
-    // defaults instead of e.g. negative α from a bad fit.
-    return {
-      tauGhH:       fit.b1 > 0  ? 1 / fit.b1 : null,
-      alphaCPerWm2: fit.b2 >= 0 ? fit.b2     : null,
-    };
+  if (xs.length < MIN_BUCKETS_FOR_GH_FIT) return null;
+  const slope = slopeThruOrigin(xs, ys);
+  if (slope === null || slope <= 0) return null;
+  if (slope < GH_ALPHA_MIN || slope > GH_ALPHA_MAX) return null;
+  return slope;
+}
+
+/**
+ * Empirical radiator UA (W/K) — heat-transfer coefficient from tank to
+ * greenhouse air. Computed from greenhouse_heating-mode hours where
+ * the radiator is the only active heat path: UA = (tank-drop power) /
+ * (tank_avg − gh). Median over hourly buckets is more robust than mean
+ * (one rapid mode-transition bucket can drag the mean by 50 %).
+ *
+ * Replaces the hardcoded 80 W/K constant the engine used pre-2026-05-08.
+ * Operational data shows real UA varies 60–120 W/K; the hardcoded mid-
+ * value over-credited radiator output in cool-tank conditions and
+ * under-predicted heater duty in nightly forecasts. Sanity-gated to
+ * [40, 200] W/K so a single bad sample (e.g. radiator just started,
+ * tank still mixing) doesn't propagate.
+ */
+function fitRadiatorUaWPerK(history) {
+  if (!history || !Array.isArray(history.readings) || history.readings.length < 2 ||
+      !Array.isArray(history.modes)) return null;
+  const readings = history.readings;
+  const modeLabels = labelModes(readings, history.modes);
+  // Per-hour bucket of (UA samples). Sub-hourly noise gets averaged
+  // within the bucket; the median across buckets is the headline value.
+  const buckets = {};
+  for (let i = 0; i < readings.length - 1; i++) {
+    if (modeLabels[i] !== 'greenhouse_heating') continue;
+    const r0 = readings[i]; const r1 = readings[i + 1];
+    const t0 = r0.ts instanceof Date ? r0.ts.getTime() : Number(r0.ts);
+    const t1 = r1.ts instanceof Date ? r1.ts.getTime() : Number(r1.ts);
+    const dtSec = (t1 - t0) / 1000;
+    if (dtSec <= 0 || dtSec > 600) continue;
+    if (typeof r0.tankTop !== 'number' || typeof r0.tankBottom !== 'number' ||
+        typeof r1.tankTop !== 'number' || typeof r1.tankBottom !== 'number' ||
+        typeof r0.greenhouse !== 'number') continue;
+    const tankAvg0 = (r0.tankTop + r0.tankBottom) / 2;
+    const tankAvg1 = (r1.tankTop + r1.tankBottom) / 2;
+    const dTankK   = tankAvg0 - tankAvg1;
+    const deltaT   = tankAvg0 - r0.greenhouse;
+    if (dTankK <= 0 || deltaT < 2) continue;
+    const powerW = (dTankK / dtSec) * TANK_THERMAL_MASS_J_PER_K;
+    const ua = powerW / deltaT;
+    if (ua < 30 || ua > 250) continue; // drop obvious outliers
+    const hourKey = Math.floor(t0 / 3600000);
+    if (!buckets[hourKey]) buckets[hourKey] = { sum: 0, n: 0 };
+    buckets[hourKey].sum += ua;
+    buckets[hourKey].n   += 1;
   }
-  // Singular design matrix → fall back to 1-variable fit on x1 only.
-  // Happens when radiation is constant (e.g. always-zero synthetic test
-  // data, or a string of fully overcast hours).
-  const slope = slopeThruOrigin(x1, ys);
-  if (slope === null || slope <= 0) return { tauGhH: null, alphaCPerWm2: null };
-  return { tauGhH: 1 / slope, alphaCPerWm2: null };
+  const bucketUas = [];
+  Object.keys(buckets).forEach(function (k) {
+    const b = buckets[k];
+    if (b.n >= 4) bucketUas.push(b.sum / b.n);
+  });
+  if (bucketUas.length < MIN_BUCKETS_FOR_GH_FIT) return null;
+  bucketUas.sort(function (a, b) { return a - b; });
+  const median = bucketUas[Math.floor(bucketUas.length / 2)];
+  if (median < RAD_UA_MIN_W_PER_K || median > RAD_UA_MAX_W_PER_K) return null;
+  return median;
 }
 
 function fitEmpiricalCoefficients(history, opts) {
@@ -405,27 +490,40 @@ function fitEmpiricalCoefficients(history, opts) {
     }
   }
 
-  const tankSlope = tankXs.length >= MIN_BUCKETS_FOR_FIT ? slopeThruOrigin(tankXs, tankYs) : null;
-  const ghLossSlope = fitGreenhouseLossWPerK(history, opts);
-  // ventOpenC mirrors DEFAULT_CONFIG.ghVentOpenC (33). Vent params are
-  // not fit yet — sparse data; can be added later when more warm-
-  // weather history exists.
-  const ghFit = fitGhPassiveAndSolar(history, 33);
-  const ghTau   = ghFit.tauGhH;
-  const ghAlpha = ghFit.alphaCPerWm2;
+  // Tank leakage: gate to physical bounds. Out-of-range slopes happen
+  // when the bucket loop sees rapid temperature drops from non-leakage
+  // causes (residual radiator effect after mode transition, sensor
+  // anomaly).
+  let tankLeak = null;
+  if (tankXs.length >= MIN_BUCKETS_FOR_FIT) {
+    const slope = slopeThruOrigin(tankXs, tankYs);
+    if (slope !== null && slope >= TANK_LEAK_MIN_W_PER_K && slope <= TANK_LEAK_MAX_W_PER_K) {
+      tankLeak = slope;
+    }
+  }
+  // Greenhouse loss: bound to plausible W/K. fitGreenhouseLossWPerK
+  // already returns null on insufficient data; gate handles the case
+  // where it converges to a non-physical value.
+  let ghLoss = fitGreenhouseLossWPerK(history, opts);
+  if (ghLoss !== null && (ghLoss < GH_LOSS_MIN_W_PER_K || ghLoss > GH_LOSS_MAX_W_PER_K)) ghLoss = null;
+  // Sequential GH-air fits — τ from night-only idle hours (no solar
+  // contamination), α from sunny daytime non-heating hours (vent-
+  // saturation buffer applied). Replaces the joint 2-variable fit that
+  // collapsed α → 0 due to (out-gh)/rad collinearity in steady-state
+  // daytime data.
+  const ghTau   = fitGhTauNight(history);
+  const ghAlpha = ghTau !== null ? fitGhAlphaDay(history, ghTau, 33) : null;
+  const radUa   = fitRadiatorUaWPerK(history);
 
   const out = {
-    tankLeakageWPerK:   tankSlope !== null && tankSlope > 0 ? tankSlope : DEFAULT_TANK_LEAKAGE_W_PER_K,
+    tankLeakageWPerK:   tankLeak !== null ? tankLeak : DEFAULT_TANK_LEAKAGE_W_PER_K,
     solarGainKwhByHour: fitSolarGainByHour(history),
-    usedDefaults:       tankSlope === null,
+    usedDefaults:       tankLeak === null,
   };
-  // Only emit greenhouseLossWPerK when the fit converged. Otherwise the
-  // engine keeps using its DEFAULT_CONFIG.greenhouseLossWPerK fallback —
-  // mirroring how solarGainKwhByHour falls through to the engine's
-  // built-in low-gain mask when the fit gives up.
-  if (ghLossSlope !== null) out.greenhouseLossWPerK = ghLossSlope;
-  if (ghTau   !== null) out.ghTimeConstantH      = ghTau;
-  if (ghAlpha !== null) out.ghSolarAlphaCPerWm2  = ghAlpha;
+  if (ghLoss  !== null) out.greenhouseLossWPerK   = ghLoss;
+  if (ghTau   !== null) out.ghTimeConstantH       = ghTau;
+  if (ghAlpha !== null) out.ghSolarAlphaCPerWm2   = ghAlpha;
+  if (radUa   !== null) out.radiatorUaWPerK       = radUa;
   return out;
 }
 
@@ -439,6 +537,16 @@ module.exports = {
   // Fit functions.
   fitSolarGainByHour,
   fitGreenhouseLossWPerK,
-  fitGhPassiveAndSolar,
+  fitGhTauNight,
+  fitGhAlphaDay,
+  fitRadiatorUaWPerK,
   fitEmpiricalCoefficients,
+  // Sanity bounds (exported so tests can exercise gate behavior).
+  _bounds: {
+    GH_TAU_MIN_H, GH_TAU_MAX_H,
+    GH_ALPHA_MIN, GH_ALPHA_MAX,
+    RAD_UA_MIN_W_PER_K, RAD_UA_MAX_W_PER_K,
+    GH_LOSS_MIN_W_PER_K, GH_LOSS_MAX_W_PER_K,
+    TANK_LEAK_MIN_W_PER_K, TANK_LEAK_MAX_W_PER_K,
+  },
 };

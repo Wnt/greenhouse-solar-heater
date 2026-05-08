@@ -202,7 +202,30 @@ async function backfillPredictions(startDate, endDate) {
   process.stdout.write(`\r[backfill] predictions ${written}\n`);
 }
 
+// Live tu loaded once from device-config.js (S3 / local) and reused
+// across all captureAt calls. Backfilling with the OPERATIONAL
+// thresholds is the whole point — the per-night "Tank lasts" / heater
+// kWh totals depend on geT/gxT/ehE/ehX, and forecast_predictions
+// recorded with default-tuned thresholds isn't comparable to live.
+let _liveTu = null;
+async function loadLiveTu() {
+  if (_liveTu !== null) return _liveTu;
+  const dc = await import(path.join(repoRoot, 'server/lib/device-config.js'));
+  return new Promise((resolve) => {
+    dc.load(() => {
+      const cfg = dc.getConfig();
+      _liveTu = {
+        tu: cfg.tu || {},
+        tuning: dc.effectiveTuning(cfg.tu || {}),
+      };
+      resolve(_liveTu);
+    });
+  });
+}
+
 async function captureAt(genAt, computeSustainForecast, fitEmpiricalCoefficients, ALGORITHM_VERSION) {
+  const { tu, tuning } = await loadLiveTu();
+
   // 1) initial state from sensor_readings_30s within ±5 min
   const tankTop    = await sensorAt('tank_top',    genAt, 5);
   const tankBottom = await sensorAt('tank_bottom', genAt, 5);
@@ -222,18 +245,26 @@ async function captureAt(genAt, computeSustainForecast, fitEmpiricalCoefficients
   const prices48h  = await fetchPricesFor(genAt, 48);
   if (weather48h.length === 0) return null;
 
-  // 4) coefficients fit from history available up to genAt
-  // For backfill simplicity, we re-fit per capture using up to 14 d of
-  // history before genAt. This mirrors the live engine's 14-day window.
+  // 4) coefficients fit from history available up to genAt. Mirrors
+  // forecast-handler.queryHistory14d (radiation join + maintenance
+  // filter) so the fit input matches the live engine exactly.
   const history = await fetchHistoryUpTo(genAt, 14);
   const coefficients = fitEmpiricalCoefficients(history);
 
-  // 5) run engine
+  // 5) run engine with live tu — same plumbing as forecast-handler.compute()
   const fc = computeSustainForecast({
     now: genAt, tankTop, tankBottom, greenhouseTemp: ghTemp,
     currentMode,
     weather48h, prices48h, coefficients,
-    config: { weatherFetchedAt: genAt },
+    config: {
+      weatherFetchedAt: genAt,
+      greenhouseEnterC:         tuning.geT,
+      greenhouseExitC:          tuning.gxT,
+      greenhouseMinTankDeltaC:  tuning.gmD,
+      greenhouseExitTankDeltaC: tuning.gxD,
+      emergencyEnterC:          tuning.ehE,
+      emergencyExitC:           tuning.ehX,
+    },
   });
 
   // 6) build rows in same shape as forecast-predictions.js buildRows
@@ -241,6 +272,7 @@ async function captureAt(genAt, computeSustainForecast, fitEmpiricalCoefficients
     generatedAt: genAt.toISOString(),
     forecast: fc, weather: weather48h, prices: prices48h,
     coefficients, algorithmVersion: ALGORITHM_VERSION,
+    tu,
   });
 }
 
@@ -378,7 +410,7 @@ function buildPredictionRows(opts) {
       precipitationMm: wx?.precipitation ?? null,
       priceCKwh: px?.priceCKwh ?? null,
       algorithmVersion: opts.algorithmVersion,
-      tu: null,
+      tu: opts.tu || null,
       coefficients: opts.coefficients,
     });
   }

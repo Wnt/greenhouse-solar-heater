@@ -373,11 +373,9 @@ describe('computeSustainForecast — FMI cloud factor', () => {
   });
 });
 
-// Regression: when the controller has cycled emergency_heating in the
-// past hour, the tank is functionally exhausted right now — not in 4 h
-// per simulation. The card showing "Tank lasts ~4 h" while the user is
-// watching the heater cycle is misleading. emergencyRecentlyActive
-// short-circuits hoursUntilBackupNeeded to 0 and the note reflects it.
+// Regression: emergencyRecentlyActive short-circuits hoursUntilBackup
+// to 0. Pre-fix the card said "Tank lasts ~4 h" while the heater was
+// already cycling — confusing for the operator.
 describe('computeSustainForecast — emergencyRecentlyActive', () => {
   it('reports hoursUntilBackupNeeded=0 when emergency cycled recently', () => {
     const result = computeSustainForecast({
@@ -452,19 +450,12 @@ describe('computeSustainForecast — emergency heater duty cycle', () => {
       'expected ~35 kWh of heater energy at 72% duty, got ' + result.electricKwh);
   });
 
-  // Regression: in real hardware, when the controller is in emergency the
-  // space heater is OVERLAID on whatever pump mode physics would pick
-  // (system.yaml overlays.emergency_heating: "the space heater is overlaid
-  // on the active pump mode"). So when the tank is hot enough, the radiator
-  // keeps delivering heat alongside the heater, and the heater fills only
-  // the gap. Old engine zero'd out the radiator during emergency, so a
-  // 40 °C tank with mild outdoor still projected ~40 kWh of heater, even
-  // though the radiator could carry the whole load alone.
+  // Regression: emergency overlays the space heater on the active pump
+  // mode (system.yaml overlays.emergency_heating). Pre-fix the engine
+  // zero'd the radiator during emergency, so a 40 °C tank still
+  // projected ~40 kWh of heater energy even though the radiator alone
+  // could carry the load.
   it('hot tank materially reduces projected heater energy', () => {
-    // Same outdoor and thresholds — only tank temperature changes. The
-    // radiator's contribution should drag the projected heater kWh well
-    // below the cold-tank case. Pre-fix: both runs returned the same kWh
-    // because the radiator was disabled during emergency.
     const baseOpts = {
       now:            Date.now(),
       greenhouseTemp: 10,
@@ -493,12 +484,9 @@ describe('computeSustainForecast — emergency heater duty cycle', () => {
         cold.electricKwh.toFixed(2) + ' hot=' + hot.electricKwh.toFixed(2));
   });
 
-  // Regression: when the user's tank is near the floor and the system has
-  // been cycling backup all morning, the engine used to project ~30 kWh of
-  // continuous emergency over the next 48 h. The forecast bar visualisation
-  // showed full-height emergency every hour even when later daytime hours
-  // would actually get strong solar gain → tank charges → radiator covers
-  // greenhouse losses and the heater barely runs.
+  // Regression: tank near floor + recent backup cycling used to project
+  // ~30 kWh of continuous emergency over the next 48 h, ignoring sunny
+  // afternoons that would charge the tank back up.
   it('cycles emergency duty down during sunny hours', () => {
     // Strong solar gain at midday (Helsinki hours 10–15). Outdoor 7 °C.
     const solarGainKwhByHour = new Array(24).fill(0);
@@ -537,12 +525,9 @@ describe('computeSustainForecast — emergency heater duty cycle', () => {
     assert.ok(noFix.electricKwh < 22,
       'expected sunny days to lower projected backup energy, got ' + noFix.electricKwh);
 
-    // The mode forecast must still carry a numeric duty for any
-    // emergency entry it does emit, so the chart can render fractional
-    // bars (the user-facing complaint that motivated this fix). Under
-    // the new heat balance, sunny mid-day hours can lift gh above ehE
-    // before any emergency entry fires, so this case may emit zero
-    // emergency entries — that's correct projection, not a regression.
+    // Emergency entries (if any) must carry numeric duty so the chart
+    // can render fractional bars. Sunny midday may lift gh above ehE
+    // before any emergency entry fires — zero entries is OK.
     const emEntries = (noFix.modeForecast || []).filter(function (e) {
       return e.mode === 'emergency_heating';
     });
@@ -550,14 +535,9 @@ describe('computeSustainForecast — emergency heater duty cycle', () => {
       'every emergency entry (if any) must carry a numeric duty fraction');
   });
 
-  // Regression: cold tank shouldn't project greenhouse_heating mode.
-  // Field report 2026-05-05: tank top 14.3 / bottom 11.8 (avg ~13), greenhouse
-  // 12.4, geT/gxT=13/14, ehE/ehX=11/13. Forecast painted 1–2 hours of yellow
-  // "heating (projected)" bars before the emergency took over. The real
-  // device requires tank_top > greenhouse + greenhouseMinTankDelta (default 5K)
-  // to enter, and tank_top >= greenhouse + greenhouseExitTankDelta (default 2K)
-  // to stay — so with that tank state the controller would never run the
-  // pump, and emergency would kick in directly when gh crossed ehE.
+  // Regression (field report 2026-05-05): cold tank (avg 13, gh 12.4)
+  // shouldn't project greenhouse_heating bars — the controller wouldn't
+  // run the pump because tank_top ≯ greenhouse + gmD.
   it('skips greenhouse_heating projection when tank is too cold to drive the radiator', () => {
     const result = computeSustainForecast({
       now:            Date.now(),
@@ -775,13 +755,9 @@ describe('computeSustainForecast — ehX threading', () => {
   });
 });
 
-// Regression test for the undefined-threshold bug. The forecast handler used to
-// pass `tuning.greenhouseEnterTemp` etc. where `effectiveTuning` actually
-// returns `tuning.geT` — so all three thresholds were undefined. With the
-// previous Object.assign, undefined overwrote DEFAULT_CONFIG, and every
-// `curGhTemp < cfg.emergencyEnterC` comparison was false → backup never fired
-// → the card showed "Tank lasts 48+ h, Backup 0 kWh" while greenhouse drifted
-// down to outdoor (~5 °C). Pinning this so a future regression surfaces in CI.
+// Regression: handler used to pass tuning.greenhouseEnterTemp where
+// effectiveTuning returns tuning.geT — undefined leaked through and
+// silently disabled all heating thresholds.
 describe('computeSustainForecast — undefined config thresholds fall back to defaults', () => {
   it('cold night with explicit-undefined thresholds still triggers backup', () => {
     const result = computeSustainForecast({
@@ -1126,10 +1102,98 @@ describe('greenhouse heat balance — solar absorption', () => {
       config: {},
     });
     const peakGh = Math.max.apply(null, fc.greenhouseTrajectory.map(p => p.temp));
-    // Vent open at 33C with τ=0.3h saturates the system a few degrees
-    // above the open point in summer extremes. Real-world ceiling
-    // should be ≤ ~38C (user's observed worst case).
+    // Vent saturates a few K above ventOpenC in summer extremes; real
+    // ceiling ≤ ~38C (user's observed worst case).
     assert.ok(peakGh <= 38, 'vent cap must hold GH below 38C; got ' + peakGh);
     assert.ok(peakGh >= 28, 'expected non-trivial solar warming; got ' + peakGh);
+  });
+});
+
+describe('coefficient sanity gates', () => {
+  const fitMod = require('../server/lib/forecast/sustain-forecast-fit.js');
+  const { _bounds } = fitMod;
+
+  function makeIdleHistory(out, ghStart, dGhPerSample, samples, rad) {
+    const dtSec = 30;
+    const readings = [];
+    let gh = ghStart;
+    for (let i = 0; i < samples; i++) {
+      const ts = new Date(Date.UTC(2026, 4, 1) + i * dtSec * 1000);
+      readings.push({ ts, greenhouse: gh, outdoor: out, tankTop: 30, tankBottom: 30, radiationGlobal: rad });
+      gh = gh + dGhPerSample;
+    }
+    return { readings, modes: [{ ts: readings[0].ts, mode: 'idle' }] };
+  }
+
+  it('rejects τ_gh below the lower bound (would predict full cooling in <30 min)', () => {
+    // Force the regression to find a steep slope: gh drops 1 K every 30 s
+    // sample with (gh-out) ≈ 20 K. -d(gh)/dt = 120 K/h, dT = 20, slope ≈ 6,
+    // τ ≈ 0.17 h — below GH_TAU_MIN_H=0.5.
+    const h = makeIdleHistory(5, 25, -1, 60, 0);
+    assert.equal(fitMod.fitGhTauNight(h), null);
+    assert.ok(_bounds.GH_TAU_MIN_H >= 0.5);
+  });
+
+  it('rejects α below the lower bound (effectively no solar absorption)', () => {
+    // α=0.001 → 700 W/m² gives 0.7 K/h, too small to matter.
+    const dtSec = 30; const tauH = 2.0; const trueAlpha = 0.001;
+    const readings = []; let gh = 12;
+    for (let i = 0; i < 6 * 24 * 60 * 2; i++) {
+      const ts = new Date(Date.UTC(2026, 4, 1) + i * dtSec * 1000);
+      const hourOfDay = Math.floor(i / 120) % 24;
+      const rad = hourOfDay >= 6 && hourOfDay < 18 ? 600 : 0;
+      readings.push({ ts, greenhouse: gh, outdoor: 10, tankTop: 20, tankBottom: 20, radiationGlobal: rad });
+      gh = gh + ((10 - gh) / tauH + trueAlpha * rad) * (dtSec / 3600);
+    }
+    const coeff = fitMod.fitEmpiricalCoefficients({
+      readings, modes: [{ ts: readings[0].ts, mode: 'idle' }],
+    });
+    assert.equal(coeff.ghSolarAlphaCPerWm2, undefined,
+      'α=0.001 should be rejected; got ' + coeff.ghSolarAlphaCPerWm2);
+  });
+
+  it('rejects radiator UA outside [40, 200] W/K and accepts 80 W/K', () => {
+    // dTank/dt = UA·(tank-gh)·3600/MASS — physically integrate so UA
+    // stays constant as ΔT shrinks (Newton's law of cooling).
+    const dtSec = 30; const ghTemp = 12; const tankAvgInit = 25;
+    const TANK_M = 300 * 4186;
+    function makeHistory(uaWPerK) {
+      const readings = []; let tank = tankAvgInit;
+      for (let i = 0; i < 4 * 60 * 2; i++) {
+        const ts = new Date(Date.UTC(2026, 4, 1) + i * dtSec * 1000);
+        readings.push({ ts, greenhouse: ghTemp, outdoor: 5, tankTop: tank, tankBottom: tank, radiationGlobal: 0 });
+        tank = tank - uaWPerK * Math.max(0, tank - ghTemp) * dtSec / TANK_M;
+      }
+      return { readings, modes: [{ ts: readings[0].ts, mode: 'greenhouse_heating' }] };
+    }
+    const ok = fitMod.fitRadiatorUaWPerK(makeHistory(80));
+    assert.ok(ok !== null && Math.abs(ok - 80) / 80 < 0.1, 'expected ≈ 80, got ' + ok);
+    assert.equal(fitMod.fitRadiatorUaWPerK(makeHistory(25)), null, 'UA=25 should be rejected');
+    assert.equal(fitMod.fitRadiatorUaWPerK(makeHistory(250)), null, 'UA=250 should be rejected');
+  });
+
+  it('engine consumes coefficient.radiatorUaWPerK over the hardcoded 80', () => {
+    // Lower UA → more heater kWh because radiator covers less GH loss.
+    const now = Date.UTC(2026, 5, 1, 18, 0, 0);
+    const weather = []; const prices = [];
+    for (let h = 0; h < 48; h++) {
+      const ts = new Date(now + h * 3600 * 1000).toISOString();
+      weather.push({ ts, temperature: 0, radiationGlobal: 0, windSpeed: 1, precipitation: 0 });
+      prices.push({ ts, priceCKwh: 5 });
+    }
+    const baseOpts = {
+      now, tankTop: 25, tankBottom: 23, greenhouseTemp: 12,
+      currentMode: 'idle', weather48h: weather, prices48h: prices,
+      config: { spaceHeaterKw: 1, transferFeeCKwh: 5, greenhouseLossWPerK: 120,
+        emergencyEnterC: 11, emergencyExitC: 12, greenhouseEnterC: 12, greenhouseExitC: 13 },
+    };
+    const high = computeSustainForecast(Object.assign({}, baseOpts, {
+      coefficients: { tankLeakageWPerK: 3, solarGainKwhByHour: new Array(24).fill(0), radiatorUaWPerK: 100 },
+    }));
+    const low = computeSustainForecast(Object.assign({}, baseOpts, {
+      coefficients: { tankLeakageWPerK: 3, solarGainKwhByHour: new Array(24).fill(0), radiatorUaWPerK: 50 },
+    }));
+    assert.ok(low.electricKwh > high.electricKwh,
+      'low UA should project more heater: low=' + low.electricKwh + ' high=' + high.electricKwh);
   });
 });
