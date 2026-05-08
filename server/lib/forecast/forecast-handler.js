@@ -18,6 +18,13 @@ const { jsonResponse } = require('../http-handlers');
 const CACHE_TTL_MS         = 60 * 1000;     // 60 s response cache
 const COEFF_CACHE_TTL_MS   = 60 * 60 * 1000; // 1 h coefficient cache
 
+// Threshold above the hour's forecast outdoor temperature beyond which a
+// sensor reading is treated as a direct-sun spike on the sensor housing
+// and replaced with the forecast value. Calibrated against the observed
+// ~5 °C 16:00 spike vs. the forecast/sensor agreement in surrounding
+// hours, which sits within ±1.5 °C. 2.5 °C cleanly separates the two.
+const OUTDOOR_SPIKE_THRESHOLD_C = 2.5;
+
 function createForecastHandler(opts) {
   const pool       = opts.pool;
   const log        = opts.log;
@@ -203,8 +210,12 @@ function createForecastHandler(opts) {
       'FROM state_events ' +
       "WHERE entity_type = 'mode' AND ts > NOW() - INTERVAL '14 days' " +
       'ORDER BY ts';
+    // Pull radiation AND temperature: radiation feeds the GH-air fits,
+    // temperature is used in pivotHistory to reject outdoor-sensor spikes
+    // (the sensor gets direct sun ~16:00 and reads ~5 °C above truth for
+    // ~1 h; substituting the forecast for that window keeps the fits clean).
     const radSql =
-      'SELECT DISTINCT ON (valid_at) valid_at, radiation_global ' +
+      'SELECT DISTINCT ON (valid_at) valid_at, radiation_global, temperature ' +
       'FROM weather_forecasts ' +
       "WHERE valid_at > NOW() - INTERVAL '14 days' AND radiation_global IS NOT NULL " +
       'ORDER BY valid_at, fetched_at DESC';
@@ -450,26 +461,13 @@ function createForecastHandler(opts) {
 }
 
 // ── History pivoting / fit-input shaping ────────────────────────────────
-//
-// Hoisted out of the handler closure so it can be unit-tested and reused.
 // Pivots sensor rows into one record per timestamp, attaches the closest
-// hour-aligned forecast radiation (used by the GH-air fits to mask off
-// sunny hours), and drops readings that fall inside any maintenance
-// interval (manual-override or mode-ban active). Maintenance reasoning:
-//
-//   * `mo` (manual override) events with a non-empty new_value JSON open
-//     an interval; the next `mo` event closes it. Override leaves the
-//     controller un-free to actuate, so any greenhouse cooling/warming
-//     during the window doesn't reflect the automated dynamics we want
-//     to fit.
-//   * `wb` (mode ban) events open / close a per-mode ban. While GH or
-//     EH is banned the controller can't fire heating, so an idle hour
-//     during a ban doesn't represent the engine's "natural cooling"
-//     dynamic — drop those hours from the fit.
-//
-// In both cases the affected greenhouse data is what we DON'T want
-// driving the τ_gh / α_solar / loss fits; tank-side fits could in
-// principle keep them, but consistency wins over a marginal data gain.
+// hour-aligned forecast radiation + outdoor-temp reference, replaces
+// outdoor-sensor spikes with the forecast value, and drops readings
+// inside any maintenance interval (manual override `mo` or mode ban
+// `wb` — during either the controller can't actuate freely, so the
+// dynamics in that window aren't what we want driving τ_gh / α_solar /
+// loss fits). Hoisted out of the handler closure for unit-testability.
 function pivotHistory(sensorRows, modeRows, radRows, maintRows) {
   const buckets = {};
   (sensorRows || []).forEach(function (row) {
@@ -480,11 +478,16 @@ function pivotHistory(sensorRows, modeRows, radRows, maintRows) {
     if (f) buckets[tsMs][f] = row.value;
   });
 
-  // Pre-sort + index radiation by hour for O(1) lookup per reading.
+  // Index radiation + forecast outdoor-temp by hour for O(1) lookup.
+  // Radiation feeds the GH-air fits; the temperature is the ground-truth
+  // reference for outdoor-spike rejection (sensor gets ~5 °C of direct
+  // sun around 16:00 for ~1 h, biasing the daytime fits otherwise).
   const radByHour = {};
+  const tempByHour = {};
   (radRows || []).forEach(function (r) {
     const k = new Date(r.valid_at).getTime();
     radByHour[k] = r.radiation_global;
+    if (typeof r.temperature === 'number') tempByHour[k] = r.temperature;
   });
 
   // Build maintenance intervals from config_events. Each interval is an
@@ -499,11 +502,24 @@ function pivotHistory(sensorRows, modeRows, radRows, maintRows) {
     .map(function (k) {
       const b = buckets[k];
       const tsMs = b.ts.getTime();
-      // Closest hour-aligned radiation (within ±1 h).
+      // Closest hour-aligned forecast (within ±1 h) for both radiation
+      // and outdoor-temperature reference.
       const hourMs = Math.floor(tsMs / 3600000) * 3600000;
       let rad = radByHour[hourMs];
       if (rad === undefined) rad = radByHour[hourMs + 3600000];
       if (typeof rad === 'number') b.radiationGlobal = rad;
+      let fcT = tempByHour[hourMs];
+      if (fcT === undefined) fcT = tempByHour[hourMs + 3600000];
+      // Spike rejection: if the outdoor sensor reading sits well above
+      // the forecast for this hour, attribute it to direct-sun heating
+      // of the sensor housing and replace with the forecast value. The
+      // forecast carries its own ~1–2 °C error but that is far smaller
+      // than the ~5 °C afternoon spike, so substitution is a net win.
+      if (typeof b.outdoor === 'number' && typeof fcT === 'number'
+          && (b.outdoor - fcT) > OUTDOOR_SPIKE_THRESHOLD_C) {
+        b._outdoorRaw = b.outdoor;
+        b.outdoor = fcT;
+      }
       b._maintenance = intervalsCover(intervals, tsMs);
       return b;
     })
@@ -578,4 +594,5 @@ module.exports = {
   // exported for tests
   _pivotHistory: pivotHistory,
   _buildMaintenanceIntervals: buildMaintenanceIntervals,
+  _OUTDOOR_SPIKE_THRESHOLD_C: OUTDOOR_SPIKE_THRESHOLD_C,
 };
