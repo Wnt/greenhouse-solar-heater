@@ -1,0 +1,23 @@
+name: Dependabot auto-merge
+
+# Auto-enable GitHub's "merge when ready" on every Dependabot PR. The
+# merge only fires once required status checks (CI, CodeQL, etc.) pass
+# and any required reviews are satisfied — GitHub holds the PR until
+# then. If checks fail, the PR stays open for manual triage.
+
+on: pull_request_target
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Enable auto-merge (squash)
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
