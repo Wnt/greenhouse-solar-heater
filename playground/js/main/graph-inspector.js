@@ -124,7 +124,7 @@ function updateInspectorData(x) {
   lastInspectorBi = bi;
   const bStart = bi * bucketSec;
   const bEnd = (bi + 1) * bucketSec;
-  let chPct, htPct, emPct;
+  let chPct, htPct, emHours;
   if (inForecast) {
     // Forecast percentages share the bar renderer's aggregator so
     // the tooltip values always agree with the visible bar heights —
@@ -137,16 +137,27 @@ function updateInspectorData(x) {
     const agg = aggregateForecastBucket(list, segStart, segEnd);
     chPct = Math.round(100 * Math.min(1, agg.chargingHours / segHours));
     htPct = Math.round(100 * Math.min(1, agg.heatingHours  / segHours));
-    emPct = Math.round(100 * Math.min(1, agg.emergencyHours / segHours));
+    emHours = agg.emergencyHours;
   } else {
     const cov = coverageInBucket(bStart, bEnd);
     chPct = Math.round(100 * cov.charging / bucketSec);
     htPct = Math.round(100 * cov.heating / bucketSec);
-    emPct = Math.round(100 * cov.emergency / bucketSec);
+    emHours = cov.emergency / 3600;
   }
+  // Emergency reads as energy (kWh), not duty cycle: the 2 kW space
+  // heater is the only consumer and the operator's question is "how
+  // much electricity does this bucket cost me?" — a percentage hides
+  // that the cost of a 33 % bar in a 1-day bucket and a 33 % bar in
+  // a 1-hour bucket differs by a factor of 24.
+  const emKwh = SPACE_HEATER_KW * emHours;
   document.getElementById('inspector-charging').textContent = chPct + '%';
   document.getElementById('inspector-heating').textContent = htPct + '%';
-  document.getElementById('inspector-emergency').textContent = emPct + '%';
+  document.getElementById('inspector-emergency').textContent = fmtKwh(emKwh);
+}
+
+const SPACE_HEATER_KW = 2;
+function fmtKwh(v) {
+  return (Math.round(v * 10) / 10).toFixed(1) + ' kWh';
 }
 
 // Linearly interpolate a forecast trajectory at simTime (Unix seconds)

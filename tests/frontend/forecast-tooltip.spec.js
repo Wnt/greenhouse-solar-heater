@@ -43,8 +43,10 @@ const FORECAST_PAYLOAD = {
       temp: 14 - i * 0.16,
     })),
     // Hours 0,1,2 = solar_charging. Hours 6,7,8 = greenhouse_heating.
-    // Hour 10 = emergency_heating. Default 1-h bucket means whichever
-    // bucket the cursor lands in gets a clean 100% / 0% / 0% reading.
+    // Hours 9,10,11 = emergency_heating (three consecutive so any 3 h
+    // bucket that picks up hour 10 also picks up ≥1 h of emergency).
+    // Default 1-h bucket means whichever bucket the cursor lands in
+    // gets a clean 100% / 0% / 0% reading.
     modeForecast: [
       { ts: new Date(NOW + 0 * 3600_000).toISOString(), mode: 'solar_charging' },
       { ts: new Date(NOW + 1 * 3600_000).toISOString(), mode: 'solar_charging' },
@@ -52,7 +54,9 @@ const FORECAST_PAYLOAD = {
       { ts: new Date(NOW + 6 * 3600_000).toISOString(), mode: 'greenhouse_heating' },
       { ts: new Date(NOW + 7 * 3600_000).toISOString(), mode: 'greenhouse_heating' },
       { ts: new Date(NOW + 8 * 3600_000).toISOString(), mode: 'greenhouse_heating' },
+      { ts: new Date(NOW + 9 * 3600_000).toISOString(),  mode: 'emergency_heating' },
       { ts: new Date(NOW + 10 * 3600_000).toISOString(), mode: 'emergency_heating' },
+      { ts: new Date(NOW + 11 * 3600_000).toISOString(), mode: 'emergency_heating' },
     ],
     hoursUntilFloor: 48,
     hoursUntilBackupNeeded: 10,
@@ -237,6 +241,42 @@ test.describe('Inspector tooltip on the forecast side of the history graph', () 
 
     const ht = await page.locator('#inspector-heating').textContent();
     expect(parseInt(ht, 10)).toBeGreaterThan(0);
+  });
+
+  test('inspector emergency row reports energy in kWh, not percent', async ({ page }) => {
+    await scaffold(page);
+    await page.goto('/playground/');
+    await page.waitForFunction(() => window.__initComplete === true);
+    await page.waitForFunction(() => {
+      const el = document.getElementById('forecast-val-hours');
+      return !!(el && el.textContent && el.textContent !== '—');
+    }, { timeout: 5000 });
+
+    await page.locator('#graph-show-forecast-toggle').click();
+
+    // Charging and heating still read as %, so any hover position works.
+    // Historical region first.
+    await hoverChartAt(page, 0.5);
+    const emHist = (await page.locator('#inspector-emergency').textContent()) || '';
+    expect(emHist).toMatch(/kWh\s*$/);
+    expect(emHist).not.toContain('%');
+
+    // Forecast region — hours 9–11 carry emergency_heating, so any 3 h
+    // bucket containing hour 10 picks up at least 1 h of emergency.
+    // Hover at frac 0.944 ≈ now + 10 h.
+    await hoverChartAt(page, 0.944);
+    const emFc = (await page.locator('#inspector-emergency').textContent()) || '';
+    expect(emFc).toMatch(/kWh\s*$/);
+    expect(emFc).not.toContain('%');
+    const kwh = parseFloat(emFc);
+    expect(Number.isFinite(kwh)).toBe(true);
+    expect(kwh).toBeGreaterThan(0);
+
+    // Sanity: charging/heating still use percent.
+    const ch = (await page.locator('#inspector-charging').textContent()) || '';
+    const ht = (await page.locator('#inspector-heating').textContent()) || '';
+    expect(ch).toContain('%');
+    expect(ht).toContain('%');
   });
 
   test('forecast-region hover shows a future time, not the last live timestamp', async ({ page }) => {
