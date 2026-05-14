@@ -141,7 +141,7 @@ components:
 
   space_heater:
     type: fan heater
-    power: 2kW
+    power: 1kW
     voltage: 230V
     position: inside greenhouse
     purpose: emergency / backup heating
@@ -353,7 +353,7 @@ control:
         O1: pump (Wilo Star Z20/4, 71W max)
         O2: radiator fan (230V)
         O3: immersion heater contactor (optional)
-        O4: space heater (2kW)
+        O4: space heater (1kW)
       note: >
         Power monitoring on all channels — useful for verifying pump is
         actually running and detecting stuck/stalled conditions.
@@ -657,7 +657,7 @@ modes:
     actuators:
       pump: OFF
       fan: OFF
-      space_heater: ON (2kW)
+      space_heater: ON (1kW)
       immersion_heater: ON (optional, boost tank temperature)
 
   initial_fill:

@@ -267,7 +267,7 @@ As you install additional hardware (radiator loop, space heater), progressively 
 
 ### Add Emergency Heating
 
-**When**: 2kW space heater connected to Pro 4PM O4.
+**When**: 1kW space heater connected to Pro 4PM O4.
 
 **Config update**:
 
@@ -310,7 +310,7 @@ The system now operates fully autonomously. All modes can activate based on sens
 | 0 | 1 | Motorized valves | Stage 1 |
 | 1 | 2 | Circulation pump | Stage 1 |
 | 2 | 4 | Radiator fan | Greenhouse heating |
-| 3 | 8 | Space heater (2kW) | Emergency heating |
+| 3 | 8 | Space heater (1kW) | Emergency heating |
 | 4 | 16 | Immersion heater | Full system |
 
 Common combinations: `3` (V+P), `7` (+fan), `15` (+heater), `31` (all).

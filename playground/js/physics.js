@@ -176,7 +176,7 @@ export class ThermalModel {
 
     // ── Space heater (emergency) ──
     if (actuators.space_heater) {
-      const Q_heater = 2000 * dt; // 2kW
+      const Q_heater = 1000 * dt; // 1kW
       s.t_greenhouse += Q_heater / p.greenhouse_thermal_mass;
     }
 

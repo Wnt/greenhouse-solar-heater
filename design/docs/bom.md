@@ -211,7 +211,7 @@ None of the checked stores (Biltema, Puuilo, Motonet) carry proper **rei'itetty 
 Fixed installation cables subject to electrical regulations — source from any electrical supplier:
 
 - **1.5mm² 3-conductor** (L/N/PE, e.g. MMJ 3×1.5S): pump (~2m), radiator fan (~5-10m), immersion heater (~2m)
-- **2.5mm² 3-conductor** (e.g. MMJ 3×2.5S): space heater 2kW (~5-10m, draws ~9A)
+- **2.5mm² 3-conductor** (e.g. MMJ 3×2.5S): space heater 1kW (~5-10m, draws ~4.3A)
 - Proper circuit breaker in distribution board
 
 ---

@@ -21,7 +21,7 @@ All component specifications are defined in `system.yaml` (source of truth).
 | Reservoir canister | 25L plastic canister (kanisteri) with loose cap | On top of tank (~200cm), air separator, 3× 22mm PEX fittings on bottom, connected to dip tube |
 | Circulation pump | Wilo Star Z20/4 | 34/51/71W, 230V, near ground |
 | Radiator | Car radiator + 230V fan | Inside greenhouse, heat distribution |
-| Space heater | 2kW fan heater | Emergency/backup |
+| Space heater | 1kW fan heater | Emergency/backup |
 
 ### Valve Topology: On/Off Manifold
 
@@ -226,7 +226,7 @@ T_collector reads air temperature when collectors are empty, so it can't reliabl
 
 **Trigger:** T_greenhouse < 5°C AND tank heat insufficient
 
-- 2kW space heater ON
+- 1kW space heater ON
 - Jäspi internal heater element ON (optional, boost tank)
 
 ### Mode 7: Initial Fill (Commissioning)
@@ -293,7 +293,7 @@ Full shutdown for deep winter — no active heating from tank:
             • Tank bottom port (direct to bottom of tank)
             • Dip tube port (pipe runs UP to reservoir at 200cm)
           Radiator + fan (inside greenhouse, near ground)
-          2kW space heater (inside greenhouse)
+          1kW space heater (inside greenhouse)
 ```
 
 ### Collector Frame

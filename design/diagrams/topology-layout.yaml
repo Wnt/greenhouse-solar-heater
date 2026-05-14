@@ -234,7 +234,7 @@ components:
       out: {x: 0, y: 0.85}
 
   space_heater:
-    label: "2 kW\nSpace Heater"
+    label: "1 kW\nSpace Heater"
     style: space_heater
     geometry: {x: 760, y: 498, width: 110, height: 70}
 
