@@ -144,7 +144,7 @@ function updateInspectorData(x) {
     htPct = Math.round(100 * cov.heating / bucketSec);
     emHours = cov.emergency / 3600;
   }
-  // Emergency reads as energy (kWh), not duty cycle: the 2 kW space
+  // Emergency reads as energy (kWh), not duty cycle: the 1 kW space
   // heater is the only consumer and the operator's question is "how
   // much electricity does this bucket cost me?" — a percentage hides
   // that the cost of a 33 % bar in a 1-day bucket and a 33 % bar in
@@ -155,7 +155,7 @@ function updateInspectorData(x) {
   document.getElementById('inspector-emergency').textContent = fmtKwh(emKwh);
 }
 
-const SPACE_HEATER_KW = 2;
+const SPACE_HEATER_KW = 1;
 function fmtKwh(v) {
   return (Math.round(v * 10) / 10).toFixed(1) + ' kWh';
 }
