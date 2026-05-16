@@ -16,6 +16,7 @@ const { create: createForecastRefresher } = require('./forecast-refresher');
 const { createForecastHandler } = require('./forecast-handler');
 const { create: createForecastPredictions } = require('./forecast-predictions');
 const { create: createForecastDiagnostics } = require('./forecast-diagnostics');
+const { create: createForecastDataset } = require('./forecast-dataset');
 const fmiClient = require('./fmi-client');
 const spotPriceClient = require('./spot-price-client');
 
@@ -91,12 +92,18 @@ function start({ pool, log, repoRoot, isPreviewMode }) {
   // the multi-horizon predictions table. Shares the pool; no state.
   const diagnostics = createForecastDiagnostics({ pool, log });
 
+  // Tuning dataset — the full forecast input/output picture (weather,
+  // prices, multi-horizon predictions, data-source status) for the
+  // public /api/public/history feed. Reads the refresher's live status.
+  const dataset = createForecastDataset({
+    pool, log,
+    getRefresherStatus: refresher.getStatus,
+  });
+
   return {
     handle: function (req, res) { handler.handle(req, res); },
     handleDiagnostics: function (req, res) { diagnostics.handle(req, res); },
-    // Recent +1 h prediction history (one row per hour). Exposed so the
-    // public history endpoint can fold forecast history into its payload.
-    listRecentPredictions: function (limit, cb) { predictions.listRecent(limit, cb); },
+    getForecastDataset: function (opts, cb) { dataset.getDataset(opts, cb); },
     stop:   function () { refresher.stop(); predictions.stop(); },
   };
 }

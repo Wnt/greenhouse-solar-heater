@@ -137,14 +137,18 @@ function createHandlers(deps) {
     });
   }
 
-  // Public, unauthenticated mirror of /api/history for external
-  // dashboards: state transitions + sensor readings + forecast
-  // prediction history in one round-trip. Read-only and exposes only
-  // non-sensitive operational telemetry, so it sits outside the auth
-  // gate. Sends `Access-Control-Allow-Origin: *` so it can be fetched
-  // cross-origin from a browser.
-  //   GET /api/public/history?range=24h&forecastLimit=48
-  //   -> { range, points: [...], events: [...], forecast: [...] }
+  // Public, unauthenticated forecast-tuning feed. One round-trip gives an
+  // external tool the full picture needed to fine-tune the projection
+  // algorithm: ground truth (sensor readings + mode transitions), the
+  // engine's multi-horizon predictions, the weather + electricity-price
+  // inputs the engine consumed, the per-generation algorithm fingerprint
+  // (tuning overrides + fitted coefficients), and the health/status of
+  // each external data source. Read-only, non-sensitive operational
+  // telemetry, so it sits outside the auth gate. Sends
+  // `Access-Control-Allow-Origin: *` for cross-origin browser fetches.
+  //   GET /api/public/history?range=24h&horizon=<1..48>
+  //   -> { range, generatedAt, points, events, weather, prices,
+  //        predictions, generations, sources }
   function handlePublicHistoryApi(req, res, forecast) {
     function send(code, data, extraHeaders) {
       const headers = Object.assign(
@@ -173,7 +177,9 @@ function createHandlers(deps) {
 
     const parsed = new URL(req.url, 'http://localhost');
     const range = parsed.searchParams.get('range') || '24h';
-    const forecastLimit = parseInt(parsed.searchParams.get('forecastLimit'), 10) || 48;
+    const horizonRaw = parsed.searchParams.get('horizon');
+    const horizon = horizonRaw && /^\d+$/.test(horizonRaw) ? parseInt(horizonRaw, 10) : null;
+    const emptyForecast = { weather: [], prices: [], predictions: [], generations: [], sources: [] };
 
     db.getHistory(range, null, function (err, points) {
       if (err) {
@@ -186,23 +192,33 @@ function createHandlers(deps) {
           log.error('public history events query failed', { error: evErr.message });
           events = [];
         }
-        function finish(forecastRows) {
-          send(200, { range, points, events, forecast: forecastRows });
+        function finish(fc) {
+          send(200, {
+            range,
+            generatedAt: new Date().toISOString(),
+            points,
+            events,
+            weather: fc.weather,
+            prices: fc.prices,
+            predictions: fc.predictions,
+            generations: fc.generations,
+            sources: fc.sources,
+          });
         }
-        // Forecast history is optional — the subsystem only exists when
-        // a DB is wired, and its table may be absent on some fixtures.
-        // Degrade to an empty list rather than failing the whole call.
-        if (forecast && typeof forecast.listRecentPredictions === 'function') {
-          forecast.listRecentPredictions(forecastLimit, function (fErr, rows) {
-            if (fErr) {
-              log.error('public history forecast query failed', { error: fErr.message });
-              finish([]);
+        // The forecast dataset is optional — the subsystem only exists
+        // when a DB is wired. getForecastDataset itself degrades each
+        // section to [] on a per-query failure, so this never rejects.
+        if (forecast && typeof forecast.getForecastDataset === 'function') {
+          forecast.getForecastDataset({ range, horizon }, function (fErr, fc) {
+            if (fErr || !fc) {
+              log.error('public history forecast dataset failed', { error: fErr && fErr.message });
+              finish(emptyForecast);
             } else {
-              finish(rows || []);
+              finish(fc);
             }
           });
         } else {
-          finish([]);
+          finish(emptyForecast);
         }
       });
     });

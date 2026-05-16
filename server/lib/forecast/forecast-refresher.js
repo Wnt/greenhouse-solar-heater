@@ -28,6 +28,14 @@ function create(opts) {
   let _intervalHandle = null;
   let _inFlightPromise = null;
 
+  // External-data-source health, surfaced via getStatus() for the public
+  // forecast dataset feed. Updated per fetch in runCycle(). Dates here;
+  // getStatus() converts to ISO strings.
+  const _status = {
+    weather: { lastAttemptAt: null, lastSuccessAt: null, lastSuccessRows: null, lastErrorAt: null, lastError: null },
+    prices:  { lastAttemptAt: null, lastSuccessAt: null, lastSuccessRows: null, lastErrorAt: null, lastError: null },
+  };
+
   function upsertWeather(rows, fetchedAt) {
     if (!rows || rows.length === 0) return Promise.resolve();
     const sql = 'INSERT INTO weather_forecasts ' +
@@ -98,28 +106,63 @@ function create(opts) {
 
   function runCycle() {
     const fetchedAt = new Date();
+    _status.weather.lastAttemptAt = fetchedAt;
+    _status.prices.lastAttemptAt = fetchedAt;
 
     const weatherPromise = fmiClient.fetchForecast({ lat, lon, hours: FORECAST_HOURS })
       .then(function (rows) {
         return upsertWeather(rows, fetchedAt).then(function () {
+          _status.weather.lastSuccessAt = new Date();
+          _status.weather.lastSuccessRows = rows.length;
+          _status.weather.lastError = null;
+          _status.weather.lastErrorAt = null;
           log.info('forecast-refresher: weather upserted', { rows: rows.length });
         });
       })
       .catch(function (err) {
+        _status.weather.lastErrorAt = new Date();
+        _status.weather.lastError = err.message;
         log.error('forecast-refresher: weather fetch failed', { error: err.message });
       });
 
     const pricesPromise = spotClient.fetchPrices({ horizonHours: FORECAST_HOURS })
       .then(function (rows) {
         return upsertPrices(rows, fetchedAt).then(function () {
+          _status.prices.lastSuccessAt = new Date();
+          _status.prices.lastSuccessRows = rows.length;
+          _status.prices.lastError = null;
+          _status.prices.lastErrorAt = null;
           log.info('forecast-refresher: prices upserted', { rows: rows.length });
         });
       })
       .catch(function (err) {
+        _status.prices.lastErrorAt = new Date();
+        _status.prices.lastError = err.message;
         log.error('forecast-refresher: prices fetch failed', { error: err.message });
       });
 
     return Promise.all([weatherPromise, pricesPromise]);
+  }
+
+  // Health snapshot of both external data sources. Timestamps are ISO
+  // strings so the value drops straight into a JSON response.
+  function getStatus() {
+    return {
+      enabled: !isPreviewMode,
+      refreshIntervalMs: intervalMs,
+      weather: snapshotState(_status.weather),
+      prices: snapshotState(_status.prices),
+    };
+  }
+
+  function snapshotState(s) {
+    return {
+      lastAttemptAt: isoOrNull(s.lastAttemptAt),
+      lastSuccessAt: isoOrNull(s.lastSuccessAt),
+      lastSuccessRows: s.lastSuccessRows,
+      lastErrorAt: isoOrNull(s.lastErrorAt),
+      lastError: s.lastError,
+    };
   }
 
   function start() {
@@ -143,7 +186,12 @@ function create(opts) {
     return _inFlightPromise || Promise.resolve();
   }
 
-  return { start, stop };
+  return { start, stop, getStatus };
+}
+
+function isoOrNull(d) {
+  if (!d) return null;
+  return d instanceof Date ? d.toISOString() : String(d);
 }
 
 module.exports = { create };
