@@ -196,6 +196,14 @@ export function drawHistoryGraph() {
   canvas.width = canvas.offsetWidth * dpr;
   canvas.height = canvas.offsetHeight * dpr;
   ctx.scale(dpr, dpr);
+  // Round joins/caps for every stroke this pass. Setting the backing-store
+  // size above resets the context to defaults, so this has to come after.
+  // Temperature lines zigzag with sensor noise; when the chart is zoomed
+  // out an up/down spike collapses into an acute V, and a miter join would
+  // extend the stroke a long point past the real peak — round joins clamp
+  // it to the vertex.
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
   const dw = canvas.offsetWidth;
   const dh = canvas.offsetHeight;
   ctx.clearRect(0, 0, dw, dh);
