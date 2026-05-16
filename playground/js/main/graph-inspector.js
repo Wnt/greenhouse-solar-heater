@@ -8,7 +8,7 @@
 import { store } from '../app-state.js';
 import { SIM_START_HOUR } from '../sim-bootstrap.js';
 import { timeSeriesStore, showAllSensors, showForecast, forecastData } from './state.js';
-import { tankAvgOf, getChartWindow } from './history-graph.js';
+import { tankAvgOf, getChartWindow, chartPadding } from './history-graph.js';
 import { formatClockTime } from './time-format.js';
 import { coverageInBucket } from './mode-events.js';
 import { aggregateForecastBucket } from './forecast-overlay.js';
@@ -57,7 +57,7 @@ export function hideInspector() {
 function updateInspectorData(x) {
   if (timeSeriesStore.times.length < 2) return;
   const dw = canvasEl.offsetWidth;
-  const pad = { top: 16, right: 16, bottom: 24, left: 8 };
+  const pad = chartPadding();
   const pw = dw - pad.left - pad.right;
 
   const win = getChartWindow();

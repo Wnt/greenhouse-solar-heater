@@ -100,6 +100,16 @@ export function getChartWindow() {
   return { tMin: baseRight - graphRange, tMax };
 }
 
+// Plot-area padding. Shared with the inspector (graph-inspector.js) so
+// its crosshair x→time inversion runs against the exact left gutter the
+// series and bars are drawn with. Fullscreen widens the left pad to a
+// 36px column for the Y-axis labels — a private copy in the inspector
+// silently desyncs the tooltip the moment the two diverge, which is what
+// happened when fullscreen landed and the inspector kept a hard-coded 8.
+export function chartPadding() {
+  return { top: 16, right: 16, bottom: 24, left: chartFullscreen ? 36 : 8 };
+}
+
 // How much forecast the *default* (non-zoomed) view shows when the
 // overlay toggle is on: half the current range, capped at the full
 // FORECAST_OVERLAY_SEC horizon. So 24h → +12h forecast, 12h → +6h,
@@ -192,7 +202,7 @@ export function drawHistoryGraph() {
 
   // Fullscreen mode adds a left-side gutter for the Y-axis labels.
   // Otherwise the chart hugs the card edge as before.
-  const pad = { top: 16, right: 16, bottom: 24, left: chartFullscreen ? 36 : 8 };
+  const pad = chartPadding();
   const pw = dw - pad.left - pad.right;
   const ph = dh - pad.top - pad.bottom;
 
