@@ -59,8 +59,14 @@ export default defineConfig({
     {
       command: 'node tests/e2e/_setup/start.cjs',
       port: 3220,
-      reuseExistingServer: true,
-      timeout: 20000,
+      // Never reuse an existing harness: with reuse on, Playwright's
+      // port probe could latch onto a previous run's harness that is
+      // mid-shutdown, hand the tests a dying server, and skip spawning
+      // a fresh one — every request then fails with ECONNREFUSED. With
+      // reuse off Playwright always spawns its own; start.cjs's
+      // waitForPortFree handles a slow-to-die predecessor on 1883/3220.
+      reuseExistingServer: false,
+      timeout: 30000,
     },
   ],
 });

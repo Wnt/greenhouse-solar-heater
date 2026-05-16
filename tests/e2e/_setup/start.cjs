@@ -85,28 +85,49 @@ require.cache[pgPath] = {
 
 // ── 2. aedes MQTT broker ──────────────────────────────────────
 
+const { waitForPortFree } = require('./wait-for-port.cjs');
 const { Aedes } = require('aedes');
 const MQTT_PORT = 1883;
+const HTTP_PORT = 3220;
+const PORT_FREE_TIMEOUT_MS = 10000;
 
+// Playwright runs this harness with `reuseExistingServer: false` (see the
+// webServer block in playwright.config.js), so a new boot can race a
+// previous run's harness that is still releasing 1883/3220. Bind only
+// once each port is free — otherwise the bind throws EADDRINUSE and the
+// whole e2e run fails. See ./wait-for-port.cjs.
+//
 // aedes@1 moved to an async factory; the old `new Aedes()` constructor
-// throws a migration error. `createBroker()` returns a promise — we
-// boot the rest of the harness inside its `.then` so the broker is
-// accepting connections before server/server.js tries to dial out.
-Aedes.createBroker().then((broker) => {
-  const mqttServer = net.createServer(broker.handle);
-  mqttServer.listen(MQTT_PORT, '127.0.0.1', () => {
-    process.stdout.write(`[e2e-harness] aedes listening on 127.0.0.1:${MQTT_PORT}\n`);
-    bootServer();
-  });
+// throws a migration error. `createBroker()` returns a promise — we boot
+// the rest of the harness through the chain so the broker is accepting
+// connections before server/server.js tries to dial out.
+waitForPortFree(MQTT_PORT, '127.0.0.1', PORT_FREE_TIMEOUT_MS)
+  .then(() => Aedes.createBroker())
+  .then((broker) => {
+    const mqttServer = net.createServer(broker.handle);
 
-  // Register teardown hooks once the broker is live.
-  const shutdown = () => {
-    try { mqttServer.close(); } catch (_) { /* noop */ }
-    broker.close().then(() => process.exit(0), () => process.exit(1));
-  };
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
-});
+    // Register teardown hooks once the broker is live.
+    const shutdown = () => {
+      try { mqttServer.close(); } catch (_) { /* noop */ }
+      broker.close().then(() => process.exit(0), () => process.exit(1));
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+
+    return new Promise((resolve, reject) => {
+      mqttServer.once('error', reject);
+      mqttServer.listen(MQTT_PORT, '127.0.0.1', () => {
+        process.stdout.write(`[e2e-harness] aedes listening on 127.0.0.1:${MQTT_PORT}\n`);
+        resolve();
+      });
+    });
+  })
+  .then(() => waitForPortFree(HTTP_PORT, '127.0.0.1', PORT_FREE_TIMEOUT_MS))
+  .then(() => bootServer())
+  .catch((err) => {
+    process.stderr.write(`[e2e-harness] fatal: ${err && err.message}\n`);
+    process.exit(1);
+  });
 
 // ── 3. Env + server boot ──────────────────────────────────────
 
