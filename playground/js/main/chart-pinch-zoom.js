@@ -2,10 +2,13 @@
 // pan / pinch / tap / long-press disambiguate against a single source of
 // pointer-event truth.
 //
-//   2 fingers            — pinch zoom the x-axis (y stays fixed at 0–100°C).
-//                          The 1H/6H/12H/24H timeframe-selector value is
-//                          the upper bound; pinch-out past it snaps back
-//                          to the default sliding window.
+//   2 fingers            — pinch zoom the x-axis (the y-axis reacts on its
+//                          own). The moment under the gesture midpoint
+//                          stays pinned to it, so sliding the fingers pans
+//                          the window while their spread zooms it. The
+//                          1H/6H/12H/24H timeframe-selector value is the
+//                          upper bound; pinch-out past it snaps back to
+//                          the default sliding window.
 //   1 finger drag while  — pan the visible window left/right within the
 //   zoomed                 timeframe-selector's natural span.
 //   1 finger short tap   — reset zoom (no-op if already at default).
@@ -19,7 +22,7 @@ import {
   graphRange, chartZoom, setChartZoom, timeSeriesStore,
   showForecast, FORECAST_OVERLAY_SEC,
 } from './state.js';
-import { drawHistoryGraph, getChartWindow } from './history-graph.js';
+import { drawHistoryGraph, getChartWindow, chartPadding } from './history-graph.js';
 import { showInspector, hideInspector } from './graph-inspector.js';
 import { store } from '../app-state.js';
 
@@ -28,18 +31,17 @@ const TAP_MAX_PX = 8;     // movement that still counts as a tap
 const TAP_MAX_MS = 300;   // touch duration that still counts as a tap
 const LONG_PRESS_MS = 400;
 
-// Mirror the pad object in drawHistoryGraph; needed to translate pinch
-// midpoint pixels into a fraction of the plot area.
-const PAD_LEFT = 8;
-const PAD_RIGHT = 16;
-
-// Pure: derive the new visible window from a 2-finger gesture. Returns
-// null when the result would equal or exceed maxRange — caller then
-// clears chartZoom so the default sliding view returns.
+// Pure: derive the new visible window from a 2-finger gesture.
+// timeAtPinchCenter is the moment anchored to the gesture (captured at
+// gesture start); fracOfPinchCenter is where the midpoint currently sits
+// across the plot — sampled every move, so a sliding gesture pans the
+// window while the finger spread zooms it. Returns null when the result
+// would equal or exceed maxRange — caller then clears chartZoom so the
+// default sliding view returns.
 export function pinchZoomWindow({
   initialRange,
-  initialFracOfPinchCenter,
-  initialTimeAtPinchCenter,
+  fracOfPinchCenter,
+  timeAtPinchCenter,
   distanceRatio,
   maxRange,
   minRange,
@@ -47,8 +49,8 @@ export function pinchZoomWindow({
   let newRange = initialRange / distanceRatio;
   if (newRange >= maxRange) return null;
   if (newRange < minRange) newRange = minRange;
-  const f = initialFracOfPinchCenter;
-  const tc = initialTimeAtPinchCenter;
+  const f = fracOfPinchCenter;
+  const tc = timeAtPinchCenter;
   return { tMin: tc - f * newRange, tMax: tc + (1 - f) * newRange };
 }
 
@@ -117,14 +119,18 @@ export function setupChartPinchZoom() {
   let pinch = null;
   let one = null;
 
+  // chartPadding() is the single source the renderer draws against
+  // (fullscreen widens the left gutter), so the pinch midpoint→fraction
+  // math stays aligned with the plotted data in every mode.
   function plotWidth() {
     const r = canvas.getBoundingClientRect();
-    return Math.max(1, r.width - PAD_LEFT - PAD_RIGHT);
+    const pad = chartPadding();
+    return Math.max(1, r.width - pad.left - pad.right);
   }
 
   function midpointFracX(rect, p1, p2) {
     const m = (p1.x + p2.x) / 2 - rect.left;
-    const f = (m - PAD_LEFT) / plotWidth();
+    const f = (m - chartPadding().left) / plotWidth();
     if (f < 0) return 0;
     if (f > 1) return 1;
     return f;
@@ -139,8 +145,10 @@ export function setupChartPinchZoom() {
     const f0 = midpointFracX(rect, pts[0], pts[1]);
     const win = getChartWindow();
     const range0 = win.tMax - win.tMin;
+    // The moment under the gesture midpoint — stays anchored for the
+    // whole gesture so a sliding pinch pans the window to keep it there.
     const tMid = win.tMin + f0 * range0;
-    pinch = { d0, f0, tMid, range0 };
+    pinch = { d0, tMid, range0 };
   }
 
   function updatePinch(e) {
@@ -150,11 +158,15 @@ export function setupChartPinchZoom() {
     const d = Math.abs(pts[0].x - pts[1].x);
     if (d < 1) return;
     e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
     const bound = defaultBound();
+    // Resample the midpoint fraction every move: the anchored moment
+    // (pinch.tMid) is re-placed under wherever the gesture sits now, so
+    // sliding the fingers pans the window while their spread zooms it.
     const next = pinchZoomWindow({
       initialRange: pinch.range0,
-      initialFracOfPinchCenter: pinch.f0,
-      initialTimeAtPinchCenter: pinch.tMid,
+      fracOfPinchCenter: midpointFracX(rect, pts[0], pts[1]),
+      timeAtPinchCenter: pinch.tMid,
       distanceRatio: d / pinch.d0,
       // maxRange = the full default window (history + forecast horizon when
       // the overlay is on). Without this, pinch-out would snap back the
@@ -163,7 +175,9 @@ export function setupChartPinchZoom() {
       maxRange: bound.tMax - bound.tMin,
       minRange: MIN_RANGE_SEC,
     });
-    setChartZoom(next);
+    // Clamp into the pannable bound — the same guard the 1-finger pan
+    // uses — so sliding the gesture can't push the window past the data.
+    setChartZoom(next ? panZoomWindow(next, 0, bound) : null);
     drawHistoryGraph();
   }
 
