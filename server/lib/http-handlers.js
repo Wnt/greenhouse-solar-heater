@@ -137,6 +137,91 @@ function createHandlers(deps) {
     });
   }
 
+  // Public, unauthenticated forecast-tuning feed. One round-trip gives an
+  // external tool the full picture needed to fine-tune the projection
+  // algorithm: ground truth (sensor readings + mode transitions), the
+  // engine's multi-horizon predictions, the weather + electricity-price
+  // inputs the engine consumed, the per-generation algorithm fingerprint
+  // (tuning overrides + fitted coefficients), and the health/status of
+  // each external data source. Read-only, non-sensitive operational
+  // telemetry, so it sits outside the auth gate. Sends
+  // `Access-Control-Allow-Origin: *` for cross-origin browser fetches.
+  //   GET /api/public/history?range=24h&horizon=<1..48>
+  //   -> { range, generatedAt, points, events, weather, prices,
+  //        predictions, generations, sources }
+  function handlePublicHistoryApi(req, res, forecast) {
+    // CORS for cross-origin browser fetches — set before any writeHead
+    // so it merges into every response below. JSON bodies go out via
+    // jsonResponse(), whose literal `Content-Type: application/json`
+    // keeps the reflected `range` value off any HTML-rendering path.
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Max-Age': '86400',
+      });
+      res.end();
+      return;
+    }
+    if (req.method !== 'GET') {
+      jsonResponse(res, 405, { error: 'Method not allowed' });
+      return;
+    }
+    if (!db) {
+      jsonResponse(res, 503, { error: 'Database not available' });
+      return;
+    }
+
+    const parsed = new URL(req.url, 'http://localhost');
+    const range = parsed.searchParams.get('range') || '24h';
+    const horizonRaw = parsed.searchParams.get('horizon');
+    const horizon = horizonRaw && /^\d+$/.test(horizonRaw) ? parseInt(horizonRaw, 10) : null;
+    const emptyForecast = { weather: [], prices: [], predictions: [], generations: [], sources: [] };
+
+    db.getHistory(range, null, function (err, points) {
+      if (err) {
+        log.error('public history query failed', { error: err.message });
+        jsonResponse(res, 500, { error: 'Query failed' });
+        return;
+      }
+      db.getEvents(range, 'mode', function (evErr, events) {
+        if (evErr) {
+          log.error('public history events query failed', { error: evErr.message });
+          events = [];
+        }
+        function finish(fc) {
+          jsonResponse(res, 200, {
+            range,
+            generatedAt: new Date().toISOString(),
+            points,
+            events,
+            weather: fc.weather,
+            prices: fc.prices,
+            predictions: fc.predictions,
+            generations: fc.generations,
+            sources: fc.sources,
+          });
+        }
+        // The forecast dataset is optional — the subsystem only exists
+        // when a DB is wired. getForecastDataset itself degrades each
+        // section to [] on a per-query failure, so this never rejects.
+        if (forecast && typeof forecast.getForecastDataset === 'function') {
+          forecast.getForecastDataset({ range, horizon }, function (fErr, fc) {
+            if (fErr || !fc) {
+              log.error('public history forecast dataset failed', { error: fErr && fErr.message });
+              finish(emptyForecast);
+            } else {
+              finish(fc);
+            }
+          });
+        } else {
+          finish(emptyForecast);
+        }
+      });
+    });
+  }
+
   // Paginated state_events feed for the System Logs UI. Supports
   // newest-first cursor pagination so the client can lazy-load older
   // entries on scroll.
@@ -321,6 +406,7 @@ function createHandlers(deps) {
     handleVersion,
     handleRuntimeApi,
     handleHistoryApi,
+    handlePublicHistoryApi,
     handleEventsApi,
     handleDeviceConfigApi,
     handleSensorDiscovery,

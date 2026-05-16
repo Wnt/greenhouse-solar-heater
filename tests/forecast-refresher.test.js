@@ -232,4 +232,71 @@ describe('forecast-refresher', () => {
     const errorLogs = log.msgs.filter(function (m) { return m.level === 'error' && /prices/.test(m.msg); });
     assert.ok(errorLogs.length >= 1, 'price error was logged');
   });
+
+  // ── 6. getStatus() reflects fetch outcomes ──
+
+  it('getStatus() reports per-source health after a successful cycle', async () => {
+    const fmiClient  = { fetchForecast: function () { return Promise.resolve(makeWeatherRows()); } };
+    const spotClient = { fetchPrices:   function () { return Promise.resolve(makePriceRows()); } };
+
+    const refresher = create({
+      pool: makePool(),
+      log: makeLog(),
+      config: { location: { lat: 60.41, lon: 22.37 }, refreshIntervalMs: 9999999 },
+      isPreviewMode: false,
+      fmiClient,
+      spotPriceClient: spotClient,
+    });
+
+    refresher.start();
+    await refresher.stop();
+
+    const st = refresher.getStatus();
+    assert.equal(st.enabled, true);
+    assert.equal(st.refreshIntervalMs, 9999999);
+    assert.ok(st.weather.lastSuccessAt, 'weather lastSuccessAt set');
+    assert.equal(st.weather.lastSuccessRows, 2);
+    assert.equal(st.weather.lastError, null);
+    assert.ok(st.prices.lastSuccessAt, 'prices lastSuccessAt set');
+    assert.equal(st.prices.lastSuccessRows, 2);
+  });
+
+  it('getStatus() records the error message and spares the healthy source', async () => {
+    const fmiClient  = { fetchForecast: function () { return Promise.reject(new Error('FMI timeout')); } };
+    const spotClient = { fetchPrices:   function () { return Promise.resolve(makePriceRows()); } };
+
+    const refresher = create({
+      pool: makePool(),
+      log: makeLog(),
+      config: { location: { lat: 60.41, lon: 22.37 }, refreshIntervalMs: 9999999 },
+      isPreviewMode: false,
+      fmiClient,
+      spotPriceClient: spotClient,
+    });
+
+    refresher.start();
+    await refresher.stop();
+
+    const st = refresher.getStatus();
+    assert.equal(st.weather.lastError, 'FMI timeout');
+    assert.ok(st.weather.lastErrorAt, 'weather lastErrorAt set');
+    assert.equal(st.weather.lastSuccessAt, null);
+    assert.ok(st.prices.lastSuccessAt, 'healthy source still records success');
+    assert.equal(st.prices.lastError, null);
+  });
+
+  it('getStatus() reports enabled=false in preview mode', () => {
+    const refresher = create({
+      pool: makePool(),
+      log: makeLog(),
+      config: { location: { lat: 60.41, lon: 22.37 }, refreshIntervalMs: 9999999 },
+      isPreviewMode: true,
+      fmiClient: { fetchForecast: function () { return Promise.resolve([]); } },
+      spotPriceClient: { fetchPrices: function () { return Promise.resolve([]); } },
+    });
+
+    const st = refresher.getStatus();
+    assert.equal(st.enabled, false);
+    assert.equal(st.weather.lastAttemptAt, null);
+  });
 });

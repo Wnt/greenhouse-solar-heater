@@ -181,17 +181,13 @@ const server = http.createServer(function (req, res) {
     return;
   }
 
-  // Device config GET — unauthenticated (Shelly can't do WebAuthn, VPN-only access)
-  if (urlPath === '/api/device-config' && req.method === 'GET') {
-    deviceConfig.handleGet(req, res);
-    return;
-  }
-
-  // Sensor config GET — unauthenticated (same rationale as device config)
-  if (urlPath === '/api/sensor-config' && req.method === 'GET') {
-    sensorConfig.handleGet(req, res);
-    return;
-  }
+  // Unauthenticated GETs: the Shelly controller can't do WebAuthn and
+  // reaches the server VPN-only, so it reads device + sensor config
+  // without a session. /api/public/history is the read-only telemetry
+  // mirror of /api/history for external dashboards — see the handler.
+  if (urlPath === '/api/device-config' && req.method === 'GET') { deviceConfig.handleGet(req, res); return; }
+  if (urlPath === '/api/sensor-config' && req.method === 'GET') { sensorConfig.handleGet(req, res); return; }
+  if (urlPath === '/api/public/history') { handlers.handlePublicHistoryApi(req, res, forecast); return; }
 
   // Auth gate for all other routes
   let currentUser = null;

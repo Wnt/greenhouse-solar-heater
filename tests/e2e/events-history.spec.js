@@ -43,6 +43,32 @@ test.describe('GET /api/events + /api/history', () => {
     }, { timeout: 5000 }).not.toBeNull();
   });
 
+  test('GET /api/public/history is unauthenticated and returns the full forecast-tuning dataset', async ({ page }) => {
+    // The public forecast-tuning feed — ground truth + forecast inputs +
+    // predictions + data-source status, no session required. We assert
+    // the response contract (shape + CORS header), not contents, so the
+    // test is independent of sibling-worker writes. range=all hits the
+    // aggregate path that pg-mem can parse (see sibling test below); the
+    // forecast tables are absent from this fixture, so those sections
+    // degrade to [] — exactly the contract we want to verify.
+    const res = await page.request.get('/api/public/history?range=all');
+    expect(res.status()).toBe(200);
+    expect(res.headers()['access-control-allow-origin']).toBe('*');
+    const body = await res.json();
+    expect(body.range).toBe('all');
+    expect(typeof body.generatedAt).toBe('string');
+    for (const key of ['points', 'events', 'weather', 'prices', 'predictions', 'generations', 'sources']) {
+      expect(Array.isArray(body[key]), `${key} should be an array`).toBe(true);
+    }
+    // Data-source status is built from in-memory refresher state, so it
+    // is present even though the forecast tables are not.
+    expect(body.sources.length).toBe(2);
+    expect(body.sources.map((s) => s.id).sort()).toEqual(['fmi-weather', 'spot-price']);
+    for (const s of body.sources) {
+      expect(typeof s.status).toBe('string');
+    }
+  });
+
   test('GET /api/history?range=all returns points + events fields', async ({ page, mqttClient }) => {
     // Seed one reading so points has at least one entry from this
     // worker (older readings may still be present from sibling tests
