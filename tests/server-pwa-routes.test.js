@@ -213,6 +213,24 @@ describe('server PWA public routes (AUTH_ENABLED=true)', () => {
     });
   });
 
+  describe('Public history API requires no session', () => {
+    it('GET /api/public/history → not redirected, not 401 (auth-bypassed)', async () => {
+      const res = await request('/api/public/history');
+      assert.notStrictEqual(res.status, 302, 'public endpoint must not redirect to login');
+      assert.notStrictEqual(res.status, 401, 'public endpoint must not require a session');
+      // No DATABASE_URL in this harness → 503, which proves the route is
+      // reached and handled rather than gated behind the auth redirect.
+      assert.strictEqual(res.status, 503);
+      const body = JSON.parse(res.body);
+      assert.ok(body.error);
+    });
+
+    it('GET /api/public/history sends an open CORS header for cross-origin dashboards', async () => {
+      const res = await request('/api/public/history');
+      assert.strictEqual(res.headers['access-control-allow-origin'], '*');
+    });
+  });
+
   describe('Protected routes still require auth', () => {
     it('GET / → 302 redirect to /public/login.html', async () => {
       const res = await request('/');

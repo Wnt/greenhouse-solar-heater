@@ -43,6 +43,22 @@ test.describe('GET /api/events + /api/history', () => {
     }, { timeout: 5000 }).not.toBeNull();
   });
 
+  test('GET /api/public/history is unauthenticated and returns points + events + forecast', async ({ page }) => {
+    // The public mirror of /api/history — same read-only telemetry, no
+    // session required, plus the forecast-prediction history. We assert
+    // the response contract (shape + CORS header), not contents, so the
+    // test is independent of sibling-worker writes. range=all hits the
+    // aggregate path that pg-mem can parse (see sibling test below).
+    const res = await page.request.get('/api/public/history?range=all');
+    expect(res.status()).toBe(200);
+    expect(res.headers()['access-control-allow-origin']).toBe('*');
+    const body = await res.json();
+    expect(body.range).toBe('all');
+    expect(Array.isArray(body.points)).toBe(true);
+    expect(Array.isArray(body.events)).toBe(true);
+    expect(Array.isArray(body.forecast)).toBe(true);
+  });
+
   test('GET /api/history?range=all returns points + events fields', async ({ page, mqttClient }) => {
     // Seed one reading so points has at least one entry from this
     // worker (older readings may still be present from sibling tests

@@ -94,6 +94,9 @@ function start({ pool, log, repoRoot, isPreviewMode }) {
   return {
     handle: function (req, res) { handler.handle(req, res); },
     handleDiagnostics: function (req, res) { diagnostics.handle(req, res); },
+    // Recent +1 h prediction history (one row per hour). Exposed so the
+    // public history endpoint can fold forecast history into its payload.
+    listRecentPredictions: function (limit, cb) { predictions.listRecent(limit, cb); },
     stop:   function () { refresher.stop(); predictions.stop(); },
   };
 }

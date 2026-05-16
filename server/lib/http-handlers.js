@@ -137,6 +137,77 @@ function createHandlers(deps) {
     });
   }
 
+  // Public, unauthenticated mirror of /api/history for external
+  // dashboards: state transitions + sensor readings + forecast
+  // prediction history in one round-trip. Read-only and exposes only
+  // non-sensitive operational telemetry, so it sits outside the auth
+  // gate. Sends `Access-Control-Allow-Origin: *` so it can be fetched
+  // cross-origin from a browser.
+  //   GET /api/public/history?range=24h&forecastLimit=48
+  //   -> { range, points: [...], events: [...], forecast: [...] }
+  function handlePublicHistoryApi(req, res, forecast) {
+    function send(code, data, extraHeaders) {
+      const headers = Object.assign(
+        { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        extraHeaders || {}
+      );
+      res.writeHead(code, headers);
+      res.end(data === null ? '' : JSON.stringify(data));
+    }
+
+    if (req.method === 'OPTIONS') {
+      send(204, null, {
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Max-Age': '86400',
+      });
+      return;
+    }
+    if (req.method !== 'GET') {
+      send(405, { error: 'Method not allowed' });
+      return;
+    }
+    if (!db) {
+      send(503, { error: 'Database not available' });
+      return;
+    }
+
+    const parsed = new URL(req.url, 'http://localhost');
+    const range = parsed.searchParams.get('range') || '24h';
+    const forecastLimit = parseInt(parsed.searchParams.get('forecastLimit'), 10) || 48;
+
+    db.getHistory(range, null, function (err, points) {
+      if (err) {
+        log.error('public history query failed', { error: err.message });
+        send(500, { error: 'Query failed' });
+        return;
+      }
+      db.getEvents(range, 'mode', function (evErr, events) {
+        if (evErr) {
+          log.error('public history events query failed', { error: evErr.message });
+          events = [];
+        }
+        function finish(forecastRows) {
+          send(200, { range, points, events, forecast: forecastRows });
+        }
+        // Forecast history is optional — the subsystem only exists when
+        // a DB is wired, and its table may be absent on some fixtures.
+        // Degrade to an empty list rather than failing the whole call.
+        if (forecast && typeof forecast.listRecentPredictions === 'function') {
+          forecast.listRecentPredictions(forecastLimit, function (fErr, rows) {
+            if (fErr) {
+              log.error('public history forecast query failed', { error: fErr.message });
+              finish([]);
+            } else {
+              finish(rows || []);
+            }
+          });
+        } else {
+          finish([]);
+        }
+      });
+    });
+  }
+
   // Paginated state_events feed for the System Logs UI. Supports
   // newest-first cursor pagination so the client can lazy-load older
   // entries on scroll.
@@ -321,6 +392,7 @@ function createHandlers(deps) {
     handleVersion,
     handleRuntimeApi,
     handleHistoryApi,
+    handlePublicHistoryApi,
     handleEventsApi,
     handleDeviceConfigApi,
     handleSensorDiscovery,
