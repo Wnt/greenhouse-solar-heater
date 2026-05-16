@@ -17,8 +17,8 @@ describe('pinchZoomWindow', () => {
   it('halves the visible range when fingers spread to twice the distance', () => {
     const r = pinchZoomWindow({
       initialRange: 24 * HOUR,
-      initialFracOfPinchCenter: 0.5,
-      initialTimeAtPinchCenter: 12 * HOUR,
+      fracOfPinchCenter: 0.5,
+      timeAtPinchCenter: 12 * HOUR,
       distanceRatio: 2,
       maxRange: 24 * HOUR,
       minRange: 60,
@@ -31,8 +31,8 @@ describe('pinchZoomWindow', () => {
     // time. After zooming 2×, that mark must still sit at 25% across.
     const r = pinchZoomWindow({
       initialRange: 24 * HOUR,
-      initialFracOfPinchCenter: 0.25,
-      initialTimeAtPinchCenter: 6 * HOUR,
+      fracOfPinchCenter: 0.25,
+      timeAtPinchCenter: 6 * HOUR,
       distanceRatio: 2,
       maxRange: 24 * HOUR,
       minRange: 60,
@@ -48,8 +48,8 @@ describe('pinchZoomWindow', () => {
     // immediately busts the cap.
     const r = pinchZoomWindow({
       initialRange: 12 * HOUR,
-      initialFracOfPinchCenter: 0.5,
-      initialTimeAtPinchCenter: 12 * HOUR,
+      fracOfPinchCenter: 0.5,
+      timeAtPinchCenter: 12 * HOUR,
       distanceRatio: 0.4,
       maxRange: 24 * HOUR,
       minRange: 60,
@@ -60,8 +60,8 @@ describe('pinchZoomWindow', () => {
   it('clamps very tight pinches to minRange instead of going to zero', () => {
     const r = pinchZoomWindow({
       initialRange: 1 * HOUR,
-      initialFracOfPinchCenter: 0.5,
-      initialTimeAtPinchCenter: 0,
+      fracOfPinchCenter: 0.5,
+      timeAtPinchCenter: 0,
       distanceRatio: 1000,
       maxRange: 24 * HOUR,
       minRange: 60,
@@ -75,8 +75,8 @@ describe('pinchZoomWindow', () => {
     // maxRange.
     const r = pinchZoomWindow({
       initialRange: 6 * HOUR,
-      initialFracOfPinchCenter: 0.5,
-      initialTimeAtPinchCenter: 3 * HOUR,
+      fracOfPinchCenter: 0.5,
+      timeAtPinchCenter: 3 * HOUR,
       distanceRatio: 1.5,
       maxRange: 24 * HOUR,
       minRange: 60,
