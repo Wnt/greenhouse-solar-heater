@@ -150,28 +150,26 @@ function createHandlers(deps) {
   //   -> { range, generatedAt, points, events, weather, prices,
   //        predictions, generations, sources }
   function handlePublicHistoryApi(req, res, forecast) {
-    function send(code, data, extraHeaders) {
-      const headers = Object.assign(
-        { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        extraHeaders || {}
-      );
-      res.writeHead(code, headers);
-      res.end(data === null ? '' : JSON.stringify(data));
-    }
+    // CORS for cross-origin browser fetches — set before any writeHead
+    // so it merges into every response below. JSON bodies go out via
+    // jsonResponse(), whose literal `Content-Type: application/json`
+    // keeps the reflected `range` value off any HTML-rendering path.
+    res.setHeader('Access-Control-Allow-Origin', '*');
 
     if (req.method === 'OPTIONS') {
-      send(204, null, {
+      res.writeHead(204, {
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Max-Age': '86400',
       });
+      res.end();
       return;
     }
     if (req.method !== 'GET') {
-      send(405, { error: 'Method not allowed' });
+      jsonResponse(res, 405, { error: 'Method not allowed' });
       return;
     }
     if (!db) {
-      send(503, { error: 'Database not available' });
+      jsonResponse(res, 503, { error: 'Database not available' });
       return;
     }
 
@@ -184,7 +182,7 @@ function createHandlers(deps) {
     db.getHistory(range, null, function (err, points) {
       if (err) {
         log.error('public history query failed', { error: err.message });
-        send(500, { error: 'Query failed' });
+        jsonResponse(res, 500, { error: 'Query failed' });
         return;
       }
       db.getEvents(range, 'mode', function (evErr, events) {
@@ -193,7 +191,7 @@ function createHandlers(deps) {
           events = [];
         }
         function finish(fc) {
-          send(200, {
+          jsonResponse(res, 200, {
             range,
             generatedAt: new Date().toISOString(),
             points,
