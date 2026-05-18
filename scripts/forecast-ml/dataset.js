@@ -33,6 +33,38 @@ function buildModeTimeline(events) {
     .sort(function cmp(a, b) { return a.ts - b.ts; });
 }
 
+// ── tuning-threshold timeline ───────────────────────────────────────
+// Controller thresholds (greenhouse-heating + emergency setpoints) as
+// they changed over time, reconstructed from the per-generation `tu`
+// snapshots in the public feed. Used by the threshold-feature
+// experiment in train-forecast-model.mjs.
+
+const TU_KEYS = ['geT', 'gxT', 'gmD', 'gxD', 'ehE', 'ehX'];
+const TU_DEFAULTS = { geT: 10, gxT: 12, gmD: 5, gxD: 2, ehE: 9, ehX: 12 };
+
+function buildTuTimeline(generations) {
+  return (generations || [])
+    .filter(function hasTu(g) { return g && g.tu && typeof g.tu === 'object'; })
+    .map(function row(g) { return { ts: Date.parse(g.generatedAt), tu: g.tu }; })
+    .filter(function valid(r) { return !isNaN(r.ts); })
+    .sort(function cmp(a, b) { return a.ts - b.ts; });
+}
+
+// Thresholds active at time t. Before the first recorded snapshot the
+// earliest known set is carried back; missing keys fall to defaults.
+function tuAt(timeline, t) {
+  const out = Object.assign({}, TU_DEFAULTS);
+  if (!timeline.length) return out;
+  let pick = timeline[0].tu;
+  for (let i = 0; i < timeline.length; i++) {
+    if (timeline[i].ts <= t) pick = timeline[i].tu; else break;
+  }
+  TU_KEYS.forEach(function set(k) {
+    if (typeof pick[k] === 'number') out[k] = pick[k];
+  });
+  return out;
+}
+
 function modeAt(evs, t) {
   if (evs.length === 0) return 'idle';
   if (t < evs[0].ts) return evs[0].from || 'idle';
@@ -122,16 +154,18 @@ function buildWeatherIndex(weather) {
 
 // ── dataset assembly ────────────────────────────────────────────────
 
-// Returns { X, yTank, yGh, t0s, index } where index bundles the
+// Returns { X, yTank, yGh, t0s, tu, index } where `tu` is the parallel
+// per-sample controller-threshold snapshot and `index` bundles the
 // stateAt / weatherAt / modeFractions accessors for the rollout eval.
 function buildDataset(payload) {
   const stateIdx = buildStateIndex(payload.points);
   const weatherAt = buildWeatherIndex(payload.weather);
   const modeEvs = buildModeTimeline(payload.events);
+  const tuTimeline = buildTuTimeline(payload.generations);
 
-  const X = [], yTank = [], yGh = [], t0s = [];
+  const X = [], yTank = [], yGh = [], t0s = [], tu = [];
   if (stateIdx.firstTs === null) {
-    return { X, yTank, yGh, t0s, index: null };
+    return { X, yTank, yGh, t0s, tu, index: null };
   }
 
   const start = Math.ceil(stateIdx.firstTs / ANCHOR_STEP_MS) * ANCHOR_STEP_MS;
@@ -147,6 +181,7 @@ function buildDataset(payload) {
     yTank.push(s1.tankAvg - s0.tankAvg);
     yGh.push(s1.greenhouse - s0.greenhouse);
     t0s.push(t0);
+    tu.push(tuAt(tuTimeline, t0));
   }
 
   return {
@@ -154,6 +189,7 @@ function buildDataset(payload) {
     yTank,
     yGh,
     t0s,
+    tu,
     index: {
       stateAt: stateIdx.stateAt,
       weatherAt,
@@ -168,6 +204,7 @@ module.exports = {
   MODES,
   FEATURE_NAMES,
   STEP_MS,
+  TU_KEYS,
   buildDataset,
   featureRow,
   weatherUsable,

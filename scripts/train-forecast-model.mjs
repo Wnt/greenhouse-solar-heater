@@ -16,8 +16,9 @@
 // to /tmp so repeat runs are fast. --save writes the trained model JSON.
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { gzipSync } from 'node:zlib';
+import { gzipSync, gunzipSync } from 'node:zlib';
 import rf from '../server/lib/forecast/ml/random-forest.js';
+import { computeMlForecast } from '../server/lib/forecast/ml/ml-forecast.js';
 import ds from './forecast-ml/dataset.js';
 
 const DEFAULT_URL = 'https://greenhouse.madekivi.fi/api/public/history?range=all';
@@ -270,6 +271,86 @@ function importanceReport(model, names) {
   });
 }
 
+function rmseR2(model, X, y) {
+  const p = predictAll(model, X);
+  return { rmse: rmse(p, y), r2: r2(p, y) };
+}
+
+// Retrain with the controller thresholds appended as features and
+// compare held-out accuracy — answers "does the model need to know the
+// tuning thresholds, or is the observed mode enough?".
+function thresholdExperiment(data, split, Xtr, Xte, tankTe, ghTe, baseTank, baseGh) {
+  const keys = ds.TU_KEYS;
+  console.log('  threshold variation across the ' + data.tu.length + ' training samples:');
+  keys.forEach(function show(k) {
+    const vals = Array.from(new Set(data.tu.map(function pick(t) { return t[k]; })))
+      .sort(function cmp(a, b) { return a - b; });
+    console.log('    ' + pad(k, 6) + JSON.stringify(vals)
+      + (vals.length < 2 ? '   (constant — unlearnable)' : ''));
+  });
+
+  function augment(baseX, tuRows) {
+    return baseX.map(function row(r, i) {
+      return r.concat(keys.map(function val(k) { return tuRows[i][k]; }));
+    });
+  }
+  const augXtr = augment(Xtr, data.tu.slice(0, split));
+  const augXte = augment(Xte, data.tu.slice(split));
+  const augTank = rf.trainForest(augXtr, data.yTank.slice(0, split), { seed: 1 });
+  const augGh = rf.trainForest(augXtr, data.yGh.slice(0, split), { seed: 2 });
+
+  const bt = rmseR2(baseTank, Xte, tankTe);
+  const at = rmseR2(augTank, augXte, tankTe);
+  const bg = rmseR2(baseGh, Xte, ghTe);
+  const ag = rmseR2(augGh, augXte, ghTe);
+  console.log('\n  held-out 1 h accuracy   baseline (16 feat)      + thresholds ('
+    + (16 + keys.length) + ' feat)');
+  console.log('    tank        RMSE ' + pad(f2(bt.rmse), 9) + 'R2 ' + pad(f2(bt.r2), 11)
+    + 'RMSE ' + pad(f2(at.rmse), 9) + 'R2 ' + f2(at.r2));
+  console.log('    greenhouse  RMSE ' + pad(f2(bg.rmse), 9) + 'R2 ' + pad(f2(bg.r2), 11)
+    + 'RMSE ' + pad(f2(ag.rmse), 9) + 'R2 ' + f2(ag.r2));
+  console.log('\n  threshold-feature importance (augmented tank model):');
+  keys.forEach(function imp(k, i) {
+    console.log('    ' + pad(k, 7) + pct(augTank.featureImportance[16 + i]));
+  });
+}
+
+// Drive computeMlForecast at a range of greenhouse-heating thresholds
+// from one fixed start state — shows whether the *forecast* responds to
+// the threshold even though the random forest does not take it as input.
+function sensitivitySweep() {
+  let model;
+  try {
+    model = JSON.parse(gunzipSync(
+      readFileSync('server/lib/forecast/ml/forecast-model.json.gz')).toString('utf8'));
+  } catch (e) {
+    console.log('  (skipped — committed model not found: ' + e.message + ')');
+    return;
+  }
+  const wx = [], px = [];
+  for (let h = 0; h < 48; h++) {
+    const hod = h % 24;
+    wx.push({ temperature: 6, radiationGlobal: (hod >= 9 && hod <= 16) ? 250 : 0, windSpeed: 3, precipitation: 0 });
+    px.push({ priceCKwh: 12 });
+  }
+  console.log('  start: tank 37 degC, greenhouse 15 degC, 6 degC outdoor, partly-sunny days');
+  console.log('    geT/gxT    tank avg +12h    +24h    +48h    heating h   backup kWh');
+  [8, 10, 12, 14, 16].forEach(function sweep(geT) {
+    const fc = computeMlForecast({
+      now: new Date('2026-05-15T15:00:00Z'),
+      tankTop: 40, tankBottom: 34, greenhouseTemp: 15, currentMode: 'idle',
+      weather48h: wx, prices48h: px, model,
+      config: { greenhouseEnterC: geT, greenhouseExitC: geT + 1 },
+    });
+    console.log('    ' + pad(geT + '/' + (geT + 1), 11)
+      + pad(fc.tankTrajectory[12].avg.toFixed(1), 16)
+      + pad(fc.tankTrajectory[24].avg.toFixed(1), 8)
+      + pad(fc.tankTrajectory[48].avg.toFixed(1), 8)
+      + pad(String(fc.greenhouseHeatingHours), 12)
+      + fc.electricKwh.toFixed(1));
+  });
+}
+
 // Per-feature [min, max] over the dataset — shipped with the model so
 // the inference engine can flag out-of-distribution conditions.
 function featureRanges(X) {
@@ -347,6 +428,12 @@ async function main() {
 
   console.log('\n--- Feature importance (tank model) ---');
   importanceReport(tankModel, ds.FEATURE_NAMES);
+
+  console.log('\n--- Threshold-feature experiment ---');
+  thresholdExperiment(data, split, Xtr, Xte, tankTe, ghTe, tankModel, ghModel);
+
+  console.log('\n--- Forecast sensitivity to the greenhouse-heating threshold ---');
+  sensitivitySweep();
 
   if (args.save) {
     // The committed artifact is trained on ALL available history (the
