@@ -883,6 +883,16 @@
           </div>
         </div>
 
+        <!-- Forecast engine -->
+        <div class="card settings-card" id="forecast-engine-card">
+          <h3>Forecast engine</h3>
+          <p class="settings-desc">The Next 48 h forecast runs on the physics model by default. The experimental machine-learning engine predicts tank and greenhouse temperatures from a random forest trained on recorded sensor and weather history.</p>
+          <label class="notif-cat-label">
+            <input type="checkbox" id="forecast-engine-ml">
+            <span><strong>Machine-learning forecast</strong> &mdash; experimental, learns from history</span>
+          </label>
+        </div>
+
         <!-- Anomaly watchdogs -->
         <div class="card settings-card" id="watchdogs-card" data-admin-only>
           <h3>Anomaly watchdogs</h3>

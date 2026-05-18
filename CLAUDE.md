@@ -173,6 +173,8 @@ These files are **generated, not hand-edited**. Regenerate and commit in the **s
 
 A threshold change in `control-logic.js` without a regenerated snapshot fails CI with a pointer to the first diverging line and the fix command. Topology palette overrides live in `topology-layout.yaml` under `themes.{light,playground}.{fill,font,stroke}`.
 
+The ML forecast model `server/lib/forecast/ml/forecast-model.json.gz` (random forest, gzipped) is **not** drift-checked — it's trained offline by `node scripts/train-forecast-model.mjs --save server/lib/forecast/ml/forecast-model.json.gz`, which fetches the public history feed. Retrain and commit it whenever the feature set in `server/lib/forecast/ml/features.js` changes; the alternative ML forecast engine (`#settings` → Forecast engine) loads it at boot.
+
 ## Pre-Push Checklist
 
 **Before pushing any non-trivial change, run the full local CI gate suite.** These are the exact checks `.github/workflows/ci.yml` runs; running them locally is a ~80 s feedback loop (~5 s static + ~75 s unit+Playwright in parallel) vs. a 3–5 min round-trip through GitHub Actions, so always do it locally first:

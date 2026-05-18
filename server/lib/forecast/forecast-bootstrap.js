@@ -17,6 +17,7 @@ const { createForecastHandler } = require('./forecast-handler');
 const { create: createForecastPredictions } = require('./forecast-predictions');
 const { create: createForecastDiagnostics } = require('./forecast-diagnostics');
 const { create: createForecastDataset } = require('./forecast-dataset');
+const { createMlForecastHandler } = require('./ml/ml-forecast-handler');
 const fmiClient = require('./fmi-client');
 const spotPriceClient = require('./spot-price-client');
 
@@ -48,6 +49,10 @@ function start({ pool, log, repoRoot, isPreviewMode }) {
     pool, log, systemYaml,
     listRecentPredictions: predictions.listRecent,
   });
+
+  // Alternative ML-driven forecast engine. Self-contained (own queries,
+  // own cache, own model load); /api/forecast?engine=ml routes here.
+  const mlHandler = createMlForecastHandler({ pool, log, systemYaml });
 
   // The forecast refresher writes purely external/idempotent data
   // (FMI weather + Nord Pool prices), so it's safe to run from preview
@@ -100,8 +105,20 @@ function start({ pool, log, repoRoot, isPreviewMode }) {
     getRefresherStatus: refresher.getStatus,
   });
 
+  // Dispatch /api/forecast on the `engine` query param — the user's
+  // Settings toggle drives this. Default (and any unknown value) is the
+  // physics engine.
+  function handle(req, res) {
+    let engine = 'physics';
+    try {
+      engine = new URL(req.url, 'http://localhost').searchParams.get('engine') || 'physics';
+    } catch (_e) { /* malformed URL — fall through to physics */ }
+    if (engine === 'ml') mlHandler.handle(req, res);
+    else handler.handle(req, res);
+  }
+
   return {
-    handle: function (req, res) { handler.handle(req, res); },
+    handle,
     handleDiagnostics: function (req, res) { diagnostics.handle(req, res); },
     getForecastDataset: function (opts, cb) { dataset.getDataset(opts, cb); },
     stop:   function () { refresher.stop(); predictions.stop(); },

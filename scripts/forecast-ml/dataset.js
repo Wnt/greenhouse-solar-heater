@@ -14,30 +14,13 @@
 // bottom split and the collector sensor are NOT used — they cannot be
 // carried forward in a recursive 48 h rollout without a second model.
 
-const MODES = ['idle', 'solar_charging', 'greenhouse_heating', 'active_drain', 'emergency_heating'];
+// Feature contract (column list + row builder) is shared with the
+// server-side inference engine — see server/lib/forecast/ml/features.js.
+const { MODES, STEP_MS, FEATURE_NAMES, featureRow, weatherUsable } =
+  require('../../server/lib/forecast/ml/features.js');
 
-const FEATURE_NAMES = [
-  'wx_temp_c',          // FMI forecast outdoor temperature
-  'wx_radiation_w',     // FMI forecast global radiation
-  'wx_wind_ms',         // FMI forecast wind speed
-  'wx_precip_mm',       // FMI forecast precipitation
-  'tank_avg_c',         // carried: tank average temperature
-  'greenhouse_c',       // carried: greenhouse air temperature
-  'tank_minus_outdoor', // tank loss gradient
-  'gh_minus_outdoor',   // greenhouse loss gradient
-  'tank_minus_gh',      // radiator delivery gradient
-  'hour_sin',
-  'hour_cos',
-  'frac_idle',
-  'frac_solar_charging',
-  'frac_greenhouse_heating',
-  'frac_active_drain',
-  'frac_emergency_heating',
-];
-
-const STEP_MS = 3600000;        // 1 h prediction step
-const ANCHOR_STEP_MS = 900000;  // new training anchor every 15 min
-const MAX_GAP_MS = 8 * 60000;   // skip samples straddling a sensor gap
+const ANCHOR_STEP_MS = 900000; // new training anchor every 15 min
+const MAX_GAP_MS = 8 * 60000;  // skip samples straddling a sensor gap
 
 function lerp(a, b, w) { return a + (b - a) * w; }
 
@@ -135,42 +118,6 @@ function buildWeatherIndex(weather) {
   return function weatherAt(t) {
     return byHour[Math.floor(t / STEP_MS) * STEP_MS] || null;
   };
-}
-
-// ── feature row ─────────────────────────────────────────────────────
-
-// Build the model feature vector. `tankAvg`/`greenhouse` are the carried
-// model state, `outdoor` the outdoor temperature used for the gradient
-// features (FMI forecast temp during a rollout, sensor reading during
-// training — they track within ~1-2 degC).
-function featureRow(tankAvg, greenhouse, outdoor, wx, frac, t) {
-  const hod = ((t / STEP_MS) % 24 + 24) % 24;
-  return [
-    wx.temperature,
-    wx.radiationGlobal,
-    wx.windSpeed,
-    wx.precipitation,
-    tankAvg,
-    greenhouse,
-    tankAvg - outdoor,
-    greenhouse - outdoor,
-    tankAvg - greenhouse,
-    Math.sin(2 * Math.PI * hod / 24),
-    Math.cos(2 * Math.PI * hod / 24),
-    frac.idle,
-    frac.solar_charging,
-    frac.greenhouse_heating,
-    frac.active_drain,
-    frac.emergency_heating,
-  ];
-}
-
-function weatherUsable(w) {
-  return w
-    && typeof w.temperature === 'number'
-    && typeof w.radiationGlobal === 'number'
-    && typeof w.windSpeed === 'number'
-    && typeof w.precipitation === 'number';
 }
 
 // ── dataset assembly ────────────────────────────────────────────────

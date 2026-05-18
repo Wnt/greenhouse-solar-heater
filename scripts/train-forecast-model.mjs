@@ -16,7 +16,8 @@
 // to /tmp so repeat runs are fast. --save writes the trained model JSON.
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import rf from './forecast-ml/random-forest.js';
+import { gzipSync } from 'node:zlib';
+import rf from '../server/lib/forecast/ml/random-forest.js';
 import ds from './forecast-ml/dataset.js';
 
 const DEFAULT_URL = 'https://greenhouse.madekivi.fi/api/public/history?range=all';
@@ -269,6 +270,23 @@ function importanceReport(model, names) {
   });
 }
 
+// Per-feature [min, max] over the dataset — shipped with the model so
+// the inference engine can flag out-of-distribution conditions.
+function featureRanges(X) {
+  const p = X[0].length;
+  const out = [];
+  for (let j = 0; j < p; j++) {
+    let mn = Infinity, mx = -Infinity;
+    for (let i = 0; i < X.length; i++) {
+      const v = X[i][j];
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    out.push({ min: mn, max: mx });
+  }
+  return out;
+}
+
 // ── main ────────────────────────────────────────────────────────────
 
 async function main() {
@@ -331,16 +349,28 @@ async function main() {
   importanceReport(tankModel, ds.FEATURE_NAMES);
 
   if (args.save) {
+    // The committed artifact is trained on ALL available history (the
+    // 80/20 split above exists only to produce the held-out report).
+    console.log('\nTraining shipped model on full history ...');
+    const tankFull = rf.trainForest(data.X, data.yTank, { seed: 1 });
+    const ghFull = rf.trainForest(data.X, data.yGh, { seed: 2 });
     const model = {
+      version: 1,
       featureNames: ds.FEATURE_NAMES,
       stepMs: ds.STEP_MS,
-      tank: tankModel,
-      greenhouse: ghModel,
+      featureRanges: featureRanges(data.X),
+      tank: tankFull,
+      greenhouse: ghFull,
       trainedAt: new Date().toISOString(),
+      trainSamples: data.X.length,
     };
     const json = JSON.stringify(model);
-    writeFileSync(args.save, json);
-    console.log('\nModel saved to ' + args.save + ' (' + (json.length / 1e6).toFixed(2) + ' MB)');
+    const gzip = /\.gz$/.test(args.save);
+    const out = gzip ? gzipSync(json, { level: 9 }) : json;
+    writeFileSync(args.save, out);
+    console.log('Model saved to ' + args.save + ' ('
+      + (json.length / 1e6).toFixed(2) + ' MB JSON'
+      + (gzip ? ' -> ' + (out.length / 1e6).toFixed(2) + ' MB gzip' : '') + ')');
   }
   console.log('');
 }
