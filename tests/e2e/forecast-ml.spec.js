@@ -14,6 +14,9 @@ test.describe('GET /api/forecast?engine=ml', () => {
 
     expect(body.engine).toBe('ml');
     expect(body.forecast).toBeTruthy();
+    // Model provenance + staleness flag for the in-process trainer.
+    expect(typeof body.modelStale).toBe('boolean');
+    expect('modelTrainedAt' in body).toBe(true);
 
     const fc = body.forecast;
     expect(fc.engine).toBe('ml');

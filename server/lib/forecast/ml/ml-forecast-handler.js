@@ -7,36 +7,36 @@
 // own model load. forecast-bootstrap.js dispatches to this handler when
 // the request carries `engine=ml`.
 //
-// createMlForecastHandler({ pool, log, systemYaml }) -> { handle(req, res) }
+// createMlForecastHandler({ pool, log, systemYaml, modelStore,
+//   getTrainerStatus }) -> { handle(req, res) }
 
-const fs = require('fs');
-const path = require('path');
-const zlib = require('zlib');
 const { computeMlForecast } = require('./ml-forecast');
 const deviceConfig = require('../../device-config');
 const { jsonResponse } = require('../../http-handlers');
 const { parseTuningOverride } = require('../tuning-override');
 
 const CACHE_TTL_MS = 60 * 1000;
-const MODEL_PATH = path.join(__dirname, 'forecast-model.json.gz');
+// The serving model is "stale" once the in-process trainer has gone
+// this long without promoting a model (counted from its last success,
+// or process start before the first run). 26 h gives the daily retrain
+// cycle slack so the flag doesn't flap at exactly 24 h.
+const STALE_MS = 26 * 60 * 60 * 1000;
 
-// Load + gunzip the committed model once. Returns null (and logs) when
-// the artifact is missing or corrupt — the handler then answers 503.
-function loadModel(log) {
-  try {
-    const json = zlib.gunzipSync(fs.readFileSync(MODEL_PATH)).toString('utf8');
-    return JSON.parse(json);
-  } catch (e) {
-    log.warn('ml-forecast: model artifact unavailable', { error: e.message, path: MODEL_PATH });
-    return null;
-  }
+// True when the trainer is enabled but hasn't produced an accepted
+// model recently — surfaced to the UI as a staleness warning.
+function isStale(trainerStatus) {
+  if (!trainerStatus || !trainerStatus.enabled) return false;
+  const ref = Date.parse(trainerStatus.lastSuccessAt || trainerStatus.processStartAt);
+  return Number.isFinite(ref) && (Date.now() - ref) > STALE_MS;
 }
 
 function createMlForecastHandler(opts) {
   const pool = opts.pool;
   const log = opts.log;
   const systemYaml = opts.systemYaml || {};
-  const model = loadModel(log);
+  const modelStore = opts.modelStore;
+  const getTrainerStatus = typeof opts.getTrainerStatus === 'function'
+    ? opts.getTrainerStatus : function () { return null; };
 
   const electricity = systemYaml.electricity || {};
   const spaceHeater = systemYaml.space_heater || {};
@@ -114,6 +114,7 @@ function createMlForecastHandler(opts) {
 
   function compute(callback, overrideTuning) {
     if (!pool) { callback(new Error('Database not available')); return; }
+    const model = modelStore.get();
     if (!model) { callback(new Error('ML model not available')); return; }
 
     const nowMs = Date.now();
@@ -174,11 +175,14 @@ function createMlForecastHandler(opts) {
         return;
       }
 
+      const storeInfo = modelStore.getInfo();
       const response = {
         generatedAt: forecast.generatedAt,
         engine: 'ml',
         algorithmVersion: 'ml',
-        mlTrainedAt: model.trainedAt || null,
+        modelTrainedAt: storeInfo.trainedAt,
+        modelSource: storeInfo.source,
+        modelStale: isStale(getTrainerStatus()),
         tu: overrideTuning || dcfg.tu || {},
         weather,
         prices,
@@ -212,7 +216,7 @@ function createMlForecastHandler(opts) {
     }, parseTuningOverride(req.url));
   }
 
-  return { handle, compute, modelLoaded: !!model };
+  return { handle, compute };
 }
 
 module.exports = { createMlForecastHandler };

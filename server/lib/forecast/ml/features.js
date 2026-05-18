@@ -80,10 +80,30 @@ function weatherUsable(w) {
     && typeof w.precipitation === 'number';
 }
 
+// Per-feature [min, max] over a feature matrix — shipped with the model
+// so the inference engine can flag out-of-distribution conditions.
+function featureRanges(X) {
+  if (!X.length) return [];
+  const p = X[0].length;
+  const out = [];
+  for (let j = 0; j < p; j++) {
+    let mn = Infinity;
+    let mx = -Infinity;
+    for (let i = 0; i < X.length; i++) {
+      const v = X[i][j];
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    out.push({ min: mn, max: mx });
+  }
+  return out;
+}
+
 module.exports = {
   MODES,
   STEP_MS,
   FEATURE_NAMES,
   featureRow,
   weatherUsable,
+  featureRanges,
 };

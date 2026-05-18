@@ -20,18 +20,19 @@ import { setForecastData } from './main/state.js';
 import { drawHistoryGraph } from './main/history-graph.js';
 
 // ── Forecast engine selection ────────────────────────────────────────
-// The Settings view lets the user pick the physics engine (default) or
-// the experimental ML engine. The choice is a client-side preference
-// (localStorage) that drives the /api/forecast `engine` query param —
-// the server computes the forecast with whichever engine is requested.
+// The Next 48 h forecast runs on the ML engine by default; the Settings
+// view lets the user fall back to the physics engine. The choice is a
+// client-side preference (localStorage) that drives the /api/forecast
+// `engine` query param — the server computes the forecast with
+// whichever engine is requested.
 
 const ENGINE_STORAGE_KEY = 'forecastEngine';
 
 export function getForecastEngine() {
   try {
-    return localStorage.getItem(ENGINE_STORAGE_KEY) === 'ml' ? 'ml' : 'physics';
+    return localStorage.getItem(ENGINE_STORAGE_KEY) === 'physics' ? 'physics' : 'ml';
   } catch (_e) {
-    return 'physics';
+    return 'ml';
   }
 }
 
@@ -145,6 +146,12 @@ export function renderForecastCard(data) {
   if (notesEl) {
     notesEl.innerHTML = '';
     if (fc) {
+      if (data && data.modelStale) {
+        const stale = el('p', 'forecast-note forecast-note-warn',
+          '⚠ ML forecast model may be stale — automatic retraining hasn’t '
+          + 'produced an accepted model in over a day.');
+        notesEl.appendChild(stale);
+      }
       if (fc.modelConfidence === 'low') {
         const warn = el('p', 'forecast-note forecast-note-warn',
           '⚠ Forecast model still warming up — limited history.');

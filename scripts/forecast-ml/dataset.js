@@ -16,7 +16,7 @@
 
 // Feature contract (column list + row builder) is shared with the
 // server-side inference engine — see server/lib/forecast/ml/features.js.
-const { MODES, STEP_MS, FEATURE_NAMES, featureRow, weatherUsable } =
+const { MODES, STEP_MS, FEATURE_NAMES, featureRow, weatherUsable, featureRanges } =
   require('../../server/lib/forecast/ml/features.js');
 
 const ANCHOR_STEP_MS = 900000; // new training anchor every 15 min
@@ -258,4 +258,5 @@ module.exports = {
   buildDataset,
   featureRow,
   weatherUsable,
+  featureRanges,
 };

@@ -18,6 +18,8 @@ const { create: createForecastPredictions } = require('./forecast-predictions');
 const { create: createForecastDiagnostics } = require('./forecast-diagnostics');
 const { create: createForecastDataset } = require('./forecast-dataset');
 const { createMlForecastHandler } = require('./ml/ml-forecast-handler');
+const { createModelStore } = require('./ml/model-store');
+const { createMlTrainer } = require('./ml/ml-trainer');
 const fmiClient = require('./fmi-client');
 const spotPriceClient = require('./spot-price-client');
 
@@ -30,7 +32,7 @@ function loadSystemYaml(repoRoot, log) {
   }
 }
 
-function start({ pool, log, repoRoot, isPreviewMode }) {
+function start({ pool, db, log, repoRoot, isPreviewMode }) {
   const systemYaml = loadSystemYaml(repoRoot, log);
   const isTestEnv = process.env.NODE_ENV === 'test';
 
@@ -49,10 +51,6 @@ function start({ pool, log, repoRoot, isPreviewMode }) {
     pool, log, systemYaml,
     listRecentPredictions: predictions.listRecent,
   });
-
-  // Alternative ML-driven forecast engine. Self-contained (own queries,
-  // own cache, own model load); /api/forecast?engine=ml routes here.
-  const mlHandler = createMlForecastHandler({ pool, log, systemYaml });
 
   // The forecast refresher writes purely external/idempotent data
   // (FMI weather + Nord Pool prices), so it's safe to run from preview
@@ -105,6 +103,26 @@ function start({ pool, log, repoRoot, isPreviewMode }) {
     getRefresherStatus: refresher.getStatus,
   });
 
+  // ML model store + in-process trainer. The store loads the committed
+  // model synchronously, then overrides it from S3 when a fresher
+  // accepted model is present. The trainer retrains daily and promotes
+  // only gated candidates — disabled in preview (a preview pod must
+  // never overwrite prod's shared S3 model) and in tests.
+  const modelStore = createModelStore({ log });
+  modelStore.loadInitial(function loaded() {});
+  const trainer = createMlTrainer({
+    db, log, modelStore,
+    getForecastDataset: dataset.getDataset,
+  });
+  if (!isTestEnv && !isPreviewMode) trainer.start();
+
+  // Alternative ML-driven forecast engine — /api/forecast?engine=ml.
+  const mlHandler = createMlForecastHandler({
+    pool, log, systemYaml,
+    modelStore,
+    getTrainerStatus: trainer.getStatus,
+  });
+
   // Dispatch /api/forecast on the `engine` query param — the user's
   // Settings toggle drives this. Default (and any unknown value) is the
   // physics engine.
@@ -121,7 +139,7 @@ function start({ pool, log, repoRoot, isPreviewMode }) {
     handle,
     handleDiagnostics: function (req, res) { diagnostics.handle(req, res); },
     getForecastDataset: function (opts, cb) { dataset.getDataset(opts, cb); },
-    stop:   function () { refresher.stop(); predictions.stop(); },
+    stop:   function () { refresher.stop(); predictions.stop(); trainer.stop(); },
   };
 }
 
