@@ -1,40 +1,30 @@
 // Forecast preview for the device-view Tuning thresholds section.
 //
-// Runs the real thermal model + control logic forward 24 h from the
-// latest live sensor readings, once for the values typed into the
-// tuning form and once for the values currently saved on the
-// controller, and draws both trajectories on a canvas so the operator
-// can see what a threshold change does before pushing it.
+// Asks the real forecast engine (server-side: FMI weather + fitted
+// thermal coefficients / ML model, see server/lib/forecast/) for two
+// 48 h projections and draws them on a canvas:
+//   - solid lines  — the values typed into the tuning form, sent as the
+//                    `?tu=` what-if override
+//   - dashed lines — the live forecast (values currently saved on the
+//                    controller), i.e. plain /api/forecast
+// so the operator can see what a threshold change does before pushing
+// it. Recomputes (debounced) as the form is edited.
 //
 // External API:
-//   initTuningForecast()        — wire view/resize triggers (call once at boot).
-//   setForecastBaseline(tu)     — set the saved-on-controller tuning map.
-//   setForecastEntered(tu)      — set the typed-into-form tuning map.
-// Both setters schedule a debounced redraw.
+//   initTuningForecast()    — wire view/resize triggers + sync source.
+//   setForecastEntered(tu)  — set the typed-into-form tuning map (sparse,
+//                             numeric short keys); schedules a redraw.
 
 import { store } from '../app-state.js';
-import { ThermalModel } from '../physics.js';
-import { ControlStateMachine } from '../control.js';
-import { SIM_START_HOUR, getDayNightEnv } from '../sim-bootstrap.js';
-import { model, lastLiveFrame, timeSeriesStore } from './state.js';
-
-// 24 h projection at a 30 s integration step. The control logic's
-// timers are all minutes-scale, so 30 s resolves every transition;
-// finer steps only cost compute on the debounced live-recompute.
-const HORIZON_SEC = 24 * 3600;
-const DT = 30;
-// Representative clear-day peak irradiance (W/m²) — matches the
-// simulator's default so the forecast curve reads like the live sim.
-const PEAK_IRRADIANCE = 500;
+import { registerDataSource } from '../sync/registry.js';
+import { getForecastEngine } from '../forecast.js';
 
 // Series colours mirror the main history graph.
-const COLORS = {
-  tank: '#e9c349', collector: '#ef5350', greenhouse: '#69d0c5', outdoor: '#42a5f5',
-};
+const COLORS = { tank: '#e9c349', greenhouse: '#69d0c5', outdoor: '#42a5f5' };
 
-let _baselineTu = {};   // tuning saved on the controller (dashed lines)
-let _enteredTu = {};    // tuning typed into the form (solid lines)
+let _enteredTu = {};    // tuning typed into the form (drives the `?tu=` override)
 let _timer = null;
+let _abort = null;
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -45,11 +35,14 @@ export function initTuningForecast() {
   window.addEventListener('resize', () => {
     if (store.get('currentView') === 'device') scheduleRender();
   });
-}
-
-export function setForecastBaseline(tu) {
-  _baselineTu = tu || {};
-  scheduleRender();
+  // Refresh on Android resume / tab focus / network recovery / periodic
+  // resync — the underlying weather forecast updates every 30 min.
+  registerDataSource({
+    id: 'tuning-forecast',
+    isActive: () => store.get('phase') === 'live' && store.get('currentView') === 'device',
+    fetch: (signal) => fetchForecasts(signal),
+    applyToStore: (data) => drawForecasts(data),
+  });
 }
 
 export function setForecastEntered(tu) {
@@ -61,134 +54,128 @@ export function setForecastEntered(tu) {
 
 function scheduleRender() {
   if (_timer) clearTimeout(_timer);
-  _timer = setTimeout(() => { _timer = null; renderTuningForecast(); }, 200);
+  _timer = setTimeout(() => { _timer = null; render(); }, 350);
 }
 
-function renderTuningForecast() {
+function render() {
   const canvas = document.getElementById('tuning-forecast-chart');
   const statusEl = document.getElementById('tuning-forecast-status');
   if (!canvas) return;
-  // Skip while the device view is hidden: a display:none canvas has no
+  // Skip while the device view is hidden — a display:none canvas has no
   // layout size. The currentView subscription redraws on entry.
   if (canvas.offsetWidth === 0) return;
 
-  const readings = currentReadings();
-  if (!readings) {
-    clearCanvas(canvas);
-    setStatus(statusEl,
-      'Waiting for live readings — the forecast appears once the controller reports sensor data.');
-    return;
-  }
+  if (_abort) _abort.abort();
+  _abort = new AbortController();
+  const signal = _abort.signal;
+  setStatus(statusEl, 'Computing forecast…');
 
-  let entered, baseline;
-  try {
-    entered = runForecast(readings, _enteredTu);
-    baseline = runForecast(readings, _baselineTu);
-  } catch (err) {
-    clearCanvas(canvas);
-    setStatus(statusEl, 'Forecast unavailable: ' + err.message);
-    return;
-  }
-  setStatus(statusEl, '');
-  draw(canvas, entered, baseline);
-}
-
-// ── Simulation ───────────────────────────────────────────────────────────────
-
-// Latest valid sensor snapshot to seed the simulation from. Prefers the
-// freshest live frame; falls back to the newest history sample. Returns
-// null when no frame has all five temperatures as finite numbers.
-function currentReadings() {
-  const candidates = [];
-  if (lastLiveFrame && lastLiveFrame.state) candidates.push(lastLiveFrame.state);
-  const n = timeSeriesStore.times.length;
-  if (n > 0) candidates.push(timeSeriesStore.values[n - 1]);
-  for (let i = 0; i < candidates.length; i++) {
-    const c = candidates[i];
-    const r = {
-      t_tank_top: c.t_tank_top,
-      t_tank_bottom: c.t_tank_bottom,
-      t_collector: c.t_collector,
-      t_greenhouse: c.t_greenhouse,
-      t_outdoor: c.t_outdoor,
-    };
-    let ok = true;
-    for (const k in r) {
-      if (typeof r[k] !== 'number' || !isFinite(r[k])) { ok = false; break; }
-    }
-    if (ok) return r;
-  }
-  return null;
-}
-
-// Synthetic day/night environment shifted so sim-time 0 maps to the
-// current hour-of-day, with the outdoor curve's base picked so it is
-// continuous with the latest outdoor reading.
-function makeEnv(currentOutdoor) {
-  const now = new Date();
-  const currentHour = now.getHours() + now.getMinutes() / 60;
-  const offsetSec = (currentHour - SIM_START_HOUR) * 3600;
-  const baseOutdoor = currentOutdoor - 5 * Math.cos((currentHour - 15) / 24 * 2 * Math.PI);
-  return function (simTime) {
-    return getDayNightEnv(simTime + offsetSec, baseOutdoor, PEAK_IRRADIANCE);
-  };
-}
-
-// Run the model + control logic forward HORIZON_SEC from `initial`,
-// applying `tu` as a tuning overlay. ce/ea are forced fully-enabled so
-// the forecast isolates the effect of the thresholds themselves rather
-// than the actuator-enable mask.
-function runForecast(initial, tu) {
-  const m = new ThermalModel(model && model.p ? model.p : undefined);
-  m.reset({
-    t_tank_top: initial.t_tank_top,
-    t_tank_bottom: initial.t_tank_bottom,
-    t_collector: initial.t_collector,
-    t_greenhouse: initial.t_greenhouse,
-    t_outdoor: initial.t_outdoor,
-  });
-  const ctrl = new ControlStateMachine(null, { ce: true, ea: 31, tu: tu || {} });
-  const getEnv = makeEnv(initial.t_outdoor);
-  const points = [];
-  const steps = Math.floor(HORIZON_SEC / DT);
-  for (let i = 0; i < steps; i++) {
-    const env = getEnv(m.state.simTime);
-    const sensors = {
-      t_collector: m.state.t_collector,
-      t_tank_top: m.state.t_tank_top,
-      t_tank_bottom: m.state.t_tank_bottom,
-      t_greenhouse: m.state.t_greenhouse,
-      t_outdoor: m.state.t_outdoor,
-    };
-    const result = ctrl.evaluate(sensors, m.state.simTime);
-    m.step(DT, env, result.actuators, result.mode);
-    points.push({
-      t: m.state.simTime,
-      tank: (m.state.t_tank_top + m.state.t_tank_bottom) / 2,
-      collector: m.state.t_collector,
-      greenhouse: m.state.t_greenhouse,
-      outdoor: m.state.t_outdoor,
+  fetchForecasts(signal)
+    .then((data) => {
+      if (signal.aborted) return;
+      drawForecasts(data);
+    })
+    .catch((err) => {
+      if (signal.aborted || (err && err.name === 'AbortError')) return;
+      clearCanvas(canvas);
+      setStatus(statusEl, 'Forecast unavailable: ' + err.message);
     });
+}
+
+// Build the /api/forecast URL — engine-aware, with an optional `tu`
+// what-if override. Mirrors playground/js/forecast.js's engine choice.
+function forecastUrl(tu) {
+  const params = new URLSearchParams();
+  if (getForecastEngine() === 'ml') params.set('engine', 'ml');
+  if (tu) params.set('tu', JSON.stringify(tu));
+  const qs = params.toString();
+  return '/api/forecast' + (qs ? '?' + qs : '');
+}
+
+function fetchOne(url, signal) {
+  return fetch(url, { signal }).then((r) => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  });
+}
+
+// Fetch the baseline (live device-config tuning) and the entered
+// (what-if `?tu=`) forecasts in parallel.
+function fetchForecasts(signal) {
+  return Promise.all([
+    fetchOne(forecastUrl(null), signal),
+    fetchOne(forecastUrl(_enteredTu), signal),
+  ]).then(([baseline, entered]) => ({ baseline, entered }));
+}
+
+// ── Series extraction ────────────────────────────────────────────────────────
+
+function isNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
+
+// Pull a [timeMs, value] series out of an array of forecast points.
+function seriesOf(arr, tsKey, valKey) {
+  const out = [];
+  if (!Array.isArray(arr)) return out;
+  for (let i = 0; i < arr.length; i++) {
+    const t = Date.parse(arr[i][tsKey]);
+    const v = arr[i][valKey];
+    if (!Number.isNaN(t) && isNum(v)) out.push([t, v]);
   }
-  return points;
+  return out;
+}
+
+function tankSeries(resp) {
+  const fc = resp && resp.forecast;
+  return fc ? seriesOf(fc.tankTrajectory, 'ts', 'avg') : [];
+}
+function greenhouseSeries(resp) {
+  const fc = resp && resp.forecast;
+  return fc ? seriesOf(fc.greenhouseTrajectory, 'ts', 'temp') : [];
+}
+function outdoorSeries(resp) {
+  return resp ? seriesOf(resp.weather, 'validAt', 'temperature') : [];
 }
 
 // ── Canvas rendering ─────────────────────────────────────────────────────────
-
-function clearCanvas(canvas) {
-  const dpr = window.devicePixelRatio || 1;
-  const dw = canvas.offsetWidth;
-  const dh = canvas.offsetHeight;
-  canvas.width = dw * dpr;
-  canvas.height = dh * dpr;
-  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-}
 
 function setStatus(el, text) {
   if (el) el.textContent = text;
 }
 
-function draw(canvas, entered, baseline) {
+function clearCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.offsetWidth * dpr;
+  canvas.height = canvas.offsetHeight * dpr;
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawForecasts(data) {
+  const canvas = document.getElementById('tuning-forecast-chart');
+  const statusEl = document.getElementById('tuning-forecast-status');
+  if (!canvas || canvas.offsetWidth === 0) return;
+
+  const entered = data && data.entered;
+  const baseline = data && data.baseline;
+
+  const series = {
+    enteredTank: tankSeries(entered),
+    enteredGh: greenhouseSeries(entered),
+    baselineTank: tankSeries(baseline),
+    baselineGh: greenhouseSeries(baseline),
+    outdoor: outdoorSeries(entered),
+  };
+
+  if (series.enteredTank.length < 2 && series.enteredGh.length < 2) {
+    clearCanvas(canvas);
+    setStatus(statusEl,
+      'No forecast data yet — weather forecast not available for this device.');
+    return;
+  }
+  setStatus(statusEl, '');
+  draw(canvas, series);
+}
+
+function draw(canvas, series) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const dw = canvas.offsetWidth;
@@ -205,21 +192,27 @@ function draw(canvas, entered, baseline) {
   const ph = dh - pad.top - pad.bottom;
   if (pw <= 0 || ph <= 0) return;
 
-  // Y range spans both runs, padded and snapped to 5° steps.
+  const all = [
+    series.enteredTank, series.enteredGh,
+    series.baselineTank, series.baselineGh, series.outdoor,
+  ];
+
+  // Time + temperature range across every plotted series.
+  let tMin = Infinity;
+  let tMax = -Infinity;
   let lo = Infinity;
   let hi = -Infinity;
-  const runs = [entered, baseline];
-  for (let r = 0; r < runs.length; r++) {
-    const pts = runs[r];
-    for (let i = 0; i < pts.length; i++) {
-      const vals = [pts[i].tank, pts[i].collector, pts[i].greenhouse, pts[i].outdoor];
-      for (let k = 0; k < 4; k++) {
-        if (vals[k] < lo) lo = vals[k];
-        if (vals[k] > hi) hi = vals[k];
-      }
+  for (let s = 0; s < all.length; s++) {
+    for (let i = 0; i < all[s].length; i++) {
+      const t = all[s][i][0];
+      const v = all[s][i][1];
+      if (t < tMin) tMin = t;
+      if (t > tMax) tMax = t;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
     }
   }
-  if (!isFinite(lo) || !isFinite(hi)) return;
+  if (!isFinite(tMin) || !isFinite(lo) || tMax <= tMin) return;
   if (hi - lo < 10) hi = lo + 10;
   const span = hi - lo;
   const yMin = Math.floor((lo - span * 0.08) / 5) * 5;
@@ -242,47 +235,39 @@ function draw(canvas, entered, baseline) {
     ctx.fillText(Math.round(yMin + frac * (yMax - yMin)) + '°', pad.left - 4, y);
   }
 
-  // X-axis labels — hour-of-day every 6 h from "now".
+  // X-axis labels — hour-of-day every 12 h.
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  const now = new Date();
-  const startHour = now.getHours() + now.getMinutes() / 60;
-  for (let h = 0; h <= 24; h += 6) {
-    const x = pad.left + (h / 24) * pw;
-    const tod = Math.floor((startHour + h) % 24);
-    ctx.fillText((tod < 10 ? '0' : '') + tod + ':00', x, dh - 6);
+  const HOUR = 3600 * 1000;
+  const firstTick = Math.ceil(tMin / (12 * HOUR)) * 12 * HOUR;
+  for (let t = firstTick; t <= tMax; t += 12 * HOUR) {
+    const x = pad.left + ((t - tMin) / (tMax - tMin)) * pw;
+    const h = new Date(t).getHours();
+    ctx.fillText((h < 10 ? '0' : '') + h + ':00', x, dh - 6);
   }
 
-  const xOf = function (t) { return pad.left + (t / HORIZON_SEC) * pw; };
-  const yOf = function (v) { return pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph; };
+  const xOf = (t) => pad.left + ((t - tMin) / (tMax - tMin)) * pw;
+  const yOf = (v) => pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph;
 
-  const series = [
-    { key: 'outdoor', color: COLORS.outdoor, width: 1 },
-    { key: 'collector', color: COLORS.collector, width: 1.5 },
-    { key: 'greenhouse', color: COLORS.greenhouse, width: 1.5 },
-    { key: 'tank', color: COLORS.tank, width: 2 },
-  ];
-  // Baseline first (dashed, faint) so the entered (solid) lines sit on top.
-  // Outdoor is environment-driven and identical for both runs — drawn once.
-  for (let s = 0; s < series.length; s++) {
-    if (series[s].key === 'outdoor') continue;
-    drawLine(ctx, baseline, series[s].key, xOf, yOf, series[s].color, series[s].width, true);
-  }
-  for (let s = 0; s < series.length; s++) {
-    drawLine(ctx, entered, series[s].key, xOf, yOf, series[s].color, series[s].width, false);
-  }
+  // Baseline first (dashed, faint), entered on top (solid). Outdoor is
+  // weather-driven and identical for both runs — drawn once.
+  drawLine(ctx, series.outdoor, xOf, yOf, COLORS.outdoor, 1, false, 0.55);
+  drawLine(ctx, series.baselineTank, xOf, yOf, COLORS.tank, 2, true, 0.4);
+  drawLine(ctx, series.baselineGh, xOf, yOf, COLORS.greenhouse, 1.5, true, 0.4);
+  drawLine(ctx, series.enteredTank, xOf, yOf, COLORS.tank, 2, false, 0.95);
+  drawLine(ctx, series.enteredGh, xOf, yOf, COLORS.greenhouse, 1.5, false, 0.95);
 }
 
-function drawLine(ctx, pts, key, xOf, yOf, color, width, dashed) {
+function drawLine(ctx, pts, xOf, yOf, color, width, dashed, alpha) {
   if (pts.length < 2) return;
   ctx.save();
   ctx.beginPath();
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
-  ctx.globalAlpha = dashed ? 0.4 : 0.95;
+  ctx.globalAlpha = alpha;
   if (dashed) ctx.setLineDash([4, 3]);
-  ctx.moveTo(xOf(pts[0].t), yOf(pts[0][key]));
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(xOf(pts[i].t), yOf(pts[i][key]));
+  ctx.moveTo(xOf(pts[0][0]), yOf(pts[0][1]));
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(xOf(pts[i][0]), yOf(pts[i][1]));
   ctx.stroke();
   ctx.restore();
 }

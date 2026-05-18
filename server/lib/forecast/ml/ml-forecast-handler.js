@@ -15,6 +15,7 @@ const zlib = require('zlib');
 const { computeMlForecast } = require('./ml-forecast');
 const deviceConfig = require('../../device-config');
 const { jsonResponse } = require('../../http-handlers');
+const { parseTuningOverride } = require('../tuning-override');
 
 const CACHE_TTL_MS = 60 * 1000;
 const MODEL_PATH = path.join(__dirname, 'forecast-model.json.gz');
@@ -111,12 +112,12 @@ function createMlForecastHandler(opts) {
 
   // ── Compute ──
 
-  function compute(callback) {
+  function compute(callback, overrideTuning) {
     if (!pool) { callback(new Error('Database not available')); return; }
     if (!model) { callback(new Error('ML model not available')); return; }
 
     const nowMs = Date.now();
-    if (cache && (nowMs - cachedAt) < CACHE_TTL_MS) { callback(null, cache); return; }
+    if (!overrideTuning && cache && (nowMs - cachedAt) < CACHE_TTL_MS) { callback(null, cache); return; }
 
     // Each section degrades to empty on a query failure rather than
     // sinking the whole forecast — a transient DB hiccup still yields a
@@ -133,7 +134,7 @@ function createMlForecastHandler(opts) {
       if (pending > 0) return;
 
       const dcfg = deviceConfig.getConfig() || {};
-      const tuning = deviceConfig.effectiveTuning(dcfg.tu || {});
+      const tuning = deviceConfig.effectiveTuning(overrideTuning || dcfg.tu || {});
       const config = {
         spaceHeaterKw: typeof spaceHeater.assumed_continuous_power_kw === 'number'
           ? spaceHeater.assumed_continuous_power_kw : 1,
@@ -173,18 +174,19 @@ function createMlForecastHandler(opts) {
         return;
       }
 
-      cache = {
+      const response = {
         generatedAt: forecast.generatedAt,
         engine: 'ml',
         algorithmVersion: 'ml',
         mlTrainedAt: model.trainedAt || null,
-        tu: dcfg.tu || {},
+        tu: overrideTuning || dcfg.tu || {},
         weather,
         prices,
         forecast,
       };
-      cachedAt = Date.now();
-      callback(null, cache);
+      // A what-if preview must not poison the live-forecast cache.
+      if (!overrideTuning) { cache = response; cachedAt = Date.now(); }
+      callback(null, response);
     }
 
     queryLatestSensors(function got(err, s) { if (s) sensors = s; onPart(err, 'sensors'); });
@@ -207,7 +209,7 @@ function createMlForecastHandler(opts) {
         return;
       }
       jsonResponse(res, 200, response);
-    });
+    }, parseTuningOverride(req.url));
   }
 
   return { handle, compute, modelLoaded: !!model };

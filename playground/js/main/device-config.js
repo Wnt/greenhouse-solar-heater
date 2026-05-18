@@ -5,9 +5,7 @@
 import { store } from '../app-state.js';
 import { renderModeEnablement } from './watchdog-ui.js';
 import { putJson } from './fetch-helpers.js';
-import {
-  initTuningForecast, setForecastBaseline, setForecastEntered,
-} from './tuning-forecast.js';
+import { initTuningForecast, setForecastEntered } from './tuning-forecast.js';
 
 // Tuning-threshold inputs. Compact key + UI metadata. Mirrors the
 // server-side TUNING_RANGES table in server/lib/device-config.js and
@@ -148,9 +146,9 @@ function populateDeviceForm(cfg) {
     if (!input) return;
     input.value = (typeof tu[f.key] === 'number') ? String(tu[f.key]) : '';
   });
-  // Feed the forecast preview: the saved config is the dashed baseline,
-  // the freshly-populated form is the (initially identical) solid line.
-  setForecastBaseline(numericTu(tu));
+  // Feed the forecast preview with the freshly-populated form values.
+  // The dashed baseline is the live /api/forecast (saved config), so
+  // it needs no client-side input.
   pushEnteredTuning();
 
   // Version & size
@@ -210,20 +208,8 @@ function readTuningFromForm() {
   return hasAny ? tu : null;
 }
 
-// Keep only numeric entries — the forecast simulation treats an absent
-// key as "use firmware default", so nulls/strings must be dropped.
-function numericTu(tu) {
-  const out = {};
-  if (tu) {
-    Object.keys(tu).forEach((k) => {
-      if (typeof tu[k] === 'number') out[k] = tu[k];
-    });
-  }
-  return out;
-}
-
 // Read the tuning form into a sparse numeric map for the forecast
-// simulation: empty fields are omitted (firmware default applies).
+// preview: empty fields are omitted (firmware default applies).
 function readTuningForSim() {
   const tu = {};
   TUNING_FIELDS.forEach((f) => {
@@ -283,9 +269,8 @@ function saveDeviceConfig() {
         if (!input) return;
         input.value = (typeof ttu[f.key] === 'number') ? String(ttu[f.key]) : '';
       });
-      // The just-saved values are now the controller's baseline; the
-      // form (post-clamp) is the entered trajectory.
-      setForecastBaseline(numericTu(ttu));
+      // The saved values are now the live forecast's baseline; refresh
+      // the entered trajectory from the (post-clamp) form.
       pushEnteredTuning();
       setTimeout(() => { status.textContent = ''; }, 3000);
     })
