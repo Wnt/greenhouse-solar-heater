@@ -96,7 +96,7 @@ async function scaffold(page, { forecastPayload = BASE_FORECAST, forecastStatus 
   });
 
   // Forecast endpoint
-  await page.route('**/api/forecast', r => r.fulfill({
+  await page.route('**/api/forecast**', r => r.fulfill({
     status: forecastStatus,
     contentType: 'application/json',
     body: forecastStatus === 200 ? JSON.stringify(forecastPayload) : '{"error":"server error"}',

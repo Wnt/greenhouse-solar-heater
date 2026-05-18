@@ -132,7 +132,7 @@ async function scaffold(page) {
       ],
     }),
   }));
-  await page.route('**/api/forecast', r => r.fulfill({
+  await page.route('**/api/forecast**', r => r.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify(FORECAST_PAYLOAD),
   }));

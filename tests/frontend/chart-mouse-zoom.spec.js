@@ -59,7 +59,7 @@ async function scaffold(page) {
       events: [{ ts: NOW - 7200_000, type: 'mode', id: 'controller', from: 'idle', to: 'solar_charging' }],
     }),
   }));
-  await page.route('**/api/forecast', r => r.fulfill({
+  await page.route('**/api/forecast**', r => r.fulfill({
     status: 200, contentType: 'application/json', body: JSON.stringify({ forecast: null, weather: [], prices: [] }),
   }));
   await page.route('**/api/watchdog/state', r => r.fulfill({

@@ -62,7 +62,7 @@ async function scaffold(page) {
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ range: '24h', points: LIVE_POINTS, events: [] }),
   }));
-  await page.route('**/api/forecast', r => r.fulfill({
+  await page.route('**/api/forecast**', r => r.fulfill({
     status: 200, contentType: 'application/json', body: 'null',
   }));
   await page.route('**/api/watchdog/state', r => r.fulfill({
