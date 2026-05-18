@@ -27,8 +27,13 @@ export async function initControlLogic() {
 }
 
 export class ControlStateMachine {
-  constructor(modesConfig) {
+  constructor(modesConfig, deviceConfig) {
     this.modes = modesConfig;      // system.yaml modes (for valve display names)
+    // Optional device-config object ({ ce, ea, tu, ... }) forwarded to
+    // the control logic as its third `deviceConfig` argument. Null for
+    // the live simulator (no tuning); the Tuning-thresholds forecast
+    // preview passes a config with a `tu` overlay.
+    this.deviceConfig = deviceConfig || null;
     this.currentMode = 'idle';
     this.modeStartTime = 0;
     this.collectorsDrained = false;
@@ -87,7 +92,7 @@ export class ControlStateMachine {
     const prevPeak = this.solarChargePeakTankAvg;
 
     // Delegate decision to the real Shelly control logic
-    const result = _evaluate(shellyState, null);
+    const result = _evaluate(shellyState, null, this.deviceConfig);
     const nextMode = result.nextMode.toLowerCase();
 
     // Update internal state
