@@ -19,11 +19,15 @@ function buildForecast(geT) {
   const tank = [];
   const gh = [];
   const weather = [];
+  const modeForecast = [];
+  const MODES = ['solar_charging', 'solar_charging', 'greenhouse_heating',
+    'greenhouse_heating', 'emergency_heating', 'idle', 'idle', 'idle'];
   for (let h = 0; h < 48; h++) {
     const ts = new Date(now + h * 3600000).toISOString();
     tank.push({ ts, top: 45 - h * 0.2, bottom: 40 - h * 0.2, avg: 42.5 - h * 0.2 });
     gh.push({ ts, temp: 8 + (geT - 10) * 0.6 + Math.sin(h / 6) });
     weather.push({ validAt: ts, temperature: 5 + 4 * Math.sin(h / 8) });
+    modeForecast.push({ ts, mode: MODES[h % MODES.length] });
   }
   return {
     generatedAt: new Date(now).toISOString(),
@@ -34,6 +38,7 @@ function buildForecast(geT) {
       horizonHours: 48,
       tankTrajectory: tank,
       greenhouseTrajectory: gh,
+      modeForecast,
       hoursUntilBackupNeeded: null,
       electricKwh: 0,
       electricCostEur: 0,
@@ -183,6 +188,31 @@ test.describe('Tuning forecast preview', () => {
     // The recompute carried geT=22 in the override.
     const newUrls = forecastUrls.slice(urlsBefore);
     expect(newUrls.some(u => /tu=.*22/.test(decodeURIComponent(u)))).toBe(true);
+  });
+
+  test('hover shows the crosshair inspector with projected values', async ({ page }) => {
+    await setupDeviceView(page);
+
+    await expect.poll(
+      async () => (await canvasFingerprint(page)).painted,
+      { timeout: 5000 },
+    ).toBeGreaterThan(200);
+
+    const canvas = page.locator('#tuning-forecast-chart');
+    await canvas.scrollIntoViewIfNeeded();
+    const box = await canvas.boundingBox();
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+
+    const inspector = page.locator('#tuning-forecast-inspector');
+    await expect(inspector).toBeVisible();
+    await expect(page.locator('#tuning-forecast-crosshair')).toBeVisible();
+    // Readout is populated — temperatures and a mode label.
+    await expect(page.locator('#tfi-tank')).toContainText('°C');
+    await expect(page.locator('#tfi-mode')).not.toHaveText('');
+
+    // Leaving the canvas hides the inspector.
+    await page.mouse.move(box.x - 20, box.y - 20);
+    await expect(inspector).toBeHidden();
   });
 
 });

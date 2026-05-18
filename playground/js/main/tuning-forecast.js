@@ -7,24 +7,34 @@
 //                    `?tu=` what-if override
 //   - dashed lines — the live forecast (values currently saved on the
 //                    controller), i.e. plain /api/forecast
-// so the operator can see what a threshold change does before pushing
-// it. Recomputes (debounced) as the form is edited.
+// plus predicted mode bars (charging / heating / emergency) along the
+// bottom, so the operator can see what a threshold change does before
+// pushing it. Recomputes (debounced) as the form is edited. A crosshair
+// inspector reads off the projected values on hover.
 //
 // External API:
-//   initTuningForecast()    — wire view/resize triggers + sync source.
+//   initTuningForecast()    — wire view/resize/inspector triggers + sync.
 //   setForecastEntered(tu)  — set the typed-into-form tuning map (sparse,
 //                             numeric short keys); schedules a redraw.
 
 import { store } from '../app-state.js';
 import { registerDataSource } from '../sync/registry.js';
 import { getForecastEngine } from '../forecast.js';
+import { aggregateForecastBucket } from './forecast-overlay.js';
+import { drawEmergencyStripes } from './emergency-stripes.js';
 
-// Series colours mirror the main history graph.
+// Series + mode-bar colours mirror the main history graph.
 const COLORS = { tank: '#e9c349', greenhouse: '#69d0c5', outdoor: '#42a5f5' };
+const MODE_FILL = { charging: 'rgba(238, 125, 119, 0.55)', heating: 'rgba(233, 195, 73, 0.55)' };
+const EMERGENCY_STRIPE = 'rgba(255, 112, 67, 0.8)';
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 let _enteredTu = {};    // tuning typed into the form (drives the `?tu=` override)
 let _timer = null;
 let _abort = null;
+// Stashed geometry + data from the last draw, so the hover inspector
+// can map a cursor x back to projected values. Null until first paint.
+let _chart = null;
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -35,6 +45,7 @@ export function initTuningForecast() {
   window.addEventListener('resize', () => {
     if (store.get('currentView') === 'device') scheduleRender();
   });
+  wireInspector();
   // Refresh on Android resume / tab focus / network recovery / periodic
   // resync — the underlying weather forecast updates every 30 min.
   registerDataSource({
@@ -68,6 +79,7 @@ function render() {
   if (_abort) _abort.abort();
   _abort = new AbortController();
   const signal = _abort.signal;
+  hideInspector();
   setStatus(statusEl, 'Computing forecast…');
 
   fetchForecasts(signal)
@@ -77,6 +89,7 @@ function render() {
     })
     .catch((err) => {
       if (signal.aborted || (err && err.name === 'AbortError')) return;
+      _chart = null;
       clearCanvas(canvas);
       setStatus(statusEl, 'Forecast unavailable: ' + err.message);
     });
@@ -136,6 +149,27 @@ function outdoorSeries(resp) {
   return resp ? seriesOf(resp.weather, 'validAt', 'temperature') : [];
 }
 
+// Hourly mode buckets from the engine's modeForecast — each carries the
+// charging / heating / emergency fraction (0..1) of that clock hour.
+function modeBucketsOf(resp, tMinMs, tMaxMs) {
+  const fc = resp && resp.forecast;
+  const list = fc && Array.isArray(fc.modeForecast) ? fc.modeForecast : [];
+  const buckets = [];
+  if (list.length === 0 || !isFinite(tMinMs) || !isFinite(tMaxMs)) return buckets;
+  const HOUR = 3600000;
+  for (let t = Math.floor(tMinMs / HOUR) * HOUR; t < tMaxMs; t += HOUR) {
+    const agg = aggregateForecastBucket(list, t / 1000, (t + HOUR) / 1000);
+    buckets.push({
+      t0: t,
+      t1: t + HOUR,
+      charging: Math.min(1, agg.chargingHours),
+      heating: Math.min(1, agg.heatingHours),
+      emergency: Math.min(1, agg.emergencyHours),
+    });
+  }
+  return buckets;
+}
+
 // ── Canvas rendering ─────────────────────────────────────────────────────────
 
 function setStatus(el, text) {
@@ -166,16 +200,18 @@ function drawForecasts(data) {
   };
 
   if (series.enteredTank.length < 2 && series.enteredGh.length < 2) {
+    _chart = null;
+    hideInspector();
     clearCanvas(canvas);
     setStatus(statusEl,
       'No forecast data yet — weather forecast not available for this device.');
     return;
   }
   setStatus(statusEl, '');
-  draw(canvas, series);
+  draw(canvas, series, entered);
 }
 
-function draw(canvas, series) {
+function draw(canvas, series, enteredResp) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const dw = canvas.offsetWidth;
@@ -187,7 +223,7 @@ function draw(canvas, series) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
-  const pad = { top: 12, right: 12, bottom: 22, left: 34 };
+  const pad = { top: 12, right: 12, bottom: 30, left: 34 };
   const pw = dw - pad.left - pad.right;
   const ph = dh - pad.top - pad.bottom;
   if (pw <= 0 || ph <= 0) return;
@@ -218,6 +254,9 @@ function draw(canvas, series) {
   const yMin = Math.floor((lo - span * 0.08) / 5) * 5;
   const yMax = Math.ceil((hi + span * 0.08) / 5) * 5;
 
+  const xOf = (t) => pad.left + ((t - tMin) / (tMax - tMin)) * pw;
+  const yOf = (v) => pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph;
+
   // Grid lines + Y-axis labels.
   ctx.font = '10px Manrope, sans-serif';
   ctx.fillStyle = '#a5abb9';
@@ -235,19 +274,10 @@ function draw(canvas, series) {
     ctx.fillText(Math.round(yMin + frac * (yMax - yMin)) + '°', pad.left - 4, y);
   }
 
-  // X-axis labels — hour-of-day every 12 h.
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  const HOUR = 3600 * 1000;
-  const firstTick = Math.ceil(tMin / (12 * HOUR)) * 12 * HOUR;
-  for (let t = firstTick; t <= tMax; t += 12 * HOUR) {
-    const x = pad.left + ((t - tMin) / (tMax - tMin)) * pw;
-    const h = new Date(t).getHours();
-    ctx.fillText((h < 10 ? '0' : '') + h + ':00', x, dh - 6);
-  }
+  drawXAxis(ctx, tMin, tMax, xOf, pad, ph, dh);
 
-  const xOf = (t) => pad.left + ((t - tMin) / (tMax - tMin)) * pw;
-  const yOf = (v) => pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph;
+  const modeBuckets = modeBucketsOf(enteredResp, tMin, tMax);
+  drawModeBars(ctx, modeBuckets, xOf, pad, ph);
 
   // Baseline first (dashed, faint), entered on top (solid). Outdoor is
   // weather-driven and identical for both runs — drawn once.
@@ -256,6 +286,77 @@ function draw(canvas, series) {
   drawLine(ctx, series.baselineGh, xOf, yOf, COLORS.greenhouse, 1.5, true, 0.4);
   drawLine(ctx, series.enteredTank, xOf, yOf, COLORS.tank, 2, false, 0.95);
   drawLine(ctx, series.enteredGh, xOf, yOf, COLORS.greenhouse, 1.5, false, 0.95);
+
+  // Stash geometry + data for the hover inspector.
+  _chart = {
+    tMin, tMax, padLeft: pad.left, pw,
+    enteredTank: series.enteredTank,
+    enteredGh: series.enteredGh,
+    outdoor: series.outdoor,
+    modeBuckets,
+  };
+}
+
+// X-axis: a tick every 6 h (local time). Midnight ticks get a brighter
+// day-divider line + a weekday/date label so day boundaries stand out;
+// the rest get a muted HH:00 label.
+function drawXAxis(ctx, tMin, tMax, xOf, pad, ph, dh) {
+  const HOUR = 3600000;
+  ctx.textBaseline = 'alphabetic';
+  for (let t = Math.ceil(tMin / HOUR) * HOUR; t <= tMax; t += HOUR) {
+    const d = new Date(t);
+    const h = d.getHours();
+    if (h % 6 !== 0) continue;
+    const x = xOf(t);
+    const midnight = h === 0;
+    ctx.strokeStyle = midnight ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, pad.top);
+    ctx.lineTo(x, pad.top + ph);
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    if (midnight) {
+      ctx.fillStyle = '#e6e8ec';
+      ctx.fillText(WEEKDAYS[d.getDay()] + ' ' + d.getDate(), x, dh - 4);
+    } else {
+      ctx.fillStyle = '#7f8694';
+      ctx.fillText((h < 10 ? '0' : '') + h + ':00', x, dh - 4);
+    }
+  }
+}
+
+// Predicted mode bars along the bottom — charging (red, bottom), heating
+// (gold, middle), emergency (orange stripes). Mirrors the main history
+// graph's duty-cycle stack.
+function drawModeBars(ctx, buckets, xOf, pad, ph) {
+  if (!buckets || buckets.length === 0) return;
+  const barAreaH = ph * 0.28;
+  const barY0 = pad.top + ph;
+  ctx.save();
+  for (let i = 0; i < buckets.length; i++) {
+    const b = buckets[i];
+    const x0 = xOf(b.t0);
+    const x1 = xOf(b.t1);
+    const w = Math.max(1, x1 - x0 - 1);
+    let stackH = 0;
+    if (b.charging > 0) {
+      const bh = b.charging * barAreaH;
+      ctx.fillStyle = MODE_FILL.charging;
+      ctx.fillRect(x0, barY0 - bh, w, bh);
+      stackH += bh;
+    }
+    if (b.heating > 0) {
+      const bh = b.heating * barAreaH;
+      ctx.fillStyle = MODE_FILL.heating;
+      ctx.fillRect(x0, barY0 - stackH - bh, w, bh);
+    }
+    if (b.emergency > 0) {
+      const bh = b.emergency * barAreaH;
+      drawEmergencyStripes(ctx, x0, barY0 - bh, w, bh, EMERGENCY_STRIPE);
+    }
+  }
+  ctx.restore();
 }
 
 function drawLine(ctx, pts, xOf, yOf, color, width, dashed, alpha) {
@@ -270,4 +371,104 @@ function drawLine(ctx, pts, xOf, yOf, color, width, dashed, alpha) {
   for (let i = 1; i < pts.length; i++) ctx.lineTo(xOf(pts[i][0]), yOf(pts[i][1]));
   ctx.stroke();
   ctx.restore();
+}
+
+// ── Hover inspector ──────────────────────────────────────────────────────────
+
+function wireInspector() {
+  const canvas = document.getElementById('tuning-forecast-chart');
+  if (!canvas) return;
+  const atClientX = (clientX) => clientX - canvas.getBoundingClientRect().left;
+  canvas.addEventListener('mousemove', (e) => moveInspector(atClientX(e.clientX)));
+  canvas.addEventListener('mouseleave', hideInspector);
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches[0]) moveInspector(atClientX(e.touches[0].clientX));
+  }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches[0]) moveInspector(atClientX(e.touches[0].clientX));
+  }, { passive: true });
+  canvas.addEventListener('touchend', hideInspector);
+}
+
+function moveInspector(x) {
+  const c = _chart;
+  const tooltip = document.getElementById('tuning-forecast-inspector');
+  const crosshair = document.getElementById('tuning-forecast-crosshair');
+  const container = document.getElementById('tuning-forecast-container');
+  if (!c || !tooltip || !crosshair || !container) return;
+
+  const frac = (x - c.padLeft) / c.pw;
+  if (frac < 0 || frac > 1) { hideInspector(); return; }
+  const t = c.tMin + frac * (c.tMax - c.tMin);
+
+  setText('tfi-time', formatStamp(t));
+  setText('tfi-tank', fmtTemp(interpAt(c.enteredTank, t)));
+  setText('tfi-gh', fmtTemp(interpAt(c.enteredGh, t)));
+  setText('tfi-out', fmtTemp(interpAt(c.outdoor, t)));
+  setText('tfi-mode', modeLabelAt(c.modeBuckets, t));
+
+  crosshair.style.display = 'block';
+  crosshair.style.left = x + 'px';
+  tooltip.style.display = 'block';
+  const containerW = container.offsetWidth;
+  if (x > containerW * 0.6) {
+    tooltip.style.left = 'auto';
+    tooltip.style.right = (containerW - x + 12) + 'px';
+  } else {
+    tooltip.style.left = (x + 12) + 'px';
+    tooltip.style.right = 'auto';
+  }
+}
+
+function hideInspector() {
+  const tooltip = document.getElementById('tuning-forecast-inspector');
+  const crosshair = document.getElementById('tuning-forecast-crosshair');
+  if (tooltip) tooltip.style.display = 'none';
+  if (crosshair) crosshair.style.display = 'none';
+}
+
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function fmtTemp(v) { return isNum(v) ? v.toFixed(1) + '°C' : '—'; }
+
+function formatStamp(t) {
+  const d = new Date(t);
+  const p2 = (n) => (n < 10 ? '0' : '') + n;
+  return WEEKDAYS[d.getDay()] + ' ' + d.getDate() + ', ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+}
+
+// Linear interpolation of a sorted [timeMs, value] series at time t.
+function interpAt(series, t) {
+  if (!series || series.length === 0) return null;
+  if (t <= series[0][0]) return series[0][1];
+  const last = series[series.length - 1];
+  if (t >= last[0]) return last[1];
+  for (let i = 1; i < series.length; i++) {
+    if (series[i][0] >= t) {
+      const a = series[i - 1];
+      const b = series[i];
+      if (b[0] === a[0]) return b[1];
+      return a[1] + (b[1] - a[1]) * (t - a[0]) / (b[0] - a[0]);
+    }
+  }
+  return last[1];
+}
+
+// Dominant predicted mode for the bucket containing time t.
+function modeLabelAt(buckets, t) {
+  if (!buckets) return '—';
+  for (let i = 0; i < buckets.length; i++) {
+    const b = buckets[i];
+    if (t >= b.t0 && t < b.t1) {
+      const max = Math.max(b.charging, b.heating, b.emergency);
+      if (max <= 0) return 'Idle';
+      if (b.emergency === max) return 'Emergency heating';
+      if (b.heating === max) return 'Greenhouse heating';
+      return 'Solar charging';
+    }
+  }
+  return '—';
 }
