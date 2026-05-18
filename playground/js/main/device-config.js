@@ -5,6 +5,7 @@
 import { store } from '../app-state.js';
 import { renderModeEnablement } from './watchdog-ui.js';
 import { putJson } from './fetch-helpers.js';
+import { initTuningForecast, setForecastEntered } from './tuning-forecast.js';
 
 // Tuning-threshold inputs. Compact key + UI metadata. Mirrors the
 // server-side TUNING_RANGES table in server/lib/device-config.js and
@@ -55,6 +56,11 @@ export function initDeviceConfig() {
 
   // Render tuning inputs once at boot — values populated each load.
   renderTuningInputs();
+  // Each tuning input drives the forecast preview live as the user types.
+  TUNING_FIELDS.forEach((f) => {
+    const input = document.getElementById('dc-tu-' + f.key);
+    if (input) input.addEventListener('input', pushEnteredTuning);
+  });
   const resetBtn = document.getElementById('dc-tuning-reset');
   if (resetBtn) {
     resetBtn.addEventListener('click', () => {
@@ -62,8 +68,12 @@ export function initDeviceConfig() {
         const input = document.getElementById('dc-tu-' + f.key);
         if (input) input.value = '';
       });
+      pushEnteredTuning();
     });
   }
+
+  // Forecast preview under the tuning inputs.
+  initTuningForecast();
 
   // "Try anyway" link
   const tryLink = document.getElementById('dc-try-anyway');
@@ -136,6 +146,10 @@ function populateDeviceForm(cfg) {
     if (!input) return;
     input.value = (typeof tu[f.key] === 'number') ? String(tu[f.key]) : '';
   });
+  // Feed the forecast preview with the freshly-populated form values.
+  // The dashed baseline is the live /api/forecast (saved config), so
+  // it needs no client-side input.
+  pushEnteredTuning();
 
   // Version & size
   document.getElementById('dc-version').textContent = cfg.v || '-';
@@ -194,6 +208,25 @@ function readTuningFromForm() {
   return hasAny ? tu : null;
 }
 
+// Read the tuning form into a sparse numeric map for the forecast
+// preview: empty fields are omitted (firmware default applies).
+function readTuningForSim() {
+  const tu = {};
+  TUNING_FIELDS.forEach((f) => {
+    const input = document.getElementById('dc-tu-' + f.key);
+    if (!input) return;
+    const raw = input.value.trim();
+    if (raw === '') return;
+    const num = Number(raw);
+    if (Number.isFinite(num)) tu[f.key] = num;
+  });
+  return tu;
+}
+
+function pushEnteredTuning() {
+  setForecastEntered(readTuningForSim());
+}
+
 function setToggle(id, on) {
   const el = document.getElementById(id);
   if (el) el.classList.toggle('active', on);
@@ -236,6 +269,9 @@ function saveDeviceConfig() {
         if (!input) return;
         input.value = (typeof ttu[f.key] === 'number') ? String(ttu[f.key]) : '';
       });
+      // The saved values are now the live forecast's baseline; refresh
+      // the entered trajectory from the (post-clamp) form.
+      pushEnteredTuning();
       setTimeout(() => { status.textContent = ''; }, 3000);
     })
     .catch(err => {

@@ -27,7 +27,7 @@ import { drawHistoryGraph } from './main/history-graph.js';
 
 const ENGINE_STORAGE_KEY = 'forecastEngine';
 
-function getForecastEngine() {
+export function getForecastEngine() {
   try {
     return localStorage.getItem(ENGINE_STORAGE_KEY) === 'ml' ? 'ml' : 'physics';
   } catch (_e) {

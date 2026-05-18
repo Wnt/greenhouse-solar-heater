@@ -316,4 +316,68 @@ describe('GET /api/forecast handler', () => {
     const handler = createForecastHandler({ pool: null, log, systemYaml: {} });
     handler.prewarm();
   });
+
+  // The Tuning-thresholds forecast preview asks /api/forecast?tu=<json>
+  // for a what-if projection. The override must reach the engine, be
+  // clamped, and never poison the live-forecast cache.
+  function fullPool() {
+    return makePool({
+      'sensor_readings_30s': makeSensorReadings30sRows(),
+      'state_events':        [{ mode: 'idle' }],
+      'weather_forecasts':   makeWeatherRows(),
+      'spot_prices':         makePriceRows(),
+    });
+  }
+
+  function handleAndWait(handler, url, done, assertFn) {
+    const res = fakeRes();
+    handler.handle(fakeReq(url), res);
+    const deadline = Date.now() + 2000;
+    (function poll() {
+      if (res.written.status !== null) { assertFn(res.written); done(); }
+      else if (Date.now() < deadline) setImmediate(poll);
+      else done(new Error('handler did not respond: ' + url));
+    })();
+  }
+
+  it('?tu= override threads custom thresholds into the response', function (t, done) {
+    const handler = createForecastHandler({ pool: fullPool(), log: makeLog(), systemYaml: {} });
+    const url = '/api/forecast?tu=' + encodeURIComponent(JSON.stringify({ geT: 20 }));
+    handleAndWait(handler, url, done, function (written) {
+      assert.equal(written.status, 200);
+      assert.equal(written.body.tu.geT, 20, 'response tu reflects the override');
+    });
+  });
+
+  it('?tu= override clamps out-of-range thresholds', function (t, done) {
+    const handler = createForecastHandler({ pool: fullPool(), log: makeLog(), systemYaml: {} });
+    const url = '/api/forecast?tu=' + encodeURIComponent(JSON.stringify({ geT: 999 }));
+    handleAndWait(handler, url, done, function (written) {
+      assert.equal(written.status, 200);
+      assert.equal(written.body.tu.geT, 25, 'geT clamped to its 0–25 range');
+    });
+  });
+
+  it('a ?tu= preview does not poison the live-forecast cache', function (t, done) {
+    const handler = createForecastHandler({ pool: fullPool(), log: makeLog(), systemYaml: {} });
+    // 1. Plain call — populates the 60 s response cache.
+    handleAndWait(handler, '/api/forecast', function (e1) {
+      if (e1) return done(e1);
+      // 2. Preview call — must recompute (bypass cache) and echo the override.
+      const url = '/api/forecast?tu=' + encodeURIComponent(JSON.stringify({ geT: 20 }));
+      handleAndWait(handler, url, function (e2) {
+        if (e2) return done(e2);
+        // 3. Plain call again — the cached live forecast, untouched by step 2.
+        handleAndWait(handler, '/api/forecast', done, function (written) {
+          assert.equal(written.status, 200);
+          assert.equal(written.body.tu.geT, undefined, 'live cache not poisoned by the preview');
+        });
+      }, function (written) {
+        assert.equal(written.status, 200);
+        assert.equal(written.body.tu.geT, 20, 'preview recomputed despite the warm cache');
+      });
+    }, function (written) {
+      assert.equal(written.status, 200);
+    });
+  });
 });

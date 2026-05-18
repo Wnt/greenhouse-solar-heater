@@ -14,6 +14,7 @@ const { fitEmpiricalCoefficients, computeSustainForecast } = require('./sustain-
 const { ALGORITHM_VERSION } = require('./version');
 const deviceConfig = require('../device-config');
 const { jsonResponse } = require('../http-handlers');
+const { parseTuningOverride } = require('./tuning-override');
 
 const CACHE_TTL_MS         = 60 * 1000;     // 60 s response cache
 const COEFF_CACHE_TTL_MS   = 60 * 60 * 1000; // 1 h coefficient cache
@@ -276,11 +277,11 @@ function createForecastHandler(opts) {
   // forecast response object and hands it to callback(err, response).
   // The HTTP handler `handle()` and the prediction-capture scheduler
   // share this path so they always see the same numbers.
-  function compute(callback) {
+  function compute(callback, overrideTuning) {
     if (!pool) { callback(new Error('Database not available')); return; }
 
     const now = Date.now();
-    if (_responseCache && (now - _responseCachedAt) < CACHE_TTL_MS) {
+    if (!overrideTuning && _responseCache && (now - _responseCachedAt) < CACHE_TTL_MS) {
       callback(null, _responseCache);
       return;
     }
@@ -316,7 +317,7 @@ function createForecastHandler(opts) {
         // effectiveTuning returns SHORT keys (geT, gxT, ehE) — same shape as
         // tu — and merges user overrides over the control-logic defaults.
         const dcfg     = deviceConfig.getConfig() || {};
-        const tuning   = deviceConfig.effectiveTuning(dcfg.tu || {});
+        const tuning   = deviceConfig.effectiveTuning(overrideTuning || dcfg.tu || {});
         const forecastConfig = {
           spaceHeaterKw:   configFromYaml.spaceHeaterKw,
           transferFeeCKwh: configFromYaml.transferFeeCKwh,
@@ -371,7 +372,7 @@ function createForecastHandler(opts) {
           // forecast, so a tuning analysis can correlate prediction
           // shifts with config / fit changes.
           algorithmVersion: ALGORITHM_VERSION,
-          tu:               dcfg.tu || {},
+          tu:               overrideTuning || dcfg.tu || {},
           coefficients:     coeff || null,
           weather,
           prices,
@@ -382,8 +383,7 @@ function createForecastHandler(opts) {
         // missing service or DB read failure ships without it — the
         // rest of the forecast is still useful.
         attachPredictions(baseResponse, function (response) {
-          _responseCache    = response;
-          _responseCachedAt = Date.now();
+          if (!overrideTuning) { _responseCache = response; _responseCachedAt = Date.now(); }
           callback(null, response);
         });
       });
@@ -438,7 +438,7 @@ function createForecastHandler(opts) {
         return;
       }
       jsonResponse(res, 200, response);
-    });
+    }, parseTuningOverride(req.url));
   }
 
   // Pre-warm the coefficient cache. The 14d history fit is the dominant
