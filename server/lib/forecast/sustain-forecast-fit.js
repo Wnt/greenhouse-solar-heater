@@ -3,116 +3,31 @@
 // sustain-forecast-fit.js — empirical-coefficient fitting for the
 // 48 h sustain forecast engine. Pure functions, no I/O.
 //
-// Split out of sustain-forecast.js purely to keep both files under
-// the 600-line cap. The engine imports the fit functions and the
-// shared Helsinki-time helpers (so all hour-of-day computation goes
-// through the same path).
+// Split out of sustain-forecast.js purely to keep files under the
+// 600-line cap; shared constants + helpers live in -fit-base.js.
 
-// ── Physical constants (shared with engine) ──
-const TANK_THERMAL_MASS_J_PER_K = 300 * 4186;
-
-// ── Fit defaults ──
-const DEFAULT_TANK_LEAKAGE_W_PER_K = 3.0;
-
-// Fit thresholds.
-const MIN_IDLE_BUCKET_MINUTES = 20;
-const MIN_BUCKETS_FOR_FIT     = 5;
-// GH-air fits run on far fewer rows than the tank/heater fits because
-// they need radiation present + the right mode + non-maintenance — a
-// lower bar lets them converge from days, not weeks, of clean history.
-const MIN_BUCKETS_FOR_GH_FIT  = 3;
-
-// Sanity bounds. Fits whose output falls outside these ranges are
-// physically implausible for this greenhouse and are rejected (return
-// null) — caller falls through to DEFAULT_CONFIG. Bounds are
-// deliberately wide; the goal is to catch garbage fits (e.g. α near
-// zero from a radiation column with no spread, or a τ that says the
-// greenhouse cools fully in 6 minutes), not to second-guess plausible
-// variations. Values seeded from operational observation: GH peaks at
-// ~33 °C in sunny noon, cools to outdoor in ~2 h after vents close,
-// radiator measured at ~80–100 W/K from logged tank-drop data.
-const GH_TAU_MIN_H        = 0.5;
-// User's logged cooldown 27.8 → 12.1 °C in 4 h (outdoor 10 °C) implies
-// τ ≈ 1.9 h. Long-tail soil/structure thermal mass biases the 14d-
-// average fit upward toward 4 h, which makes the simulation hold gh
-// well above ehE all night (heater never fires). Cap at 3 h: above
-// this is implausible for an air-temperature-driven control loop.
-const GH_TAU_MAX_H        = 3.0;
-const GH_ALPHA_MIN        = 0.005;
-const GH_ALPHA_MAX        = 0.05;
-const RAD_UA_MIN_W_PER_K  = 40;
-// Empirically the car-radiator + fan setup measures 80–100 W/K from
-// logged greenhouse_heating-mode tank-drop pairs. The fit's median
-// drifts higher than this — likely because heating-mode tank loss
-// includes both radiator output AND ambient leakage, and the fit
-// attributes all of it to UA. 130 caps the upward bias while leaving
-// headroom for genuinely high-flow operating points.
-const RAD_UA_MAX_W_PER_K  = 130;
-const GH_LOSS_MIN_W_PER_K = 30;
-const GH_LOSS_MAX_W_PER_K = 300;
-const TANK_LEAK_MIN_W_PER_K = 1;
-const TANK_LEAK_MAX_W_PER_K = 30;
-
-// ── Helsinki TZ helpers (deterministic across server timezones) ──
-const HELSINKI_HOUR_FMT = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Europe/Helsinki', hour12: false, hour: '2-digit',
-});
-const HELSINKI_HHMM_FMT = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Europe/Helsinki', hour12: false, hour: '2-digit', minute: '2-digit',
-});
-function helsinkiHour(date) {
-  const h = parseInt(HELSINKI_HOUR_FMT.format(date), 10);
-  return h === 24 ? 0 : h;
-}
-function helsinkiHHMM(date) {
-  return HELSINKI_HHMM_FMT.format(date);
-}
-
-// Shared mode-labeller: returns one mode string per reading by
-// forward-walking the modes array. Was duplicated in three fit
-// functions (fitSolarGainByHour, fitGreenhouseLossWPerK,
-// fitEmpiricalCoefficients) — consolidated here in 2026-05-08 when the
-// new GH heat-balance fits added a fourth and fifth caller.
-function labelModes(readings, modes) {
-  const labels = new Array(readings.length);
-  let cursor = 0;
-  let currentMode = 'idle';
-  while (cursor < modes.length) {
-    const tsMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
-    const r0Ms = readings[0].ts instanceof Date ? readings[0].ts.getTime() : Number(readings[0].ts);
-    if (tsMs <= r0Ms) { currentMode = modes[cursor].mode; cursor++; }
-    else break;
-  }
-  labels[0] = currentMode;
-  for (let i = 1; i < readings.length; i++) {
-    const rMs = readings[i].ts instanceof Date ? readings[i].ts.getTime() : Number(readings[i].ts);
-    while (cursor < modes.length) {
-      const mMs = modes[cursor].ts instanceof Date ? modes[cursor].ts.getTime() : Number(modes[cursor].ts);
-      if (mMs <= rMs) { currentMode = modes[cursor].mode; cursor++; }
-      else break;
-    }
-    labels[i] = currentMode;
-  }
-  return labels;
-}
-
-// ── Least-squares slope through origin: slope = Σ(xi·yi) / Σ(xi²) ──
-function slopeThruOrigin(xs, ys) {
-  let sumXY = 0, sumX2 = 0;
-  for (let i = 0; i < xs.length; i++) {
-    sumXY += xs[i] * ys[i];
-    sumX2 += xs[i] * xs[i];
-  }
-  return sumX2 === 0 ? null : sumXY / sumX2;
-}
-
-/**
- * Fit empirical thermal coefficients from historical sensor + mode data.
- */
-// Tank energy capacity in kWh per K (300 L water, 4186 J/(kg·K)):
-// 300 × 4186 / 3.6e6 = 0.349 kWh/K. Useful for converting between tank ΔK
-// and kWh — the operationally meaningful unit.
-const TANK_KWH_PER_K = TANK_THERMAL_MASS_J_PER_K / 3.6e6;
+const base = require('./sustain-forecast-fit-base');
+const TANK_THERMAL_MASS_J_PER_K  = base.TANK_THERMAL_MASS_J_PER_K;
+const TANK_KWH_PER_K             = base.TANK_KWH_PER_K;
+const DEFAULT_TANK_LEAKAGE_W_PER_K = base.DEFAULT_TANK_LEAKAGE_W_PER_K;
+const MIN_IDLE_BUCKET_MINUTES    = base.MIN_IDLE_BUCKET_MINUTES;
+const MIN_BUCKETS_FOR_FIT        = base.MIN_BUCKETS_FOR_FIT;
+const MIN_BUCKETS_FOR_GH_FIT     = base.MIN_BUCKETS_FOR_GH_FIT;
+const GH_TAU_MIN_H        = base.GH_TAU_MIN_H;
+const GH_TAU_MAX_H        = base.GH_TAU_MAX_H;
+const GH_ALPHA_MIN        = base.GH_ALPHA_MIN;
+const GH_ALPHA_MAX        = base.GH_ALPHA_MAX;
+const RAD_UA_MIN_W_PER_K  = base.RAD_UA_MIN_W_PER_K;
+const RAD_UA_MAX_W_PER_K  = base.RAD_UA_MAX_W_PER_K;
+const GH_LOSS_MIN_W_PER_K = base.GH_LOSS_MIN_W_PER_K;
+const GH_LOSS_MAX_W_PER_K = base.GH_LOSS_MAX_W_PER_K;
+const TANK_LEAK_MIN_W_PER_K = base.TANK_LEAK_MIN_W_PER_K;
+const TANK_LEAK_MAX_W_PER_K = base.TANK_LEAK_MAX_W_PER_K;
+const CLOUD_REF_MIN_WM2   = base.CLOUD_REF_MIN_WM2;
+const CLOUD_REF_MAX_WM2   = base.CLOUD_REF_MAX_WM2;
+const helsinkiHour    = base.helsinkiHour;
+const labelModes      = base.labelModes;
+const slopeThruOrigin = base.slopeThruOrigin;
 
 /**
  * Empirical solar gain by hour-of-day, in kWh of tank energy per clock hour
@@ -199,6 +114,56 @@ function fitSolarGainByHour(history) {
   for (let h = 0; h < 24; h++) total += out[h];
   if (total < 0.5) return fallback;
   return out;
+}
+
+/**
+ * Cloud-reference radiation (W/m²) for the solar-gain model.
+ *
+ * The forecast credits solar gain as solarGainKwhByHour[h] × (radiation /
+ * cloudReferenceWm2). For that credit to be unbiased on an average-weather
+ * day, cloudReferenceWm2 must equal the radiation level the baseline was
+ * built from — i.e. the gain-weighted mean RadiationGlobal over exactly
+ * the solar_charging samples fitSolarGainByHour sums. A hand-picked
+ * constant (the old 500 W/m²) that sits below the true mean systematically
+ * over-credits gain.
+ *
+ * Uses the same sample gate as fitSolarGainByHour (solar_charging mode,
+ * ≤ 10-min pair, positive tank ΔK) and weights each sample's radiation by
+ * its ΔK, so ref = Σ(ΔK·rad) / Σ(ΔK). Falls back to null on insufficient
+ * data or an out-of-band result; the engine then keeps the seed default.
+ *
+ * @param {object} history  { readings, modes } — readings carry radiationGlobal
+ * @returns {number|null}   Reference W/m² within sanity bounds, else null
+ */
+function fitCloudReferenceWm2(history) {
+  if (!history || !Array.isArray(history.readings) || history.readings.length < 2 ||
+      !Array.isArray(history.modes)) {
+    return null;
+  }
+  const readings = history.readings;
+  const modeLabels = labelModes(readings, history.modes);
+  let sumDk = 0, sumDkRad = 0, n = 0;
+  for (let i = 0; i < readings.length - 1; i++) {
+    if (modeLabels[i] !== 'solar_charging') continue;
+    const r0 = readings[i];
+    const r1 = readings[i + 1];
+    const t0 = r0.ts instanceof Date ? r0.ts.getTime() : Number(r0.ts);
+    const t1 = r1.ts instanceof Date ? r1.ts.getTime() : Number(r1.ts);
+    const dtSec = (t1 - t0) / 1000;
+    if (dtSec <= 0 || dtSec > 600) continue;
+    if (typeof r0.tankTop !== 'number' || typeof r0.tankBottom !== 'number' ||
+        typeof r1.tankTop !== 'number' || typeof r1.tankBottom !== 'number') continue;
+    if (typeof r0.radiationGlobal !== 'number') continue;
+    const dK = (r1.tankTop + r1.tankBottom) / 2 - (r0.tankTop + r0.tankBottom) / 2;
+    if (dK <= 0 || !isFinite(dK)) continue;
+    sumDk    += dK;
+    sumDkRad += dK * r0.radiationGlobal;
+    n        += 1;
+  }
+  if (n < MIN_BUCKETS_FOR_FIT || sumDk <= 0) return null;
+  const ref = sumDkRad / sumDk;
+  if (ref < CLOUD_REF_MIN_WM2 || ref > CLOUD_REF_MAX_WM2) return null;
+  return ref;
 }
 
 /**
@@ -543,16 +508,20 @@ function fitEmpiricalCoefficients(history, opts) {
   const ghTau   = fitGhTauNight(history);
   const ghAlpha = ghTau !== null ? fitGhAlphaDay(history, ghTau, 33) : null;
   const radUa   = fitRadiatorUaWPerK(history);
+  // Self-calibrating cloud reference: keeps the solar-gain credit
+  // unbiased as the solarGainKwhByHour baseline shifts with the season.
+  const cloudRef = fitCloudReferenceWm2(history);
 
   const out = {
     tankLeakageWPerK:   tankLeak !== null ? tankLeak : DEFAULT_TANK_LEAKAGE_W_PER_K,
     solarGainKwhByHour: fitSolarGainByHour(history),
     usedDefaults:       tankLeak === null,
   };
-  if (ghLoss  !== null) out.greenhouseLossWPerK   = ghLoss;
-  if (ghTau   !== null) out.ghTimeConstantH       = ghTau;
-  if (ghAlpha !== null) out.ghSolarAlphaCPerWm2   = ghAlpha;
-  if (radUa   !== null) out.radiatorUaWPerK       = radUa;
+  if (ghLoss   !== null) out.greenhouseLossWPerK = ghLoss;
+  if (ghTau    !== null) out.ghTimeConstantH     = ghTau;
+  if (ghAlpha  !== null) out.ghSolarAlphaCPerWm2 = ghAlpha;
+  if (radUa    !== null) out.radiatorUaWPerK     = radUa;
+  if (cloudRef !== null) out.cloudReferenceWm2   = cloudRef;
   return out;
 }
 
@@ -560,11 +529,11 @@ module.exports = {
   // Constants the engine also needs.
   TANK_THERMAL_MASS_J_PER_K,
   TANK_KWH_PER_K,
-  // TZ helpers.
+  // TZ helper (engine consumes this).
   helsinkiHour,
-  helsinkiHHMM,
   // Fit functions.
   fitSolarGainByHour,
+  fitCloudReferenceWm2,
   fitGreenhouseLossWPerK,
   fitGhTauNight,
   fitGhAlphaDay,
@@ -577,5 +546,6 @@ module.exports = {
     RAD_UA_MIN_W_PER_K, RAD_UA_MAX_W_PER_K,
     GH_LOSS_MIN_W_PER_K, GH_LOSS_MAX_W_PER_K,
     TANK_LEAK_MIN_W_PER_K, TANK_LEAK_MAX_W_PER_K,
+    CLOUD_REF_MIN_WM2, CLOUD_REF_MAX_WM2,
   },
 };

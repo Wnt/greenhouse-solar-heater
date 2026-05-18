@@ -15,10 +15,10 @@
 //                            weather48h, prices48h, coefficients, config }) → forecast
 
 const fit = require('./sustain-forecast-fit');
+const { buildNotes } = require('./sustain-forecast-notes');
 const { tankStoredEnergyKwh } = require('../energy-balance');
 const TANK_THERMAL_MASS_J_PER_K = fit.TANK_THERMAL_MASS_J_PER_K;
 const helsinkiHour  = fit.helsinkiHour;
-const helsinkiHHMM  = fit.helsinkiHHMM;
 const fitEmpiricalCoefficients = fit.fitEmpiricalCoefficients;
 
 // Engine fallback: used only when a caller passes a coefficients object
@@ -48,10 +48,13 @@ const DEFAULT_CONFIG = {
   emergencyExitC:           12,
   spaceHeaterKw:            1,    // from system.yaml space_heater.assumed_continuous_power_kw
   transferFeeCKwh:          5,    // from system.yaml electricity.transfer_fee_c_kwh
-  // Reference FMI RadiationGlobal that maps to "cloudFactor = 1" in the data-
-  // driven solar gain model. ~500 W/m² is a typical partly-cloudy noon at lat
-  // 60° in May (clear sky peaks ~700-900). The historical solarGainKwhByHour
-  // baseline is normalised against this reference.
+  // Reference FMI RadiationGlobal that maps to "cloudFactor = 1" in the
+  // data-driven solar gain model. For an unbiased credit this must equal
+  // the average radiation over the same charging hours that produced the
+  // solarGainKwhByHour baseline — sustain-forecast-fit emits a fitted
+  // cloudReferenceWm2 (gain-weighted mean) that overrides this. The 500
+  // here is only a cold-start seed before the fit converges; it ran ~23 %
+  // low against real data and over-credited solar gain accordingly.
   cloudReferenceWm2:        500,
   // Tank stops charging around this temperature in the real controller.
   tankMaxC:                 55,
@@ -82,6 +85,15 @@ const DEFAULT_CONFIG = {
   weatherFetchedAt:         null,
   // Number of buckets used for the empirical fit (for confidence)
   fitBucketCount:           0,
+  // Tank destratification. The step-4 solar skew (60/40 top/bottom) and
+  // any other per-layer asymmetry would let the top/bottom split grow
+  // without bound across a 48 h sim. Real tanks mix (conduction +
+  // convection + pump circulation): observed tank_top − tank_bottom
+  // stays ~1.5 K (14 d median 1.3, p90 3.4) and relaxes within hours.
+  // Each sim hour the spread decays exponentially toward tankStratEqC
+  // with time constant tankMixTauH. Set tankMixTauH ≤ 0 to disable.
+  tankMixTauH:              2.0,
+  tankStratEqC:             1.5,
 };
 
 /**
@@ -137,6 +149,7 @@ function computeSustainForecast(opts) {
   applyCoeffOverride(cfg, coeff, 'ghSolarAlphaCPerWm2', v => v >= 0);
   applyCoeffOverride(cfg, coeff, 'ghVentOpenC',         v => v > 0);
   applyCoeffOverride(cfg, coeff, 'ghVentTauH',          v => v > 0);
+  applyCoeffOverride(cfg, coeff, 'cloudReferenceWm2',   v => v > 0);
 
   const tankLeakageWPerK    = typeof coeff.tankLeakageWPerK    === 'number' ? coeff.tankLeakageWPerK    : DEFAULT_TANK_LEAKAGE_W_PER_K;
   // Observed tank-drop rate during the most recent ~hour, in K/h (positive
@@ -275,19 +288,24 @@ function computeSustainForecast(opts) {
     // sets these; the unified heat balance converts to ΔT. Idle = 0.
     let radHeatToGhW = 0;
     let heaterHeatToGhW = 0;
+    // Radiator output while the thermostat has it ON during
+    // greenhouse_heating; the substep loop cycles it bang-bang and the
+    // resulting duty scales the tank draw. 0 for every other mode.
+    let radWhenOnW = 0;
     // Components captured per-hour for forecast_predictions storage.
     let hourHeaterKwh = 0;
     let hourTankLossW = 0;
 
     if (simMode === 'greenhouse_heating') {
       modeForecast.push({ ts: hourDate, mode: simMode });
-      const radDeliveredW = Math.min(radPeakW, radUaWPerK * radDeltaT);
-      tankDeltaJ -= radDeliveredW * SECONDS_PER_HOUR;
-      radHeatToGhW = radDeliveredW;
+      // The real controller cycles the radiator to hold the greenhouse
+      // inside [geT, gxT]. The substep loop below runs that bang-bang;
+      // the tank draw is applied afterwards, scaled by the duty cycle.
+      // Projecting a full hour of constant radiator output overshot the
+      // ~1 K exit band by many K (radiator ≈ 7 K/h into GH air) and made
+      // the trajectory sawtooth instead of holding the band flat.
+      radWhenOnW = Math.min(radPeakW, radUaWPerK * radDeltaT);
       greenhouseHeatingHours += 1;
-      // hourTankLossW stays at the loop-top default 0 here — the
-      // radiator dominates the tank side and we report leakage as 0
-      // to keep components additive.
     } else if (simMode === 'emergency_heating') {
       // The real device overlays the heater on the active pump mode
       // (system.yaml overlays.emergency_heating: "the space heater is
@@ -346,14 +364,34 @@ function computeSustainForecast(opts) {
     const SUBSTEPS = 60;
     const dtH = 1 / SUBSTEPS;
     let newGhTemp = curGhTemp;
+    // Thermostatic radiator: during greenhouse_heating the controller
+    // cycles the radiator bang-bang to hold gh within [geT, gxT]. radOn
+    // tracks that switch substep-by-substep; radOnSubsteps accumulates
+    // the duty so the tank draw and component capture can be scaled.
+    let radOn = simMode === 'greenhouse_heating' && curGhTemp < cfg.greenhouseExitC;
+    let radOnSubsteps = 0;
     for (let s = 0; s < SUBSTEPS; s++) {
+      if (simMode === 'greenhouse_heating') {
+        if (newGhTemp >= cfg.greenhouseExitC) radOn = false;
+        else if (newGhTemp <= cfg.greenhouseEnterC) radOn = true;
+        if (radOn) radOnSubsteps += 1;
+      }
+      const radNowW = simMode === 'greenhouse_heating'
+        ? (radOn ? radWhenOnW : 0) : radHeatToGhW;
       const ghPassive = (outdoorC - newGhTemp) / cfg.ghTimeConstantH;
       const ghSolar   = cfg.ghSolarAlphaCPerWm2 * radiation;
       const ghVent    = newGhTemp > cfg.ghVentOpenC
         ? -(newGhTemp - cfg.ghVentOpenC) / cfg.ghVentTauH : 0;
       const ghActive  = (cfg.ghTimeConstantH > 0 && cfg.greenhouseLossWPerK > 0)
-        ? (radHeatToGhW + heaterHeatToGhW) / (cfg.ghTimeConstantH * cfg.greenhouseLossWPerK) : 0;
+        ? (radNowW + heaterHeatToGhW) / (cfg.ghTimeConstantH * cfg.greenhouseLossWPerK) : 0;
       newGhTemp += (ghPassive + ghSolar + ghVent + ghActive) * dtH;
+    }
+    // Apply the thermostatic radiator's tank draw once the duty is
+    // known. radHeatToGhW (0 until here for greenhouse_heating) carries
+    // the duty-averaged output into the per-hour component capture.
+    if (simMode === 'greenhouse_heating') {
+      radHeatToGhW = radWhenOnW * (radOnSubsteps / SUBSTEPS);
+      tankDeltaJ -= radHeatToGhW * SECONDS_PER_HOUR;
     }
 
     // ── 3. Solar charging credit ──
@@ -391,6 +429,20 @@ function computeSustainForecast(opts) {
     } else {
       tankTopC += tankAvgDeltaC;
       tankBotC += tankAvgDeltaC;
+    }
+
+    // ── 4b. Destratification ──
+    // Conduction + convective mixing pull the top/bottom split back
+    // toward a small equilibrium. Without this the step-4 solar skew
+    // accumulates unboundedly — the 48 h projection drifts the top
+    // several K too hot and the bottom several K too cold even though
+    // the average stays accurate. Conserves the tank average.
+    if (cfg.tankMixTauH > 0) {
+      const stratAvg    = (tankTopC + tankBotC) / 2;
+      const stratDecay  = Math.exp(-1 / cfg.tankMixTauH);
+      const stratSpread = cfg.tankStratEqC + ((tankTopC - tankBotC) - cfg.tankStratEqC) * stratDecay;
+      tankTopC = stratAvg + stratSpread / 2;
+      tankBotC = stratAvg - stratSpread / 2;
     }
 
     // ── 5. Greenhouse temperature update ──
@@ -499,86 +551,6 @@ function computeSustainForecast(opts) {
     modelConfidence:        confidence,
     notes,
   };
-}
-
-// Notes are ordered by operational relevance: GH min temp, tank stored
-// kWh + sustain hours, backup electric usage, solar gain. Capped at 3.
-function buildNotes(ctx) {
-  const notes = [];
-
-  if (ctx.usedDefaults) {
-    notes.push('Forecast based on default coefficients — model still warming up with limited history.');
-  }
-
-  // 1. Greenhouse minimum temperature.
-  if (ctx.ghMin !== undefined && notes.length < 3) {
-    const minDate = new Date(ctx.now + ctx.ghMinIdx * 3600 * 1000);
-    const hhmm    = helsinkiHHMM(minDate);
-    if (ctx.electricKwh > 0) {
-      notes.push(
-        'Greenhouse cools to ' + ctx.ghMin.toFixed(1) + ' °C around ' + hhmm +
-        ', when the space heater takes over to hold it there.'
-      );
-    } else {
-      notes.push(
-        'Greenhouse holds above ' + ctx.ghMin.toFixed(1) + ' °C the whole window — tank covers it without backup.'
-      );
-    }
-  }
-
-  // 2. Tank storage + sustain hours. Same tankStoredEnergyKwh formula
-  //    as the gauge tile / balance card / push notifications.
-  if (ctx.tankStoredKwhNow !== undefined && notes.length < 3) {
-    const stored = ctx.tankStoredKwhNow.toFixed(1);
-    if (ctx.hoursUntilBackupNeeded === 0) {
-      // Tank too cold for radiator OR backup already cycling — naming
-      // this "~0 h until backup" reads as broken; surface it explicitly.
-      notes.push(
-        'Tank stores ~' + stored + ' kWh above the floor, but it’s too cold ' +
-        'to drive the radiator — the space heater is providing the heating.'
-      );
-    } else if (ctx.hoursUntilBackupNeeded !== null) {
-      notes.push(
-        'Tank stores ~' + stored + ' kWh above the floor — covers greenhouse heating for about ~' +
-        Math.round(ctx.hoursUntilBackupNeeded) + ' h before the space heater kicks in.'
-      );
-    } else if (ctx.electricKwh > 0) {
-      notes.push(
-        'Tank stores ~' + stored + ' kWh above the floor; heating bridges most of the night, with ~' +
-        Math.round(ctx.electricKwh) + ' h of space-heater backup mixed in.'
-      );
-    } else {
-      notes.push(
-        'Tank stores ~' + stored + ' kWh above the floor — enough for the whole window with no backup needed.'
-      );
-    }
-  }
-
-  // 3. Backup electricity summary (cost and hours), if any.
-  if (ctx.electricKwh > 0 && notes.length < 3) {
-    const eur = ctx.electricCostEur;
-    notes.push(
-      'Space heater projected: ~' + Math.round(ctx.electricKwh) +
-      ' kWh over the next 48 h, costing about €' + eur.toFixed(2) + '.'
-    );
-  }
-
-  // 4. Solar gain context (today / tomorrow), if there's slot room.
-  if (Array.isArray(ctx.solarGainByDay) && ctx.solarGainByDay.length > 0 && notes.length < 3) {
-    const today = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Europe/Helsinki', year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(new Date(ctx.now));
-    const parts = ctx.solarGainByDay.slice(0, 2).map(function (d) {
-      const label = d.date === today ? 'Today' : 'Tomorrow';
-      const kwh = d.kWh < 0.5 ? d.kWh.toFixed(1) : Math.round(d.kWh);
-      return label + ' ~' + kwh + ' kWh';
-    });
-    if (parts.length > 0) {
-      notes.push('Solar gain projected: ' + parts.join(', ') + '.');
-    }
-  }
-
-  return notes;
 }
 
 function round2(v) { return Math.round(v * 100) / 100; }
