@@ -284,19 +284,24 @@ function computeSustainForecast(opts) {
     // sets these; the unified heat balance converts to ΔT. Idle = 0.
     let radHeatToGhW = 0;
     let heaterHeatToGhW = 0;
+    // Radiator output while the thermostat has it ON during
+    // greenhouse_heating; the substep loop cycles it bang-bang and the
+    // resulting duty scales the tank draw. 0 for every other mode.
+    let radWhenOnW = 0;
     // Components captured per-hour for forecast_predictions storage.
     let hourHeaterKwh = 0;
     let hourTankLossW = 0;
 
     if (simMode === 'greenhouse_heating') {
       modeForecast.push({ ts: hourDate, mode: simMode });
-      const radDeliveredW = Math.min(radPeakW, radUaWPerK * radDeltaT);
-      tankDeltaJ -= radDeliveredW * SECONDS_PER_HOUR;
-      radHeatToGhW = radDeliveredW;
+      // The real controller cycles the radiator to hold the greenhouse
+      // inside [geT, gxT]. The substep loop below runs that bang-bang;
+      // the tank draw is applied afterwards, scaled by the duty cycle.
+      // Projecting a full hour of constant radiator output overshot the
+      // ~1 K exit band by many K (radiator ≈ 7 K/h into GH air) and made
+      // the trajectory sawtooth instead of holding the band flat.
+      radWhenOnW = Math.min(radPeakW, radUaWPerK * radDeltaT);
       greenhouseHeatingHours += 1;
-      // hourTankLossW stays at the loop-top default 0 here — the
-      // radiator dominates the tank side and we report leakage as 0
-      // to keep components additive.
     } else if (simMode === 'emergency_heating') {
       // The real device overlays the heater on the active pump mode
       // (system.yaml overlays.emergency_heating: "the space heater is
@@ -355,14 +360,34 @@ function computeSustainForecast(opts) {
     const SUBSTEPS = 60;
     const dtH = 1 / SUBSTEPS;
     let newGhTemp = curGhTemp;
+    // Thermostatic radiator: during greenhouse_heating the controller
+    // cycles the radiator bang-bang to hold gh within [geT, gxT]. radOn
+    // tracks that switch substep-by-substep; radOnSubsteps accumulates
+    // the duty so the tank draw and component capture can be scaled.
+    let radOn = simMode === 'greenhouse_heating' && curGhTemp < cfg.greenhouseExitC;
+    let radOnSubsteps = 0;
     for (let s = 0; s < SUBSTEPS; s++) {
+      if (simMode === 'greenhouse_heating') {
+        if (newGhTemp >= cfg.greenhouseExitC) radOn = false;
+        else if (newGhTemp <= cfg.greenhouseEnterC) radOn = true;
+        if (radOn) radOnSubsteps += 1;
+      }
+      const radNowW = simMode === 'greenhouse_heating'
+        ? (radOn ? radWhenOnW : 0) : radHeatToGhW;
       const ghPassive = (outdoorC - newGhTemp) / cfg.ghTimeConstantH;
       const ghSolar   = cfg.ghSolarAlphaCPerWm2 * radiation;
       const ghVent    = newGhTemp > cfg.ghVentOpenC
         ? -(newGhTemp - cfg.ghVentOpenC) / cfg.ghVentTauH : 0;
       const ghActive  = (cfg.ghTimeConstantH > 0 && cfg.greenhouseLossWPerK > 0)
-        ? (radHeatToGhW + heaterHeatToGhW) / (cfg.ghTimeConstantH * cfg.greenhouseLossWPerK) : 0;
+        ? (radNowW + heaterHeatToGhW) / (cfg.ghTimeConstantH * cfg.greenhouseLossWPerK) : 0;
       newGhTemp += (ghPassive + ghSolar + ghVent + ghActive) * dtH;
+    }
+    // Apply the thermostatic radiator's tank draw once the duty is
+    // known. radHeatToGhW (0 until here for greenhouse_heating) carries
+    // the duty-averaged output into the per-hour component capture.
+    if (simMode === 'greenhouse_heating') {
+      radHeatToGhW = radWhenOnW * (radOnSubsteps / SUBSTEPS);
+      tankDeltaJ -= radHeatToGhW * SECONDS_PER_HOUR;
     }
 
     // ── 3. Solar charging credit ──

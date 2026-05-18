@@ -1234,3 +1234,27 @@ describe('computeSustainForecast — tank destratification', () => {
       'disabled mixing keeps the spread');
   });
 });
+
+// ── Greenhouse heating thermostat ──
+// The real controller cycles the radiator bang-bang to hold the
+// greenhouse inside [geT, gxT]. Projecting a full hour of constant
+// radiator output overshoots the ~1 K exit band by many K and makes
+// the trajectory sawtooth instead of holding the band flat.
+describe('computeSustainForecast — greenhouse heating holds the band', () => {
+  it('does not overshoot the exit threshold during sustained radiator heating', () => {
+    const result = computeSustainForecast({
+      now: Date.UTC(2026, 4, 18, 18, 0, 0),
+      tankTop: 55, tankBottom: 50, greenhouseTemp: 12.5,
+      currentMode: 'greenhouse_heating',
+      weather48h: makeWeather48h({ temperature: 2 }),
+      prices48h: makePrices48h(),
+      coefficients: { tankLeakageWPerK: 3, radiatorUaWPerK: 120, usedDefaults: false },
+      config: { greenhouseEnterC: 13, greenhouseExitC: 14,
+        emergencyEnterC: 9, emergencyExitC: 12 },
+    });
+    const peak = Math.max.apply(null, result.greenhouseTrajectory.map(p => p.temp));
+    // A full hour of unthrottled radiator output blows past 18 °C; the
+    // thermostat must cap the greenhouse close to the 14 °C exit point.
+    assert.ok(peak < 15.5, 'greenhouse held near the band; peak=' + peak);
+  });
+});
