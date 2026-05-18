@@ -147,8 +147,8 @@ function createHandlers(deps) {
   // telemetry, so it sits outside the auth gate. Sends
   // `Access-Control-Allow-Origin: *` for cross-origin browser fetches.
   //   GET /api/public/history?range=24h&horizon=<1..48>
-  //   -> { range, generatedAt, points, events, weather, prices,
-  //        predictions, generations, sources }
+  //   -> { range, generatedAt, points, events, actuators, overlays,
+  //        weather, prices, predictions, generations, sources }
   function handlePublicHistoryApi(req, res, forecast) {
     // CORS for cross-origin browser fetches — set before any writeHead
     // so it merges into every response below. JSON bodies go out via
@@ -190,34 +190,52 @@ function createHandlers(deps) {
           log.error('public history events query failed', { error: evErr.message });
           events = [];
         }
-        function finish(fc) {
-          jsonResponse(res, 200, {
-            range,
-            generatedAt: new Date().toISOString(),
-            points,
-            events,
-            weather: fc.weather,
-            prices: fc.prices,
-            predictions: fc.predictions,
-            generations: fc.generations,
-            sources: fc.sources,
-          });
-        }
-        // The forecast dataset is optional — the subsystem only exists
-        // when a DB is wired. getForecastDataset itself degrades each
-        // section to [] on a per-query failure, so this never rejects.
-        if (forecast && typeof forecast.getForecastDataset === 'function') {
-          forecast.getForecastDataset({ range, horizon }, function (fErr, fc) {
-            if (fErr || !fc) {
-              log.error('public history forecast dataset failed', { error: fErr && fErr.message });
-              finish(emptyForecast);
+        // Actuator (pump / fan / space_heater / immersion_heater) and
+        // overlay (greenhouse fan-cooling) on/off transitions — the
+        // fine-grained duty data the ML forecast trainer turns into
+        // heater + fan-cool features.
+        db.getEvents(range, 'actuator', function (aErr, actuators) {
+          if (aErr) {
+            log.error('public history actuator query failed', { error: aErr.message });
+            actuators = [];
+          }
+          db.getEvents(range, 'overlay', function (oErr, overlays) {
+            if (oErr) {
+              log.error('public history overlay query failed', { error: oErr.message });
+              overlays = [];
+            }
+            function finish(fc) {
+              jsonResponse(res, 200, {
+                range,
+                generatedAt: new Date().toISOString(),
+                points,
+                events,
+                actuators,
+                overlays,
+                weather: fc.weather,
+                prices: fc.prices,
+                predictions: fc.predictions,
+                generations: fc.generations,
+                sources: fc.sources,
+              });
+            }
+            // The forecast dataset is optional — the subsystem only exists
+            // when a DB is wired. getForecastDataset itself degrades each
+            // section to [] on a per-query failure, so this never rejects.
+            if (forecast && typeof forecast.getForecastDataset === 'function') {
+              forecast.getForecastDataset({ range, horizon }, function (fErr, fc) {
+                if (fErr || !fc) {
+                  log.error('public history forecast dataset failed', { error: fErr && fErr.message });
+                  finish(emptyForecast);
+                } else {
+                  finish(fc);
+                }
+              });
             } else {
-              finish(fc);
+              finish(emptyForecast);
             }
           });
-        } else {
-          finish(emptyForecast);
-        }
+        });
       });
     });
   }

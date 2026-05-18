@@ -57,7 +57,8 @@ test.describe('GET /api/events + /api/history', () => {
     const body = await res.json();
     expect(body.range).toBe('all');
     expect(typeof body.generatedAt).toBe('string');
-    for (const key of ['points', 'events', 'weather', 'prices', 'predictions', 'generations', 'sources']) {
+    for (const key of ['points', 'events', 'actuators', 'overlays', 'weather',
+      'prices', 'predictions', 'generations', 'sources']) {
       expect(Array.isArray(body[key]), `${key} should be an array`).toBe(true);
     }
     // Data-source status is built from in-memory refresher state, so it

@@ -19,6 +19,26 @@ import { registerDataSource } from './sync/registry.js';
 import { setForecastData } from './main/state.js';
 import { drawHistoryGraph } from './main/history-graph.js';
 
+// ── Forecast engine selection ────────────────────────────────────────
+// The Settings view lets the user pick the physics engine (default) or
+// the experimental ML engine. The choice is a client-side preference
+// (localStorage) that drives the /api/forecast `engine` query param —
+// the server computes the forecast with whichever engine is requested.
+
+const ENGINE_STORAGE_KEY = 'forecastEngine';
+
+function getForecastEngine() {
+  try {
+    return localStorage.getItem(ENGINE_STORAGE_KEY) === 'ml' ? 'ml' : 'physics';
+  } catch (_e) {
+    return 'physics';
+  }
+}
+
+function forecastUrl() {
+  return getForecastEngine() === 'ml' ? '/api/forecast?engine=ml' : '/api/forecast';
+}
+
 // ── DOM helpers ─────────────────────────────────────────────────────────────
 
 function el(tag, cls, text) {
@@ -196,7 +216,7 @@ function _showError() {
 
 function _doFetch(signal) {
   _showLoading();
-  return fetch('/api/forecast', signal ? { signal } : {})
+  return fetch(forecastUrl(), signal ? { signal } : {})
     .then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
@@ -238,7 +258,7 @@ export function initForecastCard() {
     id: 'forecast',
     isActive: function () { return store.get('phase') === 'live'; },
     fetch: function (signal) {
-      return fetch('/api/forecast', { signal }).then(function (r) {
+      return fetch(forecastUrl(), { signal }).then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
       });
@@ -254,5 +274,23 @@ export function initForecastCard() {
     if (store.get('phase') === 'live') {
       _doFetch();
     }
+  });
+}
+
+// Wires the Settings-view "Forecast engine" toggle. The checkbox state
+// is mirrored from localStorage; flipping it persists the preference
+// and re-fetches the card so the change is visible immediately.
+export function initForecastEngineSetting() {
+  const checkbox = document.getElementById('forecast-engine-ml');
+  if (!checkbox) return;
+  checkbox.checked = getForecastEngine() === 'ml';
+  checkbox.addEventListener('change', function () {
+    try {
+      localStorage.setItem(ENGINE_STORAGE_KEY, checkbox.checked ? 'ml' : 'physics');
+    } catch (_e) {
+      // Private-mode / storage-disabled — the preference just won't
+      // persist across reloads; the immediate re-fetch still works.
+    }
+    _doFetch();
   });
 }
