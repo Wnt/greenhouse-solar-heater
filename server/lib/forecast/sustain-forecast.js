@@ -48,10 +48,13 @@ const DEFAULT_CONFIG = {
   emergencyExitC:           12,
   spaceHeaterKw:            1,    // from system.yaml space_heater.assumed_continuous_power_kw
   transferFeeCKwh:          5,    // from system.yaml electricity.transfer_fee_c_kwh
-  // Reference FMI RadiationGlobal that maps to "cloudFactor = 1" in the data-
-  // driven solar gain model. ~500 W/m² is a typical partly-cloudy noon at lat
-  // 60° in May (clear sky peaks ~700-900). The historical solarGainKwhByHour
-  // baseline is normalised against this reference.
+  // Reference FMI RadiationGlobal that maps to "cloudFactor = 1" in the
+  // data-driven solar gain model. For an unbiased credit this must equal
+  // the average radiation over the same charging hours that produced the
+  // solarGainKwhByHour baseline — sustain-forecast-fit emits a fitted
+  // cloudReferenceWm2 (gain-weighted mean) that overrides this. The 500
+  // here is only a cold-start seed before the fit converges; it ran ~23 %
+  // low against real data and over-credited solar gain accordingly.
   cloudReferenceWm2:        500,
   // Tank stops charging around this temperature in the real controller.
   tankMaxC:                 55,
@@ -146,6 +149,7 @@ function computeSustainForecast(opts) {
   applyCoeffOverride(cfg, coeff, 'ghSolarAlphaCPerWm2', v => v >= 0);
   applyCoeffOverride(cfg, coeff, 'ghVentOpenC',         v => v > 0);
   applyCoeffOverride(cfg, coeff, 'ghVentTauH',          v => v > 0);
+  applyCoeffOverride(cfg, coeff, 'cloudReferenceWm2',   v => v > 0);
 
   const tankLeakageWPerK    = typeof coeff.tankLeakageWPerK    === 'number' ? coeff.tankLeakageWPerK    : DEFAULT_TANK_LEAKAGE_W_PER_K;
   // Observed tank-drop rate during the most recent ~hour, in K/h (positive

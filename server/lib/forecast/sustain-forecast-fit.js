@@ -52,6 +52,12 @@ const GH_LOSS_MIN_W_PER_K = 30;
 const GH_LOSS_MAX_W_PER_K = 300;
 const TANK_LEAK_MIN_W_PER_K = 1;
 const TANK_LEAK_MAX_W_PER_K = 30;
+// Cloud-reference radiation (W/m²) — the gain-weighted mean RadiationGlobal
+// over historical charging hours. Outside this band the fit is rejected
+// (too few samples / a radiation column with no spread) and the engine
+// keeps DEFAULT_CONFIG.cloudReferenceWm2.
+const CLOUD_REF_MIN_WM2 = 200;
+const CLOUD_REF_MAX_WM2 = 900;
 
 // ── Helsinki TZ helpers (deterministic across server timezones) ──
 const HELSINKI_HOUR_FMT = new Intl.DateTimeFormat('en-GB', {
@@ -199,6 +205,56 @@ function fitSolarGainByHour(history) {
   for (let h = 0; h < 24; h++) total += out[h];
   if (total < 0.5) return fallback;
   return out;
+}
+
+/**
+ * Cloud-reference radiation (W/m²) for the solar-gain model.
+ *
+ * The forecast credits solar gain as solarGainKwhByHour[h] × (radiation /
+ * cloudReferenceWm2). For that credit to be unbiased on an average-weather
+ * day, cloudReferenceWm2 must equal the radiation level the baseline was
+ * built from — i.e. the gain-weighted mean RadiationGlobal over exactly
+ * the solar_charging samples fitSolarGainByHour sums. A hand-picked
+ * constant (the old 500 W/m²) that sits below the true mean systematically
+ * over-credits gain.
+ *
+ * Uses the same sample gate as fitSolarGainByHour (solar_charging mode,
+ * ≤ 10-min pair, positive tank ΔK) and weights each sample's radiation by
+ * its ΔK, so ref = Σ(ΔK·rad) / Σ(ΔK). Falls back to null on insufficient
+ * data or an out-of-band result; the engine then keeps the seed default.
+ *
+ * @param {object} history  { readings, modes } — readings carry radiationGlobal
+ * @returns {number|null}   Reference W/m² within sanity bounds, else null
+ */
+function fitCloudReferenceWm2(history) {
+  if (!history || !Array.isArray(history.readings) || history.readings.length < 2 ||
+      !Array.isArray(history.modes)) {
+    return null;
+  }
+  const readings = history.readings;
+  const modeLabels = labelModes(readings, history.modes);
+  let sumDk = 0, sumDkRad = 0, n = 0;
+  for (let i = 0; i < readings.length - 1; i++) {
+    if (modeLabels[i] !== 'solar_charging') continue;
+    const r0 = readings[i];
+    const r1 = readings[i + 1];
+    const t0 = r0.ts instanceof Date ? r0.ts.getTime() : Number(r0.ts);
+    const t1 = r1.ts instanceof Date ? r1.ts.getTime() : Number(r1.ts);
+    const dtSec = (t1 - t0) / 1000;
+    if (dtSec <= 0 || dtSec > 600) continue;
+    if (typeof r0.tankTop !== 'number' || typeof r0.tankBottom !== 'number' ||
+        typeof r1.tankTop !== 'number' || typeof r1.tankBottom !== 'number') continue;
+    if (typeof r0.radiationGlobal !== 'number') continue;
+    const dK = (r1.tankTop + r1.tankBottom) / 2 - (r0.tankTop + r0.tankBottom) / 2;
+    if (dK <= 0 || !isFinite(dK)) continue;
+    sumDk    += dK;
+    sumDkRad += dK * r0.radiationGlobal;
+    n        += 1;
+  }
+  if (n < MIN_BUCKETS_FOR_FIT || sumDk <= 0) return null;
+  const ref = sumDkRad / sumDk;
+  if (ref < CLOUD_REF_MIN_WM2 || ref > CLOUD_REF_MAX_WM2) return null;
+  return ref;
 }
 
 /**
@@ -543,16 +599,20 @@ function fitEmpiricalCoefficients(history, opts) {
   const ghTau   = fitGhTauNight(history);
   const ghAlpha = ghTau !== null ? fitGhAlphaDay(history, ghTau, 33) : null;
   const radUa   = fitRadiatorUaWPerK(history);
+  // Self-calibrating cloud reference: keeps the solar-gain credit
+  // unbiased as the solarGainKwhByHour baseline shifts with the season.
+  const cloudRef = fitCloudReferenceWm2(history);
 
   const out = {
     tankLeakageWPerK:   tankLeak !== null ? tankLeak : DEFAULT_TANK_LEAKAGE_W_PER_K,
     solarGainKwhByHour: fitSolarGainByHour(history),
     usedDefaults:       tankLeak === null,
   };
-  if (ghLoss  !== null) out.greenhouseLossWPerK   = ghLoss;
-  if (ghTau   !== null) out.ghTimeConstantH       = ghTau;
-  if (ghAlpha !== null) out.ghSolarAlphaCPerWm2   = ghAlpha;
-  if (radUa   !== null) out.radiatorUaWPerK       = radUa;
+  if (ghLoss   !== null) out.greenhouseLossWPerK = ghLoss;
+  if (ghTau    !== null) out.ghTimeConstantH     = ghTau;
+  if (ghAlpha  !== null) out.ghSolarAlphaCPerWm2 = ghAlpha;
+  if (radUa    !== null) out.radiatorUaWPerK     = radUa;
+  if (cloudRef !== null) out.cloudReferenceWm2   = cloudRef;
   return out;
 }
 
@@ -565,6 +625,7 @@ module.exports = {
   helsinkiHHMM,
   // Fit functions.
   fitSolarGainByHour,
+  fitCloudReferenceWm2,
   fitGreenhouseLossWPerK,
   fitGhTauNight,
   fitGhAlphaDay,
@@ -577,5 +638,6 @@ module.exports = {
     RAD_UA_MIN_W_PER_K, RAD_UA_MAX_W_PER_K,
     GH_LOSS_MIN_W_PER_K, GH_LOSS_MAX_W_PER_K,
     TANK_LEAK_MIN_W_PER_K, TANK_LEAK_MAX_W_PER_K,
+    CLOUD_REF_MIN_WM2, CLOUD_REF_MAX_WM2,
   },
 };

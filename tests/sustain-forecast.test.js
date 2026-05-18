@@ -7,7 +7,7 @@ const {
   computeSustainForecast,
   _TANK_THERMAL_MASS_J_PER_K,
 } = require('../server/lib/forecast/sustain-forecast.js');
-const { fitSolarGainByHour, fitGreenhouseLossWPerK } = require('../server/lib/forecast/sustain-forecast-fit.js');
+const { fitSolarGainByHour, fitGreenhouseLossWPerK, fitCloudReferenceWm2 } = require('../server/lib/forecast/sustain-forecast-fit.js');
 
 // ── Helpers ──
 
@@ -1256,5 +1256,47 @@ describe('computeSustainForecast — greenhouse heating holds the band', () => {
     // A full hour of unthrottled radiator output blows past 18 °C; the
     // thermostat must cap the greenhouse close to the 14 °C exit point.
     assert.ok(peak < 15.5, 'greenhouse held near the band; peak=' + peak);
+  });
+});
+
+// ── Self-calibrating cloud reference ──
+// The solar credit is solarGainKwhByHour × radiation / cloudReferenceWm2.
+// The reference must match the radiation the baseline was built from, or
+// the credit is biased. The fit emits a gain-weighted mean and the engine
+// honours it over the seed default.
+describe('computeSustainForecast — fitted cloud reference', () => {
+  it('fitCloudReferenceWm2 emits the gain-weighted charging radiation', () => {
+    const base = Date.UTC(2026, 4, 1, 9, 0, 0);
+    const readings = [];
+    for (let i = 0; i < 8; i++) {
+      readings.push({ ts: new Date(base + i * 10 * 60000),
+        tankTop: 30 + i, tankBottom: 28 + i, greenhouse: 14, outdoor: 8,
+        radiationGlobal: 600 });
+    }
+    const history = { readings, modes: [{ ts: new Date(base - 60000), mode: 'solar_charging' }] };
+    assert.equal(Math.round(fitCloudReferenceWm2(history)), 600);
+    assert.equal(Math.round(fitEmpiricalCoefficients(history).cloudReferenceWm2), 600);
+  });
+
+  it('returns null when there are no charging hours to measure', () => {
+    assert.equal(fitCloudReferenceWm2({ readings: [], modes: [] }), null);
+  });
+
+  it('a higher coefficient cloudReferenceWm2 credits less solar gain', () => {
+    const base = {
+      now: Date.UTC(2026, 4, 18, 9, 0, 0),
+      tankTop: 30, tankBottom: 28, greenhouseTemp: 15, currentMode: 'idle',
+      weather48h: makeWeather48h({ temperature: 10, radiationGlobal: 600 }),
+      prices48h: makePrices48h(),
+    };
+    const sg = new Array(24).fill(0.4);
+    const lowRef  = computeSustainForecast(Object.assign({}, base, {
+      coefficients: { tankLeakageWPerK: 3, solarGainKwhByHour: sg, cloudReferenceWm2: 400 } }));
+    const highRef = computeSustainForecast(Object.assign({}, base, {
+      coefficients: { tankLeakageWPerK: 3, solarGainKwhByHour: sg, cloudReferenceWm2: 800 } }));
+    const lowEnd  = lowRef.tankTrajectory[12].avg;
+    const highEnd = highRef.tankTrajectory[12].avg;
+    assert.ok(lowEnd > highEnd + 2,
+      'lower cloud reference credits more solar: low=' + lowEnd + ' high=' + highEnd);
   });
 });
