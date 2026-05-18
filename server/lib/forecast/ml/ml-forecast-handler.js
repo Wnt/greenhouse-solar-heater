@@ -145,6 +145,8 @@ function createMlForecastHandler(opts) {
         greenhouseExitTankDeltaC: tuning.gxD,
         emergencyEnterC: tuning.ehE,
         emergencyExitC: tuning.ehX,
+        fanCoolEnterC: tuning.fcE,
+        fanCoolExitC: tuning.fcX,
         weatherFetchedAt: weather.length > 0 ? new Date() : null,
       };
 

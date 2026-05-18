@@ -32,6 +32,8 @@ const DEFAULT_CONFIG = {
   greenhouseExitTankDeltaC: 2,
   emergencyEnterC: 9,
   emergencyExitC: 12,
+  fanCoolEnterC: 30,
+  fanCoolExitC: 28,
   spaceHeaterKw: 1,
   transferFeeCKwh: 5,
   greenhouseLossWPerK: 120,
@@ -118,6 +120,9 @@ function computeMlForecast(opts) {
   const currentMode = String(opts.currentMode || 'idle');
   let heatMode = (currentMode === 'greenhouse_heating' || currentMode === 'emergency_heating')
     ? currentMode : 'idle';
+  // Fan-cooling is an overlay (not a mode) with its own hysteresis;
+  // tracked independently across the rollout.
+  let fanCooling = false;
 
   const tankTrajectory = [];
   const greenhouseTrajectory = [];
@@ -195,10 +200,16 @@ function computeMlForecast(opts) {
     if (mode === 'greenhouse_heating') greenhouseHeatingHours += 1;
     modeForecast.push(duty !== null ? { ts: hourIso, mode, duty: round2(duty) } : { ts: hourIso, mode });
 
+    // Fan-cooling overlay — own hysteresis on the predicted greenhouse
+    // temperature, can be active under any mode.
+    if (gh > cfg.fanCoolEnterC) fanCooling = true;
+    else if (gh < cfg.fanCoolExitC) fanCooling = false;
+
     // ── ML thermal step ──
     const frac = {};
     frac[mode] = 1;
-    const row = featureRow(tankAvg, gh, outdoorC, wx, frac, hourMs);
+    const aux = { heaterOn: typeof duty === 'number' ? duty : 0, fanCooling: fanCooling ? 1 : 0 };
+    const row = featureRow(tankAvg, gh, outdoorC, wx, frac, aux, hourMs);
     if (outOfRangeCount(row, model.featureRanges) > 0) oodHours += 1;
 
     const prevTankAvg = tankAvg;

@@ -97,6 +97,46 @@ function modeFractions(evs, t0, t1) {
   return frac;
 }
 
+// ── actuator / overlay on-off timelines ─────────────────────────────
+// The space heater and fan-cooling run as on/off overlays inside the
+// controller modes; their duty over the step window is reconstructed
+// the same way modeFractions reconstructs the mode mix.
+
+function buildOnOffTimeline(events, type, id) {
+  return (events || [])
+    .filter(function match(e) { return e.type === type && e.id === id; })
+    .slice()
+    .sort(function cmp(a, b) { return a.ts - b.ts; });
+}
+
+function onStateAt(tl, t) {
+  if (!tl.length) return false;
+  if (t < tl[0].ts) return tl[0].from === 'on';
+  let on = false;
+  for (let i = 0; i < tl.length; i++) {
+    if (tl[i].ts <= t) on = tl[i].to === 'on'; else break;
+  }
+  return on;
+}
+
+// Fraction of [t0, t1] the entity spent in the 'on' state.
+function onFraction(tl, t0, t1) {
+  const span = t1 - t0;
+  if (span <= 0) return onStateAt(tl, t0) ? 1 : 0;
+  let cur = t0;
+  let on = onStateAt(tl, t0);
+  let onMs = 0;
+  for (let i = 0; i < tl.length; i++) {
+    if (tl[i].ts <= t0) continue;
+    if (tl[i].ts >= t1) break;
+    if (on) onMs += tl[i].ts - cur;
+    cur = tl[i].ts;
+    on = tl[i].to === 'on';
+  }
+  if (on) onMs += t1 - cur;
+  return onMs / span;
+}
+
 // ── sensor state index ──────────────────────────────────────────────
 
 function buildStateIndex(points) {
@@ -162,6 +202,14 @@ function buildDataset(payload) {
   const weatherAt = buildWeatherIndex(payload.weather);
   const modeEvs = buildModeTimeline(payload.events);
   const tuTimeline = buildTuTimeline(payload.generations);
+  const heaterTl = buildOnOffTimeline(payload.actuators, 'actuator', 'space_heater');
+  const fanCoolTl = buildOnOffTimeline(payload.overlays, 'overlay', 'greenhouse_fan_cooling');
+  function auxFractions(a, b) {
+    return {
+      heaterOn: onFraction(heaterTl, a, b),
+      fanCooling: onFraction(fanCoolTl, a, b),
+    };
+  }
 
   const X = [], yTank = [], yGh = [], t0s = [], tu = [];
   if (stateIdx.firstTs === null) {
@@ -177,7 +225,8 @@ function buildDataset(payload) {
     const wx = weatherAt(t0);
     if (!weatherUsable(wx)) continue;
     const frac = modeFractions(modeEvs, t0, t0 + STEP_MS);
-    X.push(featureRow(s0.tankAvg, s0.greenhouse, s0.outdoor, wx, frac, t0));
+    const aux = auxFractions(t0, t0 + STEP_MS);
+    X.push(featureRow(s0.tankAvg, s0.greenhouse, s0.outdoor, wx, frac, aux, t0));
     yTank.push(s1.tankAvg - s0.tankAvg);
     yGh.push(s1.greenhouse - s0.greenhouse);
     t0s.push(t0);
@@ -194,6 +243,7 @@ function buildDataset(payload) {
       stateAt: stateIdx.stateAt,
       weatherAt,
       modeFractions: function frac(a, b) { return modeFractions(modeEvs, a, b); },
+      auxFractions,
       firstTs: stateIdx.firstTs,
       lastTs: stateIdx.lastTs,
     },

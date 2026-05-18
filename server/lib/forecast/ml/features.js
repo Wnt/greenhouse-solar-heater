@@ -36,6 +36,8 @@ const FEATURE_NAMES = [
   'frac_greenhouse_heating',
   'frac_active_drain',
   'frac_emergency_heating',
+  'frac_heater_on',     // space-heater duty over the step window
+  'frac_fan_cooling',   // greenhouse fan-cooling duty over the step window
 ];
 
 // Build the model feature vector. `tankAvg`/`greenhouse` are the carried
@@ -43,8 +45,11 @@ const FEATURE_NAMES = [
 // features (FMI forecast temp during a rollout, sensor reading during
 // training — they track within ~1-2 degC). `frac` is the controller
 // mode mix over the step window (fractions of MODES, summing to 1).
-function featureRow(tankAvg, greenhouse, outdoor, wx, frac, t) {
+// `aux` carries actuator duty over the window: { heaterOn, fanCooling }
+// — each a 0..1 fraction.
+function featureRow(tankAvg, greenhouse, outdoor, wx, frac, aux, t) {
   const hod = ((t / STEP_MS) % 24 + 24) % 24;
+  const a = aux || {};
   return [
     wx.temperature,
     wx.radiationGlobal,
@@ -62,6 +67,8 @@ function featureRow(tankAvg, greenhouse, outdoor, wx, frac, t) {
     frac.greenhouse_heating || 0,
     frac.active_drain || 0,
     frac.emergency_heating || 0,
+    a.heaterOn || 0,
+    a.fanCooling || 0,
   ];
 }
 

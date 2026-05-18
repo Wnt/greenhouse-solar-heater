@@ -223,7 +223,8 @@ function rolloutReport(index, tankModel, ghModel, startTs, endTs) {
       const wx = index.weatherAt(hStart);
       if (!ds.weatherUsable(wx)) { ok = false; break; }
       const frac = index.modeFractions(hStart, hStart + ds.STEP_MS);
-      const row = ds.featureRow(tankAvg, gh, wx.temperature, wx, frac, hStart);
+      const aux = index.auxFractions(hStart, hStart + ds.STEP_MS);
+      const row = ds.featureRow(tankAvg, gh, wx.temperature, wx, frac, aux, hStart);
       tankAvg += rf.predictForest(tankModel, row);
       gh += rf.predictForest(ghModel, row);
       const actual = index.stateAt(hStart + ds.STEP_MS);
@@ -303,15 +304,15 @@ function thresholdExperiment(data, split, Xtr, Xte, tankTe, ghTe, baseTank, base
   const at = rmseR2(augTank, augXte, tankTe);
   const bg = rmseR2(baseGh, Xte, ghTe);
   const ag = rmseR2(augGh, augXte, ghTe);
-  console.log('\n  held-out 1 h accuracy   baseline (16 feat)      + thresholds ('
-    + (16 + keys.length) + ' feat)');
+  console.log('\n  held-out 1 h accuracy   baseline (' + ds.FEATURE_NAMES.length
+    + ' feat)      + thresholds (' + (ds.FEATURE_NAMES.length + keys.length) + ' feat)');
   console.log('    tank        RMSE ' + pad(f2(bt.rmse), 9) + 'R2 ' + pad(f2(bt.r2), 11)
     + 'RMSE ' + pad(f2(at.rmse), 9) + 'R2 ' + f2(at.r2));
   console.log('    greenhouse  RMSE ' + pad(f2(bg.rmse), 9) + 'R2 ' + pad(f2(bg.r2), 11)
     + 'RMSE ' + pad(f2(ag.rmse), 9) + 'R2 ' + f2(ag.r2));
   console.log('\n  threshold-feature importance (augmented tank model):');
   keys.forEach(function imp(k, i) {
-    console.log('    ' + pad(k, 7) + pct(augTank.featureImportance[16 + i]));
+    console.log('    ' + pad(k, 7) + pct(augTank.featureImportance[ds.FEATURE_NAMES.length + i]));
   });
 }
 
