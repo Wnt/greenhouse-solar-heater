@@ -82,6 +82,15 @@ const DEFAULT_CONFIG = {
   weatherFetchedAt:         null,
   // Number of buckets used for the empirical fit (for confidence)
   fitBucketCount:           0,
+  // Tank destratification. The step-4 solar skew (60/40 top/bottom) and
+  // any other per-layer asymmetry would let the top/bottom split grow
+  // without bound across a 48 h sim. Real tanks mix (conduction +
+  // convection + pump circulation): observed tank_top − tank_bottom
+  // stays ~1.5 K (14 d median 1.3, p90 3.4) and relaxes within hours.
+  // Each sim hour the spread decays exponentially toward tankStratEqC
+  // with time constant tankMixTauH. Set tankMixTauH ≤ 0 to disable.
+  tankMixTauH:              2.0,
+  tankStratEqC:             1.5,
 };
 
 /**
@@ -391,6 +400,20 @@ function computeSustainForecast(opts) {
     } else {
       tankTopC += tankAvgDeltaC;
       tankBotC += tankAvgDeltaC;
+    }
+
+    // ── 4b. Destratification ──
+    // Conduction + convective mixing pull the top/bottom split back
+    // toward a small equilibrium. Without this the step-4 solar skew
+    // accumulates unboundedly — the 48 h projection drifts the top
+    // several K too hot and the bottom several K too cold even though
+    // the average stays accurate. Conserves the tank average.
+    if (cfg.tankMixTauH > 0) {
+      const stratAvg    = (tankTopC + tankBotC) / 2;
+      const stratDecay  = Math.exp(-1 / cfg.tankMixTauH);
+      const stratSpread = cfg.tankStratEqC + ((tankTopC - tankBotC) - cfg.tankStratEqC) * stratDecay;
+      tankTopC = stratAvg + stratSpread / 2;
+      tankBotC = stratAvg - stratSpread / 2;
     }
 
     // ── 5. Greenhouse temperature update ──

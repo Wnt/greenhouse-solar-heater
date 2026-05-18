@@ -1197,3 +1197,40 @@ describe('coefficient sanity gates', () => {
       'low UA should project more heater: low=' + low.electricKwh + ' high=' + high.electricKwh);
   });
 });
+
+// ── Tank destratification ──
+// The step-4 solar skew (60/40 top/bottom) and any other per-layer
+// asymmetry would otherwise let the tank top/bottom split grow without
+// bound over a 48 h sim. Real tanks mix: observed tank_top − tank_bottom
+// stays ~1.5 K (14 d median 1.3, p90 3.4) and relaxes within hours.
+describe('computeSustainForecast — tank destratification', () => {
+  const baseOpts = {
+    now: Date.UTC(2026, 4, 18, 18, 0, 0),
+    tankTop: 60, tankBottom: 20, greenhouseTemp: 12, currentMode: 'idle',
+    weather48h: makeWeather48h({ temperature: 5 }),
+    prices48h: makePrices48h(),
+    coefficients: { tankLeakageWPerK: 3, usedDefaults: false },
+  };
+
+  it('relaxes an extreme top/bottom spread toward equilibrium within hours', () => {
+    const result = computeSustainForecast(baseOpts);
+    const traj = result.tankTrajectory;
+    assert.ok((traj[0].top - traj[0].bottom) > 30, 'starts strongly stratified');
+    assert.ok((traj[6].top - traj[6].bottom) < 6,
+      'spread relaxes within 6 h; got ' + (traj[6].top - traj[6].bottom));
+  });
+
+  it('conserves the tank average — mixing only moves heat between layers', () => {
+    const withMix = computeSustainForecast(baseOpts);
+    const noMix   = computeSustainForecast(Object.assign({}, baseOpts, {
+      config: { tankMixTauH: 0 },
+    }));
+    for (let i = 0; i < withMix.tankTrajectory.length; i++) {
+      assert.ok(Math.abs(withMix.tankTrajectory[i].avg - noMix.tankTrajectory[i].avg) < 1e-6,
+        'avg identical with/without mixing at h=' + i);
+    }
+    // tankMixTauH:0 disables destratification — spread stays wide.
+    assert.ok((noMix.tankTrajectory[6].top - noMix.tankTrajectory[6].bottom) > 30,
+      'disabled mixing keeps the spread');
+  });
+});
