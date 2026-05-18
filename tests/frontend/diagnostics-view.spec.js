@@ -131,7 +131,9 @@ async function scaffold(page, { seriesPayload = makeSeries(), generationByTs = {
 
   // Silence the rest of the boot endpoints.
   await page.route('**/api/runtime', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
-  await page.route('**/api/forecast', r => r.fulfill({
+  // Match /api/forecast and /api/forecast?engine=ml — but NOT the
+  // /api/forecast/diagnostics subpath, which has its own mock above.
+  await page.route(/\/api\/forecast(\?|$)/, r => r.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ generatedAt: new Date(NOW).toISOString(), forecast: { tankTrajectory: [], greenhouseTrajectory: [], notes: [] } }),
   }));

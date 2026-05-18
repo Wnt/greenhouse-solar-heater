@@ -8,7 +8,7 @@ import { test, expect } from './fixtures.js';
 
 const NOW = Date.now();
 
-function makeForecast(engine, hoursUntilBackup) {
+function makeForecast(engine, hoursUntilBackup, modelStale) {
   const traj = Array.from({ length: 48 }, (_, i) => ({
     ts: new Date(NOW + i * 3600_000).toISOString(), top: 40, bottom: 30, avg: 35,
   }));
@@ -18,6 +18,7 @@ function makeForecast(engine, hoursUntilBackup) {
   return {
     generatedAt: new Date(NOW).toISOString(),
     engine,
+    modelStale: !!modelStale,
     weather: [],
     forecast: {
       generatedAt: new Date(NOW).toISOString(),
@@ -40,7 +41,9 @@ function makeForecast(engine, hoursUntilBackup) {
 }
 
 // Returns { mlRequests } — a live counter of ?engine=ml fetches.
-async function scaffold(page) {
+// opts.mlStale makes the mocked ML response report a stale model.
+async function scaffold(page, opts) {
+  const o = opts || {};
   const counter = { mlRequests: 0 };
 
   await page.addInitScript(() => {
@@ -72,7 +75,7 @@ async function scaffold(page) {
     r.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(isMl ? makeForecast('ml', 20) : makeForecast('physics', 10)),
+      body: JSON.stringify(isMl ? makeForecast('ml', 20, o.mlStale) : makeForecast('physics', 10)),
     });
   });
 
@@ -99,42 +102,50 @@ async function scaffold(page) {
 }
 
 test.describe('Forecast engine toggle', () => {
-  test('defaults to the physics engine', async ({ page }) => {
-    await scaffold(page);
+  test('defaults to the ML engine', async ({ page }) => {
+    const counter = await scaffold(page);
     await page.goto('/playground/#settings');
     await page.waitForFunction(() => window.__initComplete === true);
 
     const checkbox = page.locator('#forecast-engine-ml');
     await expect(checkbox).toBeAttached();
-    await expect(checkbox).not.toBeChecked();
-    // Card rendered with the physics payload (hoursUntilBackupNeeded 10).
-    await expect(page.locator('#forecast-val-hours')).toHaveText('~10 h');
-  });
-
-  test('enabling ML persists the preference and re-fetches with engine=ml', async ({ page }) => {
-    const counter = await scaffold(page);
-    await page.goto('/playground/#settings');
-    await page.waitForFunction(() => window.__initComplete === true);
-
-    await page.locator('#forecast-engine-ml').check();
-
-    // Preference persisted.
-    await expect.poll(() => page.evaluate(() => localStorage.getItem('forecastEngine')))
-      .toBe('ml');
-    // A ?engine=ml fetch was issued and the card shows the ML payload.
+    await expect(checkbox).toBeChecked();
+    // Card rendered with the ML payload (hoursUntilBackupNeeded 20).
     await expect.poll(() => counter.mlRequests).toBeGreaterThan(0);
     await expect(page.locator('#forecast-val-hours')).toHaveText('~20 h');
   });
 
-  test('the saved ML preference is used on the next load', async ({ page }) => {
+  test('unchecking switches to physics and persists the preference', async ({ page }) => {
+    await scaffold(page);
+    await page.goto('/playground/#settings');
+    await page.waitForFunction(() => window.__initComplete === true);
+
+    await page.locator('#forecast-engine-ml').uncheck();
+
+    // Preference persisted and the card re-fetched the physics payload.
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('forecastEngine')))
+      .toBe('physics');
+    await expect(page.locator('#forecast-val-hours')).toHaveText('~10 h');
+  });
+
+  test('shows a staleness warning when the ML model is stale', async ({ page }) => {
+    await scaffold(page, { mlStale: true });
+    await page.goto('/playground/#settings');
+    await page.waitForFunction(() => window.__initComplete === true);
+
+    // ML is the default engine, so the stale payload renders on load.
+    await expect(page.locator('#forecast-notes')).toContainText('stale');
+  });
+
+  test('a saved physics preference is honoured on the next load', async ({ page }) => {
     await scaffold(page);
     await page.addInitScript(() => {
-      try { localStorage.setItem('forecastEngine', 'ml'); } catch (_e) { /* ignore */ }
+      try { localStorage.setItem('forecastEngine', 'physics'); } catch (_e) { /* ignore */ }
     });
     await page.goto('/playground/#settings');
     await page.waitForFunction(() => window.__initComplete === true);
 
-    await expect(page.locator('#forecast-engine-ml')).toBeChecked();
-    await expect(page.locator('#forecast-val-hours')).toHaveText('~20 h');
+    await expect(page.locator('#forecast-engine-ml')).not.toBeChecked();
+    await expect(page.locator('#forecast-val-hours')).toHaveText('~10 h');
   });
 });

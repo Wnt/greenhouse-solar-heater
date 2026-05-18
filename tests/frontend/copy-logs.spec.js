@@ -231,7 +231,7 @@ async function mockHistoryApi(page, points, events) {
 }
 
 async function mockForecastApi(page, payload) {
-  await page.route('**/api/forecast', route => route.fulfill({
+  await page.route('**/api/forecast**', route => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify(payload),
@@ -1022,7 +1022,7 @@ test.describe('Copy System Logs — live mode', () => {
     await mockHistoryApi(page);
     await mockEventsApi(page, []);
     // 500 → forecast.js _showError, forecastData stays null.
-    await page.route('**/api/forecast', route => route.fulfill({ status: 500, body: '' }));
+    await page.route('**/api/forecast**', route => route.fulfill({ status: 500, body: '' }));
 
     await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#connection-dot')).toHaveClass(/connected/, { timeout: 5000 });

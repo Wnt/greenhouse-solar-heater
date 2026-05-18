@@ -352,23 +352,6 @@ function sensitivitySweep() {
   });
 }
 
-// Per-feature [min, max] over the dataset — shipped with the model so
-// the inference engine can flag out-of-distribution conditions.
-function featureRanges(X) {
-  const p = X[0].length;
-  const out = [];
-  for (let j = 0; j < p; j++) {
-    let mn = Infinity, mx = -Infinity;
-    for (let i = 0; i < X.length; i++) {
-      const v = X[i][j];
-      if (v < mn) mn = v;
-      if (v > mx) mx = v;
-    }
-    out.push({ min: mn, max: mx });
-  }
-  return out;
-}
-
 // ── main ────────────────────────────────────────────────────────────
 
 async function main() {
@@ -446,7 +429,7 @@ async function main() {
       version: 1,
       featureNames: ds.FEATURE_NAMES,
       stepMs: ds.STEP_MS,
-      featureRanges: featureRanges(data.X),
+      featureRanges: ds.featureRanges(data.X),
       tank: tankFull,
       greenhouse: ghFull,
       trainedAt: new Date().toISOString(),

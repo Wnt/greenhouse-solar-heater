@@ -896,10 +896,10 @@
         <!-- Forecast engine -->
         <div class="card settings-card" id="forecast-engine-card">
           <h3>Forecast engine</h3>
-          <p class="settings-desc">The Next 48 h forecast runs on the physics model by default. The experimental machine-learning engine predicts tank and greenhouse temperatures from a random forest trained on recorded sensor and weather history.</p>
+          <p class="settings-desc">The Next 48 h forecast runs on a machine-learning model by default — a random forest trained on recorded sensor and weather history, retrained daily. Uncheck to fall back to the physics model.</p>
           <label class="notif-cat-label">
             <input type="checkbox" id="forecast-engine-ml">
-            <span><strong>Machine-learning forecast</strong> &mdash; experimental, learns from history</span>
+            <span><strong>Machine-learning forecast</strong> &mdash; default engine; uncheck for the physics model</span>
           </label>
           <p class="settings-desc" style="margin-top:10px"><a href="./public/ml-forecast.html" target="_blank" rel="noopener">How the ML forecast works &#8599;</a></p>
         </div>

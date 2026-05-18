@@ -456,7 +456,7 @@ function initServices(callback) {
       const onDbReady = function () {
         setWsCommandHandlersDb(db);
         initAnomalyManager();
-        forecast = forecastBootstrap.start({ pool: db.getPool(), log, repoRoot: REPO_ROOT, isPreviewMode: PREVIEW_MODE });
+        forecast = forecastBootstrap.start({ pool: db.getPool(), db, log, repoRoot: REPO_ROOT, isPreviewMode: PREVIEW_MODE });
         finish();
       };
       if (PREVIEW_MODE) {
