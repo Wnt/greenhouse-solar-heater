@@ -1,9 +1,11 @@
 // @ts-check
-// Tests for the Settings-view "Forecast engine" toggle wired in
-// playground/js/forecast.js (initForecastEngineSetting). The toggle is
-// a client-side preference that switches /api/forecast between the
-// physics engine and ?engine=ml. API responses are mocked via
-// page.route() so the test runs offline against the static server.
+// Tests for the forecast-engine selectors. The engine choice (ML vs.
+// physics) is a client-side preference exposed from two switches that
+// stay in sync via playground/js/forecast.js:
+//   - the Status-graph 3-way switch  (Off / ML / Physics)
+//   - the device-view Forecast-preview 2-way switch  (ML / Physics)
+// API responses are mocked via page.route() so the test runs offline
+// against the static server.
 import { test, expect } from './fixtures.js';
 
 const NOW = Date.now();
@@ -101,40 +103,103 @@ async function scaffold(page, opts) {
   return counter;
 }
 
-test.describe('Forecast engine toggle', () => {
-  test('defaults to the ML engine', async ({ page }) => {
-    const counter = await scaffold(page);
-    await page.goto('/playground/#settings');
-    await page.waitForFunction(() => window.__initComplete === true);
+async function bootStatus(page) {
+  await page.goto('/playground/');
+  await page.waitForFunction(() => window.__initComplete === true);
+}
 
-    const checkbox = page.locator('#forecast-engine-ml');
-    await expect(checkbox).toBeAttached();
-    await expect(checkbox).toBeChecked();
-    // Card rendered with the ML payload (hoursUntilBackupNeeded 20).
-    await expect.poll(() => counter.mlRequests).toBeGreaterThan(0);
-    await expect(page.locator('#forecast-val-hours')).toHaveText('~20 h');
+async function gotoDevice(page) {
+  await page.locator('.sidebar-nav [data-view="device"]').click();
+  await expect(page.locator('#device-config-form')).toBeVisible();
+}
+
+const engineKey = () => 'forecastEngine';
+
+test.describe('Status-graph forecast switch (Off / ML / Physics)', () => {
+  test('defaults to Off — the overlay is not shown', async ({ page }) => {
+    await scaffold(page);
+    await bootStatus(page);
+
+    await expect(page.locator('#graph-forecast-off')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('#graph-forecast-ml')).toHaveAttribute('aria-checked', 'false');
+    await expect(page.locator('#graph-forecast-physics')).toHaveAttribute('aria-checked', 'false');
   });
 
-  test('unchecking switches to physics and persists the preference', async ({ page }) => {
+  test('selecting ML turns the overlay on with the ML engine', async ({ page }) => {
     await scaffold(page);
-    await page.goto('/playground/#settings');
-    await page.waitForFunction(() => window.__initComplete === true);
+    await bootStatus(page);
 
-    await page.locator('#forecast-engine-ml').uncheck();
+    await page.locator('#graph-forecast-ml').click();
 
-    // Preference persisted and the card re-fetched the physics payload.
-    await expect.poll(() => page.evaluate(() => localStorage.getItem('forecastEngine')))
+    await expect(page.locator('#graph-forecast-ml')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('#graph-forecast-off')).toHaveAttribute('aria-checked', 'false');
+    // ML headline numbers (hoursUntilBackupNeeded 20) and the forecast
+    // legend revealed by the overlay.
+    await expect(page.locator('#forecast-val-hours')).toHaveText('~20 h');
+    await expect(page.locator('.forecast-legend').first()).toBeVisible();
+  });
+
+  test('selecting Physics switches the engine and persists the preference', async ({ page }) => {
+    await scaffold(page);
+    await bootStatus(page);
+
+    await page.locator('#graph-forecast-physics').click();
+
+    await expect(page.locator('#graph-forecast-physics')).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), engineKey()))
       .toBe('physics');
+    // The card re-fetched with the physics payload (hoursUntilBackupNeeded 10).
     await expect(page.locator('#forecast-val-hours')).toHaveText('~10 h');
+  });
+
+  test('selecting Off hides the overlay again', async ({ page }) => {
+    await scaffold(page);
+    await bootStatus(page);
+
+    await page.locator('#graph-forecast-ml').click();
+    await expect(page.locator('#graph-forecast-ml')).toHaveAttribute('aria-checked', 'true');
+
+    await page.locator('#graph-forecast-off').click();
+    await expect(page.locator('#graph-forecast-off')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.forecast-legend').first()).toBeHidden();
+  });
+
+  test('keyboard arrows move the selection', async ({ page }) => {
+    await scaffold(page);
+    await bootStatus(page);
+
+    await page.locator('#graph-forecast-off').focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('#graph-forecast-ml')).toHaveAttribute('aria-checked', 'true');
+
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.locator('#graph-forecast-off')).toHaveAttribute('aria-checked', 'true');
   });
 
   test('shows a staleness warning when the ML model is stale', async ({ page }) => {
     await scaffold(page, { mlStale: true });
-    await page.goto('/playground/#settings');
-    await page.waitForFunction(() => window.__initComplete === true);
+    await bootStatus(page);
 
-    // ML is the default engine, so the stale payload renders on load.
+    // ML is the default engine, so the card fetches the stale ML payload
+    // on load even before the overlay is turned on.
     await expect(page.locator('#forecast-notes')).toContainText('stale');
+  });
+});
+
+test.describe('Device-view Forecast-preview engine switch (ML / Physics)', () => {
+  test('defaults to ML and switches the engine, persisting the preference', async ({ page }) => {
+    await scaffold(page);
+    await bootStatus(page);
+    await gotoDevice(page);
+
+    await expect(page.locator('#tuning-forecast-ml')).toHaveAttribute('aria-checked', 'true');
+
+    await page.locator('#tuning-forecast-physics').click();
+
+    await expect(page.locator('#tuning-forecast-physics')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('#tuning-forecast-ml')).toHaveAttribute('aria-checked', 'false');
+    await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), engineKey()))
+      .toBe('physics');
   });
 
   test('a saved physics preference is honoured on the next load', async ({ page }) => {
@@ -142,10 +207,42 @@ test.describe('Forecast engine toggle', () => {
     await page.addInitScript(() => {
       try { localStorage.setItem('forecastEngine', 'physics'); } catch (_e) { /* ignore */ }
     });
-    await page.goto('/playground/#settings');
-    await page.waitForFunction(() => window.__initComplete === true);
+    await bootStatus(page);
 
-    await expect(page.locator('#forecast-engine-ml')).not.toBeChecked();
+    // The card fetched the physics payload on load.
     await expect(page.locator('#forecast-val-hours')).toHaveText('~10 h');
+
+    await gotoDevice(page);
+    await expect(page.locator('#tuning-forecast-physics')).toHaveAttribute('aria-checked', 'true');
+  });
+});
+
+test.describe('The two engine switches stay in sync', () => {
+  test('a device-view engine change is reflected on the status switch', async ({ page }) => {
+    await scaffold(page);
+    await bootStatus(page);
+
+    // Turn the status overlay on (ML), then switch to physics from the
+    // device view.
+    await page.locator('#graph-forecast-ml').click();
+    await expect(page.locator('#graph-forecast-ml')).toHaveAttribute('aria-checked', 'true');
+
+    await gotoDevice(page);
+    await page.locator('#tuning-forecast-physics').click();
+
+    await expect(page.locator('#graph-forecast-physics')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('#graph-forecast-ml')).toHaveAttribute('aria-checked', 'false');
+  });
+
+  test('a status-switch engine change is reflected on the device switch', async ({ page }) => {
+    await scaffold(page);
+    await bootStatus(page);
+
+    await page.locator('#graph-forecast-physics').click();
+    await expect(page.locator('#graph-forecast-physics')).toHaveAttribute('aria-checked', 'true');
+
+    await gotoDevice(page);
+    await expect(page.locator('#tuning-forecast-physics')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('#tuning-forecast-ml')).toHaveAttribute('aria-checked', 'false');
   });
 });

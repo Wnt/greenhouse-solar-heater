@@ -19,7 +19,7 @@
 
 import { store } from '../app-state.js';
 import { registerDataSource } from '../sync/registry.js';
-import { getForecastEngine } from '../forecast.js';
+import { getForecastEngine, setForecastEngine, onForecastEngineChange } from '../forecast.js';
 import { aggregateForecastBucket } from './forecast-overlay.js';
 import { drawEmergencyStripes } from './emergency-stripes.js';
 
@@ -46,6 +46,7 @@ export function initTuningForecast() {
     if (store.get('currentView') === 'device') scheduleRender();
   });
   wireInspector();
+  wireEngineToggle();
   // Refresh on Android resume / tab focus / network recovery / periodic
   // resync — the underlying weather forecast updates every 30 min.
   registerDataSource({
@@ -59,6 +60,46 @@ export function initTuningForecast() {
 export function setForecastEntered(tu) {
   _enteredTu = tu || {};
   scheduleRender();
+}
+
+// ── Engine selector ──────────────────────────────────────────────────────────
+
+// Wires the Forecast-preview 2-way segmented switch (ML / Physics). The
+// engine choice is shared app-wide via forecast.js — selecting here
+// flips it for the whole app (and the Status-graph selector stays in
+// sync). onForecastEngineChange fires for changes from either place, so
+// the buttons and the preview both refresh.
+function wireEngineToggle() {
+  const seg = document.getElementById('tuning-forecast-seg');
+  if (!seg) return;
+  const btns = Array.from(seg.querySelectorAll('.forecast-seg-btn'));
+  if (btns.length === 0) return;
+
+  const render = () => {
+    const sel = getForecastEngine();
+    for (const b of btns) {
+      const on = b.dataset.mode === sel;
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on ? 0 : -1;
+    }
+  };
+
+  for (const b of btns) {
+    b.addEventListener('click', () => setForecastEngine(b.dataset.mode));
+  }
+  seg.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    let idx = btns.findIndex((b) => b.dataset.mode === getForecastEngine());
+    idx = e.key === 'ArrowLeft'
+      ? (idx - 1 + btns.length) % btns.length
+      : (idx + 1) % btns.length;
+    btns[idx].focus();
+    setForecastEngine(btns[idx].dataset.mode);
+  });
+
+  onForecastEngineChange(() => { render(); scheduleRender(); });
+  render();
 }
 
 // ── Render orchestration ─────────────────────────────────────────────────────

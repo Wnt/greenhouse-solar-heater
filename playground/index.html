@@ -284,9 +284,13 @@
               <span>All sensors</span>
               <div class="mode-toggle-switch" id="graph-show-all-sensors" role="switch" tabindex="0" aria-checked="false"></div>
             </div>
-            <div class="graph-option-toggle live-only" id="graph-show-forecast-toggle" style="display:none;">
+            <div class="graph-option-toggle live-only" id="graph-forecast-toggle" style="display:none;">
               <span>Forecast</span>
-              <div class="mode-toggle-switch" id="graph-show-forecast" role="switch" tabindex="0" aria-checked="false"></div>
+              <div class="forecast-seg" id="graph-forecast-seg" role="radiogroup" aria-label="Forecast overlay engine">
+                <button type="button" class="forecast-seg-btn" id="graph-forecast-off" data-mode="off" role="radio" aria-checked="true" tabindex="0">Off</button>
+                <button type="button" class="forecast-seg-btn" id="graph-forecast-ml" data-mode="ml" role="radio" aria-checked="false" tabindex="-1">ML</button>
+                <button type="button" class="forecast-seg-btn" id="graph-forecast-physics" data-mode="physics" role="radio" aria-checked="false" tabindex="-1">Physics</button>
+              </div>
             </div>
             <button type="button" class="graph-fullscreen-btn" id="graph-fullscreen-btn" aria-label="Toggle fullscreen" aria-pressed="false" title="Toggle fullscreen">
               <span class="material-symbols-outlined" id="graph-fullscreen-icon">fullscreen</span>
@@ -669,6 +673,13 @@
 
           <h4 style="margin:24px 0 4px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Forecast preview</h4>
           <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 12px;">48-hour projection from the forecast engine &mdash; live FMI weather and the fitted thermal model. <strong>Solid</strong> lines recompute the forecast with the values entered above; <strong>dashed</strong> lines are the live forecast (values currently saved on the controller), so you can see what a threshold change does before pushing it. Bars along the bottom show the predicted operating mode; hover for a readout.</p>
+          <div class="graph-option-toggle" id="tuning-forecast-engine-toggle" style="margin:0 0 10px;">
+            <span>Forecast engine</span>
+            <div class="forecast-seg" id="tuning-forecast-seg" role="radiogroup" aria-label="Forecast engine">
+              <button type="button" class="forecast-seg-btn" id="tuning-forecast-ml" data-mode="ml" role="radio" aria-checked="true" tabindex="0">ML</button>
+              <button type="button" class="forecast-seg-btn" id="tuning-forecast-physics" data-mode="physics" role="radio" aria-checked="false" tabindex="-1">Physics</button>
+            </div>
+          </div>
           <div id="tuning-forecast-container" style="position:relative;">
             <canvas id="tuning-forecast-chart" style="width:100%;height:220px;display:block;"></canvas>
             <div class="graph-inspector" id="tuning-forecast-inspector">
@@ -906,17 +917,6 @@
             </div>
             <p class="notif-test-hint">Tap <span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px;">send</span> to preview how a notification in that category looks on this device.</p>
           </div>
-        </div>
-
-        <!-- Forecast engine -->
-        <div class="card settings-card" id="forecast-engine-card">
-          <h3>Forecast engine</h3>
-          <p class="settings-desc">The Next 48 h forecast runs on a machine-learning model by default — a random forest trained on recorded sensor and weather history, retrained daily. Uncheck to fall back to the physics model.</p>
-          <label class="notif-cat-label">
-            <input type="checkbox" id="forecast-engine-ml">
-            <span><strong>Machine-learning forecast</strong> &mdash; default engine; uncheck for the physics model</span>
-          </label>
-          <p class="settings-desc" style="margin-top:10px"><a href="./public/ml-forecast.html" target="_blank" rel="noopener">How the ML forecast works &#8599;</a></p>
         </div>
 
         <!-- Anomaly watchdogs -->
