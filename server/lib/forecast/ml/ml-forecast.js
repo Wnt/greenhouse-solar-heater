@@ -6,9 +6,16 @@
 // Mirrors the *output contract* of computeSustainForecast
 // (sustain-forecast.js) so the /api/forecast card and the history-graph
 // overlay render an ML forecast with no client changes — only the
-// per-hour thermal step differs.
+// per-step thermal step differs.
 //
-// Each hour: decide the controller mode from the same hysteresis the
+// The rollout is multi-resolution: 5-min steps across the near term
+// (features.FINE_HORIZON_MS), then 1-h steps for the tail. Fine steps
+// give precise near-term mode timing — the window the operator acts on
+// — without paying the recursive-error cost of running 5-min steps for
+// the whole 48 h. The trained forest takes the step length as a feature
+// (`step_h`), so one model serves both regimes.
+//
+// Each step: decide the controller mode from the same hysteresis the
 // physics engine uses (evaluated on the ML-predicted state), build the
 // shared feature row, and step tank-average + greenhouse temperature
 // with the trained forest. Backup electricity is derived from the
@@ -16,11 +23,12 @@
 // physics engine uses.
 
 const rf = require('./random-forest');
-const { featureRow } = require('./features');
+const {
+  featureRow, STEP_FINE_MS, STEP_COARSE_MS, FINE_HORIZON_MS, HORIZON_MS, MS_PER_HOUR,
+} = require('./features');
 const { tankStoredEnergyKwh } = require('../../energy-balance');
 
-const SECONDS_PER_HOUR = 3600;
-const HOURS = 48;
+const HORIZON_HOURS = 48;
 
 // Defaults mirror sustain-forecast.js DEFAULT_CONFIG; the handler
 // overrides the threshold fields from live device-config tuning.
@@ -75,6 +83,16 @@ function outOfRangeCount(row, ranges) {
     if (row[f] < r.min - margin || row[f] > r.max + margin) n += 1;
   }
   return n;
+}
+
+// Multi-resolution step plan: 5-min steps until FINE_HORIZON_MS, then
+// 1-h steps out to HORIZON_MS. The lengths sum to exactly HORIZON_MS.
+function buildStepSchedule() {
+  const steps = [];
+  let elapsed = 0;
+  while (elapsed < FINE_HORIZON_MS) { steps.push(STEP_FINE_MS); elapsed += STEP_FINE_MS; }
+  while (elapsed < HORIZON_MS) { steps.push(STEP_COARSE_MS); elapsed += STEP_COARSE_MS; }
+  return steps;
 }
 
 /**
@@ -134,24 +152,33 @@ function computeMlForecast(opts) {
   let greenhouseHeatingHours = 0;
   let hoursUntilFloor = null;
   let hoursUntilBackupNeeded = opts.emergencyRecentlyActive ? 0 : null;
+  // OOD time is summed in hours (steps have unequal length).
   let oodHours = 0;
 
-  for (let h = 0; h < HOURS; h++) {
-    const hourMs = now + h * SECONDS_PER_HOUR * 1000;
-    const hourIso = new Date(hourMs).toISOString();
+  const steps = buildStepSchedule();
+  let elapsedMs = 0;
+  for (let i = 0; i < steps.length; i++) {
+    const stepMs = steps[i];
+    const stepH = stepMs / MS_PER_HOUR;
+    const tMs = now + elapsedMs;
+    const tIso = new Date(tMs).toISOString();
+    const elapsedH = elapsedMs / MS_PER_HOUR;
     const tankTop = tankAvg + spread / 2;
 
     tankTrajectory.push({
-      ts: hourIso, top: round2(tankTop), bottom: round2(tankAvg - spread / 2), avg: round2(tankAvg),
+      ts: tIso, top: round2(tankTop), bottom: round2(tankAvg - spread / 2), avg: round2(tankAvg),
     });
-    greenhouseTrajectory.push({ ts: hourIso, temp: round2(gh) });
-    if (hoursUntilFloor === null && tankAvg < cfg.tankFloorC) hoursUntilFloor = h;
+    greenhouseTrajectory.push({ ts: tIso, temp: round2(gh) });
+    if (hoursUntilFloor === null && tankAvg < cfg.tankFloorC) hoursUntilFloor = elapsedH;
 
-    const wx = weather[h] || weather[weather.length - 1]
+    // Weather and prices are hourly; index by the elapsed hour so the
+    // 12 fine steps inside an hour all read that hour's forecast row.
+    const wxIdx = Math.floor(elapsedMs / MS_PER_HOUR);
+    const wx = weather[wxIdx] || weather[weather.length - 1]
       || { temperature: 0, radiationGlobal: 0, windSpeed: 0, precipitation: 0 };
     const outdoorC = num(wx.temperature);
     const radiation = num(wx.radiationGlobal);
-    const px = prices[h] || prices[prices.length - 1] || { priceCKwh: 10 };
+    const px = prices[wxIdx] || prices[prices.length - 1] || { priceCKwh: 10 };
     const priceCKwh = typeof px.priceCKwh === 'number' ? px.priceCKwh : 10;
 
     // ── Mode decision — same hysteresis as the physics engine ──
@@ -159,7 +186,7 @@ function computeMlForecast(opts) {
     const tankCanSustain = tankTop >= gh + cfg.greenhouseExitTankDeltaC;
     if (gh < cfg.emergencyEnterC) {
       if (heatMode !== 'emergency_heating' && hoursUntilBackupNeeded === null) {
-        hoursUntilBackupNeeded = h;
+        hoursUntilBackupNeeded = elapsedH;
       }
       heatMode = 'emergency_heating';
     } else if (heatMode === 'emergency_heating' && gh > cfg.emergencyExitC) {
@@ -170,14 +197,14 @@ function computeMlForecast(opts) {
       heatMode = 'idle';
     }
     // solar_charging is an exclusive mode in the training data; model it
-    // as an overlay on an idle hour when the sun is strong and the tank
+    // as an overlay on an idle step when the sun is strong and the tank
     // still has headroom.
     let mode = heatMode;
     if (heatMode === 'idle' && radiation >= cfg.solarChargeRadiationMinWm2 && tankAvg < cfg.tankMaxC) {
       mode = 'solar_charging';
     }
 
-    // ── Backup electricity (emergency hours only) ──
+    // ── Backup electricity (emergency steps only) ──
     let duty = null;
     if (mode === 'emergency_heating') {
       const ghTarget = (cfg.emergencyEnterC + cfg.emergencyExitC) / 2;
@@ -188,17 +215,17 @@ function computeMlForecast(opts) {
       );
       const heaterW = cfg.spaceHeaterKw * 1000;
       duty = Math.min(1, Math.max(0, ghLossW - radDeliveredW) / heaterW);
-      const kwh = duty * cfg.spaceHeaterKw;
+      const kwh = duty * cfg.spaceHeaterKw * stepH;
       if (kwh > 0) {
         electricKwh += kwh;
         const eur = kwh * (priceCKwh + cfg.transferFeeCKwh) / 100;
         electricCostEur += eur;
-        costBreakdown.push({ ts: hourIso, kWh: round4(kwh), priceCKwh, eurInclTransfer: round4(eur) });
+        costBreakdown.push({ ts: tIso, kWh: round4(kwh), priceCKwh, eurInclTransfer: round4(eur) });
       }
     }
-    if (mode === 'solar_charging') solarChargingHours += 1;
-    if (mode === 'greenhouse_heating') greenhouseHeatingHours += 1;
-    modeForecast.push(duty !== null ? { ts: hourIso, mode, duty: round2(duty) } : { ts: hourIso, mode });
+    if (mode === 'solar_charging') solarChargingHours += stepH;
+    if (mode === 'greenhouse_heating') greenhouseHeatingHours += stepH;
+    modeForecast.push(duty !== null ? { ts: tIso, mode, duty: round2(duty) } : { ts: tIso, mode });
 
     // Fan-cooling overlay — own hysteresis on the predicted greenhouse
     // temperature, can be active under any mode.
@@ -209,8 +236,8 @@ function computeMlForecast(opts) {
     const frac = {};
     frac[mode] = 1;
     const aux = { heaterOn: typeof duty === 'number' ? duty : 0, fanCooling: fanCooling ? 1 : 0 };
-    const row = featureRow(tankAvg, gh, outdoorC, wx, frac, aux, hourMs);
-    if (outOfRangeCount(row, model.featureRanges) > 0) oodHours += 1;
+    const row = featureRow(tankAvg, gh, outdoorC, wx, frac, aux, tMs, stepMs);
+    if (outOfRangeCount(row, model.featureRanges) > 0) oodHours += stepH;
 
     const prevTankAvg = tankAvg;
     tankAvg += rf.predictForest(model.tank, row);
@@ -218,12 +245,13 @@ function computeMlForecast(opts) {
     if (gh < outdoorC) gh = outdoorC; // can't fall below the outdoor air
 
     if (hoursUntilFloor === null && tankAvg < cfg.tankFloorC && prevTankAvg >= cfg.tankFloorC) {
-      hoursUntilFloor = h + (prevTankAvg - cfg.tankFloorC) / (prevTankAvg - tankAvg);
+      hoursUntilFloor = elapsedH + stepH * (prevTankAvg - cfg.tankFloorC) / (prevTankAvg - tankAvg);
     }
+    elapsedMs += stepMs;
   }
 
-  // Trailing 48 h point.
-  const finalIso = new Date(now + HOURS * SECONDS_PER_HOUR * 1000).toISOString();
+  // Trailing point at the 48 h horizon.
+  const finalIso = new Date(now + HORIZON_MS).toISOString();
   tankTrajectory.push({
     ts: finalIso, top: round2(tankAvg + spread / 2), bottom: round2(tankAvg - spread / 2), avg: round2(tankAvg),
   });
@@ -234,26 +262,27 @@ function computeMlForecast(opts) {
   if (cfg.weatherFetchedAt) {
     const fetchedMs = cfg.weatherFetchedAt instanceof Date
       ? cfg.weatherFetchedAt.getTime() : Number(cfg.weatherFetchedAt);
-    weatherFresh = (now - fetchedMs) < 2 * 3600 * 1000;
+    weatherFresh = (now - fetchedMs) < 2 * MS_PER_HOUR;
   }
   let confidence = 'medium';
-  if (oodHours > HOURS / 4) confidence = 'low';
+  if (oodHours > HORIZON_HOURS / 4) confidence = 'low';
   else if (oodHours === 0 && weatherFresh) confidence = 'high';
 
   // ── Notes ──
   const ghTemps = greenhouseTrajectory.map(function temp(p) { return p.temp; });
   const ghMin = Math.min.apply(null, ghTemps);
   const ghMinIdx = ghTemps.indexOf(ghMin);
+  const ghMinTs = Date.parse(greenhouseTrajectory[ghMinIdx].ts);
   const tankAvgNow = tankTrajectory[0].avg;
   const notes = buildNotes({
-    now, confidence, ghMin, ghMinIdx, electricKwh, electricCostEur,
+    confidence, ghMin, ghMinTs, electricKwh, electricCostEur,
     hoursUntilBackupNeeded, tankStoredKwhNow: tankStoredEnergyKwh(tankAvgNow),
   });
 
   return {
     generatedAt: new Date(now).toISOString(),
     engine: 'ml',
-    horizonHours: HOURS,
+    horizonHours: HORIZON_HOURS,
     tankTrajectory,
     greenhouseTrajectory,
     modeForecast,
@@ -262,8 +291,8 @@ function computeMlForecast(opts) {
     electricKwh: round4(electricKwh),
     electricCostEur: round4(electricCostEur),
     costBreakdown,
-    solarChargingHours,
-    greenhouseHeatingHours,
+    solarChargingHours: round2(solarChargingHours),
+    greenhouseHeatingHours: round2(greenhouseHeatingHours),
     modelConfidence: confidence,
     notes,
   };
@@ -276,7 +305,7 @@ function buildNotes(ctx) {
     notes.push('ML forecast is extrapolating beyond its trained conditions — treat as indicative.');
   }
   if (notes.length < 3) {
-    const hhmm = helsinkiHHMM(ctx.now + ctx.ghMinIdx * 3600 * 1000);
+    const hhmm = helsinkiHHMM(ctx.ghMinTs);
     notes.push(ctx.electricKwh > 0
       ? 'Greenhouse cools to ' + ctx.ghMin.toFixed(1) + ' °C around ' + hhmm
         + ', when the space heater takes over.'

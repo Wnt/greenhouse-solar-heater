@@ -104,18 +104,19 @@ export function drawForecastOverlay(ctx, data, nowSec, cutoffSec, tMin, tMax, vi
   }
 }
 
-// Pure: aggregate the modeForecast hourly entries into bucket totals
-// for [segStart, segEnd). Each entry carries a single timestamp and
-// represents the mode active for the full [t, t+1h) interval, so a
-// bucket smaller than 1 h gets its overlap-fraction-of-an-hour rather
-// than 1.0 if the entry's timestamp happens to land inside it. The
-// previous "+1 if t is in bucket" math left every other 30-min bucket
-// empty when the forecast was at 1-hour resolution — see PR for the
-// 15min/30min-bar zoom screenshots that motivated the fix.
+// Pure: aggregate the modeForecast entries into bucket totals for
+// [segStart, segEnd). Each entry is the mode active from its own
+// timestamp until the next entry's — derived here rather than assumed,
+// so this works for both the hourly physics engine and the ML engine's
+// multi-resolution output (5-min near-term entries, 1-h tail). The last
+// entry has no successor and falls back to a 1-h span. A bucket smaller
+// than an entry's span gets its overlap fraction rather than the whole
+// span, which is what keeps sub-hour zoom levels from rendering empty
+// every-other bucket.
 //
 // emergency entries carry an optional `duty` (0..1); a partial duty
-// scales the per-hour contribution proportionally. So a 30-min bucket
-// fully inside an "emergency_heating duty 0.4" hour contributes
+// scales the contribution proportionally. So a 30-min bucket fully
+// inside an "emergency_heating duty 0.4" hour contributes
 // 0.4 × 0.5 h = 0.2 h of emergency, which divided by segHours = 0.5
 // renders as a 40%-tall bar — matching the underlying duty cycle.
 export function aggregateForecastBucket(modeForecast, segStart, segEnd) {
@@ -124,7 +125,13 @@ export function aggregateForecastBucket(modeForecast, segStart, segEnd) {
   for (let i = 0; i < modeForecast.length; i++) {
     const e = modeForecast[i];
     const t = Math.floor(new Date(e.ts).getTime() / 1000);
-    const eEnd = t + HOUR_SEC;
+    // Entry span runs to the next distinct timestamp (entries are
+    // time-ordered; some engines emit a solar overlay sharing a ts).
+    let eEnd = t + HOUR_SEC;
+    for (let j = i + 1; j < modeForecast.length; j++) {
+      const tj = Math.floor(new Date(modeForecast[j].ts).getTime() / 1000);
+      if (tj > t) { eEnd = tj; break; }
+    }
     const overlap = Math.max(0, Math.min(eEnd, segEnd) - Math.max(t, segStart));
     if (overlap <= 0) continue;
     const oh = overlap / HOUR_SEC;

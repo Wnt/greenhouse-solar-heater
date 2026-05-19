@@ -10,14 +10,29 @@
 //
 // Feature set is deliberately "rollout-safe": every column is either an
 // FMI weather-forecast value (known ahead of time), a carried model
-// state (tankAvg / greenhouse), a clock value, or a controller mode
-// fraction. Tank top/bottom split and the collector sensor are NOT
-// used — they cannot be carried through a recursive 48 h rollout
-// without a second model.
+// state (tankAvg / greenhouse), a clock value, a controller mode
+// fraction, or the prediction-step length. Tank top/bottom split and
+// the collector sensor are NOT used — they cannot be carried through a
+// recursive 48 h rollout without a second model.
+//
+// The rollout is multi-resolution: 5-min steps over the near term
+// (FINE_HORIZON_MS), then 1-h steps for the tail — fine near-term mode
+// timing without the recursive-error blow-up of running 5-min steps for
+// the whole 48 h. One forest pair serves both regimes: the `step_h`
+// feature lets the trees partition fine from coarse samples. At the
+// 5-min step a sample window almost never spans a mode transition, so
+// its mode fractions collapse to a one-hot of the real logged mode —
+// which is the categorical "real transition log" signal, no aggregation.
 
 const MODES = ['idle', 'solar_charging', 'greenhouse_heating', 'active_drain', 'emergency_heating'];
 
-const STEP_MS = 3600000; // 1 h prediction step
+const MS_PER_HOUR = 3600000;
+
+// Prediction-step sizes and the near-term horizon that uses the fine one.
+const STEP_FINE_MS = 5 * 60 * 1000;
+const STEP_COARSE_MS = 60 * 60 * 1000;
+const FINE_HORIZON_MS = 4 * 60 * 60 * 1000;
+const HORIZON_MS = 48 * 60 * 60 * 1000;
 
 const FEATURE_NAMES = [
   'wx_temp_c',          // FMI forecast outdoor temperature
@@ -38,6 +53,7 @@ const FEATURE_NAMES = [
   'frac_emergency_heating',
   'frac_heater_on',     // space-heater duty over the step window
   'frac_fan_cooling',   // greenhouse fan-cooling duty over the step window
+  'step_h',             // prediction-step length in hours (~0.083 fine / 1 coarse)
 ];
 
 // Build the model feature vector. `tankAvg`/`greenhouse` are the carried
@@ -46,9 +62,11 @@ const FEATURE_NAMES = [
 // training — they track within ~1-2 degC). `frac` is the controller
 // mode mix over the step window (fractions of MODES, summing to 1).
 // `aux` carries actuator duty over the window: { heaterOn, fanCooling }
-// — each a 0..1 fraction.
-function featureRow(tankAvg, greenhouse, outdoor, wx, frac, aux, t) {
-  const hod = ((t / STEP_MS) % 24 + 24) % 24;
+// — each a 0..1 fraction. `stepMs` is the length of the window the
+// targets span; `step_h` tells the model whether a row is a fine
+// (5-min) or a coarse (1-h) sample.
+function featureRow(tankAvg, greenhouse, outdoor, wx, frac, aux, t, stepMs) {
+  const hod = ((t / MS_PER_HOUR) % 24 + 24) % 24;
   const a = aux || {};
   return [
     wx.temperature,
@@ -69,6 +87,7 @@ function featureRow(tankAvg, greenhouse, outdoor, wx, frac, aux, t) {
     frac.emergency_heating || 0,
     a.heaterOn || 0,
     a.fanCooling || 0,
+    (stepMs || STEP_COARSE_MS) / MS_PER_HOUR,
   ];
 }
 
@@ -101,7 +120,11 @@ function featureRanges(X) {
 
 module.exports = {
   MODES,
-  STEP_MS,
+  MS_PER_HOUR,
+  STEP_FINE_MS,
+  STEP_COARSE_MS,
+  FINE_HORIZON_MS,
+  HORIZON_MS,
   FEATURE_NAMES,
   featureRow,
   weatherUsable,

@@ -539,7 +539,7 @@ function appendForecast(lines) {
     }
 
     lines.push('');
-    lines.push('Hourly projection:');
+    lines.push('Projection (per forecast step):');
     lines.push('Time                  TempOut    Rad   Wind  Precip   Price  Mode                Solar  Duty  TankAvg     GH');
     for (let i = 0; i < order.length; i++) {
       const g = groups[order[i]];

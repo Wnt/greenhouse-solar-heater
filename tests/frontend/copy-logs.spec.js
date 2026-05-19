@@ -623,7 +623,7 @@ test.describe('Copy System Logs — live mode', () => {
     expect(text).toContain('  2026-05-06: 14.5 kWh');
     expect(text).toContain('Notes:');
     expect(text).toContain('  - Greenhouse stays above 10 °C through tomorrow morning.');
-    expect(text).toContain('Hourly projection:');
+    expect(text).toContain('Projection (per forecast step):');
     // The hourly row should join weather + price + mode + trajectory on
     // the same timestamp. We don't pin the wall-clock format (TZ-dependent)
     // but every projection field must show up on the same line.
@@ -706,7 +706,7 @@ test.describe('Copy System Logs — live mode', () => {
     const lines = text.split('\n');
 
     // Header should have a dedicated Solar column.
-    const headerIdx = lines.findIndex(l => l.includes('Hourly projection:'));
+    const headerIdx = lines.findIndex(l => l.includes('Projection (per forecast step):'));
     expect(headerIdx).toBeGreaterThan(-1);
     expect(lines[headerIdx + 1]).toMatch(/Mode\s+Solar\s+Duty/);
 

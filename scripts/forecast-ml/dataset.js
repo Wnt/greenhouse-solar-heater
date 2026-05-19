@@ -16,11 +16,19 @@
 
 // Feature contract (column list + row builder) is shared with the
 // server-side inference engine — see server/lib/forecast/ml/features.js.
-const { MODES, STEP_MS, FEATURE_NAMES, featureRow, weatherUsable, featureRanges } =
-  require('../../server/lib/forecast/ml/features.js');
+const {
+  MODES, MS_PER_HOUR, STEP_FINE_MS, STEP_COARSE_MS,
+  FEATURE_NAMES, featureRow, weatherUsable, featureRanges,
+} = require('../../server/lib/forecast/ml/features.js');
 
 const ANCHOR_STEP_MS = 900000; // new training anchor every 15 min
 const MAX_GAP_MS = 8 * 60000;  // skip samples straddling a sensor gap
+
+// Each anchor yields one sample per prediction-step size — the rollout
+// runs 5-min steps near-term and 1-h steps for the tail, so the model
+// must learn both. `step_h` (set inside featureRow) lets the forest
+// tell the two regimes apart.
+const STEPS_MS = [STEP_FINE_MS, STEP_COARSE_MS];
 
 function lerp(a, b, w) { return a + (b - a) * w; }
 
@@ -188,7 +196,7 @@ function buildWeatherIndex(weather) {
     if (!isNaN(ms)) byHour[ms] = w;
   });
   return function weatherAt(t) {
-    return byHour[Math.floor(t / STEP_MS) * STEP_MS] || null;
+    return byHour[Math.floor(t / MS_PER_HOUR) * MS_PER_HOUR] || null;
   };
 }
 
@@ -217,20 +225,24 @@ function buildDataset(payload) {
   }
 
   const start = Math.ceil(stateIdx.firstTs / ANCHOR_STEP_MS) * ANCHOR_STEP_MS;
-  const end = stateIdx.lastTs - STEP_MS;
+  const end = stateIdx.lastTs - STEP_FINE_MS;
   for (let t0 = start; t0 <= end; t0 += ANCHOR_STEP_MS) {
     const s0 = stateIdx.stateAt(t0);
-    const s1 = stateIdx.stateAt(t0 + STEP_MS);
-    if (!s0 || !s1) continue;
+    if (!s0) continue;
     const wx = weatherAt(t0);
     if (!weatherUsable(wx)) continue;
-    const frac = modeFractions(modeEvs, t0, t0 + STEP_MS);
-    const aux = auxFractions(t0, t0 + STEP_MS);
-    X.push(featureRow(s0.tankAvg, s0.greenhouse, s0.outdoor, wx, frac, aux, t0));
-    yTank.push(s1.tankAvg - s0.tankAvg);
-    yGh.push(s1.greenhouse - s0.greenhouse);
-    t0s.push(t0);
-    tu.push(tuAt(tuTimeline, t0));
+    for (let si = 0; si < STEPS_MS.length; si++) {
+      const stepMs = STEPS_MS[si];
+      const s1 = stateIdx.stateAt(t0 + stepMs);
+      if (!s1) continue;
+      const frac = modeFractions(modeEvs, t0, t0 + stepMs);
+      const aux = auxFractions(t0, t0 + stepMs);
+      X.push(featureRow(s0.tankAvg, s0.greenhouse, s0.outdoor, wx, frac, aux, t0, stepMs));
+      yTank.push(s1.tankAvg - s0.tankAvg);
+      yGh.push(s1.greenhouse - s0.greenhouse);
+      t0s.push(t0);
+      tu.push(tuAt(tuTimeline, t0));
+    }
   }
 
   return {
@@ -253,7 +265,8 @@ function buildDataset(payload) {
 module.exports = {
   MODES,
   FEATURE_NAMES,
-  STEP_MS,
+  STEP_FINE_MS,
+  STEP_COARSE_MS,
   TU_KEYS,
   buildDataset,
   featureRow,

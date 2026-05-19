@@ -17,7 +17,7 @@
 //   -> { start(), stop(), retrainOnce(cb), getStatus() }
 
 const rf = require('./random-forest');
-const { FEATURE_NAMES, STEP_MS, featureRanges } = require('./features');
+const { FEATURE_NAMES, STEP_FINE_MS, STEP_COARSE_MS, featureRanges } = require('./features');
 const { buildDataset } = require('../../../../scripts/forecast-ml/dataset.js');
 
 const RETRAIN_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
@@ -194,7 +194,7 @@ function createMlTrainer(opts) {
       const model = {
         version: 1,
         featureNames: FEATURE_NAMES,
-        stepMs: STEP_MS,
+        steps: [STEP_FINE_MS, STEP_COARSE_MS],
         featureRanges: featureRanges(data.X),
         tank: fullTank,
         greenhouse: fullGh,
