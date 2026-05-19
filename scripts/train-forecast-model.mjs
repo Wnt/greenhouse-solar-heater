@@ -167,7 +167,7 @@ function singleStepReport(label, X, yTrain, XTest, yTest, model, lin) {
   const predLin = XTest.map(function p(r) { return lin(r); });
   const zero = yTest.map(function z() { return 0; });
   console.log('\n  ' + label);
-  console.log('    target spread (test, 1 h change):  std = ' + f2(std(yTest)) + ' degC');
+  console.log('    target spread (test, per-step change):  std = ' + f2(std(yTest)) + ' degC');
   console.log('    persistence (no change)  RMSE = ' + pad(f2(rmse(zero, yTest)), 8)
     + ' MAE = ' + pad(f2(mae(zero, yTest)), 8));
   console.log('    ridge linear             RMSE = ' + pad(f2(rmse(predLin, yTest)), 8)
@@ -212,22 +212,22 @@ function bucketRmse(buckets, key) {
 function rolloutReport(index, tankModel, ghModel, startTs, endTs) {
   const buckets = emptyBuckets();
   let starts = 0;
-  for (let t0 = startTs; t0 <= endTs - 48 * ds.STEP_MS; t0 += 6 * ds.STEP_MS) {
+  for (let t0 = startTs; t0 <= endTs - 48 * ds.STEP_COARSE_MS; t0 += 6 * ds.STEP_COARSE_MS) {
     const s0 = index.stateAt(t0);
     if (!s0) continue;
     let tankAvg = s0.tankAvg;
     let gh = s0.greenhouse;
     let ok = true;
     for (let h = 1; h <= 48 && ok; h++) {
-      const hStart = t0 + (h - 1) * ds.STEP_MS;
+      const hStart = t0 + (h - 1) * ds.STEP_COARSE_MS;
       const wx = index.weatherAt(hStart);
       if (!ds.weatherUsable(wx)) { ok = false; break; }
-      const frac = index.modeFractions(hStart, hStart + ds.STEP_MS);
-      const aux = index.auxFractions(hStart, hStart + ds.STEP_MS);
-      const row = ds.featureRow(tankAvg, gh, wx.temperature, wx, frac, aux, hStart);
+      const frac = index.modeFractions(hStart, hStart + ds.STEP_COARSE_MS);
+      const aux = index.auxFractions(hStart, hStart + ds.STEP_COARSE_MS);
+      const row = ds.featureRow(tankAvg, gh, wx.temperature, wx, frac, aux, hStart, ds.STEP_COARSE_MS);
       tankAvg += rf.predictForest(tankModel, row);
       gh += rf.predictForest(ghModel, row);
-      const actual = index.stateAt(hStart + ds.STEP_MS);
+      const actual = index.stateAt(hStart + ds.STEP_COARSE_MS);
       if (actual) {
         const b = bucketLabel(h);
         if (b) {
@@ -336,6 +336,12 @@ function sensitivitySweep() {
   }
   console.log('  start: tank 37 degC, greenhouse 15 degC, 6 degC outdoor, partly-sunny days');
   console.log('    geT/gxT    tank avg +12h    +24h    +48h    heating h   backup kWh');
+  // The multi-resolution trajectory is 48 five-min points (hours 0-4)
+  // then hourly points — map an hour offset to its trajectory index.
+  const trajAvgAt = function avgAt(traj, h) {
+    const idx = h <= 4 ? h * 12 : 48 + (h - 4);
+    return (traj[idx] ? traj[idx].avg : NaN).toFixed(1);
+  };
   [8, 10, 12, 14, 16].forEach(function sweep(geT) {
     const fc = computeMlForecast({
       now: new Date('2026-05-15T15:00:00Z'),
@@ -344,10 +350,10 @@ function sensitivitySweep() {
       config: { greenhouseEnterC: geT, greenhouseExitC: geT + 1 },
     });
     console.log('    ' + pad(geT + '/' + (geT + 1), 11)
-      + pad(fc.tankTrajectory[12].avg.toFixed(1), 16)
-      + pad(fc.tankTrajectory[24].avg.toFixed(1), 8)
-      + pad(fc.tankTrajectory[48].avg.toFixed(1), 8)
-      + pad(String(fc.greenhouseHeatingHours), 12)
+      + pad(trajAvgAt(fc.tankTrajectory, 12), 16)
+      + pad(trajAvgAt(fc.tankTrajectory, 24), 8)
+      + pad(trajAvgAt(fc.tankTrajectory, 48), 8)
+      + pad(fc.greenhouseHeatingHours.toFixed(1), 12)
       + fc.electricKwh.toFixed(1));
   });
 }
@@ -371,7 +377,7 @@ async function main() {
   console.log('  raw sensor points   ' + payload.points.length);
   console.log('  weather rows        ' + payload.weather.length);
   console.log('  mode transitions    ' + payload.events.length);
-  console.log('  training samples    ' + data.X.length + ' (1 h step, 15 min anchors)');
+  console.log('  training samples    ' + data.X.length + ' (5-min + 1-h steps, 15 min anchors)');
   console.log('  features            ' + ds.FEATURE_NAMES.length);
 
   // Time-ordered split: train on the older 80%, test on the newest 20%.
@@ -428,7 +434,7 @@ async function main() {
     const model = {
       version: 1,
       featureNames: ds.FEATURE_NAMES,
-      stepMs: ds.STEP_MS,
+      steps: [ds.STEP_FINE_MS, ds.STEP_COARSE_MS],
       featureRanges: ds.featureRanges(data.X),
       tank: tankFull,
       greenhouse: ghFull,

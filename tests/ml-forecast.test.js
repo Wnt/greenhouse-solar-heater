@@ -76,9 +76,11 @@ test('computeMlForecast returns the forecast-card contract', () => {
   });
   assert.strictEqual(fc.engine, 'ml');
   assert.strictEqual(fc.horizonHours, 48);
-  assert.strictEqual(fc.tankTrajectory.length, 49);
-  assert.strictEqual(fc.greenhouseTrajectory.length, 49);
-  assert.strictEqual(fc.modeForecast.length, 48);
+  // 48 five-min steps (first 4 h) + 44 one-h steps = 92, plus the
+  // trailing 48 h trajectory point = 93.
+  assert.strictEqual(fc.tankTrajectory.length, 93);
+  assert.strictEqual(fc.greenhouseTrajectory.length, 93);
+  assert.strictEqual(fc.modeForecast.length, 92);
   assert.ok(Array.isArray(fc.notes) && fc.notes.length > 0);
   assert.ok(['low', 'medium', 'high'].includes(fc.modelConfidence));
   assert.strictEqual(typeof fc.electricKwh, 'number');
@@ -86,6 +88,26 @@ test('computeMlForecast returns the forecast-card contract', () => {
   // First trajectory point reflects the supplied tank/greenhouse state.
   assert.strictEqual(fc.tankTrajectory[0].avg, 33);
   assert.strictEqual(fc.greenhouseTrajectory[0].temp, 16);
+});
+
+test('computeMlForecast rolls a multi-resolution step schedule', () => {
+  const model = loadModel();
+  const fc = computeMlForecast({
+    now: new Date('2026-05-18T18:00:00Z'),
+    tankTop: 36, tankBottom: 30, greenhouseTemp: 16,
+    currentMode: 'idle',
+    weather48h: makeWeather(9, true),
+    prices48h: makePrices(),
+    model,
+  });
+  const tsAt = (i) => Date.parse(fc.tankTrajectory[i].ts);
+  // First 48 trajectory points are 5-min apart (the near-term window).
+  assert.strictEqual(tsAt(1) - tsAt(0), 5 * 60 * 1000);
+  assert.strictEqual(tsAt(48) - tsAt(47), 5 * 60 * 1000);
+  // After the fine window the points step hourly.
+  assert.strictEqual(tsAt(49) - tsAt(48), 60 * 60 * 1000);
+  // The trailing point lands exactly 48 h after `now`.
+  assert.strictEqual(tsAt(92) - tsAt(0), 48 * 60 * 60 * 1000);
 });
 
 test('computeMlForecast throws without a loaded model', () => {

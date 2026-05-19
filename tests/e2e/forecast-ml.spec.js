@@ -22,11 +22,13 @@ test.describe('GET /api/forecast?engine=ml', () => {
     expect(fc.engine).toBe('ml');
     expect(fc.horizonHours).toBe(48);
     expect(Array.isArray(fc.tankTrajectory)).toBe(true);
-    expect(fc.tankTrajectory.length).toBe(49);
+    // Multi-resolution rollout: 48 five-min steps + 44 hourly steps,
+    // plus the trailing 48 h point.
+    expect(fc.tankTrajectory.length).toBe(93);
     expect(Array.isArray(fc.greenhouseTrajectory)).toBe(true);
-    expect(fc.greenhouseTrajectory.length).toBe(49);
+    expect(fc.greenhouseTrajectory.length).toBe(93);
     expect(Array.isArray(fc.modeForecast)).toBe(true);
-    expect(fc.modeForecast.length).toBe(48);
+    expect(fc.modeForecast.length).toBe(92);
     expect(Array.isArray(fc.notes)).toBe(true);
     expect(['low', 'medium', 'high']).toContain(fc.modelConfidence);
     expect(typeof fc.electricKwh).toBe('number');
