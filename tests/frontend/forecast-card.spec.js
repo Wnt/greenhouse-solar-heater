@@ -217,7 +217,7 @@ test.describe('Forecast card — chart overlay handoff', () => {
       return el && el.textContent && el.textContent !== '—';
     }, { timeout: 5000 });
 
-    const toggle = page.locator('#graph-show-forecast-toggle');
+    const toggle = page.locator('#graph-forecast-toggle');
     await expect(toggle).toBeVisible();
     await expect(toggle).toContainText('Forecast');
   });

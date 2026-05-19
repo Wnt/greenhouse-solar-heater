@@ -25,7 +25,8 @@ import {
 } from './main/logs.js';
 import { setupCopyLogsButton } from './main/logs-clipboard.js';
 import { initBalanceCard } from './main/balance-card.js';
-import { initForecastCard, initForecastEngineSetting } from './forecast.js';
+import { initForecastCard } from './forecast.js';
+import { setupForecastToggle } from './main/forecast-toggle.js';
 import { setupInspector } from './main/graph-inspector.js';
 import { setupChartPinchZoom, resetChartZoom } from './main/chart-pinch-zoom.js';
 import { setupChartMouseZoom } from './main/chart-mouse-zoom.js';
@@ -42,10 +43,10 @@ window.__triggerVersionCheck = triggerVersionCheck;
 // Shared mutable state lives in ./main/state.js as a leaf module so
 // siblings don't have to import back from main.js (which would cycle).
 import {
-  model, controller, running, showAllSensors, showForecast,
+  model, controller, running, showAllSensors,
   params, timeSeriesStore, trendStore,
   setModel, setController, setRunning,
-  setSimSpeed, setShowAllSensors, setShowForecast,
+  setSimSpeed, setShowAllSensors,
   hiddenSeries, toggleSeriesHidden,
   setChartFullscreen,
 } from './main/state.js';
@@ -135,7 +136,6 @@ async function init() {
   setupLogsScrollLoader();
   setupCopyLogsButton();
   initForecastCard();
-  initForecastEngineSetting();
   initBalanceCard({ onRerender: rerenderWithHistoryFallback });
   updateDisplay(model.getState(), { mode: 'idle', valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false }, actuators: { pump: false, fan: false, space_heater: false }, transition: null });
 
@@ -241,48 +241,6 @@ function setupAllSensorsToggle() {
 function applyAllSensorsVisibility() {
   const display = showAllSensors ? '' : 'none';
   document.querySelectorAll('.sensor-detail').forEach((el) => {
-    el.style.display = display;
-  });
-}
-
-// Mirror of setupAllSensorsToggle for the "Forecast" toggle. The data
-// itself is fetched by playground/js/forecast.js and stashed in state
-// (forecastData); this toggle just gates whether history-graph.js
-// renders the overlay. Hidden in sim mode via the .live-only class.
-function setupForecastToggle() {
-  const sw = document.getElementById('graph-show-forecast');
-  const container = document.getElementById('graph-show-forecast-toggle');
-  if (!sw || !container) return;
-
-  const render = () => {
-    sw.classList.toggle('active', showForecast);
-    sw.setAttribute('aria-checked', showForecast ? 'true' : 'false');
-    applyForecastLegendVisibility();
-  };
-  const toggle = () => {
-    setShowForecast(!showForecast);
-    // Snap the visible window back to the new default so toggling on
-    // immediately reveals "past graphRange + min(graphRange/2, 48h)
-    // forecast" — and toggling off snaps back to "past graphRange".
-    // Otherwise a previously-set chartZoom would mask the change.
-    resetChartZoom();
-    render();
-    drawHistoryGraph();
-  };
-
-  render();
-  container.addEventListener('click', toggle);
-  sw.addEventListener('keydown', (e) => {
-    if (e.key === ' ' || e.key === 'Enter') {
-      e.preventDefault();
-      toggle();
-    }
-  });
-}
-
-function applyForecastLegendVisibility() {
-  const display = showForecast ? '' : 'none';
-  document.querySelectorAll('.forecast-legend').forEach((el) => {
     el.style.display = display;
   });
 }

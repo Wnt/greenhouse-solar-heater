@@ -180,8 +180,8 @@ test.describe('Inspector tooltip on the forecast side of the history graph', () 
     }, { timeout: 5000 });
 
     // Enable the forecast overlay so the chart draws past "now".
-    await page.locator('#graph-show-forecast-toggle').click();
-    await expect(page.locator('#graph-show-forecast')).toHaveAttribute('aria-checked', 'true');
+    await page.locator('#graph-forecast-ml').click();
+    await expect(page.locator('#graph-forecast-ml')).toHaveAttribute('aria-checked', 'true');
 
     // Hover ~9 h into the forecast region. With the forecast preset
     // zoom, the visible window at the default 24 h range spans 24 h of
@@ -228,7 +228,7 @@ test.describe('Inspector tooltip on the forecast side of the history graph', () 
       return !!(el && el.textContent && el.textContent !== '—');
     }, { timeout: 5000 });
 
-    await page.locator('#graph-show-forecast-toggle').click();
+    await page.locator('#graph-forecast-ml').click();
 
     // Hover at frac 0.861 — with the forecast preset zoom, visible
     // window spans 36 h (24 h history + 12 h forecast), so simTime ≈
@@ -252,7 +252,7 @@ test.describe('Inspector tooltip on the forecast side of the history graph', () 
       return !!(el && el.textContent && el.textContent !== '—');
     }, { timeout: 5000 });
 
-    await page.locator('#graph-show-forecast-toggle').click();
+    await page.locator('#graph-forecast-ml').click();
 
     // Charging and heating still read as %, so any hover position works.
     // Historical region first.
@@ -288,7 +288,7 @@ test.describe('Inspector tooltip on the forecast side of the history graph', () 
       return !!(el && el.textContent && el.textContent !== '—');
     }, { timeout: 5000 });
 
-    await page.locator('#graph-show-forecast-toggle').click();
+    await page.locator('#graph-forecast-ml').click();
 
     // Read what the chart thinks "now" is by hovering on the right
     // edge of the historical span. The last live sample was 60 s ago —

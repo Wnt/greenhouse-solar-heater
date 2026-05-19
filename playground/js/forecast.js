@@ -20,20 +20,52 @@ import { setForecastData } from './main/state.js';
 import { drawHistoryGraph } from './main/history-graph.js';
 
 // ── Forecast engine selection ────────────────────────────────────────
-// The Next 48 h forecast runs on the ML engine by default; the Settings
-// view lets the user fall back to the physics engine. The choice is a
-// client-side preference (localStorage) that drives the /api/forecast
-// `engine` query param — the server computes the forecast with
-// whichever engine is requested.
+// The Next 48 h forecast runs on the ML engine by default; the user can
+// fall back to the physics engine. The choice is a client-side
+// preference (localStorage) that drives the /api/forecast `engine` query
+// param — the server computes the forecast with whichever engine is
+// requested. It is selected from two places that stay in sync through
+// onForecastEngineChange: the Status-graph 3-way switch (Off / ML /
+// Physics) and the device-view Forecast-preview 2-way switch.
 
 const ENGINE_STORAGE_KEY = 'forecastEngine';
+const _engineListeners = [];
+// Cached engine value — lazily seeded from localStorage on first read,
+// then kept authoritative in memory so the selection stays consistent
+// even when localStorage writes fail (private mode).
+let _engine = null;
 
 export function getForecastEngine() {
-  try {
-    return localStorage.getItem(ENGINE_STORAGE_KEY) === 'physics' ? 'physics' : 'ml';
-  } catch (_e) {
-    return 'ml';
+  if (_engine === null) {
+    try {
+      _engine = localStorage.getItem(ENGINE_STORAGE_KEY) === 'physics' ? 'physics' : 'ml';
+    } catch (_e) {
+      _engine = 'ml';
+    }
   }
+  return _engine;
+}
+
+// Persist the forecast-engine preference and notify listeners. A no-op
+// (and no notification) when the value is unchanged, so re-selecting the
+// already-active engine doesn't trigger a spurious re-fetch.
+export function setForecastEngine(engine) {
+  const next = engine === 'physics' ? 'physics' : 'ml';
+  if (next === getForecastEngine()) return;
+  _engine = next;
+  try {
+    localStorage.setItem(ENGINE_STORAGE_KEY, next);
+  } catch (_e) {
+    // Private-mode / storage-disabled — the preference just won't
+    // persist across reloads; in-session listeners still fire.
+  }
+  for (let i = 0; i < _engineListeners.length; i++) {
+    try { _engineListeners[i](next); } catch (_e) { /* listener isolation */ }
+  }
+}
+
+export function onForecastEngineChange(cb) {
+  if (typeof cb === 'function') _engineListeners.push(cb);
 }
 
 function forecastUrl() {
@@ -282,22 +314,9 @@ export function initForecastCard() {
       _doFetch();
     }
   });
-}
 
-// Wires the Settings-view "Forecast engine" toggle. The checkbox state
-// is mirrored from localStorage; flipping it persists the preference
-// and re-fetches the card so the change is visible immediately.
-export function initForecastEngineSetting() {
-  const checkbox = document.getElementById('forecast-engine-ml');
-  if (!checkbox) return;
-  checkbox.checked = getForecastEngine() === 'ml';
-  checkbox.addEventListener('change', function () {
-    try {
-      localStorage.setItem(ENGINE_STORAGE_KEY, checkbox.checked ? 'ml' : 'physics');
-    } catch (_e) {
-      // Private-mode / storage-disabled — the preference just won't
-      // persist across reloads; the immediate re-fetch still works.
-    }
-    _doFetch();
-  });
+  // Re-fetch whenever the engine is switched (from either the Status-
+  // graph or the device-view Forecast-preview selector) so the headline
+  // numbers and the chart overlay reflect the new engine immediately.
+  onForecastEngineChange(function () { _doFetch(); });
 }

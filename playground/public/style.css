@@ -648,6 +648,44 @@ select, input, textarea { max-width: 100%; }
   user-select: none;
 }
 
+/* Segmented control for the forecast-engine selector — used by the
+ * Status-graph 3-way switch (Off / ML / Physics) and the device-view
+ * Forecast-preview 2-way switch (ML / Physics). */
+.forecast-seg {
+  display: inline-flex;
+  background: var(--surface-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.forecast-seg-btn {
+  background: transparent;
+  border: 0;
+  margin: 0;
+  padding: 4px 9px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.forecast-seg-btn + .forecast-seg-btn { border-left: 1px solid var(--outline-variant); }
+
+.forecast-seg-btn[aria-checked="true"] {
+  background: var(--secondary-container);
+  color: var(--secondary);
+}
+
+.forecast-seg-btn:focus-visible {
+  outline: 2px solid var(--secondary);
+  outline-offset: -2px;
+}
+
 /* Fullscreen toggle — sits at the right edge of the graph header
  * alongside the All Sensors / Forecast switches. Clicking it calls
  * requestFullscreen on the .graph-card so the same DOM (toggles,
