@@ -121,19 +121,28 @@ function render() {
   _abort = new AbortController();
   const signal = _abort.signal;
   hideInspector();
-  setStatus(statusEl, 'Computing forecast…');
+  showLoading(true);
+  setStatus(statusEl, '');
 
   fetchForecasts(signal)
     .then((data) => {
       if (signal.aborted) return;
+      showLoading(false);
       drawForecasts(data);
     })
     .catch((err) => {
       if (signal.aborted || (err && err.name === 'AbortError')) return;
+      showLoading(false);
       _chart = null;
       clearCanvas(canvas);
+      updateLegendRanges(null, null);
       setStatus(statusEl, 'Forecast unavailable: ' + err.message);
     });
+}
+
+function showLoading(on) {
+  const el = document.getElementById('tuning-forecast-loading');
+  if (el) el.hidden = !on;
 }
 
 // Build the /api/forecast URL — engine-aware, with an optional `tu`

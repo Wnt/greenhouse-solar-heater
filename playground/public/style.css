@@ -2176,6 +2176,44 @@ button.primary.disabled {
 
 .forecast-legend-range:empty { display: none; }
 
+/* Loading overlay on the forecast-preview canvas. Absolutely
+ * positioned over the existing 220 px chart so toggling it never
+ * changes the surrounding layout — it covers the canvas with a
+ * blurred backdrop + centered spinner while the forecast fetch is
+ * in flight, then unhides the rendered chart underneath. */
+.forecast-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 14, 18, 0.45);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.forecast-loading[hidden] { display: none; }
+
+.forecast-loading-spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid var(--outline-variant);
+  border-top-color: var(--secondary);
+  animation: forecast-loading-spin 0.9s linear infinite;
+}
+
+@keyframes forecast-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .forecast-loading-spinner { animation-duration: 2.4s; }
+}
+
 /* ── Relay Toggle Board ── */
 
 .relay-board {

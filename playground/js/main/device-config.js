@@ -217,10 +217,21 @@ function initDualTemperatureSlider(containerId) {
   const hiField = TUNING_FIELDS.find((f) => f.key === hiKey);
   if (!loField || !hiField) return;
 
-  const sMin = Math.min(loField.min, hiField.min);
-  const sMax = Math.max(loField.max, hiField.max);
+  // Slider range — by default the union of the two field ranges, but
+  // each container may narrow it via data-slider-min / data-slider-max
+  // (the typical operator-tweak range, not the full hardware range).
+  const sMin = container.dataset.sliderMin !== undefined
+    ? Number(container.dataset.sliderMin) : Math.min(loField.min, hiField.min);
+  const sMax = container.dataset.sliderMax !== undefined
+    ? Number(container.dataset.sliderMax) : Math.max(loField.max, hiField.max);
   const step = Math.min(loField.step, hiField.step);
   const minGap = step;
+  // Effective per-knob bounds: intersect the field's own [min, max]
+  // with the slider's visual [sMin, sMax]. This is what clamp() uses.
+  const loLo = Math.max(sMin, loField.min);
+  const loHi = Math.min(sMax, loField.max);
+  const hiLo = Math.max(sMin, hiField.min);
+  const hiHi = Math.min(sMax, hiField.max);
   const loLabel = container.dataset.loLabel || loField.label;
   const hiLabel = container.dataset.hiLabel || hiField.label;
 
@@ -293,23 +304,46 @@ function initDualTemperatureSlider(containerId) {
     paint();
   }
 
+  // Push behavior: when one knob invades the other's space, shove the
+  // other knob along instead of clamping the moving one. Final values
+  // are kept within their own field bounds AND the slider's visual
+  // range. If the receiving knob hits its ceiling/floor, the moving
+  // knob clamps so the one-step gap is preserved.
   function commitLo() {
-    const hi = Number(hiRange.value);
-    let lo = Number(loRange.value);
-    lo = clamp(lo, loField.min, Math.min(loField.max, hi - minGap));
+    let lo = clamp(Number(loRange.value), loLo, loHi);
+    let hi = Number(hiRange.value);
+    const origHi = hi;
+    if (lo > hi - minGap) {
+      hi = clamp(lo + minGap, hiLo, hiHi);
+      if (lo > hi - minGap) lo = hi - minGap;
+    }
     loRange.value = String(lo);
+    hiRange.value = String(hi);
     loHidden.value = String(lo);
     loHidden.dispatchEvent(new Event('input', { bubbles: true }));
+    if (hi !== origHi) {
+      hiHidden.value = String(hi);
+      hiHidden.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     paint();
   }
 
   function commitHi() {
-    const lo = Number(loRange.value);
-    let hi = Number(hiRange.value);
-    hi = clamp(hi, Math.max(hiField.min, lo + minGap), hiField.max);
+    let hi = clamp(Number(hiRange.value), hiLo, hiHi);
+    let lo = Number(loRange.value);
+    const origLo = lo;
+    if (hi < lo + minGap) {
+      lo = clamp(hi - minGap, loLo, loHi);
+      if (hi < lo + minGap) hi = lo + minGap;
+    }
+    loRange.value = String(lo);
     hiRange.value = String(hi);
     hiHidden.value = String(hi);
     hiHidden.dispatchEvent(new Event('input', { bubbles: true }));
+    if (lo !== origLo) {
+      loHidden.value = String(lo);
+      loHidden.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     paint();
   }
 

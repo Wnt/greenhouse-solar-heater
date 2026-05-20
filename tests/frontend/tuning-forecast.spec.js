@@ -199,6 +199,57 @@ test.describe('Tuning forecast preview', () => {
     expect(newUrls.some(u => /"geT":5\b/.test(decodeURIComponent(u)))).toBe(true);
   });
 
+  test('loading spinner overlays the chart while the forecast is in flight', async ({ page }) => {
+    // Slow the forecast endpoint so the loading state is observable.
+    let unblock;
+    const block = new Promise((resolve) => { unblock = resolve; });
+    await page.route('**/api/forecast**', async (route) => {
+      await block;
+      const url = route.request().url();
+      let geT = 11;
+      const m = url.match(/[?&]tu=([^&]+)/);
+      if (m) {
+        try {
+          const tu = JSON.parse(decodeURIComponent(m[1]));
+          if (typeof tu.geT === 'number') geT = tu.geT;
+        } catch (e) { /* fall back */ }
+      }
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify(buildForecast(geT)),
+      });
+    });
+
+    await page.route('**/api/device-config', (r) => r.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify(DEFAULT_CONFIG),
+    }));
+    await page.route('**/api/history**', (r) => r.fulfill({
+      status: 200, contentType: 'application/json', body: '[]',
+    }));
+    await mockLiveConnection(page);
+    await page.goto('/playground/', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.__initComplete === true);
+    await page.locator('.sidebar-nav [data-view="device"]').click();
+    await expect(page.locator('#device-config-form')).toBeVisible();
+
+    // Spinner overlays the chart while fetch is blocked.
+    const spinner = page.locator('#tuning-forecast-loading');
+    await expect(spinner).toBeVisible();
+
+    // The legacy text status no longer carries "Computing forecast…".
+    await expect(page.locator('#tuning-forecast-status'))
+      .not.toContainText('Computing forecast');
+
+    // The status row reserves vertical space so the legend below it
+    // doesn't jump when the message appears/disappears.
+    const minHeight = await page.locator('#tuning-forecast-status').evaluate(
+      (el) => getComputedStyle(el).minHeight);
+    expect(parseFloat(minHeight)).toBeGreaterThan(0);
+
+    unblock();
+    await expect(spinner).toBeHidden();
+  });
+
   test('legend shows the projected min/max for tank and greenhouse', async ({ page }) => {
     await setupDeviceView(page);
 

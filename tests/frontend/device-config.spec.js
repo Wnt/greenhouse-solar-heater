@@ -823,23 +823,58 @@ test.describe('Device config UI', () => {
     await expect(ghLoReadout).toHaveClass(/temp-dual-slider-readout-value--default/);
   });
 
-  test('slider keeps the heat-exit knob at least one step above heat-enter', async ({ page }) => {
+  test('dragging the lower knob past the upper knob pushes the upper one up', async ({ page }) => {
     await setupDeviceView(page, {
       tu: { geT: 10, gxT: 12 },
     });
 
-    // Push the lower knob (geT) up past the upper knob (gxT=12). The
-    // commit logic must clamp lo to hi - 0.5 = 11.5, mirroring the
-    // server-side invariant gxT > geT.
+    // Push the lower knob (geT) above the upper knob (gxT=12). The
+    // commit logic must shove gxT up so the one-step gap is preserved
+    // (server-side invariant gxT > geT). Target lo=15 leaves room
+    // below the 20 °C slider ceiling, so neither knob hits a wall.
     await page.evaluate(() => {
       const lo = document.querySelector(
         '#dc-greenhouse-heat-slider .temp-dual-slider-input--lo');
-      lo.value = '20';
+      lo.value = '15';
       lo.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
-    await expect(page.locator('#dc-tu-geT')).toHaveValue('11.5');
-    await expect(page.locator('#dc-tu-gxT')).toHaveValue('12');
+    await expect(page.locator('#dc-tu-geT')).toHaveValue('15');
+    await expect(page.locator('#dc-tu-gxT')).toHaveValue('15.5');
+  });
+
+  test('dragging the upper knob below the lower knob pushes the lower one down', async ({ page }) => {
+    await setupDeviceView(page, {
+      tu: { geT: 10, gxT: 12 },
+    });
+
+    await page.evaluate(() => {
+      const hi = document.querySelector(
+        '#dc-greenhouse-heat-slider .temp-dual-slider-input--hi');
+      hi.value = '7';
+      hi.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await expect(page.locator('#dc-tu-gxT')).toHaveValue('7');
+    await expect(page.locator('#dc-tu-geT')).toHaveValue('6.5');
+  });
+
+  test('slider visual range is fixed at 5–20 °C with the scale labels matching', async ({ page }) => {
+    await setupDeviceView(page);
+
+    for (const containerId of ['#dc-greenhouse-heat-slider', '#dc-emergency-heat-slider']) {
+      await expect(page.locator(containerId + ' .temp-dual-slider-input--lo'))
+        .toHaveAttribute('min', '5');
+      await expect(page.locator(containerId + ' .temp-dual-slider-input--lo'))
+        .toHaveAttribute('max', '20');
+      await expect(page.locator(containerId + ' .temp-dual-slider-input--hi'))
+        .toHaveAttribute('min', '5');
+      await expect(page.locator(containerId + ' .temp-dual-slider-input--hi'))
+        .toHaveAttribute('max', '20');
+      const scale = page.locator(containerId + ' .temp-dual-slider-scale span');
+      await expect(scale.nth(0)).toHaveText('5°C');
+      await expect(scale.nth(1)).toHaveText('20°C');
+    }
   });
 
   test('device view only visible in live mode', async ({ page }) => {
