@@ -14,7 +14,7 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
-const { FEATURE_NAMES } = require('./features');
+const { FEATURE_NAMES, MODEL_VERSION } = require('./features');
 
 const COMMITTED_PATH = path.join(__dirname, 'forecast-model.json.gz');
 
@@ -34,9 +34,13 @@ function s3Config() {
 }
 
 // A model is usable only if its feature contract matches the running
-// code — guards against a model/code desync after a deploy.
+// code AND its target-semantics version matches. The version check
+// catches changes the feature-name check can't see — e.g. v2 moved
+// targets from absolute ΔT to physics-residual ΔT, so an old v1
+// forest composed into the v2 rollout would silently double-count.
 function contractOk(model) {
   return !!model && !!model.tank && !!model.greenhouse
+    && model.version === MODEL_VERSION
     && Array.isArray(model.featureNames)
     && model.featureNames.length === FEATURE_NAMES.length
     && model.featureNames.every(function eq(n, i) { return n === FEATURE_NAMES[i]; });

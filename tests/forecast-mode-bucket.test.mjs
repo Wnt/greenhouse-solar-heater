@@ -71,12 +71,27 @@ describe('aggregateForecastBucket', () => {
   it('events with no overlap with the bucket contribute nothing', () => {
     const events = [{ ts: tsAt(10), mode: 'greenhouse_heating' }];
     const r = aggregateForecastBucket(events, 0, 5 * HOUR);
-    assert.deepEqual(r, { chargingHours: 0, heatingHours: 0, emergencyHours: 0 });
+    assert.deepEqual(r, {
+      chargingHours: 0, heatingHours: 0, emergencyHours: 0, emergencyPresenceHours: 0,
+    });
+  });
+
+  it('emergency presence reports the full overlap even when duty is 0', () => {
+    // ML engine quirk: when the radiator alone covers the greenhouse
+    // loss, the physics duty formula returns 0 even though the engine
+    // still ran emergency mode. Bars driven by duty disappeared in
+    // this case — emergencyPresenceHours surfaces the mode regardless.
+    const events = [{ ts: tsAt(2), mode: 'emergency_heating', duty: 0 }];
+    const r = aggregateForecastBucket(events, 2 * HOUR, 3 * HOUR);
+    assert.equal(r.emergencyHours, 0);
+    assert.equal(r.emergencyPresenceHours, 1);
   });
 
   it('events with unknown mode are ignored (forward-compat with future modes)', () => {
     const events = [{ ts: tsAt(0), mode: 'experimental_future_mode' }];
     const r = aggregateForecastBucket(events, 0, 1 * HOUR);
-    assert.deepEqual(r, { chargingHours: 0, heatingHours: 0, emergencyHours: 0 });
+    assert.deepEqual(r, {
+      chargingHours: 0, heatingHours: 0, emergencyHours: 0, emergencyPresenceHours: 0,
+    });
   });
 });

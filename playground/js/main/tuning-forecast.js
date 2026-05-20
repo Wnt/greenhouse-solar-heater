@@ -201,6 +201,10 @@ function outdoorSeries(resp) {
 
 // Hourly mode buckets from the engine's modeForecast — each carries the
 // charging / heating / emergency fraction (0..1) of that clock hour.
+// Emergency tracks mode presence (full overlap when the engine is in
+// emergency mode) rather than duty so a low-duty emergency hour still
+// renders as a bar — the user wants to see "the engine predicts the
+// space heater is on", duty intensity is secondary.
 function modeBucketsOf(resp, tMinMs, tMaxMs) {
   const fc = resp && resp.forecast;
   const list = fc && Array.isArray(fc.modeForecast) ? fc.modeForecast : [];
@@ -214,7 +218,7 @@ function modeBucketsOf(resp, tMinMs, tMaxMs) {
       t1: t + HOUR,
       charging: Math.min(1, agg.chargingHours),
       heating: Math.min(1, agg.heatingHours),
-      emergency: Math.min(1, agg.emergencyHours),
+      emergency: Math.min(1, agg.emergencyPresenceHours),
     });
   }
   return buckets;
