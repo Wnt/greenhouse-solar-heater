@@ -2,6 +2,18 @@
 
 ![Thermal simulation playground showing 24h of simulated data](tests/frontend/screenshots/readme-hero.png)
 
+## Video Walkthrough
+
+A three-part tour of the system:
+
+1. **Hardware tour** — solar collectors, insulated 300 L tank, pump and valve manifold, sensors, and the Shelly-based controller running JavaScript: <https://www.youtube.com/shorts/mBVhaG1TZ9Q>
+2. **App walkthrough** — current mode, sensor history, tank energy storage, and mode timeline: <https://www.youtube.com/shorts/zDSO4PRq0j8>
+3. **Simulation & flow view** — physics-based simulation mode and the live valve/energy flow visualization: <https://www.youtube.com/shorts/vDfq7Sa74N4>
+
+[![Hardware tour](https://img.youtube.com/vi/mBVhaG1TZ9Q/hqdefault.jpg)](https://www.youtube.com/shorts/mBVhaG1TZ9Q)
+[![App walkthrough](https://img.youtube.com/vi/zDSO4PRq0j8/hqdefault.jpg)](https://www.youtube.com/shorts/zDSO4PRq0j8)
+[![Simulation & flow view](https://img.youtube.com/vi/vDfq7Sa74N4/hqdefault.jpg)](https://www.youtube.com/shorts/vDfq7Sa74N4)
+
 Solar thermal heating system for a greenhouse in Southwest Finland.
 
 ## What This Is
