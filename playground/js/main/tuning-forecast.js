@@ -136,6 +136,7 @@ function render() {
       _chart = null;
       clearCanvas(canvas);
       updateLegendRanges(null, null);
+      updateKwhSummary(null, null);
       setStatus(statusEl, 'Forecast unavailable: ' + err.message);
     });
 }
@@ -258,12 +259,14 @@ function drawForecasts(data) {
     hideInspector();
     clearCanvas(canvas);
     updateLegendRanges(null, null);
+    updateKwhSummary(null, null);
     setStatus(statusEl,
       'No forecast data yet — weather forecast not available for this device.');
     return;
   }
   setStatus(statusEl, '');
   updateLegendRanges(seriesRange(series.enteredTank), seriesRange(series.enteredGh));
+  updateKwhSummary(entered, baseline);
   draw(canvas, series, entered);
 }
 
@@ -284,6 +287,40 @@ function seriesRange(pts) {
 function updateLegendRanges(tank, gh) {
   setText('tfl-tank-range', tank ? rangeText(tank) : '');
   setText('tfl-gh-range', gh ? rangeText(gh) : '');
+}
+
+function updateKwhSummary(entered, baseline) {
+  const el = document.getElementById('tuning-forecast-kwh');
+  if (!el) return;
+  const efc = entered && entered.forecast;
+  const bfc = baseline && baseline.forecast;
+  const eKwh = efc && isNum(efc.electricKwh) ? efc.electricKwh : null;
+  const eCost = efc && isNum(efc.electricCostEur) ? efc.electricCostEur : null;
+  if (eKwh === null) { el.textContent = ''; return; }
+
+  var text = 'Space heater (48 h projected): ';
+  if (eKwh === 0) {
+    text += 'none';
+  } else {
+    text += eKwh.toFixed(1) + ' kWh';
+    if (eCost !== null) text += ' · €' + eCost.toFixed(2);
+  }
+
+  // Show saved-config baseline when it differs from the what-if by ≥0.1 kWh.
+  var bKwh = bfc && isNum(bfc.electricKwh) ? bfc.electricKwh : null;
+  if (bKwh !== null && Math.abs(bKwh - eKwh) >= 0.1) {
+    var bCost = bfc && isNum(bfc.electricCostEur) ? bfc.electricCostEur : null;
+    text += '  (saved: ';
+    if (bKwh === 0) {
+      text += 'none';
+    } else {
+      text += bKwh.toFixed(1) + ' kWh';
+      if (bCost !== null) text += ' · €' + bCost.toFixed(2);
+    }
+    text += ')';
+  }
+
+  el.textContent = text;
 }
 
 function rangeText(r) {

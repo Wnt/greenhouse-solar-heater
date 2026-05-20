@@ -246,3 +246,122 @@ test.describe('The two engine switches stay in sync', () => {
     await expect(page.locator('#tuning-forecast-ml')).toHaveAttribute('aria-checked', 'false');
   });
 });
+
+test.describe('Device-view kWh summary row (#tuning-forecast-kwh)', () => {
+  // Scaffold that lets baseline and entered return different electricKwh values.
+  async function scaffoldKwh(page, { baselineKwh, enteredKwh, baselineCost, enteredCost }) {
+    function makeKwhForecast(kwh, cost) {
+      const traj = Array.from({ length: 48 }, (_, i) => ({
+        ts: new Date(NOW + i * 3600_000).toISOString(), top: 40, bottom: 30, avg: 35,
+      }));
+      const gh = Array.from({ length: 48 }, (_, i) => ({
+        ts: new Date(NOW + i * 3600_000).toISOString(), temp: 12,
+      }));
+      return {
+        generatedAt: new Date(NOW).toISOString(),
+        engine: 'ml',
+        weather: Array.from({ length: 48 }, (_, i) => ({
+          validAt: new Date(NOW + i * 3600_000).toISOString(), temperature: 5,
+        })),
+        forecast: {
+          horizonHours: 48,
+          tankTrajectory: traj,
+          greenhouseTrajectory: gh,
+          modeForecast: [],
+          hoursUntilBackupNeeded: kwh > 0 ? 12 : null,
+          electricKwh: kwh,
+          electricCostEur: cost,
+          costBreakdown: [],
+          modelConfidence: 'medium',
+          notes: [],
+        },
+      };
+    }
+
+    await page.addInitScript(() => {
+      const OrigWS = window.WebSocket;
+      window.WebSocket = function () {
+        const fake = {
+          readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+          close() { this.readyState = 3; }, send() {},
+        };
+        setTimeout(() => {
+          fake.readyState = 1;
+          if (fake.onopen) fake.onopen(new Event('open'));
+          if (fake.onmessage) {
+            fake.onmessage({ data: JSON.stringify({ type: 'connection', status: 'connected' }) });
+          }
+        }, 50);
+        return fake;
+      };
+      window.WebSocket.prototype = OrigWS.prototype;
+      window.WebSocket.OPEN = 1;
+      window.WebSocket.CLOSED = 3;
+    });
+
+    await page.route('**/api/forecast**', (r) => {
+      const url = r.request().url();
+      const hasTu = url.includes('tu=');
+      const kwh = hasTu ? enteredKwh : baselineKwh;
+      const cost = hasTu ? enteredCost : baselineCost;
+      r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(makeKwhForecast(kwh, cost)) });
+    });
+    await page.route('**/api/watchdog/state', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ pending: null, watchdogs: [], snapshot: { we: {}, wz: {}, wb: {} }, recent: [] }),
+    }));
+    await page.route('**/api/device-config', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1 }),
+    }));
+    await page.route('**/api/history**', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ range: '48h', points: [], events: [] }),
+    }));
+    await page.route('**/api/events**', (r) => r.fulfill({
+      status: 200, contentType: 'application/json', body: '[]',
+    }));
+    await page.route('**/api/push/**', (r) => r.fulfill({
+      status: 200, contentType: 'application/json', body: '{}',
+    }));
+  }
+
+  test('shows kWh and cost when space heater is projected to run', async ({ page }) => {
+    await scaffoldKwh(page, { baselineKwh: 3.2, enteredKwh: 3.2, baselineCost: 0.48, enteredCost: 0.48 });
+    await page.goto('/playground/');
+    await page.waitForFunction(() => window.__initComplete === true);
+    await page.locator('.sidebar-nav [data-view="device"]').click();
+    await expect(page.locator('#device-config-form')).toBeVisible();
+
+    const el = page.locator('#tuning-forecast-kwh');
+    await expect(el).toContainText('3.2 kWh');
+    await expect(el).toContainText('€0.48');
+  });
+
+  test('shows "none" when electricKwh is 0', async ({ page }) => {
+    await scaffoldKwh(page, { baselineKwh: 0, enteredKwh: 0, baselineCost: 0, enteredCost: 0 });
+    await page.goto('/playground/');
+    await page.waitForFunction(() => window.__initComplete === true);
+    await page.locator('.sidebar-nav [data-view="device"]').click();
+    await expect(page.locator('#device-config-form')).toBeVisible();
+
+    const el = page.locator('#tuning-forecast-kwh');
+    await expect(el).toContainText('none');
+    await expect(el).not.toContainText('kWh');
+  });
+
+  test('shows saved-config baseline when what-if differs by ≥0.1 kWh', async ({ page }) => {
+    await scaffoldKwh(page, { baselineKwh: 4.5, enteredKwh: 1.2, baselineCost: 0.72, enteredCost: 0.19 });
+    await page.goto('/playground/');
+    await page.waitForFunction(() => window.__initComplete === true);
+    await page.locator('.sidebar-nav [data-view="device"]').click();
+    await expect(page.locator('#device-config-form')).toBeVisible();
+
+    const el = page.locator('#tuning-forecast-kwh');
+    await expect(el).toContainText('1.2 kWh');
+    await expect(el).toContainText('€0.19');
+    await expect(el).toContainText('saved:');
+    await expect(el).toContainText('4.5 kWh');
+    await expect(el).toContainText('€0.72');
+  });
+});
