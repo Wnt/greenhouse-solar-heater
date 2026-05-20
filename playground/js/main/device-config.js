@@ -275,13 +275,18 @@ function initDualTemperatureSlider(containerId) {
   const hiHidden = container.querySelector('#dc-tu-' + hiKey);
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-  function pct(v) { return ((v - sMin) / (sMax - sMin)) * 100; }
+  function frac(v) { return (v - sMin) / (sMax - sMin); }
 
+  // 14 px thumb-radius inset on each side of the rail — the fill bar
+  // lives in the same coordinate space as the rail and the thumb
+  // centers, so they all align at every value.
   function paint() {
     const lo = Number(loRange.value);
     const hi = Number(hiRange.value);
-    fill.style.left = pct(lo) + '%';
-    fill.style.width = Math.max(0, pct(hi) - pct(lo)) + '%';
+    const loF = frac(lo);
+    const widthF = Math.max(0, frac(hi) - loF);
+    fill.style.left = 'calc(14px + ' + loF + ' * (100% - 28px))';
+    fill.style.width = 'calc(' + widthF + ' * (100% - 28px))';
     const loRaw = loHidden.value;
     const hiRaw = hiHidden.value;
     const loDefault = loRaw === '';
@@ -357,8 +362,9 @@ function initDualTemperatureSlider(containerId) {
     const r = wrap.getBoundingClientRect();
     if (r.width <= 0) return;
     const px = e.clientX - r.left;
-    const loX = (pct(Number(loRange.value)) / 100) * r.width;
-    const hiX = (pct(Number(hiRange.value)) / 100) * r.width;
+    // Thumb X centers live in the rail's 14 px-inset coordinate space.
+    const loX = 14 + frac(Number(loRange.value)) * (r.width - 28);
+    const hiX = 14 + frac(Number(hiRange.value)) * (r.width - 28);
     if (Math.abs(px - loX) < Math.abs(px - hiX)) {
       loRange.style.zIndex = '4'; hiRange.style.zIndex = '3';
     } else {

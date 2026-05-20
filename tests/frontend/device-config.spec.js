@@ -859,6 +859,30 @@ test.describe('Device config UI', () => {
     await expect(page.locator('#dc-tu-geT')).toHaveValue('6.5');
   });
 
+  test('slider fill bar aligns with the rail at every value (no x-axis drift)', async ({ page }) => {
+    // Regression: with the original overhang layout the fill bar
+    // (and the thumb centers) drifted left of the rail more and more
+    // at higher values, leaving the value=max thumb visibly short of
+    // the right end. The fix moves both into the same 14 px-inset
+    // coordinate space; this test pins the right edge to the rail's
+    // right edge (within 1 px) at value=max, and the left edge to
+    // the rail's left edge at value=min.
+
+    await setupDeviceView(page, { tu: { geT: 5, gxT: 20 } });
+    await page.locator('#dc-greenhouse-heat-slider').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(50);
+
+    const track = await page
+      .locator('#dc-greenhouse-heat-slider .temp-dual-slider-track')
+      .boundingBox();
+    const fill = await page
+      .locator('#dc-greenhouse-heat-slider .temp-dual-slider-range')
+      .boundingBox();
+
+    expect(Math.abs(fill.x - track.x)).toBeLessThan(1);
+    expect(Math.abs((fill.x + fill.width) - (track.x + track.width))).toBeLessThan(1);
+  });
+
   test('slider visual range is fixed at 5–20 °C with the scale labels matching', async ({ page }) => {
     await setupDeviceView(page);
 
