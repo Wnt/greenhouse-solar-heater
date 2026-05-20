@@ -25,6 +25,11 @@ const TUNING_FIELDS = [
   { key: 'ohT', label: 'Overheat drain (°C)',            defaultValue: 95, min: 70, max: 100, step: 1,   group: 'Safety',             help: 'Drain collectors if circulation cannot keep collector below this.' },
 ];
 
+// Keys handled by the dual-knob sliders under the forecast preview
+// instead of the regular Tuning thresholds list above.
+const SLIDER_KEYS = new Set(['geT', 'gxT', 'ehE', 'ehX']);
+const SLIDER_CONTAINERS = ['dc-greenhouse-heat-slider', 'dc-emergency-heat-slider'];
+
 // Last-known wb (mode-ban map). Updated on form load and via the
 // 'wb-changed' DOM event dispatched by renderModeEnablement, which
 // fires on initial render AND on every WS-driven mode-enablement
@@ -56,7 +61,14 @@ export function initDeviceConfig() {
 
   // Render tuning inputs once at boot — values populated each load.
   renderTuningInputs();
+  // The Greenhouse-heating (geT/gxT) and Emergency-heater (ehE/ehX)
+  // pairs live under the forecast preview as dual-knob sliders. Their
+  // hidden number inputs are created here so the rest of this module
+  // can keep reading dc-tu-<key>.value without caring about the UI.
+  SLIDER_CONTAINERS.forEach(initDualTemperatureSlider);
   // Each tuning input drives the forecast preview live as the user types.
+  // Includes the hidden slider inputs — the slider dispatches 'input'
+  // events on them after every drag, so the listener still fires.
   TUNING_FIELDS.forEach((f) => {
     const input = document.getElementById('dc-tu-' + f.key);
     if (input) input.addEventListener('input', pushEnteredTuning);
@@ -68,6 +80,7 @@ export function initDeviceConfig() {
         const input = document.getElementById('dc-tu-' + f.key);
         if (input) input.value = '';
       });
+      syncSliderUI();
       pushEnteredTuning();
     });
   }
@@ -146,6 +159,9 @@ function populateDeviceForm(cfg) {
     if (!input) return;
     input.value = (typeof tu[f.key] === 'number') ? String(tu[f.key]) : '';
   });
+  // Hidden slider inputs were just rewritten — push the new values into
+  // the slider thumb positions before refreshing the forecast preview.
+  syncSliderUI();
   // Feed the forecast preview with the freshly-populated form values.
   // The dashed baseline is the live /api/forecast (saved config), so
   // it needs no client-side input.
@@ -160,10 +176,13 @@ function renderTuningInputs() {
   const list = document.getElementById('dc-tuning-list');
   if (!list) return;
   // Group fields under their group heading. Iteration order in
-  // TUNING_FIELDS already matches the desired UI order.
+  // TUNING_FIELDS already matches the desired UI order. Fields handled
+  // by a dual-knob slider are skipped here — their hidden inputs live
+  // inside the slider container.
   let html = '';
   let lastGroup = null;
   TUNING_FIELDS.forEach((f) => {
+    if (SLIDER_KEYS.has(f.key)) return;
     if (f.group !== lastGroup) {
       html += '<div style="font-size:11px;font-weight:600;color:var(--on-surface-variant);margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.5px;">'
         + escapeText(f.group) + '</div>';
@@ -179,6 +198,195 @@ function renderTuningInputs() {
       + '<p style="font-size:11px;color:var(--on-surface-variant);margin:-4px 0 4px;">' + escapeText(f.help) + '</p>';
   });
   list.innerHTML = html;
+}
+
+// Dual-knob range slider for a pair of related tuning thresholds
+// (enter/exit). The visible thumbs drive hidden number inputs that
+// share IDs with the rest of the tuning form, so every other code
+// path (read, save, reset) keeps working untouched.
+//
+// Each thumb is clamped to its own field's [min, max] *and* kept at
+// least one step away from the other thumb, mirroring the server-side
+// invariant gxT > geT (and ehX > ehE).
+function initDualTemperatureSlider(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const loKey = container.dataset.loKey;
+  const hiKey = container.dataset.hiKey;
+  const loField = TUNING_FIELDS.find((f) => f.key === loKey);
+  const hiField = TUNING_FIELDS.find((f) => f.key === hiKey);
+  if (!loField || !hiField) return;
+
+  // Slider range — by default the union of the two field ranges, but
+  // each container may narrow it via data-slider-min / data-slider-max
+  // (the typical operator-tweak range, not the full hardware range).
+  const sMin = container.dataset.sliderMin !== undefined
+    ? Number(container.dataset.sliderMin) : Math.min(loField.min, hiField.min);
+  const sMax = container.dataset.sliderMax !== undefined
+    ? Number(container.dataset.sliderMax) : Math.max(loField.max, hiField.max);
+  const step = Math.min(loField.step, hiField.step);
+  const minGap = step;
+  // Effective per-knob bounds: intersect the field's own [min, max]
+  // with the slider's visual [sMin, sMax]. This is what clamp() uses.
+  const loLo = Math.max(sMin, loField.min);
+  const loHi = Math.min(sMax, loField.max);
+  const hiLo = Math.max(sMin, hiField.min);
+  const hiHi = Math.min(sMax, hiField.max);
+  const loLabel = container.dataset.loLabel || loField.label;
+  const hiLabel = container.dataset.hiLabel || hiField.label;
+
+  container.innerHTML = ''
+    + '<div class="temp-dual-slider-readouts">'
+    +   '<div class="temp-dual-slider-readout">'
+    +     '<span class="temp-dual-slider-readout-label">' + escapeText(loLabel) + '</span>'
+    +     '<span class="temp-dual-slider-readout-value" data-role="lo-readout">—</span>'
+    +   '</div>'
+    +   '<div class="temp-dual-slider-readout temp-dual-slider-readout--right">'
+    +     '<span class="temp-dual-slider-readout-label">' + escapeText(hiLabel) + '</span>'
+    +     '<span class="temp-dual-slider-readout-value" data-role="hi-readout">—</span>'
+    +   '</div>'
+    + '</div>'
+    + '<div class="temp-dual-slider-track-wrap" data-role="track-wrap">'
+    +   '<div class="temp-dual-slider-track"></div>'
+    +   '<div class="temp-dual-slider-range" data-role="fill"></div>'
+    +   '<input type="range" class="temp-dual-slider-input temp-dual-slider-input--lo"'
+    +     ' min="' + sMin + '" max="' + sMax + '" step="' + step + '"'
+    +     ' value="' + loField.defaultValue + '"'
+    +     ' aria-label="' + escapeText(loLabel) + '" data-role="lo-range">'
+    +   '<input type="range" class="temp-dual-slider-input temp-dual-slider-input--hi"'
+    +     ' min="' + sMin + '" max="' + sMax + '" step="' + step + '"'
+    +     ' value="' + hiField.defaultValue + '"'
+    +     ' aria-label="' + escapeText(hiLabel) + '" data-role="hi-range">'
+    + '</div>'
+    + '<div class="temp-dual-slider-scale">'
+    +   '<span>' + sMin + '°C</span>'
+    +   '<span>' + sMax + '°C</span>'
+    + '</div>'
+    + '<input type="hidden" id="dc-tu-' + loKey + '" data-tu-key="' + loKey + '">'
+    + '<input type="hidden" id="dc-tu-' + hiKey + '" data-tu-key="' + hiKey + '">';
+
+  const loRange = container.querySelector('[data-role="lo-range"]');
+  const hiRange = container.querySelector('[data-role="hi-range"]');
+  const loReadout = container.querySelector('[data-role="lo-readout"]');
+  const hiReadout = container.querySelector('[data-role="hi-readout"]');
+  const fill = container.querySelector('[data-role="fill"]');
+  const wrap = container.querySelector('[data-role="track-wrap"]');
+  const loHidden = container.querySelector('#dc-tu-' + loKey);
+  const hiHidden = container.querySelector('#dc-tu-' + hiKey);
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function frac(v) { return (v - sMin) / (sMax - sMin); }
+
+  // 14 px thumb-radius inset on each side of the rail — the fill bar
+  // lives in the same coordinate space as the rail and the thumb
+  // centers, so they all align at every value.
+  function paint() {
+    const lo = Number(loRange.value);
+    const hi = Number(hiRange.value);
+    const loF = frac(lo);
+    const widthF = Math.max(0, frac(hi) - loF);
+    fill.style.left = 'calc(14px + ' + loF + ' * (100% - 28px))';
+    fill.style.width = 'calc(' + widthF + ' * (100% - 28px))';
+    const loRaw = loHidden.value;
+    const hiRaw = hiHidden.value;
+    const loDefault = loRaw === '';
+    const hiDefault = hiRaw === '';
+    const loShown = loDefault ? loField.defaultValue : Number(loRaw);
+    const hiShown = hiDefault ? hiField.defaultValue : Number(hiRaw);
+    loReadout.textContent = formatTemp(loShown);
+    hiReadout.textContent = formatTemp(hiShown);
+    loReadout.classList.toggle('temp-dual-slider-readout-value--default', loDefault);
+    hiReadout.classList.toggle('temp-dual-slider-readout-value--default', hiDefault);
+  }
+
+  function syncFromHidden() {
+    const loRaw = loHidden.value;
+    const hiRaw = hiHidden.value;
+    const loVal = loRaw === '' ? loField.defaultValue : Number(loRaw);
+    const hiVal = hiRaw === '' ? hiField.defaultValue : Number(hiRaw);
+    loRange.value = String(loVal);
+    hiRange.value = String(hiVal);
+    paint();
+  }
+
+  // Push behavior: when one knob invades the other's space, shove the
+  // other knob along instead of clamping the moving one. Final values
+  // are kept within their own field bounds AND the slider's visual
+  // range. If the receiving knob hits its ceiling/floor, the moving
+  // knob clamps so the one-step gap is preserved.
+  function commitLo() {
+    let lo = clamp(Number(loRange.value), loLo, loHi);
+    let hi = Number(hiRange.value);
+    const origHi = hi;
+    if (lo > hi - minGap) {
+      hi = clamp(lo + minGap, hiLo, hiHi);
+      if (lo > hi - minGap) lo = hi - minGap;
+    }
+    loRange.value = String(lo);
+    hiRange.value = String(hi);
+    loHidden.value = String(lo);
+    loHidden.dispatchEvent(new Event('input', { bubbles: true }));
+    if (hi !== origHi) {
+      hiHidden.value = String(hi);
+      hiHidden.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    paint();
+  }
+
+  function commitHi() {
+    let hi = clamp(Number(hiRange.value), hiLo, hiHi);
+    let lo = Number(loRange.value);
+    const origLo = lo;
+    if (hi < lo + minGap) {
+      lo = clamp(hi - minGap, loLo, loHi);
+      if (hi < lo + minGap) hi = lo + minGap;
+    }
+    loRange.value = String(lo);
+    hiRange.value = String(hi);
+    hiHidden.value = String(hi);
+    hiHidden.dispatchEvent(new Event('input', { bubbles: true }));
+    if (lo !== origLo) {
+      loHidden.value = String(lo);
+      loHidden.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    paint();
+  }
+
+  loRange.addEventListener('input', commitLo);
+  hiRange.addEventListener('input', commitHi);
+
+  // When two thumbs overlap the upper one covers the lower one. Before
+  // a touch lands, lift whichever thumb is closer to the touch point
+  // above the other so either can always be grabbed.
+  wrap.addEventListener('pointerdown', (e) => {
+    const r = wrap.getBoundingClientRect();
+    if (r.width <= 0) return;
+    const px = e.clientX - r.left;
+    // Thumb X centers live in the rail's 14 px-inset coordinate space.
+    const loX = 14 + frac(Number(loRange.value)) * (r.width - 28);
+    const hiX = 14 + frac(Number(hiRange.value)) * (r.width - 28);
+    if (Math.abs(px - loX) < Math.abs(px - hiX)) {
+      loRange.style.zIndex = '4'; hiRange.style.zIndex = '3';
+    } else {
+      hiRange.style.zIndex = '4'; loRange.style.zIndex = '3';
+    }
+  });
+
+  container._syncFromHidden = syncFromHidden;
+  syncFromHidden();
+}
+
+function formatTemp(v) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return '—';
+  const s = (v === Math.floor(v)) ? v.toFixed(0) : v.toFixed(1);
+  return s + '°';
+}
+
+function syncSliderUI() {
+  SLIDER_CONTAINERS.forEach((id) => {
+    const c = document.getElementById(id);
+    if (c && typeof c._syncFromHidden === 'function') c._syncFromHidden();
+  });
 }
 
 function escapeText(s) {
@@ -269,6 +477,7 @@ function saveDeviceConfig() {
         if (!input) return;
         input.value = (typeof ttu[f.key] === 'number') ? String(ttu[f.key]) : '';
       });
+      syncSliderUI();
       // The saved values are now the live forecast's baseline; refresh
       // the entered trajectory from the (post-clamp) form.
       pushEnteredTuning();

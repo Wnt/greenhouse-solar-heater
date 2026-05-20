@@ -735,6 +735,172 @@ test.describe('Device config UI', () => {
     await expect(banner).toBeVisible();
   });
 
+  // ── Dual-knob temperature sliders ──
+  //
+  // The Greenhouse-heating (geT/gxT) and Emergency-heater (ehE/ehX)
+  // pairs are rendered as dual-knob range sliders under the Forecast
+  // preview, replacing the old number-input rows in the Tuning
+  // thresholds list. They drive hidden `dc-tu-<key>` inputs that the
+  // save handler still reads, so the wire format is unchanged.
+
+  test('dual sliders render under the forecast preview, not in the tuning list', async ({ page }) => {
+    await setupDeviceView(page, {
+      tu: { geT: 11, gxT: 14, ehE: 8, ehX: 13 },
+    });
+
+    // The two slider blocks render, each with two range inputs.
+    await expect(page.locator('#dc-greenhouse-heat-slider .temp-dual-slider-input--lo'))
+      .toBeVisible();
+    await expect(page.locator('#dc-greenhouse-heat-slider .temp-dual-slider-input--hi'))
+      .toBeVisible();
+    await expect(page.locator('#dc-emergency-heat-slider .temp-dual-slider-input--lo'))
+      .toBeVisible();
+    await expect(page.locator('#dc-emergency-heat-slider .temp-dual-slider-input--hi'))
+      .toBeVisible();
+
+    // The four slider keys are NOT rendered as regular rows in the
+    // tuning list — only their hidden inputs (inside the slider
+    // container) exist with those IDs.
+    for (const key of ['geT', 'gxT', 'ehE', 'ehX']) {
+      const inTuningList = await page.locator('#dc-tuning-list #dc-tu-' + key).count();
+      expect(inTuningList).toBe(0);
+    }
+
+    // Initial values from the saved config propagate to the sliders'
+    // range inputs and the readouts.
+    await expect(page.locator('#dc-greenhouse-heat-slider .temp-dual-slider-input--lo'))
+      .toHaveValue('11');
+    await expect(page.locator('#dc-greenhouse-heat-slider .temp-dual-slider-input--hi'))
+      .toHaveValue('14');
+    await expect(page.locator('#dc-emergency-heat-slider .temp-dual-slider-input--lo'))
+      .toHaveValue('8');
+    await expect(page.locator('#dc-emergency-heat-slider .temp-dual-slider-input--hi'))
+      .toHaveValue('13');
+  });
+
+  test('dragging a slider knob saves the new value to the device config', async ({ page }) => {
+    const { putRequests } = await setupDeviceView(page, {
+      tu: { geT: 10, gxT: 12 },
+    });
+
+    // Move the greenhouse heat-enter knob to 7. Range inputs cannot be
+    // .fill()'d in Playwright; drive the value + dispatch 'input'.
+    await page.evaluate(() => {
+      const lo = document.querySelector(
+        '#dc-greenhouse-heat-slider .temp-dual-slider-input--lo');
+      lo.value = '7';
+      lo.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    // The hidden input picks up the new value immediately.
+    await expect(page.locator('#dc-tu-geT')).toHaveValue('7');
+
+    // Push to the device — the PUT carries geT=7 in tu.
+    await page.locator('#dc-save').click();
+    await expect.poll(() => putRequests.length, { timeout: 4000 }).toBeGreaterThan(0);
+    const last = putRequests[putRequests.length - 1];
+    expect(last.tu.geT).toBe(7);
+  });
+
+  test('reset clears slider overrides and the knobs fall back to firmware defaults', async ({ page }) => {
+    await setupDeviceView(page, {
+      tu: { geT: 7, gxT: 9, ehE: 6, ehX: 8 },
+    });
+
+    // Pre-condition: readouts show the override values, not the defaults.
+    const ghLoReadout = page.locator(
+      '#dc-greenhouse-heat-slider [data-role="lo-readout"]');
+    await expect(ghLoReadout).toHaveText('7°');
+    await expect(ghLoReadout).not.toHaveClass(/temp-dual-slider-readout-value--default/);
+
+    // Click "Reset all to firmware defaults".
+    await page.locator('#dc-tuning-reset').click();
+
+    // Hidden inputs are cleared, readouts fall back to the defaults
+    // (10° for geT) and pick up the "default" visual modifier.
+    await expect(page.locator('#dc-tu-geT')).toHaveValue('');
+    await expect(ghLoReadout).toHaveText('10°');
+    await expect(ghLoReadout).toHaveClass(/temp-dual-slider-readout-value--default/);
+  });
+
+  test('dragging the lower knob past the upper knob pushes the upper one up', async ({ page }) => {
+    await setupDeviceView(page, {
+      tu: { geT: 10, gxT: 12 },
+    });
+
+    // Push the lower knob (geT) above the upper knob (gxT=12). The
+    // commit logic must shove gxT up so the one-step gap is preserved
+    // (server-side invariant gxT > geT). Target lo=15 leaves room
+    // below the 20 °C slider ceiling, so neither knob hits a wall.
+    await page.evaluate(() => {
+      const lo = document.querySelector(
+        '#dc-greenhouse-heat-slider .temp-dual-slider-input--lo');
+      lo.value = '15';
+      lo.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await expect(page.locator('#dc-tu-geT')).toHaveValue('15');
+    await expect(page.locator('#dc-tu-gxT')).toHaveValue('15.5');
+  });
+
+  test('dragging the upper knob below the lower knob pushes the lower one down', async ({ page }) => {
+    await setupDeviceView(page, {
+      tu: { geT: 10, gxT: 12 },
+    });
+
+    await page.evaluate(() => {
+      const hi = document.querySelector(
+        '#dc-greenhouse-heat-slider .temp-dual-slider-input--hi');
+      hi.value = '7';
+      hi.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await expect(page.locator('#dc-tu-gxT')).toHaveValue('7');
+    await expect(page.locator('#dc-tu-geT')).toHaveValue('6.5');
+  });
+
+  test('slider fill bar aligns with the rail at every value (no x-axis drift)', async ({ page }) => {
+    // Regression: with the original overhang layout the fill bar
+    // (and the thumb centers) drifted left of the rail more and more
+    // at higher values, leaving the value=max thumb visibly short of
+    // the right end. The fix moves both into the same 14 px-inset
+    // coordinate space; this test pins the right edge to the rail's
+    // right edge (within 1 px) at value=max, and the left edge to
+    // the rail's left edge at value=min.
+
+    await setupDeviceView(page, { tu: { geT: 5, gxT: 20 } });
+    await page.locator('#dc-greenhouse-heat-slider').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(50);
+
+    const track = await page
+      .locator('#dc-greenhouse-heat-slider .temp-dual-slider-track')
+      .boundingBox();
+    const fill = await page
+      .locator('#dc-greenhouse-heat-slider .temp-dual-slider-range')
+      .boundingBox();
+
+    expect(Math.abs(fill.x - track.x)).toBeLessThan(1);
+    expect(Math.abs((fill.x + fill.width) - (track.x + track.width))).toBeLessThan(1);
+  });
+
+  test('slider visual range is fixed at 5–20 °C with the scale labels matching', async ({ page }) => {
+    await setupDeviceView(page);
+
+    for (const containerId of ['#dc-greenhouse-heat-slider', '#dc-emergency-heat-slider']) {
+      await expect(page.locator(containerId + ' .temp-dual-slider-input--lo'))
+        .toHaveAttribute('min', '5');
+      await expect(page.locator(containerId + ' .temp-dual-slider-input--lo'))
+        .toHaveAttribute('max', '20');
+      await expect(page.locator(containerId + ' .temp-dual-slider-input--hi'))
+        .toHaveAttribute('min', '5');
+      await expect(page.locator(containerId + ' .temp-dual-slider-input--hi'))
+        .toHaveAttribute('max', '20');
+      const scale = page.locator(containerId + ' .temp-dual-slider-scale span');
+      await expect(scale.nth(0)).toHaveText('5°C');
+      await expect(scale.nth(1)).toHaveText('20°C');
+    }
+  });
+
   test('device view only visible in live mode', async ({ page }) => {
     await page.route('**/api/device-config', route => route.fulfill({
       status: 200, contentType: 'application/json',
