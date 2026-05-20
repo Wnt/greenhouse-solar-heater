@@ -258,12 +258,14 @@ function drawForecasts(data) {
     hideInspector();
     clearCanvas(canvas);
     updateLegendRanges(null, null);
+    updateMetrics(null);
     setStatus(statusEl,
       'No forecast data yet — weather forecast not available for this device.');
     return;
   }
   setStatus(statusEl, '');
   updateLegendRanges(seriesRange(series.enteredTank), seriesRange(series.enteredGh));
+  updateMetrics(entered);
   draw(canvas, series, entered);
 }
 
@@ -288,6 +290,14 @@ function updateLegendRanges(tank, gh) {
 
 function rangeText(r) {
   return r.min.toFixed(1) + '°…' + r.max.toFixed(1) + '°';
+}
+
+function updateMetrics(resp) {
+  const el = document.getElementById('tuning-forecast-heater-kwh');
+  if (!el) return;
+  const fc = resp && resp.forecast;
+  const kwh = fc && typeof fc.electricKwh === 'number' ? fc.electricKwh : null;
+  el.textContent = kwh !== null ? (Math.round(kwh * 10) / 10).toFixed(1) + ' kWh' : '—';
 }
 
 function draw(canvas, series, enteredResp) {
