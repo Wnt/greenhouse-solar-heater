@@ -26,6 +26,7 @@ const rf = require('./random-forest');
 const {
   featureRow, STEP_FINE_MS, STEP_COARSE_MS, FINE_HORIZON_MS, HORIZON_MS, MS_PER_HOUR,
 } = require('./features');
+const { physicsStep } = require('../physics-step');
 const { tankStoredEnergyKwh } = require('../../energy-balance');
 
 const HORIZON_HOURS = 48;
@@ -69,6 +70,11 @@ function helsinkiHHMM(ms) {
     timeZone: 'Europe/Helsinki', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(new Date(ms));
 }
+
+const HELSINKI_HH = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Helsinki', hour: '2-digit', hour12: false,
+});
+function helsinkiHour(ms) { return parseInt(HELSINKI_HH.format(new Date(ms)), 10) || 0; }
 
 // Count of OOD_FEATURE_INDICES columns sitting outside the trained
 // range (with a 10% margin) for this row.
@@ -204,18 +210,22 @@ function computeMlForecast(opts) {
       mode = 'solar_charging';
     }
 
-    // ── Backup electricity (emergency steps only) ──
-    let duty = null;
+    // ── Physics step — threshold-sensitive structural baseline. ──
+    // Same call dataset.js uses to compute training targets, so the
+    // ML residual stays meaningful: tankAvg += physics + ml.
+    const phys = physicsStep({
+      tankAvg, gh, outdoor: outdoorC, radiation,
+      mode, stepHours: stepH,
+      hourOfDayHelsinki: helsinkiHour(tMs),
+      cfg: { emergencyEnterC: cfg.emergencyEnterC, emergencyExitC: cfg.emergencyExitC },
+    });
+
+    // Backup electricity (emergency steps only). Driven by the physics
+    // heater duty so the cost figure tracks the same model the trees
+    // were trained against.
+    const duty = mode === 'emergency_heating' ? phys.heaterDuty : null;
     if (mode === 'emergency_heating') {
-      const ghTarget = (cfg.emergencyEnterC + cfg.emergencyExitC) / 2;
-      const ghLossW = cfg.greenhouseLossWPerK * Math.max(0, ghTarget - outdoorC);
-      const radDeliveredW = Math.min(
-        cfg.radiatorPowerKw * 1000,
-        cfg.radiatorUaWPerK * Math.max(0, tankAvg - gh)
-      );
-      const heaterW = cfg.spaceHeaterKw * 1000;
-      duty = Math.min(1, Math.max(0, ghLossW - radDeliveredW) / heaterW);
-      const kwh = duty * cfg.spaceHeaterKw * stepH;
+      const kwh = phys.heaterDuty * cfg.spaceHeaterKw * stepH;
       if (kwh > 0) {
         electricKwh += kwh;
         const eur = kwh * (priceCKwh + cfg.transferFeeCKwh) / 100;
@@ -232,7 +242,10 @@ function computeMlForecast(opts) {
     if (gh > cfg.fanCoolEnterC) fanCooling = true;
     else if (gh < cfg.fanCoolExitC) fanCooling = false;
 
-    // ── ML thermal step ──
+    // ── Compose physics + ML residual ──
+    // The trees learn the bias correction (observed − physics), so the
+    // step is `physics + residual`. Mode → physics carries the
+    // threshold-driven dynamics; ML softens the systematic error.
     const frac = {};
     frac[mode] = 1;
     const aux = { heaterOn: typeof duty === 'number' ? duty : 0, fanCooling: fanCooling ? 1 : 0 };
@@ -240,8 +253,8 @@ function computeMlForecast(opts) {
     if (outOfRangeCount(row, model.featureRanges) > 0) oodHours += stepH;
 
     const prevTankAvg = tankAvg;
-    tankAvg += rf.predictForest(model.tank, row);
-    gh += rf.predictForest(model.greenhouse, row);
+    tankAvg += phys.dTankC + rf.predictForest(model.tank, row);
+    gh += phys.dGhC + rf.predictForest(model.greenhouse, row);
     if (gh < outdoorC) gh = outdoorC; // can't fall below the outdoor air
 
     if (hoursUntilFloor === null && tankAvg < cfg.tankFloorC && prevTankAvg >= cfg.tankFloorC) {

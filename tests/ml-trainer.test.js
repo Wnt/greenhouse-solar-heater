@@ -9,7 +9,7 @@ const assert = require('node:assert');
 const rf = require('../server/lib/forecast/ml/random-forest');
 const { evaluateGate } = require('../server/lib/forecast/ml/ml-trainer');
 const { createModelStore, contractOk } = require('../server/lib/forecast/ml/model-store');
-const { FEATURE_NAMES } = require('../server/lib/forecast/ml/features');
+const { FEATURE_NAMES, MODEL_VERSION } = require('../server/lib/forecast/ml/features');
 
 const NF = FEATURE_NAMES.length;
 
@@ -64,10 +64,15 @@ test('evaluateGate passes an equally-good candidate against a current model', ()
 });
 
 test('contractOk validates the model feature contract', () => {
-  assert.strictEqual(contractOk({ tank: {}, greenhouse: {}, featureNames: FEATURE_NAMES.slice() }), true);
-  assert.strictEqual(contractOk({ tank: {}, greenhouse: {}, featureNames: ['x'] }), false);
+  const ok = { tank: {}, greenhouse: {}, version: MODEL_VERSION, featureNames: FEATURE_NAMES.slice() };
+  assert.strictEqual(contractOk(ok), true);
+  assert.strictEqual(contractOk(Object.assign({}, ok, { featureNames: ['x'] })), false);
   assert.strictEqual(contractOk({ tank: {}, greenhouse: {} }), false);
   assert.strictEqual(contractOk(null), false);
+  // Wrong version (old absolute-target model) — must be rejected so the
+  // v2 rollout doesn't double-count the physics step.
+  assert.strictEqual(contractOk(Object.assign({}, ok, { version: 1 })), false);
+  assert.strictEqual(contractOk(Object.assign({}, ok, { version: undefined })), false);
 });
 
 test('model store loads the committed model on init', async () => {

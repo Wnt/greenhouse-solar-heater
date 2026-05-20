@@ -19,7 +19,21 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import rf from '../server/lib/forecast/ml/random-forest.js';
 import { computeMlForecast } from '../server/lib/forecast/ml/ml-forecast.js';
+import { physicsStep } from '../server/lib/forecast/physics-step.js';
 import ds from './forecast-ml/dataset.js';
+
+const HELSINKI_HH = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Helsinki', hour: '2-digit', hour12: false,
+});
+function helsinkiHour(ms) { return parseInt(HELSINKI_HH.format(new Date(ms)), 10) || 0; }
+function dominantMode(frac) {
+  let best = 'idle', bestV = 0;
+  for (const m of ['idle', 'solar_charging', 'greenhouse_heating', 'active_drain', 'emergency_heating']) {
+    const v = frac[m] || 0;
+    if (v > bestV) { bestV = v; best = m; }
+  }
+  return best;
+}
 
 const DEFAULT_URL = 'https://greenhouse.madekivi.fi/api/public/history?range=all';
 const CACHE_PATH = '/tmp/greenhouse-public-history.json';
@@ -209,9 +223,12 @@ function bucketRmse(buckets, key) {
 // mode fractions (the controller's real decisions) — so this measures
 // the thermal model assuming a perfect mode schedule; predicting the
 // schedule itself is a separate problem the engine already simulates.
+// Composes physics + ML residual at each step, mirroring the inference
+// engine's `tankAvg += physics + residual` semantics.
 function rolloutReport(index, tankModel, ghModel, startTs, endTs) {
   const buckets = emptyBuckets();
   let starts = 0;
+  const stepH = ds.STEP_COARSE_MS / 3600000;
   for (let t0 = startTs; t0 <= endTs - 48 * ds.STEP_COARSE_MS; t0 += 6 * ds.STEP_COARSE_MS) {
     const s0 = index.stateAt(t0);
     if (!s0) continue;
@@ -224,9 +241,14 @@ function rolloutReport(index, tankModel, ghModel, startTs, endTs) {
       if (!ds.weatherUsable(wx)) { ok = false; break; }
       const frac = index.modeFractions(hStart, hStart + ds.STEP_COARSE_MS);
       const aux = index.auxFractions(hStart, hStart + ds.STEP_COARSE_MS);
+      const phys = physicsStep({
+        tankAvg, gh, outdoor: wx.temperature, radiation: wx.radiationGlobal || 0,
+        mode: dominantMode(frac), stepHours: stepH,
+        hourOfDayHelsinki: helsinkiHour(hStart),
+      });
       const row = ds.featureRow(tankAvg, gh, wx.temperature, wx, frac, aux, hStart, ds.STEP_COARSE_MS);
-      tankAvg += rf.predictForest(tankModel, row);
-      gh += rf.predictForest(ghModel, row);
+      tankAvg += phys.dTankC + rf.predictForest(tankModel, row);
+      gh += phys.dGhC + rf.predictForest(ghModel, row);
       const actual = index.stateAt(hStart + ds.STEP_COARSE_MS);
       if (actual) {
         const b = bucketLabel(h);
@@ -432,7 +454,7 @@ async function main() {
     const tankFull = rf.trainForest(data.X, data.yTank, { seed: 1 });
     const ghFull = rf.trainForest(data.X, data.yGh, { seed: 2 });
     const model = {
-      version: 1,
+      version: ds.MODEL_VERSION,
       featureNames: ds.FEATURE_NAMES,
       steps: [ds.STEP_FINE_MS, ds.STEP_COARSE_MS],
       featureRanges: ds.featureRanges(data.X),

@@ -24,6 +24,13 @@
 // its mode fractions collapse to a one-hot of the real logged mode —
 // which is the categorical "real transition log" signal, no aggregation.
 
+// Bumped whenever the prediction target *semantics* change in a way
+// `featureNames` can't detect — e.g. the v1 → v2 jump moved targets
+// from absolute ΔT to physics-residual ΔT. Composing an old v1 forest
+// into the new code would silently double-count the physics; the
+// version check in model-store.contractOk rejects mismatched artifacts.
+const MODEL_VERSION = 2;
+
 const MODES = ['idle', 'solar_charging', 'greenhouse_heating', 'active_drain', 'emergency_heating'];
 
 const MS_PER_HOUR = 3600000;
@@ -119,6 +126,7 @@ function featureRanges(X) {
 }
 
 module.exports = {
+  MODEL_VERSION,
   MODES,
   MS_PER_HOUR,
   STEP_FINE_MS,

@@ -114,14 +114,17 @@ export function drawForecastOverlay(ctx, data, nowSec, cutoffSec, tMin, tMax, vi
 // span, which is what keeps sub-hour zoom levels from rendering empty
 // every-other bucket.
 //
-// emergency entries carry an optional `duty` (0..1); a partial duty
-// scales the contribution proportionally. So a 30-min bucket fully
-// inside an "emergency_heating duty 0.4" hour contributes
-// 0.4 × 0.5 h = 0.2 h of emergency, which divided by segHours = 0.5
-// renders as a 40%-tall bar — matching the underlying duty cycle.
+// Emergency entries carry an optional `duty` (0..1). The aggregator
+// returns BOTH `emergencyHours` (duty-scaled — used for kWh/cost
+// accounting in the inspector) AND `emergencyPresenceHours` (full
+// overlap whenever mode='emergency_heating', regardless of duty —
+// used for bar visibility). Pre-split, a duty=0 emergency hour
+// vanished from the chart entirely; the bar now reflects "the engine
+// predicts the heater mode is on" even when the physics duty formula
+// happens to compute 0.
 export function aggregateForecastBucket(modeForecast, segStart, segEnd) {
   const HOUR_SEC = 3600;
-  let chargingHours = 0, heatingHours = 0, emergencyHours = 0;
+  let chargingHours = 0, heatingHours = 0, emergencyHours = 0, emergencyPresenceHours = 0;
   for (let i = 0; i < modeForecast.length; i++) {
     const e = modeForecast[i];
     const t = Math.floor(new Date(e.ts).getTime() / 1000);
@@ -140,9 +143,10 @@ export function aggregateForecastBucket(modeForecast, segStart, segEnd) {
     else if (e.mode === 'emergency_heating') {
       const duty = typeof e.duty === 'number' ? e.duty : 1;
       emergencyHours += duty * oh;
+      emergencyPresenceHours += oh;
     }
   }
-  return { chargingHours, heatingHours, emergencyHours };
+  return { chargingHours, heatingHours, emergencyHours, emergencyPresenceHours };
 }
 
 // Render predicted mode bars past "now" using the same x-bucketing AND
@@ -170,7 +174,7 @@ function drawForecastModeBars(ctx, modeForecast, nowSec, cutoffSec, tMin, tMax, 
     const segEnd   = Math.min(hrEnd, cutoffSec);
     if (segEnd <= segStart) continue;
 
-    const { chargingHours, heatingHours, emergencyHours } =
+    const { chargingHours, heatingHours, emergencyPresenceHours } =
       aggregateForecastBucket(modeForecast, segStart, segEnd);
     // Per-bucket fraction = hours-on / hours-in-the-post-now slice of this
     // bucket. For the partial bucket straddling "now" we measure against
@@ -181,7 +185,11 @@ function drawForecastModeBars(ctx, modeForecast, nowSec, cutoffSec, tMin, tMax, 
     const segHours    = Math.max(1 / 60, segLen / HOURS); // avoid div-by-0
     const chargingFrac  = Math.min(1, chargingHours  / segHours);
     const heatingFrac   = Math.min(1, heatingHours   / segHours);
-    const emergencyFrac = Math.min(1, emergencyHours / segHours);
+    // Emergency bar height tracks mode PRESENCE — duty-scaled bars
+    // would disappear whenever the radiator already covers the loss
+    // even though the engine still ran the heater mode. Cost/kWh
+    // accounting still uses the duty-scaled emergencyHours field.
+    const emergencyFrac = Math.min(1, emergencyPresenceHours / segHours);
     if (chargingFrac + heatingFrac + emergencyFrac === 0) continue;
 
     // Render using segStart..segEnd (post-now slice), not the full clock-

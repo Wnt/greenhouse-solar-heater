@@ -21,6 +21,11 @@ const {
   FEATURE_NAMES, featureRow, weatherUsable, featureRanges,
 } = require('../../server/lib/forecast/ml/features.js');
 
+// Physics step shared with the inference engine — the ML model learns
+// the residual (observed − physics), so training and rollout MUST call
+// the same per-step physics. See server/lib/forecast/physics-step.js.
+const { physicsStep } = require('../../server/lib/forecast/physics-step.js');
+
 const ANCHOR_STEP_MS = 900000; // new training anchor every 15 min
 const MAX_GAP_MS = 8 * 60000;  // skip samples straddling a sensor gap
 
@@ -29,6 +34,26 @@ const MAX_GAP_MS = 8 * 60000;  // skip samples straddling a sensor gap
 // must learn both. `step_h` (set inside featureRow) lets the forest
 // tell the two regimes apart.
 const STEPS_MS = [STEP_FINE_MS, STEP_COARSE_MS];
+
+// Hour-of-day in Helsinki (matches the engine's solar profile lookup).
+// `Intl.DateTimeFormat` carries the DST rules so this stays correct
+// across spring/autumn — important because the solar gain profile
+// shifts by an hour at the boundary.
+const HELSINKI_HH = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Helsinki', hour: '2-digit', hour12: false,
+});
+function helsinkiHour(ms) { return parseInt(HELSINKI_HH.format(new Date(ms)), 10) || 0; }
+
+// Mode at time `t` from a sorted mode-transition timeline. Pure.
+function dominantModeFromFrac(frac) {
+  let bestMode = 'idle';
+  let bestFrac = 0;
+  MODES.forEach(function each(m) {
+    const f = frac[m] || 0;
+    if (f > bestFrac) { bestFrac = f; bestMode = m; }
+  });
+  return bestMode;
+}
 
 function lerp(a, b, w) { return a + (b - a) * w; }
 
@@ -202,8 +227,13 @@ function buildWeatherIndex(weather) {
 
 // ── dataset assembly ────────────────────────────────────────────────
 
-// Returns { X, yTank, yGh, t0s, tu, index } where `tu` is the parallel
-// per-sample controller-threshold snapshot and `index` bundles the
+// Returns { X, yTank, yGh, t0s, tu, index } where the targets are
+// RESIDUALS over the physics step (observed Δ minus physicsStep Δ).
+// The ML rollout composes physics + residual back together, so the
+// training and inference physics MUST be the same — both call
+// physicsStep with the same cfg (thresholds from the active tu at t0)
+// and the dominant mode of the step window. `tu` is the parallel
+// per-sample controller-threshold snapshot; `index` bundles the
 // stateAt / weatherAt / modeFractions accessors for the rollout eval.
 function buildDataset(payload) {
   const stateIdx = buildStateIndex(payload.points);
@@ -231,17 +261,26 @@ function buildDataset(payload) {
     if (!s0) continue;
     const wx = weatherAt(t0);
     if (!weatherUsable(wx)) continue;
+    const tu0 = tuAt(tuTimeline, t0);
     for (let si = 0; si < STEPS_MS.length; si++) {
       const stepMs = STEPS_MS[si];
       const s1 = stateIdx.stateAt(t0 + stepMs);
       if (!s1) continue;
       const frac = modeFractions(modeEvs, t0, t0 + stepMs);
       const aux = auxFractions(t0, t0 + stepMs);
+      const physMode = dominantModeFromFrac(frac);
+      const phys = physicsStep({
+        tankAvg: s0.tankAvg, gh: s0.greenhouse, outdoor: s0.outdoor,
+        radiation: wx.radiationGlobal || 0,
+        mode: physMode, stepHours: stepMs / MS_PER_HOUR,
+        hourOfDayHelsinki: helsinkiHour(t0),
+        cfg: { emergencyEnterC: tu0.ehE, emergencyExitC: tu0.ehX },
+      });
       X.push(featureRow(s0.tankAvg, s0.greenhouse, s0.outdoor, wx, frac, aux, t0, stepMs));
-      yTank.push(s1.tankAvg - s0.tankAvg);
-      yGh.push(s1.greenhouse - s0.greenhouse);
+      yTank.push((s1.tankAvg - s0.tankAvg) - phys.dTankC);
+      yGh.push((s1.greenhouse - s0.greenhouse) - phys.dGhC);
       t0s.push(t0);
-      tu.push(tuAt(tuTimeline, t0));
+      tu.push(tu0);
     }
   }
 
@@ -262,8 +301,13 @@ function buildDataset(payload) {
   };
 }
 
+// Re-export from the canonical features.js so consumers (CLI trainer)
+// can pull everything from one module.
+const { MODEL_VERSION } = require('../../server/lib/forecast/ml/features.js');
+
 module.exports = {
   MODES,
+  MODEL_VERSION,
   FEATURE_NAMES,
   STEP_FINE_MS,
   STEP_COARSE_MS,
