@@ -298,7 +298,7 @@ function updateKwhSummary(entered, baseline) {
   const eCost = efc && isNum(efc.electricCostEur) ? efc.electricCostEur : null;
   if (eKwh === null) { el.textContent = ''; return; }
 
-  var text = 'Space heater (48 h projected): ';
+  let text = 'Space heater (48 h projected): ';
   if (eKwh === 0) {
     text += 'none';
   } else {
@@ -307,9 +307,9 @@ function updateKwhSummary(entered, baseline) {
   }
 
   // Show saved-config baseline when it differs from the what-if by ≥0.1 kWh.
-  var bKwh = bfc && isNum(bfc.electricKwh) ? bfc.electricKwh : null;
+  const bKwh = bfc && isNum(bfc.electricKwh) ? bfc.electricKwh : null;
   if (bKwh !== null && Math.abs(bKwh - eKwh) >= 0.1) {
-    var bCost = bfc && isNum(bfc.electricCostEur) ? bfc.electricCostEur : null;
+    const bCost = bfc && isNum(bfc.electricCostEur) ? bfc.electricCostEur : null;
     text += '  (saved: ';
     if (bKwh === 0) {
       text += 'none';
