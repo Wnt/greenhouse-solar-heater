@@ -244,12 +244,37 @@ function drawForecasts(data) {
     _chart = null;
     hideInspector();
     clearCanvas(canvas);
+    updateLegendRanges(null, null);
     setStatus(statusEl,
       'No forecast data yet — weather forecast not available for this device.');
     return;
   }
   setStatus(statusEl, '');
+  updateLegendRanges(seriesRange(series.enteredTank), seriesRange(series.enteredGh));
   draw(canvas, series, entered);
+}
+
+// Min/max of a [timeMs, value] series, or null if empty.
+function seriesRange(pts) {
+  if (!pts || pts.length === 0) return null;
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const v = pts[i][1];
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  if (!isFinite(min)) return null;
+  return { min, max };
+}
+
+function updateLegendRanges(tank, gh) {
+  setText('tfl-tank-range', tank ? rangeText(tank) : '');
+  setText('tfl-gh-range', gh ? rangeText(gh) : '');
+}
+
+function rangeText(r) {
+  return r.min.toFixed(1) + '°…' + r.max.toFixed(1) + '°';
 }
 
 function draw(canvas, series, enteredResp) {

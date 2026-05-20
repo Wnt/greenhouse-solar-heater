@@ -176,18 +176,40 @@ test.describe('Tuning forecast preview', () => {
     const before = await canvasFingerprint(page);
     const urlsBefore = forecastUrls.length;
 
-    // Raise the greenhouse-heating enter threshold — the what-if
-    // trajectory diverges from the saved-config baseline.
-    await page.locator('#dc-tu-geT').fill('22');
+    // Drop the greenhouse-heating enter threshold via the dual-knob
+    // slider's lower range input — the what-if trajectory diverges from
+    // the saved-config baseline. The slider drives the hidden #dc-tu-geT
+    // input and dispatches an 'input' event on it. Value (5) stays
+    // below the gxT firmware default (12) so the cross-knob clamp does
+    // not kick in.
+    await page.evaluate(() => {
+      const lo = document.querySelector(
+        '#dc-greenhouse-heat-slider .temp-dual-slider-input--lo');
+      lo.value = '5';
+      lo.dispatchEvent(new Event('input', { bubbles: true }));
+    });
 
     await expect.poll(
       async () => (await canvasFingerprint(page)).hash,
       { timeout: 5000 },
     ).not.toBe(before.hash);
 
-    // The recompute carried geT=22 in the override.
+    // The recompute carried geT=5 in the override.
     const newUrls = forecastUrls.slice(urlsBefore);
-    expect(newUrls.some(u => /tu=.*22/.test(decodeURIComponent(u)))).toBe(true);
+    expect(newUrls.some(u => /"geT":5\b/.test(decodeURIComponent(u)))).toBe(true);
+  });
+
+  test('legend shows the projected min/max for tank and greenhouse', async ({ page }) => {
+    await setupDeviceView(page);
+
+    await expect.poll(
+      async () => (await canvasFingerprint(page)).painted,
+      { timeout: 5000 },
+    ).toBeGreaterThan(200);
+
+    // Both badges are populated with a "min…max" range in °.
+    await expect(page.locator('#tfl-tank-range')).toHaveText(/\d+\.\d+°…\d+\.\d+°/);
+    await expect(page.locator('#tfl-gh-range')).toHaveText(/\d+\.\d+°…\d+\.\d+°/);
   });
 
   test('hover shows the crosshair inspector with projected values', async ({ page }) => {

@@ -692,9 +692,9 @@
             </div>
             <div class="graph-crosshair" id="tuning-forecast-crosshair"></div>
           </div>
-          <div id="tuning-forecast-legend" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:11px;color:var(--on-surface-variant);">
-            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#e9c349;vertical-align:middle;margin-right:4px;"></span>Tank avg</span>
-            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#69d0c5;vertical-align:middle;margin-right:4px;"></span>Greenhouse</span>
+          <div id="tuning-forecast-legend" style="display:flex;flex-wrap:wrap;gap:8px 12px;margin-top:8px;font-size:11px;color:var(--on-surface-variant);">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#e9c349;vertical-align:middle;margin-right:4px;"></span>Tank avg <span class="forecast-legend-range" id="tfl-tank-range"></span></span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#69d0c5;vertical-align:middle;margin-right:4px;"></span>Greenhouse <span class="forecast-legend-range" id="tfl-gh-range"></span></span>
             <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#42a5f5;vertical-align:middle;margin-right:4px;"></span>Outdoor</span>
             <span style="opacity:0.5;">|</span>
             <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#ee7d77;vertical-align:middle;margin-right:4px;"></span>Charging</span>
@@ -702,6 +702,14 @@
             <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#ff7043;vertical-align:middle;margin-right:4px;"></span>Emergency</span>
           </div>
           <div id="tuning-forecast-status" style="font-size:11px;color:var(--on-surface-variant);margin-top:6px;"></div>
+
+          <h4 style="margin:24px 0 4px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Greenhouse heating thresholds.</h4>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 12px;">Drag the knobs to set when tank-fed greenhouse heating starts (lower knob) and stops (upper knob). The forecast above recomputes live.</p>
+          <div id="dc-greenhouse-heat-slider" class="temp-dual-slider" data-lo-key="geT" data-hi-key="gxT" data-lo-label="Heat enter" data-hi-label="Heat exit"></div>
+
+          <h4 style="margin:20px 0 4px;font-family:'Newsreader',Georgia,serif;font-style:italic;color:var(--on-surface);">Emergency heater thresholds.</h4>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin:0 0 12px;">Drag the knobs to set when the electric space heater fires (lower knob) and stops (upper knob).</p>
+          <div id="dc-emergency-heat-slider" class="temp-dual-slider" data-lo-key="ehE" data-hi-key="ehX" data-lo-label="Heater enter" data-hi-label="Heater exit"></div>
 
           <div style="margin-top:24px;display:flex;gap:12px;align-items:center;">
             <button class="primary" id="dc-save">Save &amp; Push to Device</button>

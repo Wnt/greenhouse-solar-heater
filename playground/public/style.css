@@ -1999,6 +1999,183 @@ button.primary.disabled {
   height: 16px;
 }
 
+/* ── Dual-knob temperature slider (device view, under forecast preview) ── */
+
+.temp-dual-slider {
+  padding: 8px 0 12px;
+}
+
+.temp-dual-slider-readouts {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.temp-dual-slider-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.temp-dual-slider-readout--right {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.temp-dual-slider-readout-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.temp-dual-slider-readout-value {
+  font-family: 'Manrope', sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--secondary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.temp-dual-slider-readout-value--default {
+  color: var(--on-surface-variant);
+  font-weight: 500;
+}
+
+.temp-dual-slider-track-wrap {
+  position: relative;
+  height: 44px;
+  margin: 0 14px;
+  touch-action: pan-y;
+}
+
+.temp-dual-slider-track {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 6px;
+  margin-top: -3px;
+  background: var(--surface-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.temp-dual-slider-range {
+  position: absolute;
+  top: 50%;
+  height: 6px;
+  margin-top: -3px;
+  background: var(--secondary);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.temp-dual-slider-input {
+  position: absolute;
+  top: 0;
+  left: -14px;
+  right: -14px;
+  width: calc(100% + 28px);
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  pointer-events: none;
+}
+
+.temp-dual-slider-input--lo { z-index: 3; }
+.temp-dual-slider-input--hi { z-index: 4; }
+
+.temp-dual-slider-input::-webkit-slider-runnable-track {
+  background: transparent;
+  border: 0;
+  height: 6px;
+}
+
+.temp-dual-slider-input::-moz-range-track {
+  background: transparent;
+  border: 0;
+  height: 6px;
+}
+
+.temp-dual-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--secondary);
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  cursor: grab;
+  pointer-events: auto;
+  margin-top: -11px;
+  transition: transform 0.1s ease;
+}
+
+.temp-dual-slider-input::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--secondary);
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  cursor: grab;
+  pointer-events: auto;
+  transition: transform 0.1s ease;
+}
+
+.temp-dual-slider-input:active::-webkit-slider-thumb {
+  transform: scale(1.18);
+  cursor: grabbing;
+}
+
+.temp-dual-slider-input:active::-moz-range-thumb {
+  transform: scale(1.18);
+  cursor: grabbing;
+}
+
+.temp-dual-slider-input:focus { outline: none; }
+
+.temp-dual-slider-input:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--secondary);
+  outline-offset: 3px;
+}
+
+.temp-dual-slider-input:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--secondary);
+  outline-offset: 3px;
+}
+
+.temp-dual-slider-scale {
+  display: flex;
+  justify-content: space-between;
+  padding: 0;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Forecast-preview legend min/max badge (Tank avg + Greenhouse). */
+.forecast-legend-range {
+  color: var(--on-surface);
+  font-variant-numeric: tabular-nums;
+  margin-left: 2px;
+}
+
+.forecast-legend-range:empty { display: none; }
+
 /* ── Relay Toggle Board ── */
 
 .relay-board {
