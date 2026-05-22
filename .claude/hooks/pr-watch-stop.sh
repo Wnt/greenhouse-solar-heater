@@ -36,9 +36,9 @@ if ! [ "${deadline:-0}" -gt "$now" ] 2>/dev/null; then
   exit 0
 fi
 
-# Throttle to roughly one CI cycle (CI here finishes in ~1 min). Kept under
-# the 60 s Stop-hook timeout.
-sleep "${PR_WATCH_POLL_SECONDS:-45}"
+# Poll every 20 s so completion is caught fast (CI here finishes in ~1 min).
+# Kept well under the 60 s Stop-hook timeout.
+sleep "${PR_WATCH_POLL_SECONDS:-20}"
 
 printf '{"decision":"block","reason":"Still watching PR #%s (%s) for CI. Re-check now: mcp__github__pull_request_read method=get_check_runs. If every required check has conclusion success, merge via mcp__github__merge_pull_request then run: rm -f .claude/.pr-watch . If any check failed, run rm -f .claude/.pr-watch then reproduce-and-fix per the CLAUDE.md autofix cap (or report if out of scope). If checks are still queued or in_progress, just end your turn and this hook will poll again."}\n' "${pr:-?}" "${repo:-}"
 exit 0

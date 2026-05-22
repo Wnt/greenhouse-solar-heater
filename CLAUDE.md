@@ -215,7 +215,7 @@ The cap exists because runaway CI loops mask design-level problems (flaky test, 
    printf 'PR=%s\nREPO=Wnt/greenhouse-solar-heater\nDEADLINE=%s\n' 209 "$(( $(date +%s) + 1200 ))" > .claude/.pr-watch
    ```
 
-   `.claude/hooks/pr-watch-stop.sh` (a `Stop` hook) then blocks the session from going idle, sleeps ~45 s, and feeds you back a `get_check_runs` re-check each cycle. On all-green: `merge_pull_request`, then `rm -f .claude/.pr-watch`. On any failure or once `DEADLINE` passes: clear the sentinel and report/fix per the autofix cap. The hook is **inert without the sentinel**, so it never affects ordinary or local sessions. Remove the sentinel the moment the user redirects.
+   `.claude/hooks/pr-watch-stop.sh` (a `Stop` hook) then blocks the session from going idle, sleeps ~20 s, and feeds you back a `get_check_runs` re-check each cycle. On all-green: `merge_pull_request`, then `rm -f .claude/.pr-watch`. On any failure or once `DEADLINE` passes: clear the sentinel and report/fix per the autofix cap. The hook is **inert without the sentinel**, so it never affects ordinary or local sessions. Remove the sentinel the moment the user redirects.
 
 2. **`/loop 1m`** the same `get_check_runs`-then-merge check, if you'd rather drive it explicitly. Stop the loop once the PR is merged or conclusively failed.
 
