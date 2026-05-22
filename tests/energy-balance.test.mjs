@@ -178,6 +178,34 @@ test('user-data sanity check: 21 Apr charging day', () => {
     'day net ' + result.day.netKwh);
 });
 
+test('sensor noise within one mode does not inflate buckets (net, not total variation)', () => {
+  // A pure-idle night where the tank cools 35 → 30 avg (−5 K, ≈1.74 kWh
+  // real standby loss) but the 30 s sensor signal jitters ±0.5 K around
+  // that trend. Summing the magnitude of every sample-to-sample delta
+  // (the old behaviour) accumulates the jitter into phantom "gathered"
+  // energy at night and a wildly over-counted leakage. The balance must
+  // reflect only the net change per mode segment.
+  const t0 = Date.parse('2026-04-21T18:00:00Z');
+  const points = [];
+  const N = 60; // ~ every 15 min over 15 h
+  for (let i = 0; i <= N; i++) {
+    const trend = 35 - 5 * (i / N);          // 35 → 30 avg
+    const jitter = (i % 2 === 0) ? 0.5 : -0.5; // ±0.5 K sawtooth
+    const avg = trend + jitter;
+    points.push(pt(t0 + (i / N) * 15 * HOUR, avg + 1, avg - 1));
+  }
+  const result = computeEnergyBalance(points, [], t0 + 15 * HOUR);
+  assert.ok(result.night, 'expected an ongoing night');
+  // No sun at night → gathered must be ~0, not the jitter sum.
+  assert.ok(result.night.gatheredKwh < 0.1,
+    'night gathered should be ~0, got ' + result.night.gatheredKwh);
+  // Leakage tracks the real 5 K net cooling (≈1.74 kWh), not the
+  // total-variation blow-up.
+  assert.ok(result.night.leakageKwh > 1.4 && result.night.leakageKwh < 2.1,
+    'night leakage ' + result.night.leakageKwh);
+  assert.strictEqual(result.night.heatingKwh, 0);
+});
+
 test('DAY_GAP_MS is exported and sensible (≥ 1 h, ≤ 3 h)', () => {
   assert.ok(DAY_GAP_MS >= HOUR);
   assert.ok(DAY_GAP_MS <= 3 * HOUR);

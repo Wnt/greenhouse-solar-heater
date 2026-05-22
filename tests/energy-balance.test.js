@@ -232,6 +232,50 @@ describe('energy-balance', () => {
       assert.strictEqual(stats.leakageLossWh, 0);
     });
 
+    it('rejects sensor noise: a jittery flat idle day creates no energy', () => {
+      // The whole 24 h window is idle and the tank holds a flat 30 °C avg,
+      // but the 30 s signal jitters ±0.5 K. The old per-sample algorithm
+      // summed the magnitude of every wiggle, manufacturing kWh of phantom
+      // "gathered" and "leaked" energy out of pure noise. With net-per-mode
+      // bucketing the flat trend yields ~0 in every bucket.
+      const now = Date.now();
+      const HOUR = 3600 * 1000;
+      const events = [{ ts: now - 25 * HOUR, type: 'mode', to: 'idle' }];
+      const points = [{ ts: now - 25 * HOUR, tank_top: 31, tank_bottom: 29 }]; // leading edge, avg 30
+      const N = 48;
+      for (let i = 0; i <= N; i++) {
+        const jitter = (i % 2 === 0) ? 0.5 : -0.5;
+        const avg = 30 + jitter;
+        points.push({ ts: now - 24 * HOUR + (i / N) * 24 * HOUR, tank_top: avg + 1, tank_bottom: avg - 1 });
+      }
+      const stats = computeDailyFromHistory(points, events, now);
+      assert.ok(stats.gatheredWh < 100, 'gatheredWh should be ~0, got ' + stats.gatheredWh);
+      assert.ok(stats.leakageLossWh < 100, 'leakageLossWh should be ~0, got ' + stats.leakageLossWh);
+      assert.strictEqual(stats.heatingLossWh, 0);
+    });
+
+    it('attributes only net cooling to leakage under a noisy downtrend', () => {
+      // Idle window, tank cools 30 → 27 avg (−3 K ≈ 1046 Wh) with ±0.5 K
+      // jitter riding the trend. Leakage must track the net 3 K, and no
+      // positive jitter may be miscredited as solar "gathered".
+      const now = Date.now();
+      const HOUR = 3600 * 1000;
+      const events = [{ ts: now - 25 * HOUR, type: 'mode', to: 'idle' }];
+      const points = [{ ts: now - 25 * HOUR, tank_top: 31, tank_bottom: 29 }]; // leading edge, avg 30
+      const N = 48;
+      for (let i = 0; i <= N; i++) {
+        const trend = 30 - 3 * (i / N);
+        const jitter = (i % 2 === 0) ? 0.5 : -0.5;
+        const avg = trend + jitter;
+        points.push({ ts: now - 24 * HOUR + (i / N) * 24 * HOUR, tank_top: avg + 1, tank_bottom: avg - 1 });
+      }
+      const stats = computeDailyFromHistory(points, events, now);
+      assert.ok(stats.gatheredWh < 100, 'gatheredWh should be ~0, got ' + stats.gatheredWh);
+      assert.ok(stats.leakageLossWh > 850 && stats.leakageLossWh < 1200,
+        'leakageLossWh=' + stats.leakageLossWh);
+      assert.strictEqual(stats.heatingLossWh, 0);
+    });
+
     it('computeDailyStats fetches both queries and returns stats', () => {
       const now = Date.now();
       const { points, events } = buildDayScenario(now);

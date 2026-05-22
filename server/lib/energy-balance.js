@@ -42,42 +42,78 @@ function sortModeEvents(events) {
     .sort(function (a, b) { return a.ts - b.ts; });
 }
 
-// Walk points (which include a pre-window leading edge from getHistory's
-// UNION) and credit each tank-energy delta to the mode active at the
-// later sample. Positive deltas → gathered, negative → heating (during
-// heating modes) or leakage (otherwise). Same algorithm as
-// playground/js/energy-balance.js bucketRange().
+// Bucket the tank-energy change by the *net* change within each contiguous
+// run of one mode — NOT the sum of every sample-to-sample delta. The 30 s
+// tank signal is quantised to 0.1 °C and carries ±0.5 K of sensor jitter;
+// summing each delta's magnitude is the signal's total variation, which over
+// thousands of samples accretes tens of phantom kWh (a flat night reported
+// 6 kWh "to air" and 3 kWh of nonexistent solar "gathered"). Scoring each
+// run by its endpoints telescopes the wiggles away and ties gain to the mode
+// that was actually running. Mirrors playground/js/energy-balance.js
+// bucketRange(); keep the two in sync.
+//   - solar_charging: net rise → gathered (a net fall → leakage)
+//   - heating modes:  net fall → heating
+//   - everything else: net fall → leakage
+// `points` includes a pre-window leading edge from getHistory's UNION; the
+// first counted segment is seeded from the sample just before windowStart so
+// the energy change across the window boundary is captured.
 function bucketEnergyByMode(points, modeEvents, windowStart) {
+  // Per-point mode (forward-walking event cursor) and tank energy.
+  const modes = new Array(points.length);
+  const energy = new Array(points.length);
   let pMode = 'idle';
   let evIdx = 0;
-  let gatheredWh = 0;
-  let heatingLossWh = 0;
-  let leakageLossWh = 0;
-  let prevEnergy = null;
+  let firstIn = points.length;
   for (let i = 0; i < points.length; i++) {
     const p = points[i];
     while (evIdx < modeEvents.length && modeEvents[evIdx].ts <= p.ts) {
       pMode = modeEvents[evIdx].to || pMode;
       evIdx++;
     }
-    if (typeof p.tank_top !== 'number' || typeof p.tank_bottom !== 'number') {
-      prevEnergy = null;
+    modes[i] = pMode;
+    energy[i] = (typeof p.tank_top === 'number' && typeof p.tank_bottom === 'number')
+      ? tankStoredEnergyKwh((p.tank_top + p.tank_bottom) / 2)
+      : null;
+    if (firstIn === points.length && p.ts >= windowStart) firstIn = i;
+  }
+  if (firstIn >= points.length) {
+    return { gatheredWh: 0, heatingLossWh: 0, leakageLossWh: 0 };
+  }
+  const base = firstIn > 0 ? firstIn - 1 : 0;
+
+  let gathered = 0, heating = 0, leakage = 0;
+  let segMode = null, segStartE = null, lastE = null;
+  function commit(net) {
+    if (segMode === 'solar_charging') {
+      if (net > 0) gathered += net; else leakage += -net;
+    } else if (HEATING_MODES[segMode]) {
+      if (net < 0) heating += -net;
+    } else {
+      if (net < 0) leakage += -net;
+    }
+  }
+  for (let i = base; i < points.length; i++) {
+    const e = energy[i];
+    const m = modes[i];
+    if (e === null) {
+      if (segMode !== null && segStartE !== null && lastE !== null) commit(lastE - segStartE);
+      segMode = null; segStartE = null; lastE = null;
       continue;
     }
-    const e = tankStoredEnergyKwh((p.tank_top + p.tank_bottom) / 2);
-    if (prevEnergy !== null && p.ts >= windowStart) {
-      const d = e - prevEnergy;
-      if (d > 0) {
-        gatheredWh += d * 1000;
-      } else if (d < 0) {
-        const lossWh = -d * 1000;
-        if (HEATING_MODES[pMode]) heatingLossWh += lossWh;
-        else leakageLossWh += lossWh;
-      }
+    if (segMode === null) { segMode = m; segStartE = e; lastE = e; continue; }
+    if (m !== segMode) {
+      commit(lastE - segStartE);
+      segMode = m; segStartE = lastE;
     }
-    prevEnergy = e;
+    lastE = e;
   }
-  return { gatheredWh, heatingLossWh, leakageLossWh };
+  if (segMode !== null && segStartE !== null && lastE !== null) commit(lastE - segStartE);
+
+  return {
+    gatheredWh: gathered * 1000,
+    heatingLossWh: heating * 1000,
+    leakageLossWh: leakage * 1000,
+  };
 }
 
 function computeOvernightFromHistory(points, events, now) {
