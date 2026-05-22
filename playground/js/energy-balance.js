@@ -38,19 +38,52 @@ function lastIdxAtOrBefore(points, ts) {
   return 0;
 }
 
-function bucketRange(points, modes, energy, startIdx, endIdx) {
+// Bucket the tank-energy change across [startIdx, endIdx] by the *net*
+// change within each contiguous run of one mode — NOT the sum of every
+// sample-to-sample delta. The 30 s tank signal is quantised to 0.1 °C and
+// carries ±0.5 K of sensor jitter; summing the magnitude of each delta is
+// the signal's total variation, which over thousands of samples accretes
+// tens of phantom kWh (a flat night "leaked" 6 kWh and "gathered" 3 kWh of
+// nonexistent solar). Net-per-segment telescopes those wiggles away: a run
+// is scored only by its endpoints, so noise cancels and gain is tied to the
+// mode that was actually running.
+//   - solar_charging: net rise → gathered (a net fall → leakage)
+//   - heating modes:  net fall → heating
+//   - everything else: net fall → leakage
+// A positive swing outside solar_charging is discarded (you cannot gather
+// solar at night), so gathered − heating − leakage tracks, but does not
+// exactly equal, the raw endpoint-to-endpoint change.
+function bucketRange(modes, energy, startIdx, endIdx) {
   let gathered = 0, heating = 0, leakage = 0;
-  for (let i = startIdx + 1; i <= endIdx; i++) {
-    if (energy[i] === null || energy[i - 1] === null) continue;
-    const d = energy[i] - energy[i - 1];
-    if (d > 0) {
-      gathered += d;
-    } else if (d < 0) {
-      const loss = -d;
-      if (HEATING_MODES[modes[i]]) heating += loss;
-      else leakage += loss;
+  let segMode = null, segStartE = null, lastE = null;
+  function commit(net) {
+    if (segMode === 'solar_charging') {
+      if (net > 0) gathered += net; else leakage += -net;
+    } else if (HEATING_MODES[segMode]) {
+      if (net < 0) heating += -net;
+    } else {
+      if (net < 0) leakage += -net;
     }
   }
+  for (let i = startIdx; i <= endIdx; i++) {
+    const e = energy[i];
+    const m = modes[i];
+    if (e === null) {
+      // Data gap — close the open segment and don't bridge across it.
+      if (segMode !== null && segStartE !== null && lastE !== null) commit(lastE - segStartE);
+      segMode = null; segStartE = null; lastE = null;
+      continue;
+    }
+    if (segMode === null) { segMode = m; segStartE = e; lastE = e; continue; }
+    if (m !== segMode) {
+      commit(lastE - segStartE);
+      // The boundary delta (this sample vs. the previous run's last sample)
+      // belongs to the new mode, matching the old per-sample attribution.
+      segMode = m; segStartE = lastE;
+    }
+    lastE = e;
+  }
+  if (segMode !== null && segStartE !== null && lastE !== null) commit(lastE - segStartE);
   return { gathered, heating, leakage };
 }
 
@@ -165,7 +198,7 @@ export function computeEnergyBalance(points, events, nowMs) {
 
   let night = null;
   if (nightEndIdx > nightStartIdx) {
-    const b = bucketRange(points, modes, energy, nightStartIdx, nightEndIdx);
+    const b = bucketRange(modes, energy, nightStartIdx, nightEndIdx);
     // A "night" is ongoing when it runs up to nowMs (no day after it, or
     // this day is completed).
     const nightComplete = dayStartIdx !== -1 && !dayComplete;
@@ -182,7 +215,7 @@ export function computeEnergyBalance(points, events, nowMs) {
 
   let day = null;
   if (dayStartIdx !== -1 && dayEndIdx > dayStartIdx) {
-    const b = bucketRange(points, modes, energy, dayStartIdx, dayEndIdx);
+    const b = bucketRange(modes, energy, dayStartIdx, dayEndIdx);
     day = {
       startTs: points[dayStartIdx].ts,
       endTs: points[dayEndIdx].ts,

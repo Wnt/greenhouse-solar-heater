@@ -1046,6 +1046,13 @@ select, input, textarea { max-width: 100%; }
   margin-left: 2px;
 }
 
+.balance-stat-delta {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  font-weight: 400;
+  margin-left: 8px;
+}
+
 .balance-stat-caption {
   font-family: 'Newsreader', Georgia, serif;
   font-style: italic;

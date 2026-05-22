@@ -26,6 +26,16 @@ export function tankStoredEnergyKwh(avgTankC) {
   return TANK_VOLUME_L * WATER_SPECIFIC_HEAT_KJ * dT / 3600;
 }
 
+// Inverse slope of tankStoredEnergyKwh: convert a stored-energy amount
+// (kWh) back to the tank temperature swing (K) that produced it. The 12 °C
+// baseline cancels for a delta, so this is a pure scale (~2.867 K/kWh).
+// Lets the balance card show "Δ28°C" alongside each kWh figure. Sign is
+// preserved so a net loss reads as a negative swing.
+export function tankKwhToDeltaC(kwh) {
+  if (typeof kwh !== 'number' || !isFinite(kwh)) return 0;
+  return kwh * 3600 / (TANK_VOLUME_L * WATER_SPECIFIC_HEAT_KJ);
+}
+
 // System parameters (from system.yaml, with sensible defaults)
 const DEFAULTS = {
   collector_area: 4.0,          // m²
