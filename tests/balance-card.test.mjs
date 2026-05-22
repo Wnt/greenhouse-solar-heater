@@ -16,6 +16,13 @@ test('Released stat shows a bare magnitude (no double-negative)', () => {
   assert.match(html, /1\.4 to greenhouse · 0\.4 to air/);
 });
 
+test('Released stat shows the equivalent tank temperature swing', () => {
+  // 1.75 kWh ≈ 5 K swing (1.75 · 2.867). Magnitude only, like the kWh.
+  const html = releasedStatHtml(1.4, 0.35);
+  assert.match(html, /balance-stat-delta">Δ5°C</);
+  assert.doesNotMatch(html, /Δ−/, 'released swing is a magnitude, not signed');
+});
+
 test('Released caption collapses to a single destination when only one is significant', () => {
   assert.match(releasedStatHtml(0, 2.0), /balance-stat-caption">to air/);
   assert.match(releasedStatHtml(2.0, 0), /balance-stat-caption">to greenhouse/);

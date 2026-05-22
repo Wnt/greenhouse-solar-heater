@@ -25,6 +25,15 @@ function tankStoredEnergyKwh(avgTankC) {
   return 300 * 4.186 * dT / 3600;
 }
 
+// Inverse slope of tankStoredEnergyKwh: kWh → equivalent tank temperature
+// swing (K), sign preserved. Must stay in sync with tankKwhToDeltaC() in
+// playground/js/physics.js. Used by the notification bodies to show the
+// temperature delta beside each kWh figure.
+function tankKwhToDeltaC(kwh) {
+  if (typeof kwh !== 'number' || !isFinite(kwh)) return 0;
+  return kwh * 3600 / (300 * 4.186);
+}
+
 // Window for the 12:00 noon "Overnight Heating Report" — reaches back
 // to ~18:00 the previous evening, capturing the full night plus
 // pre-sunset leakage. Positive solar deltas inside the window are
@@ -194,6 +203,7 @@ function fetchAndCompute(db, now, fromHistory, callback) {
 module.exports = {
   HEATING_MODES,
   tankStoredEnergyKwh,
+  tankKwhToDeltaC,
   computeOvernightFromHistory,
   computeDailyFromHistory,
   computeOvernightStats,

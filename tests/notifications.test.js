@@ -517,28 +517,28 @@ describe('notifications', () => {
       it('sunny day with only leakage', () => {
         // 6.5 kWh gathered, 2.5 kWh leakage, no heating
         const body = notifications.buildEveningBody(6500, 0, 2500);
-        assert.match(body, /gathered 6\.5 kWh/);
-        assert.match(body, /2\.5 kWh slipped to air/);
-        assert.match(body, /net \+4\.0 kWh/);
+        assert.match(body, /gathered 6\.5 kWh \(Δ19°C\)/);
+        assert.match(body, /2\.5 kWh \(Δ7°C\) slipped to air/);
+        assert.match(body, /net \+4\.0 kWh, Δ\+11°C/);
       });
 
       it('cloudy day with pure leakage loss', () => {
         const body = notifications.buildEveningBody(0, 0, 1400);
         assert.match(body, /No solar gain today/);
-        assert.match(body, /released 1\.4 kWh to air/);
+        assert.match(body, /released 1\.4 kWh \(Δ4°C\) to air/);
       });
 
       it('day with both heating and leakage losses', () => {
         const body = notifications.buildEveningBody(3400, 1900, 700);
-        assert.match(body, /gathered 3\.4 kWh/);
-        assert.match(body, /greenhouse drew 1\.9 kWh/);
-        assert.match(body, /0\.7 kWh slipped to air/);
-        assert.match(body, /net \+0\.8 kWh/);
+        assert.match(body, /gathered 3\.4 kWh \(Δ10°C\)/);
+        assert.match(body, /greenhouse drew 1\.9 kWh \(Δ5°C\)/);
+        assert.match(body, /0\.7 kWh \(Δ2°C\) slipped to air/);
+        assert.match(body, /net \+0\.8 kWh, Δ\+2°C/);
       });
 
       it('net negative day shows the minus sign', () => {
         const body = notifications.buildEveningBody(800, 3200, 0);
-        assert.match(body, /net −2\.4 kWh/);
+        assert.match(body, /net −2\.4 kWh, Δ−7°C/);
       });
 
       it('flat day with everything below noise floor', () => {
@@ -549,7 +549,7 @@ describe('notifications', () => {
       it('cloudy with only heating losses', () => {
         const body = notifications.buildEveningBody(0, 1800, 0);
         assert.match(body, /No solar gain today/);
-        assert.match(body, /greenhouse drew 1\.8 kWh from the tank/);
+        assert.match(body, /greenhouse drew 1\.8 kWh \(Δ5°C\) from the tank/);
       });
     });
 
@@ -557,7 +557,7 @@ describe('notifications', () => {
       it('heating disabled, tank cooled to air', () => {
         const body = notifications.buildNoonBody(0, 0, 1800, /*heatingDisabled*/ true);
         assert.match(body, /Greenhouse heating is resting/);
-        assert.match(body, /released 1\.8 kWh to air/);
+        assert.match(body, /released 1\.8 kWh \(Δ5°C\) to air/);
       });
 
       it('heating disabled, tank held steady', () => {
@@ -570,14 +570,14 @@ describe('notifications', () => {
         // 225 minutes = 3h 45min
         const body = notifications.buildNoonBody(225, 2800, 1400, false);
         assert.match(body, /3h 45min/);
-        assert.match(body, /2\.8 kWh delivered/);
-        assert.match(body, /1\.4 kWh slipped to air/);
+        assert.match(body, /2\.8 kWh \(Δ8°C\) delivered/);
+        assert.match(body, /1\.4 kWh \(Δ4°C\) slipped to air/);
       });
 
       it('heating enabled but did not run, only leakage', () => {
         const body = notifications.buildNoonBody(0, 0, 1600, false);
         assert.match(body, /No heating was needed overnight/);
-        assert.match(body, /released 1\.6 kWh to air/);
+        assert.match(body, /released 1\.6 kWh \(Δ5°C\) to air/);
       });
 
       it('heating enabled, did not run, everything quiet', () => {

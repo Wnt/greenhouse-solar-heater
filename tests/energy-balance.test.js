@@ -3,6 +3,7 @@ const assert = require('node:assert');
 
 const {
   tankStoredEnergyKwh,
+  tankKwhToDeltaC,
   computeOvernightFromHistory,
   computeDailyFromHistory,
   computeOvernightStats,
@@ -25,6 +26,21 @@ describe('energy-balance', () => {
     it('returns 0 for non-finite input', () => {
       assert.strictEqual(tankStoredEnergyKwh(NaN), 0);
       assert.strictEqual(tankStoredEnergyKwh(undefined), 0);
+    });
+  });
+
+  describe('tankKwhToDeltaC', () => {
+    it('is the inverse slope of tankStoredEnergyKwh (≈2.867 K per kWh)', () => {
+      // 1 kWh ↔ 3600 / (300 · 4.186) ≈ 2.867 K
+      assert.ok(Math.abs(tankKwhToDeltaC(1) - 2.8667) < 0.001, 'got ' + tankKwhToDeltaC(1));
+      // round-trips a known energy: tankStoredEnergyKwh(30) ≈ 6.279 kWh → 18 K span
+      assert.ok(Math.abs(tankKwhToDeltaC(tankStoredEnergyKwh(30)) - 18) < 0.01);
+    });
+
+    it('preserves sign and returns 0 for non-finite input', () => {
+      assert.ok(tankKwhToDeltaC(-2.4) < 0);
+      assert.strictEqual(tankKwhToDeltaC(NaN), 0);
+      assert.strictEqual(tankKwhToDeltaC(undefined), 0);
     });
   });
 

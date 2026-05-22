@@ -15,6 +15,7 @@ import {
   editorialDaySentence,
   editorialNightSentence,
 } from '../energy-balance.js';
+import { tankKwhToDeltaC } from '../physics.js';
 import { helsinkiParts } from './time-format.js';
 import { registerDataSource } from '../sync/registry.js';
 
@@ -150,6 +151,21 @@ function fmtBalanceWindow(startTs, endTs, complete) {
   return fmt(startTs) + ' → ' + (complete ? fmt(endTs) : 'now');
 }
 
+// "Δ28°C" — the tank temperature swing equivalent to a kWh figure, shown
+// beside it so the energy has an intuitive companion. Follows the figure's
+// own sign convention: signed for Net (which flips), bare magnitude for
+// Gathered/Released (the label carries the direction).
+function deltaCHtml(kwh, { sign = false } = {}) {
+  const rounded = Math.round(tankKwhToDeltaC(kwh));
+  let txt;
+  if (sign && rounded !== 0) {
+    txt = 'Δ' + (rounded > 0 ? '+' : '−') + Math.abs(rounded) + '°C';
+  } else {
+    txt = 'Δ' + Math.abs(rounded) + '°C';
+  }
+  return '<span class="balance-stat-delta">' + txt + '</span>';
+}
+
 function statHtml(label, kwh, { sign = false, extra = '' } = {}) {
   const val = fmtBalanceKwh(kwh, { sign });
   const cls = sign
@@ -159,7 +175,8 @@ function statHtml(label, kwh, { sign = false, extra = '' } = {}) {
   return '<div class="balance-stat">' +
     '<span class="balance-stat-label">' + label + '</span>' +
     '<div><span class="balance-stat-value' + cls + '">' + val + '</span>' +
-    '<span class="balance-stat-unit">kWh</span></div>' +
+    '<span class="balance-stat-unit">kWh</span>' +
+    deltaCHtml(kwh, { sign }) + '</div>' +
     capHtml +
     '</div>';
 }
@@ -182,7 +199,8 @@ export function releasedStatHtml(heatingKwh, leakageKwh) {
   return '<div class="balance-stat">' +
     '<span class="balance-stat-label">Released</span>' +
     '<div><span class="balance-stat-value">' + fmtBalanceKwh(total) + '</span>' +
-    '<span class="balance-stat-unit">kWh</span></div>' +
+    '<span class="balance-stat-unit">kWh</span>' +
+    deltaCHtml(total) + '</div>' +
     (caption ? '<span class="balance-stat-caption">' + caption + '</span>' : '') +
     '</div>';
 }
