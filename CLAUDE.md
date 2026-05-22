@@ -209,13 +209,13 @@ The cap exists because runaway CI loops mask design-level problems (flaky test, 
 
 `subscribe_pr_activity` wakes the session via a GitHub webhook that the web sandbox **sometimes drops**, leaving a "merge once CI is green" task hung indefinitely. CI here finishes in ~1 min, so when the task is to watch/merge a PR, always back the subscription with an active poll. The shell **cannot** poll GitHub itself (no token; the shared egress IP's unauthenticated API budget is exhausted) — only the MCP tools can, and only inside an agent turn. Two ways to get those turns on a timer:
 
-1. **Stop-hook poller (automatic, preferred).** Arm it by writing the gitignored sentinel `.claude/.pr-watch`:
+1. **Stop-hook poller (automatic, preferred).** Arm it with the helper (PR number, then optional minutes — default 20):
 
    ```bash
-   printf 'PR=%s\nREPO=Wnt/greenhouse-solar-heater\nDEADLINE=%s\n' 209 "$(( $(date +%s) + 1200 ))" > .claude/.pr-watch
+   .claude/hooks/pr-watch.sh arm 209
    ```
 
-   `.claude/hooks/pr-watch-stop.sh` (a `Stop` hook) then blocks the session from going idle, sleeps ~20 s, and feeds you back a `get_check_runs` re-check each cycle. On all-green: `merge_pull_request`, then `rm -f .claude/.pr-watch`. On any failure or once `DEADLINE` passes: clear the sentinel and report/fix per the autofix cap. The hook is **inert without the sentinel**, so it never affects ordinary or local sessions. Remove the sentinel the moment the user redirects.
+   `.claude/hooks/pr-watch-stop.sh` (a `Stop` hook) then blocks the session from going idle, sleeps ~20 s, and feeds you back a `get_check_runs` re-check each cycle. On all-green: `merge_pull_request`, then `.claude/hooks/pr-watch.sh disarm`. On any failure or once the deadline passes: disarm and report/fix per the autofix cap. **Run `arm`/`disarm` bare (never chained with `&&`)** — they're allowlisted in `.claude/settings.json` so the whole loop stays prompt-free; chaining another command breaks the match and re-triggers a permission prompt. The hook is **inert without the sentinel**, so it never affects ordinary or local sessions. Disarm the moment the user redirects.
 
 2. **`/loop 1m`** the same `get_check_runs`-then-merge check, if you'd rather drive it explicitly. Stop the loop once the PR is merged or conclusively failed.
 
@@ -291,6 +291,4 @@ terraform apply -var="new_relic_license_key=NRAK-..."
 
 - **Local**: `node server/server.js` — no auth, direct LAN access to Shelly devices.
 - **Cloud**: `AUTH_ENABLED=true RPID=<domain> ORIGIN=https://<domain> node server/server.js` — passkey auth, VPN tunnel to reach devices.
-
-<!-- pr-watch hook smoke test: 2026-05-22T21:01:48Z -->
 

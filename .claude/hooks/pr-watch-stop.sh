@@ -40,5 +40,5 @@ fi
 # Kept well under the 60 s Stop-hook timeout.
 sleep "${PR_WATCH_POLL_SECONDS:-20}"
 
-printf '{"decision":"block","reason":"Still watching PR #%s (%s) for CI. Re-check now: mcp__github__pull_request_read method=get_check_runs. If every required check has conclusion success, merge via mcp__github__merge_pull_request then run: rm -f .claude/.pr-watch . If any check failed, run rm -f .claude/.pr-watch then reproduce-and-fix per the CLAUDE.md autofix cap (or report if out of scope). If checks are still queued or in_progress, just end your turn and this hook will poll again."}\n' "${pr:-?}" "${repo:-}"
+printf '{"decision":"block","reason":"Still watching PR #%s (%s) for CI. Re-check now: mcp__github__pull_request_read method=get_check_runs. If every required check has conclusion success, merge via mcp__github__merge_pull_request then run exactly: .claude/hooks/pr-watch.sh disarm . If any check failed, run .claude/hooks/pr-watch.sh disarm then reproduce-and-fix per the CLAUDE.md autofix cap (or report if out of scope). If checks are still queued or in_progress, just end your turn and this hook will poll again. Do not chain other commands onto the disarm — run it bare so it stays prompt-free."}\n' "${pr:-?}" "${repo:-}"
 exit 0

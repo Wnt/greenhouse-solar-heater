@@ -1,5 +1,10 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(.claude/hooks/pr-watch.sh:*)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
