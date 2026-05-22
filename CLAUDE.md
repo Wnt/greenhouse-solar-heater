@@ -205,6 +205,22 @@ On a CI-failure event, **loop until green**: read the failing job (`pull_request
 
 The cap exists because runaway CI loops mask design-level problems (flaky test, environment drift, hidden coupling). Escalate immediately on contract-shape failures (test asserts a deliberate API change you didn't anticipate, schema drift, type-system shifts) — those are the user's call. Loop freely on lint nitpicks, type errors, file-size cap breaches (compress, don't bypass), and coverage regressions on files you touched.
 
+### Merge-on-green: don't trust the webhook alone
+
+`subscribe_pr_activity` wakes the session via a GitHub webhook that the web sandbox **sometimes drops**, leaving a "merge once CI is green" task hung indefinitely. CI here finishes in ~1 min, so when the task is to watch/merge a PR, always back the subscription with an active poll. The shell **cannot** poll GitHub itself (no token; the shared egress IP's unauthenticated API budget is exhausted) — only the MCP tools can, and only inside an agent turn. Two ways to get those turns on a timer:
+
+1. **Stop-hook poller (automatic, preferred).** Arm it by writing the gitignored sentinel `.claude/.pr-watch`:
+
+   ```bash
+   printf 'PR=%s\nREPO=Wnt/greenhouse-solar-heater\nDEADLINE=%s\n' 209 "$(( $(date +%s) + 1200 ))" > .claude/.pr-watch
+   ```
+
+   `.claude/hooks/pr-watch-stop.sh` (a `Stop` hook) then blocks the session from going idle, sleeps ~20 s, and feeds you back a `get_check_runs` re-check each cycle. On all-green: `merge_pull_request`, then `rm -f .claude/.pr-watch`. On any failure or once `DEADLINE` passes: clear the sentinel and report/fix per the autofix cap. The hook is **inert without the sentinel**, so it never affects ordinary or local sessions. Remove the sentinel the moment the user redirects.
+
+2. **`/loop 1m`** the same `get_check_runs`-then-merge check, if you'd rather drive it explicitly. Stop the loop once the PR is merged or conclusively failed.
+
+Keep `subscribe_pr_activity` too — it's instant when it works; the poller is just the safety net.
+
 ## Test Setup Gotchas
 
 - **Run `npm ci` first if `node_modules/` is missing.** With deps installed, the full unit suite (`npm run test:unit`, 788 tests) completes in **~20 s** locally; individual files are sub-second to a few seconds. If a run is taking materially longer, something is wrong — don't "wait it out." Common causes: missing deps (several tests hang indefinitely on missing transitive requires rather than erroring; `sensor-apply` and `sensor-discovery` are the usual offenders because they build local HTTP servers that wait on a peer module that never loads), or stale `node` processes from a previous killed run (check `ps -C node` and `pkill -9 node`).
