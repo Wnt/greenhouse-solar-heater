@@ -44,7 +44,15 @@ const DEFAULTS = {
   collector_water_volume: 0.008,// m³ (8L in collectors)
   collector_plate_mass_cp: 20000, // J/K (absorber plate thermal capacity)
   tank_volume: 0.300,           // m³ (300L)
-  tank_UA: 3.0,                 // W/K tank heat loss (insulated)
+  // Standby loss to ambient, calibrated to ~13 W/K from logged history:
+  // clean overnight idle segments across a week cool at a median ~13.7 W/K
+  // (energy-weighted ~12.4) relative to outdoor. Far lossier than a sealed
+  // insulated cylinder because this is an unpressurised drainback tank
+  // vented through an open reservoir canister, so the water surface and dip
+  // tube shed heat by evaporation + convection. The production physics
+  // forecast fits its own leakage coefficient from data; this default just
+  // keeps the playground simulator and bootstrap demo realistic.
+  tank_UA: 13.0,                // W/K tank heat loss (open-vented drainback)
   greenhouse_UA: 100.0,         // W/K greenhouse envelope loss
   greenhouse_thermal_mass: 250000, // J/K (air + soil + structure)
   greenhouse_glazing_area: 4.0,  // m² effective south-facing glazing
