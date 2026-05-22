@@ -292,3 +292,5 @@ terraform apply -var="new_relic_license_key=NRAK-..."
 - **Local**: `node server/server.js` — no auth, direct LAN access to Shelly devices.
 - **Cloud**: `AUTH_ENABLED=true RPID=<domain> ORIGIN=https://<domain> node server/server.js` — passkey auth, VPN tunnel to reach devices.
 
+<!-- pr-watch smoke test: 2026-05-22T21:35:02Z (throwaway marker — revert after) -->
+
