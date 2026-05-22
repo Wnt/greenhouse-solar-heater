@@ -1,6 +1,7 @@
 .DS_Store
 .superpowers/
 .claude/settings.local.json
+.claude/.pr-watch
 tests/output/
 test-results/
 node_modules/
