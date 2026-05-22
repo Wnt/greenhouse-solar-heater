@@ -164,7 +164,7 @@ function statHtml(label, kwh, { sign = false, extra = '' } = {}) {
     '</div>';
 }
 
-function releasedStatHtml(heatingKwh, leakageKwh) {
+export function releasedStatHtml(heatingKwh, leakageKwh) {
   const total = heatingKwh + leakageKwh;
   const heating = heatingKwh >= 0.05;
   const leakage = leakageKwh >= 0.05;
@@ -181,7 +181,7 @@ function releasedStatHtml(heatingKwh, leakageKwh) {
   }
   return '<div class="balance-stat">' +
     '<span class="balance-stat-label">Released</span>' +
-    '<div><span class="balance-stat-value">−' + fmtBalanceKwh(total) + '</span>' +
+    '<div><span class="balance-stat-value">' + fmtBalanceKwh(total) + '</span>' +
     '<span class="balance-stat-unit">kWh</span></div>' +
     (caption ? '<span class="balance-stat-caption">' + caption + '</span>' : '') +
     '</div>';
