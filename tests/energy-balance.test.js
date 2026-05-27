@@ -8,6 +8,9 @@ const {
   computeDailyFromHistory,
   computeOvernightStats,
   computeDailyStats,
+  eveningReportWindowStart,
+  computeEveningReportFromHistory,
+  computeEveningReportStats,
 } = require('../server/lib/energy-balance.js');
 
 describe('energy-balance', () => {
@@ -305,6 +308,135 @@ describe('energy-balance', () => {
           try {
             assert.ok(stats.gatheredWh > 4000);
             assert.ok(stats.heatingLossWh > 1000);
+            resolve();
+          } catch (e) { reject(e); }
+        });
+      });
+    });
+  });
+
+  describe('eveningReportWindowStart', () => {
+    it('returns 11:00 local Helsinki summer (UTC+3) for a 20:00-local evening report', () => {
+      // 2026-05-26 17:00:00Z = 20:00 Helsinki summer
+      const now = Date.parse('2026-05-26T17:00:00Z');
+      const ws = eveningReportWindowStart(now);
+      // 11:00 Helsinki summer = 08:00 UTC same day
+      assert.strictEqual(new Date(ws).toISOString(), '2026-05-26T08:00:00.000Z');
+    });
+
+    it('returns 11:00 local Helsinki winter (UTC+2) for a 20:00-local evening report', () => {
+      // 2026-01-15 18:00:00Z = 20:00 Helsinki winter
+      const now = Date.parse('2026-01-15T18:00:00Z');
+      const ws = eveningReportWindowStart(now);
+      // 11:00 Helsinki winter = 09:00 UTC same day
+      assert.strictEqual(new Date(ws).toISOString(), '2026-01-15T09:00:00.000Z');
+    });
+
+    it('falls back to yesterday 11:00 local if now is before 11:00 today', () => {
+      // 2026-05-26 06:00:00Z = 09:00 Helsinki summer, before 11:00 local
+      const now = Date.parse('2026-05-26T06:00:00Z');
+      const ws = eveningReportWindowStart(now);
+      // Most recent 11:00 local = 2026-05-25 08:00 UTC
+      assert.strictEqual(new Date(ws).toISOString(), '2026-05-25T08:00:00.000Z');
+    });
+  });
+
+  describe('computeEveningReportFromHistory', () => {
+    // Mode-flip samples carry no temp change so the segment's net delta
+    // is captured by the intermediate samples; mirrors buildDayScenario().
+    it('excludes overnight heating that ended before 11:00 local', () => {
+      // Report fires at 20:00 Helsinki summer = 17:00 UTC; the 11:00 local
+      // boundary is now-9h = 08:00 UTC.
+      const now = Date.parse('2026-05-26T17:00:00Z');
+      const HOUR = 3600 * 1000;
+      // Overnight heating ran 20:00 UTC yesterday → 06:30 UTC today
+      // (09:30 local). Tank dropped 36 → 17. Then afternoon solar
+      // brought it back to 32 by 19:00 local.
+      const events = [
+        { ts: now - 21 * HOUR, type: 'mode', to: 'greenhouse_heating' },
+        { ts: now - 10.5 * HOUR, type: 'mode', to: 'idle' },
+        { ts: now - 5 * HOUR, type: 'mode', to: 'solar_charging' },
+        { ts: now - 1 * HOUR, type: 'mode', to: 'idle' },
+      ];
+      const points = [
+        { ts: now - 22 * HOUR, tank_top: 37, tank_bottom: 35 },           // pre-window, heating
+        { ts: now - 10.5 * HOUR, tank_top: 18, tank_bottom: 16 },         // heating ends, before boundary
+        { ts: now - 9 * HOUR, tank_top: 18, tank_bottom: 16 },            // boundary, idle
+        { ts: now - 5 * HOUR - 60 * 1000, tank_top: 18, tank_bottom: 16 },// pre-solar idle
+        { ts: now - 5 * HOUR, tank_top: 18, tank_bottom: 16 },            // solar starts, no temp change
+        { ts: now - 3 * HOUR, tank_top: 25, tank_bottom: 23 },            // solar midway, avg 24
+        { ts: now - 1 * HOUR - 60 * 1000, tank_top: 33, tank_bottom: 31 },// solar peak just before flip
+        { ts: now - 1 * HOUR, tank_top: 33, tank_bottom: 31 },            // flip to idle, no temp change
+        { ts: now, tank_top: 33, tank_bottom: 31 },
+      ];
+
+      const stats = computeEveningReportFromHistory(points, events, now);
+
+      assert.strictEqual(stats.heatingLossWh, 0,
+        'heatingLossWh should be 0, got ' + stats.heatingLossWh);
+      // avg 17 → 32 = +15 K → ≈5234 Wh
+      assert.ok(stats.gatheredWh > 4900 && stats.gatheredWh < 5500,
+        'gatheredWh=' + stats.gatheredWh);
+    });
+
+    it('credits heating that happens during the day', () => {
+      const now = Date.parse('2026-05-26T17:00:00Z');
+      const HOUR = 3600 * 1000;
+      const events = [
+        { ts: now - 21 * HOUR, type: 'mode', to: 'idle' },
+        { ts: now - 6 * HOUR, type: 'mode', to: 'greenhouse_heating' },
+        { ts: now - 4 * HOUR, type: 'mode', to: 'idle' },
+      ];
+      const points = [
+        { ts: now - 10 * HOUR, tank_top: 31, tank_bottom: 29 },           // pre-window, idle
+        { ts: now - 9 * HOUR, tank_top: 31, tank_bottom: 29 },            // boundary, idle
+        { ts: now - 6 * HOUR - 60 * 1000, tank_top: 31, tank_bottom: 29 },// pre-heating idle
+        { ts: now - 6 * HOUR, tank_top: 31, tank_bottom: 29 },            // heating starts
+        { ts: now - 5 * HOUR, tank_top: 29, tank_bottom: 27 },            // intermediate
+        { ts: now - 4 * HOUR - 60 * 1000, tank_top: 27, tank_bottom: 25 },// heating end just before flip
+        { ts: now - 4 * HOUR, tank_top: 27, tank_bottom: 25 },            // flip to idle
+        { ts: now, tank_top: 27, tank_bottom: 25 },
+      ];
+
+      const stats = computeEveningReportFromHistory(points, events, now);
+
+      // avg 30 → 26 = −4 K → ≈1395 Wh
+      assert.ok(stats.heatingLossWh > 1300 && stats.heatingLossWh < 1500,
+        'heatingLossWh=' + stats.heatingLossWh);
+    });
+  });
+
+  describe('computeEveningReportStats', () => {
+    it('fetches both queries and returns stats with the 11:00 boundary', () => {
+      const now = Date.parse('2026-05-26T17:00:00Z');
+      const HOUR = 3600 * 1000;
+      const events = [
+        { ts: now - 21 * HOUR, type: 'mode', to: 'greenhouse_heating' },
+        { ts: now - 10.5 * HOUR, type: 'mode', to: 'idle' },
+        { ts: now - 5 * HOUR, type: 'mode', to: 'solar_charging' },
+        { ts: now - 1 * HOUR, type: 'mode', to: 'idle' },
+      ];
+      const points = [
+        { ts: now - 22 * HOUR, tank_top: 37, tank_bottom: 35 },
+        { ts: now - 10.5 * HOUR, tank_top: 18, tank_bottom: 16 },
+        { ts: now - 9 * HOUR, tank_top: 18, tank_bottom: 16 },
+        { ts: now - 5 * HOUR - 60 * 1000, tank_top: 18, tank_bottom: 16 },
+        { ts: now - 5 * HOUR, tank_top: 18, tank_bottom: 16 },
+        { ts: now - 3 * HOUR, tank_top: 25, tank_bottom: 23 },
+        { ts: now - 1 * HOUR - 60 * 1000, tank_top: 33, tank_bottom: 31 },
+        { ts: now - 1 * HOUR, tank_top: 33, tank_bottom: 31 },
+        { ts: now, tank_top: 33, tank_bottom: 31 },
+      ];
+      const mockDb = {
+        getHistory: function (range, sensor, cb) { cb(null, points); },
+        getEvents: function (range, entityType, cb) { cb(null, events); },
+      };
+      return new Promise(function (resolve, reject) {
+        computeEveningReportStats(mockDb, now, function (err, stats) {
+          if (err) { reject(err); return; }
+          try {
+            assert.strictEqual(stats.heatingLossWh, 0);
+            assert.ok(stats.gatheredWh > 4900);
             resolve();
           } catch (e) { reject(e); }
         });

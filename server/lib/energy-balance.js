@@ -40,9 +40,18 @@ function tankKwhToDeltaC(kwh) {
 // not reported (the body talks about heating + leakage only).
 const OVERNIGHT_WINDOW_MS = 18 * 3600 * 1000;
 
-// Window for the 20:00 evening "Daily Solar Report" — the cadence
-// between evening reports.
+// Window for the 24 h `computeDaily*` family — used by the
+// client/server parity test and by the playground's energy-balance
+// card. The 20:00 evening notification uses a tighter window
+// (`eveningReportWindowStart`) so it doesn't re-describe last night's
+// heating that the noon report already covered.
 const DAILY_WINDOW_MS = 24 * 3600 * 1000;
+
+// Local-time boundary for the evening "Daily Solar Report". 11:00 is
+// after the latest morning heating run observed in 7 days of history
+// (06:10–09:42 local), so the window captures today's charging without
+// pulling in last night's tank-to-greenhouse transfer.
+const EVENING_REPORT_BOUNDARY_LOCAL_HOUR = 11;
 
 function sortModeEvents(events) {
   return (events || [])
@@ -174,12 +183,36 @@ function computeDailyFromHistory(points, events, now) {
   return bucketEnergyByMode(points, modeEvents, windowStart);
 }
 
+// Most recent 11:00 local (Finland: UTC+2 winter, UTC+3 summer Mar-Oct)
+// before `now`. Mirrors the TZ heuristic in notifications.getLocalHour().
+function eveningReportWindowStart(now) {
+  const d = new Date(now);
+  const month = d.getUTCMonth();
+  const isDST = month >= 2 && month <= 9;
+  const offset = isDST ? 3 : 2;
+  const boundaryUtcHour = EVENING_REPORT_BOUNDARY_LOCAL_HOUR - offset;
+  const today = Date.UTC(
+    d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(),
+    boundaryUtcHour, 0, 0
+  );
+  return today <= now ? today : today - 24 * 3600 * 1000;
+}
+
+function computeEveningReportFromHistory(points, events, now) {
+  const modeEvents = sortModeEvents(events);
+  return bucketEnergyByMode(points, modeEvents, eveningReportWindowStart(now));
+}
+
 function computeOvernightStats(db, now, callback) {
   fetchAndCompute(db, now, computeOvernightFromHistory, callback);
 }
 
 function computeDailyStats(db, now, callback) {
   fetchAndCompute(db, now, computeDailyFromHistory, callback);
+}
+
+function computeEveningReportStats(db, now, callback) {
+  fetchAndCompute(db, now, computeEveningReportFromHistory, callback);
 }
 
 function fetchAndCompute(db, now, fromHistory, callback) {
@@ -208,4 +241,7 @@ module.exports = {
   computeDailyFromHistory,
   computeOvernightStats,
   computeDailyStats,
+  eveningReportWindowStart,
+  computeEveningReportFromHistory,
+  computeEveningReportStats,
 };
