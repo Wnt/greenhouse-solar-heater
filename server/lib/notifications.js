@@ -13,7 +13,7 @@ const {
   HEATING_MODES,
   tankStoredEnergyKwh,
   computeOvernightStats,
-  computeDailyStats,
+  computeEveningReportStats,
 } = require('./energy-balance.js');
 
 let pushRef = null;
@@ -342,7 +342,7 @@ function sendEveningReport(now) {
   }
 
   if (dbRef) {
-    computeDailyStats(dbRef, now, function (err, stats) {
+    computeEveningReportStats(dbRef, now, function (err, stats) {
       if (err) {
         log.warn('evening report: DB query failed, falling back to live accumulators', { error: err.message });
         dispatch({
