@@ -90,4 +90,4 @@ Since storage cannot be automatically shrunk, follow these steps if you need to 
 
 ## Swapping between plan types
 
-In addition to being able to resize Cloud Servers, it's possible to freely change between different server plan types (i.e., from General Purpose to Cloud Native or vice-versa) at the UpCloud control panel under the resize menu. Selecting a plan of a different type will change how the Cloud Server is billed accordingly.
+In addition to being able to resize Cloud Servers, it's possible to change between Starter and Premium plans at the UpCloud control panel under the resize menu. Selecting a plan of a different type will change how the Cloud Server is billed accordingly.

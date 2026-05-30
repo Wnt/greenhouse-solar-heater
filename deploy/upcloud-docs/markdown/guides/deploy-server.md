@@ -10,17 +10,15 @@ Notice that while configuring your server deployment, you can always see the Sum
 
 ## Location
 
-Begin by selecting the physical location of your new server. The closest location to you offers the lowest latency when connecting remotely. UpCloud currently offers infrastructure in Sydney, Frankfurt, Madrid, Helsinki, Amsterdam, Warsaw, Singapore, London, Chicago, New York and San Jose.
-
-Note that pricing varies between Helsinki and the other sites. This is reflected by the total monthly and hourly prices in the Summary.
+Begin by selecting the physical location of your new server. The closest location to you offers the lowest latency when connecting remotely. UpCloud currently offers infrastructure in Amsterdam, Copenhagen, Chicago, Frankfurt, Helsinki, London, Madrid, New York, San Jose, Singapore, Stavanger, Stockholm, Sydney, and Warsaw.
 
 ![server locations](img/server_location.png)
 
 ## Server plans
 
-CPU, RAM and storage space define the basic capabilities of your cloud host. You have the option to select between a range of Developer, General Purpose, High CPU, High Memory and Cloud Native plans.
+CPU, RAM and storage space define the basic capabilities of your cloud host. You have the option to select between a range of Starter, Premium and Cloud Native plans.
 
-For a start-up web server, the first General Purpose plan of 1 GB RAM, 1 CPU, and 25GB MaxIOPS is often sufficient and a great starting point as a highly cost-effective choice.
+For a start-up web server, the first Premium plan of 1 GB RAM and 1 CPU is often sufficient and a great starting point as a highly cost-effective choice.
 
 You can always change the server configuration later and even freely move between plans with ease. Find out more about the configuration options in our article about [working with Cloud Server plans](/docs/guides/cloud-server-plans.md).
 

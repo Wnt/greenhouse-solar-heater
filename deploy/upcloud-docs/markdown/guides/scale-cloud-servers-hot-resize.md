@@ -16,7 +16,7 @@ Select the Cloud Server you wish to scale up and go to the *Plan* tab.
 
 ![cloud server plans](img/cloud-server-plans-2.png)
 
-Next, choose the new General Purpose plan you want to scale up to.
+Next, choose the new plan you want to scale up to.
 
 ![hot resize cloud server](img/hot-resize-cloud-server-2.png)
 
@@ -34,11 +34,11 @@ The fully featured UpCloud API allows you to perform all the same operations as 
 
 Hot resizing a Cloud Server using the UpCloud API requires but one API request.
 
-For example, a server running the 1xCPU-1GB General Purpose plan can be upgraded to a higher configuration with the following command. Replace the server\_UUID with the actual unique identification code matching your Cloud Server.
+For example, a server running a 1xCPU-1GB server plan can be upgraded to a higher configuration with the following command. Replace the server\_UUID with the actual unique identification code matching your Cloud Server.
 
 PUT /1.3/server/server\_UUID
 
-Then include the new desired General Purpose plan in the request body in JSON format.
+Then include the new desired server plan in the request body in JSON format.
 
 ```
 {
@@ -48,7 +48,7 @@ Then include the new desired General Purpose plan in the request body in JSON fo
 }
 ```
 
-A list of available General Purpose Plans can be requested from [this API endpoint](https://developers.upcloud.com/1.3/7-plans/)
+A list of available server plans can be requested from [this API endpoint](https://developers.upcloud.com/1.3/7-plans/)
 
 When you send the API request, the system will confirm that the server can be scaled up and then applies the changes. If everything is in order, you will receive the following HTTP response:
 

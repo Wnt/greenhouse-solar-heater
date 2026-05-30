@@ -16,62 +16,48 @@ Public ingress transfer and private network transfer in both the Utility network
 
 The amount of included public egress transfer is determined by the amount of cloud resources on your account. Each of the following services contribute to the limit:
 
-### Developer plans
+### Starter plans
 
 | Cloud Server plan | Included transfer |
 | --- | --- |
-| DEV-1xCPU-1GB-10GB | 1 TB |
-| DEV-1xCPU-1GB | 1 TB |
-| DEV-1xCPU-2GB | 1.5 TB |
-| DEV-1xCPU-4GB | 2 TB |
-| DEV-2xCPU-4GB | 2.5 TB |
-| DEV-2xCPU-8GB | 3 TB |
-| DEV-2xCPU-16GB | 4 TB |
+| STARTER-1xCPU-1GB | 0.5 TB |
+| STARTER-1xCPU-2GB | 0.5 TB |
+| STARTER-2xCPU-2GB | 1 TB |
+| STARTER-1xCPU-4GB | 1 TB |
+| STARTER-2xCPU-4GB | 1.5 TB |
+| STARTER-2xCPU-8GB | 1.5 TB |
+| STARTER-4xCPU-8GB | 2 TB |
+| STARTER-2xCPU-16GB | 2 TB |
+| STARTER-4xCPU-16GB | 2.5 TB |
 
-### General Purpose plans
+### Premium plans
 
 | Cloud Server plan | Included transfer |
 | --- | --- |
-| 1xCPU-1GB | 1 TB |
-| 1xCPU-2GB | 2 TB |
-| 2xCPU-4GB | 4 TB |
+| 1xCPU-1GB | 0.5 TB |
+| 1xCPU-2GB | 1 TB |
+| 2xCPU-2GB | 2 TB |
+| 2xCPU-4GB | 3 TB |
+| 2xCPU-8GB | 4 TB |
 | 4xCPU-8GB | 5 TB |
-| 6xCPU-16GB | 6 TB |
-| 8xCPU-32GB | 7 TB |
-| 12xCPU-48GB | 9 TB |
-| 16xCPU-64GB | 10 TB |
-| 24xCPU-96GB | 12 TB |
-| 32xCPU-128GB | 24 TB |
-| 38xCPU-192GB | 24 TB |
-| 48xCPU-256GB | 24 TB |
-| 64xCPU-384GB | 24 TB |
-
-### High CPU plans
-
-| Cloud Server plan | Included transfer |
-| --- | --- |
-| HICPU-8xCPU-12GB | 4 TB |
-| HICPU-8xCPU-16GB | 4 TB |
-| HICPU-16xCPU-24GB | 5 TB |
-| HICPU-16xCPU-32GB | 5 TB |
-| HICPU-32xCPU-48GB | 6 TB |
-| HICPU-32xCPU-64GB | 6 TB |
-| HICPU-64xCPU-96GB | 7 TB |
-| HICPU-64xCPU-128GB | 7 TB |
-
-### High Memory plans
-
-| Cloud Server plan | Included transfer |
-| --- | --- |
-| HIMEM-2xCPU-8GB | 2 TB |
-| HIMEM-2xCPU-16GB | 2 TB |
-| HIMEM-4xCPU-32GB | 4 TB |
-| HIMEM-4xCPU-64GB | 4 TB |
-| HIMEM-6xCPU-128GB | 6 TB |
-| HIMEM-8xCPU-192GB | 8 TB |
-| HIMEM-12xCPU-256GB | 10 TB |
-| HIMEM-16xCPU-384GB | 12 TB |
-| HIMEM-24xCPU-512GB | 12 TB |
+| 2xCPU-16GB | 6 TB |
+| 4xCPU-16GB8 | 7 TB |
+| 8xCPU-16GB | 8 TB |
+| 4xCPU-32GB | 9 TB |
+| 8xCPU-32GB | 10 TB |
+| 16xCPU-32GB | 11 TB |
+| 8xCPU-64GB | 12 TB |
+| 16xCPU-64GB | 13 TB |
+| 32xCPU-64GB | 14 TB |
+| 24xCPU-96GB | 15 TB |
+| 48xCPU-96GB | 16 TB |
+| 8xCPU-128GB | 17 TB |
+| 32xCPU-128GB | 18 TB |
+| 64xCPU-128GB | 19 TB |
+| 38xCPU-192GB | 20 TB |
+| 48xCPU-256GB | 21 TB |
+| 64xCPU-384GB | 22 TB |
+| 80xCPU-512GB | 23 TB |
 
 ### Cloud Native plans
 

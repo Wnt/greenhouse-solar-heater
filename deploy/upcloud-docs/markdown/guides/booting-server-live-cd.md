@@ -11,7 +11,7 @@ Start off by creating a new cloud server of your choice at your [UpCloud Control
 Make the required configurations by:
 
 - Selecting the location where you wish to have the live CD available
-- Choose the configuration, the 1CPU and 1GB General Purpose plan works fine
+- Choose the configuration, the 1CPU and 1GB Premium plan works fine
 - Add a second 10GB disk by clicking the text below the first.
 
 ![alt text](img/image.png)

@@ -18,7 +18,9 @@ When you delete a GPU Server, any attached storage volumes that are not deleted 
 
 **How do multi-GPU servers work?**
 
-Multi-GPU servers are equipped with more than one dedicated GPU. All GPUs are exposed to your cloud server via PCIe passthrough, allowing you to utilize them for parallel processing, distributed training, or other multi-GPU workloads. You can verify the available GPUs using the `nvidia-smi` tool.
+Multi-GPU servers are equipped with more than one dedicated GPU. All GPUs are exposed to your cloud server via passthrough, allowing you to utilize them for parallel processing, distributed training, or other multi-GPU workloads. You can verify the available GPUs using the `nvidia-smi` tool.
+
+H100 and B200 GPUs include NVLink technology that enables direct GPU-to-GPU communication, bypassing the CPU and significantly reducing latency. NVLink provides 900 GB/s of bidirectional bandwidth on H100 servers and 1.8 TB/s on B200 servers, making large-scale distributed training and multi-GPU inference substantially more efficient.
 
 **Is GPU passthrough exclusive to my server?**
 

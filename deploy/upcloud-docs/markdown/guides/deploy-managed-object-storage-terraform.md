@@ -608,3 +608,7 @@ terraform init
 terraform plan
 terraform apply
 ```
+
+## Storing Terraform state in Managed Object Storage
+
+Once you have a Managed Object Storage instance up and running, you can also use it as a remote backend for your Terraform state file. This is especially useful for shared configurations and CI/CD pipelines, where many operators and machines work on the same state. See [How to use Managed Object Storage as an S3 state backend for Terraform](/docs/guides/managed-object-storage-s3-state-backend.md) for the full configuration.

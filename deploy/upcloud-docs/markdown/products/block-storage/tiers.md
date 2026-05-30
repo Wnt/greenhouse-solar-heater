@@ -4,7 +4,7 @@ UpCloud offers multiple storage tiers for different use cases.
 
 ## MaxIOPS
 
-MaxIOPS® is our in-house developed storage technology that enables read performance of up to 100k IOPS at 4k block size. It's offered as the default storage tier for our General Purpose Cloud Servers. MaxIOPS provides the same performance level regardless of storage device size or plan pricing.
+MaxIOPS® is our in-house developed storage technology that enables read performance of up to 100k IOPS at 4k block size. It's offered as the default storage tier for our Premium Cloud Servers. MaxIOPS provides the same performance level regardless of storage device size or plan pricing.
 
 ## Standard
 

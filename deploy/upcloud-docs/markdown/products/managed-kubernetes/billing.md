@@ -22,6 +22,6 @@ Please see the [Managed Kubernetes pricing](https://upcloud.com/pricing/#managed
 
 Data Plane is billed by the Worker node according to the selected configuration.
 
-Worker nodes can be deployed using any General Purpose, High CPU, High Memory or Cloud Native Cloud Server plans. Please refer to our [Cloud Server pricing](https://upcloud.com/pricing/#cloud-servers) for detailed node costs.
+Worker nodes can be deployed using any Starter, Premium or Cloud Native Cloud Server plan. The server plan needs to have minimum 2 GB of memory. Please refer to our [Cloud Server pricing](https://upcloud.com/pricing/#cloud-servers) for detailed node costs.
 
 Kubernetes is a registered trademark of The Linux Foundation.

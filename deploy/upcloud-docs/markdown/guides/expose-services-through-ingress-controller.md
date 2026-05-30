@@ -6,7 +6,7 @@ In this guide we will create a Managed Kubernetes cluster, deploy an example app
 
 - [terraform](https://developer.hashicorp.com/terraform/install?product_intent=terraform)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl)
-- UpCloud API username and password set in `UPCLOUD_USERNAME` and `UPCLOUD_PASSWORD` env variables
+- UpCloud API credentials set in environment variables. Use either an [API token](/docs/guides/managing-api-tokens.md) (recommended) via `UPCLOUD_TOKEN`, or a username and password via `UPCLOUD_USERNAME` and `UPCLOUD_PASSWORD`
 - (optional) [CloudFlare DNS service](https://www.cloudflare.com/application-services/products/dns/) for setting up
   public DNS resolving
   - (optional) CloudFlare API key and email set in `TF_VAR_CF_API_KEY` and `TF_VAR_CF_API_EMAIL` env variables
@@ -46,8 +46,10 @@ terraform {
 
 # UpCloud provider
 provider "upcloud" {
-  # Username and password configuration arguments can be omitted,
-  # if environment variables UPCLOUD_USERNAME and UPCLOUD_PASSWORD are set.
+  # Authentication arguments can be omitted if credentials are set via environment variables.
+  # Recommended: set UPCLOUD_TOKEN (API token).
+  # Alternatively, set UPCLOUD_USERNAME and UPCLOUD_PASSWORD.
+  # token = ""
   # username = ""
   # password = ""
 }

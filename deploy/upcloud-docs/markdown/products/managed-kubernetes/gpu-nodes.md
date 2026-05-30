@@ -2,8 +2,8 @@
 
 UpCloud Managed Kubernetes supports GPU node groups to accelerate AI, machine learning, and compute-intensive workloads. GPU nodes come with NVIDIA drivers pre-installed and GPU resources exposed to the container runtime:
 
-- **NVIDIA Driver**: Version 580
-- **CUDA**: Version 12.6
+- **NVIDIA Driver**: Version 595 (nvidia-open)
+- **CUDA**: Version 13.2
 - **NVIDIA Container Toolkit**: Pre-configured for container runtime integration
 
 ## Getting started

@@ -38,7 +38,7 @@ Certain network ports are limited during the trial. The firewall is enabled and 
 | Port | Service | Incoming | Outgoing |
 | --- | --- | --- | --- |
 | 22 | SSH | Yes | No |
-| 25\* | SMTP | Yes | No |
+| 25\* | SMTP | No | No |
 | 80 | HTTP | Yes | Yes |
 | 443 | HTTPS | Yes | Yes |
 | 123 | NTP | Yes | Yes |

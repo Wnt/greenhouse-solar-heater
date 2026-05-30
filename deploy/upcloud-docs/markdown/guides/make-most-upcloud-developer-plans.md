@@ -1,5 +1,7 @@
 # How to make the most of UpCloud Developer plans
 
+**Note** Developer plans have been replaced by Starter plans.
+
 In today’s fast-paced tech world, developers and startups need access to reliable and scalable cloud server solutions. UpCloud’s Developer plans offer a cost-effective and flexible option for optimising their development and deployment processes. This tutorial will guide you through maximising the benefits of UpCloud’s developer plans, highlighting their features, advantages, and practical tips for efficient use.
 
 ## Introduction

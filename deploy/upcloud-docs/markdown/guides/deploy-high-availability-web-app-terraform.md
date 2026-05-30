@@ -47,7 +47,10 @@ terraform {
 }
 
 provider "upcloud" {
-  # Credentials should be stored in the environmental variables
+  # Credentials should be stored in the environmental variables.
+  # Recommended: set an API token
+  # export UPCLOUD_TOKEN="Your UpCloud API token"
+  # Or alternatively, set a username and password
   # export UPCLOUD_USERNAME="Username for UpCloud API user"
   # export UPCLOUD_PASSWORD="Password for UpCloud API user"
   # Optional configuration options
@@ -117,7 +120,7 @@ These variables can also be used to make later changes to your Terraform web app
 
 Load balancers are an essential part of any high-availability cloud infrastructure. Not only does load balancing enables your application servers to handle the usage more evenly, but they can also work as the edge of your cloud network and secure it using a firewall.
 
-In this example, we are deploying the load balancer servers using the Terraform count parameter. It tells Terraform to deploy two identical instances as configured and names them according to their position in the list.
+In this example, we are deploying the load balancer servers using the Terraform count parameter. It tells Terraform to deploy two identical instances as configured and names them according to their position in the list.
 
 We are configuring the cloud servers using the variables we set earlier. This gives us an easy overview of the resources each server type will use. If you want to increase the server resources, simply increase the plan definition for the load balancers in the variables file. The storage afforded by the cloud server plan is updated dynamically to match the selected plan as defined in the variables.
 

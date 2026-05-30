@@ -22,7 +22,7 @@ All storage devices on UpCloud are block-storage and can be scaled up when not i
 
 Go to your server settings and the Storage section. You can use the sliders or edit the size on the right to increase the storage space. While doing so, you’ll see the calculated new monthly cost of your server based on your selections.
 
-While using our general purpose server plans, keep the system storage as is and [add a secondary storage device](/docs/guides/adding-removing-storage-devices.md) per your needs to retain the plan pricing.
+While using our server plans, keep the system storage as is and [add a secondary storage device](/docs/guides/adding-removing-storage-devices.md) per your needs to retain the plan pricing.
 
 Once you’ve set the storage sizes to their new values, click the *Save changes* button to confirm.
 

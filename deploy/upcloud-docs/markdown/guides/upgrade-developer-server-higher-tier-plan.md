@@ -1,8 +1,8 @@
-# Upgrading a Developer plan server to a higher-tier plan
+# Upgrading a Starter plan server to a higher-tier plan
 
-If you find that you have outgrown the Developer plan server that you started with, it's possible to upgrade to one of our higher-tier preconfigured plans: General Purpose, High Memory, or High CPU. These plans use MaxIOPS storage, which offers improved read and write performance compared to the Standard tier storage used by Developer plan servers.
+If you find that you have outgrown the Starter plan server that you started with, it's possible to upgrade to a Premium plan. These plans use MaxIOPS storage, which offers improved read and write performance compared to the Standard tier storage used by Developer plan servers.
 
-This tutorial guides you through the process of upgrading a developer server to a higher-tier plan. We'll cover the following key steps:
+This tutorial guides you through the process of upgrading a Starter server to a higher-tier plan. We'll cover the following key steps:
 
 1. Creating an on-demand backup
 2. Cloning the existing storage to MaxIOPS® using the UpCloud API
@@ -61,7 +61,7 @@ On the control panel, you should be able to see the new disk on the [Storage > D
 
 ![Newly created MaxIOPS storage visible on the Storage Devices page in the UpCloud control panel](new-maxiops-storage-created.png)
 
-Once the new MaxIOPS® storage is created, return to the Developer server and navigate to the **Storage** tab again, then ***Detach*** the Standard tier storage.
+Once the new MaxIOPS® storage is created, return to the Starter server and navigate to the **Storage** tab again, then ***Detach*** the Standard tier storage.
 
 ![Detaching the Standard tier storage from the server in the Storage tab](detach-standard-tier-storage.png)
 

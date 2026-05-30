@@ -12,6 +12,10 @@ File Storage instances must be created within the same geographic location as yo
 
 Currently, File Storage is available in the **fi-hel2** (Helsinki 2) location. All servers accessing a File Storage instance must be in the same location.
 
+## Encryption at rest
+
+File Storage instances can be initialized with [encryption support](/docs/products/file-storage/encryption-at-rest.md).
+
 ## Limits and constraints
 
 ### File Storage instance capacity

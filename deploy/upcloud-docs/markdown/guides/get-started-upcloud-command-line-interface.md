@@ -8,28 +8,33 @@ In this guide, we’ll show you how to install the UpCloud CLI on your own compu
 
 ## Setting up API access
 
-Before you can begin, you first need to enable API access to your UpCloud account.
+There are two methods to authenticate the CLI with the UpCloud API: using an API token (recommended) or using the username and password of a dedicated UpCloud subaccount.
 
-We recommend creating a separate workspace username and password for every API integration for easier access control. To do so, go to your [UpCloud Control Panel](https://hub.upcloud.com/people) under the People section.
+If using the the subaccount we recomend creating a separate subaccount with only the necessary API permissions, rather than using the main account owner's credentials. See our [getting started with UpCloud API using HTTP Basic authentication](/docs/guides/getting-started-upcloud-api-basic-auth#creating-an-api-subaccount.md) guide for step-by-step subaccount creation instructions.
 
-- Click the *Create subaccount* button
-- Choose your API username
-- Enter the contact details for your API credentials
-- Set the API password
+#### Option 1: Using API tokens (Recommended)
 
-When ready, click the *Create subaccount* button to save.
+[API tokens](https://developers.upcloud.com/1.3/24-api-tokens/) are the recommended way to authenticate with the UpCloud API as they have configurable expiration dates, can be restricted to specific IP addresses, and can be easily revoked if compromised. For full details on creating and managing tokens, see our [API Tokens guide](/docs/guides/managing-api-tokens.md).
 
-After creating the subaccount, you will need to configure permissions for it:
+Once you have created a token, you can store it in the upctl config file at `$HOME/.config/upctl.yaml`:
 
-- Switch to permissions tab and click the *Edit* button on the row where the newly created subaccount is listed.
-- Enable API access in the permissions
-- Grant all permissions for existing servers, storage, and tags
+```
+token: ucat_Your_API_Token
+```
 
-You can find more detailed instructions on API credentials in our guide for [getting started with UpCloud API](/docs/guides/getting-started-upcloud-api.md).
+Alternatively, your token can be stored in the `UPCLOUD_TOKEN` environment variable:
 
-Afterwards, you need to store your API credentials on your own computer.
+```
+export UPCLOUD_TOKEN=ucat_Your_API_Token
+```
 
-To do so, create a config file called upctl.yaml with user credentials in the `.config` folder in your home directory ($HOME/.config/upctl.yaml)
+The environment variable takes precedence over the config file if both are set.
+
+#### Option 2: Using username and password
+
+If you prefer to use the traditional authentication method, you can use a subaccount's username and password. See our [getting started with UpCloud API using HTTP Basic authentication](/docs/guides/getting-started-upcloud-api-basic-auth#creating-an-api-subaccount.md) guide for instructions on creating a subaccount.
+
+Once you have your subaccount credentials, store them in the upctl config file at `$HOME/.config/upctl.yaml`:
 
 ```
 username: your_upcloud_username
@@ -199,12 +204,12 @@ Other commands include options for managing your networking such as static and f
 
 One of the main benefits of the UpCloud CLI is the speed and ease of managing your cloud services. For example, deploying a new Cloud Server takes but a single command.
 
-The example below deploys a new Cloud Server using the 2xCPU-4GB General purpose plan running Debian 10. It also allows you to secure the server right from deployment by enabling SSH keys and disabling password login.
+The example below deploys a new Cloud Server using the 2xCPU-4GB Premium plan running Debian 10. It also allows you to secure the server right from deployment by enabling SSH keys and disabling password login.
 
 ```
 upctl server create
 --zone de-fra1
---plan 2xCPU-4GB
+--plan PREMIUM-2xCPU-4GB
 --os-storage-size 80
 --os "Debian GNU/Linux 10 (Buster)"
 --ssh-keys ~/.ssh/id_rsa.pub
@@ -270,7 +275,7 @@ That’s it! Your Cloud Server should then start up momentarily with the additio
 
 ## Storage devices
 
-All Cloud Servers deployed using General purpose plans offer ample storage out of the gate but sometimes you just need more capacity. Luckily, UpCloud CLI offers quick and easy commands for creating additional storage devices and attaching them to your Cloud Server.
+All Cloud Servers deployed using Premium plans offer ample storage out of the gate but sometimes you just need more capacity. Luckily, UpCloud CLI offers quick and easy commands for creating additional storage devices and attaching them to your Cloud Server.
 
 Furthermore, most storage operations can even be done without shutting down the server!
 

@@ -8,6 +8,14 @@ Also see our [Changelog](/docs/changelog.md) for recently released features!
 
 Projects that have been recently released, in public testing or limited availability.
 
+#### UKS Dataplane Managed Updates
+
+Opt into UKS keeping the OS and other Kubernetes components of your data plane up to date.
+
+#### Object Storage Web Hosting
+
+Reliable, inexpensive and easy-to-use web hosting for static websites and single-page applications (SPA's) directly from Object Storage
+
 #### File Storage (NFS)
 
 A distributed file system that allows users to access and share files over a network as if they were stored locally. Can be used with Cloud Servers and as persistent volumes in Kubernetes. 
@@ -42,6 +50,14 @@ Token-based authentication to use UpCloud with our [tooling](/docs/tooling.md) a
 
 Projects we're actively working on now.
 
+#### Container Registry
+
+A secure and scalable registry for storing, managing, securing and deploying any container images and other OCI-compliant artifacts.
+
+#### Object Locking
+
+S3-compliant Object Locking, delivering hardware-enforced immutability (WORM) to protect against accidental deletions, ransomware and guarantee data integrity and data retention compliance.
+
 #### Blesta integration
 
 Integration to manage UpCloud resources directly from Blesta, a webhosting automation platform.
@@ -69,10 +85,6 @@ Projects we're planning to start implementing soon.
 #### Anycast Load Balancer
 
 A global load balancer to direct traffic to the nearest healthy server worldwide, providing faster response times and seamless application availability.
-
-#### Container Registry
-
-A secure and scalable container registry for storing, managing, and deploying container images across your environments at UpCloud.
 
 #### Custom image improvements
 

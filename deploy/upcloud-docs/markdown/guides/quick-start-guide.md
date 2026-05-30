@@ -1,6 +1,6 @@
 # Cloud Server quick start guide
 
-Cloud servers offer on-demand availability of computer system resources, including data storage and computational capacity, without needing to manage the server hardware directly. UpCloud users can deploy Cloud Servers by selecting from the predefined configuration options: Developer, General Purpose, High CPU and High Memory or Cloud Native plans.
+Cloud servers offer on-demand availability of computer system resources, including data storage and computational capacity, without needing to manage the server hardware directly. UpCloud users can deploy Cloud Servers by selecting from the predefined configuration options: Starter, Premium or Cloud Native plans.
 
 Whether you're new to cloud computing or an experienced developer, these step-by-step instructions will help you get your server online swiftly and securely. Follow along to learn how to deploy a new server, connect to it, and start utilising the power of UpCloud.
 
@@ -8,10 +8,10 @@ Whether you're new to cloud computing or an experienced developer, these step-by
 
 1. **Navigate to the dashboard** and locate the purple 'Deploy' button in the top right corner. Click on it and select 'Server'.
 2. **Select the server location**: Choose the physical location of your server. For reduced latency, choosing the location closest to you is advisable.
-3. **Choose a plan**: Select a preconfigured plan from Developer, General Purpose, High CPU, High Memory and Cloud Native.
+3. **Choose a plan**: Select a preconfigured plan from Starter, Premium or Cloud Native.
 4. **Configure storage**:
 
-   - A Developer or General Purpose plan automatically configures a storage device based on the chosen plan. This device's storage size is fixed, but you can add up to 15 additional storage devices (16 in total), each up to 4 TB.
+   - A Starter or Premium plan automatically configures a storage device based on the chosen plan. This device's storage size is fixed, but you can add up to 15 additional storage devices (16 in total), each up to 4 TB.
    - For a Cloud Native plan, specify the exact storage specifications to meet your needs.
 5. **Automated backups**: Enable this feature and choose a backup plan (Day, Week, Month, or Year). Note: The Day plan is included at no extra cost if automated backups are enabled.
 6. **Choose an OS template**: Select a public template with common server OS options.

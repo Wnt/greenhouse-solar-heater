@@ -11,7 +11,14 @@ In addition to a [working Managed Kubernetes cluster](https://upcloud.com/produc
 - kubectl
 - [velero cli](https://velero.io/docs/main/basic-install/#install-the-cli)
 
-To create the resources with Terraform and install Velero, you will need your API credentials and Kubeconfig file exported as environment variables.
+To create the resources with Terraform and install Velero, you will need your API credentials and Kubeconfig file exported as environment variables. We recommend authenticating with an [API token](/docs/guides/managing-api-tokens.md):
+
+```
+export UPCLOUD_TOKEN=ucat_Your_API_Token
+export KUBECONFIG=your_kubeconfig_file
+```
+
+Alternatively, you can authenticate with the username and password of a dedicated UpCloud subaccount ([create one](/docs/guides/getting-started-upcloud-api-basic-auth#creating-an-api-subaccount.md) if you don't have one):
 
 ```
 export UPCLOUD_USERNAME=your_username

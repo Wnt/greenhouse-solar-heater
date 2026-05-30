@@ -6,6 +6,7 @@
 - [Deploy a Managed Kubernetes cluster using Terraform®](/docs/guides/deploy-managed-kubernetes-cluster-terraform.md)
 - [Deploy a Managed Kubernetes cluster with private node groups and NAT Gateway using Terraform®](/docs/guides/deploy-managed-kubernetes-cluster-private-node-groups-nat-gateway-terraform.md)
 - [Scale a Managed Kubernetes cluster](/docs/guides/scale-managed-kubernetes-cluster.md)
+- [Creating restricted and revocable Kubeconfigs](/docs/guides/creating-restricted-revocable-kubeconfigs.md)
 - [GPU workloads in Managed Kubernetes](/docs/guides/gpu-workloads-managed-kubernetes.md)
 
 ### Load balancing
@@ -29,6 +30,7 @@
 - [Clone Persistent Volumes](/docs/guides/csi-volume-cloning.md)
 - [Update the UpCloud CSI driver](/docs/guides/update-csi-driver.md)
 - [Migrate Persistent Volume Claim (PVC) from one cluster to another](/docs/guides/migrating-pvc-from-one-cluster-to-another.md)
+- [Use UpCloud File Storage (NFS) with Managed Kubernetes](/docs/guides/file-storage-nfs-managed-kubernetes.md)
 - [Implement NFS support with OpenEBS on Managed Kubernetes](/docs/guides/uks-with-openebs-nfs-provisioner.md)
 - [Use storage encryption with UpCloud CSI driver](/docs/guides/storage-encryption-at-rest.md)
 

@@ -17,11 +17,11 @@ Yes! Our Private Cloud offers dedicated hardware exclusively to your cloud serve
 
 ## Plans
 
-**What's the difference between Developer, General Purpose and Cloud Native plans?**
+**What's the difference between Starter, Premium and Cloud Native plans?**
 
-Developer plans are designed for development, testing and hosting non-critical workloads.
+Starter plans are designed for development, testing and hosting non-critical workloads.
 
-General Purpose plans offer production-grade performance and stability, with 99.999% SLA.
+Premium plans offer production-grade performance and stability, with 99.999% SLA.
 
 Cloud Native plans contain only CPU & memory resources and offer the best possible pricing. Cloud Native plans can be bundled with any storage tier and are great for ephemeral workloads, containerised applications and running microservices architectures.
 
@@ -29,7 +29,7 @@ Cloud Native plans contain only CPU & memory resources and offer the best possib
 
 **Can I switch server plans?**
 
-You can change your cloud server plan to scale up or down by shutting down the server and changing the General purpose plan on the Resize tab at your control panel. Find out more at this guide to using [Cloud Server plans](/docs/guides/cloud-server-plans.md).
+You can change your cloud server plan to scale up or down by shutting down the server and changing the used plan on the Resize tab at your control panel. Find out more at this guide to using [Cloud Server plans](/docs/guides/cloud-server-plans.md).
 
 ## Operating systems and licensing
 

@@ -8,7 +8,7 @@ IPv6 addresses are offered free of charge.
 
 Network transfer via public network interfaces is provided at zero cost following our [Zero-cost egress](https://upcloud.com/products/zero-cost-egress/) initiative and [Fair Transfer policy](https://upcloud.com/fair-transfer-policy/):
 
-- General Purpose, High CPU, High Memory, Developer, and Cloud Native plans include a fair transfer quota depending on the plan 1 TB – 100 TB, contributing to the user’s public network [fair transfer limit](https://upcloud.com/fair-transfer-policy/).
+- Starter, Premium, and Cloud Native plans include a fair transfer quota depending on the plan 1 TB – 100 TB, contributing to the user’s public network [fair transfer limit](https://upcloud.com/fair-transfer-policy/).
 - Flexible plan\* outbound transfers are billed per GB.
 
 \*Note that Flexible plans have been discontinued and no longer offered to new customers.
