@@ -2,7 +2,7 @@
 
 The UpCloud Control Panel offers three methods of taking backups of your Cloud Servers – easy-to-use Simple Backups, custom-scheduled Flexible backups, and instant on demand backups. Each of these is configured on a per-server basis at your [UpCloud Control Panel](https://hub.upcloud.com/) in the server settings under the Backups tab.
 
-![Server settings backups](img/image.png)
+![Configuration of scheduled and on-demand backups for a server, including pricing plans and history.](media/backups-overview.png)
 
 Note that all backups are stored in the same data centre as the origin Cloud Server to enable fast restore. You can arrange offsite backups manually, for example, by [cloning](/docs/guides/server-cloning#cloning-storage-device-backups.md) backups to a different location for disaster recovery.
 
@@ -25,7 +25,7 @@ Next, pick a time of the day for the backup most convenient to your cloud server
 
 Then click the *Save* button to confirm.
 
-![Scheduled backups simple](img/image-1.png)
+![Backup plan options: Day plan (€1.20/month), Week plan (€2.40/month), Month plan (€4.80/month), Year plan (€7.20/month), with a schedule time input.](media/backup-plans.png)
 
 That’s it! The first backup will be taken at the next scheduled time.
 
@@ -43,7 +43,7 @@ Turn on Flexible backups by doing the following:
 - Choose the duration after which the backup is automatically deleted
 - And finally, click the Save button to confirm the changes.
 
-![Scheduled backups flexible](img/image-2.png)
+![Screen displaying flexible backup scheduling options, with a daily backup set for 03:00 and automatic deletion after three days.](media/backup-schedule-settings.png)
 
 Be sure to select an appropriate schedule for the automatic deletion to avoid keeping unnecessary backups of the same data. All storage, including each backup, is priced by the storage size, so optimising the backup retention can help save on costs. See more about the backup pricing below.
 
@@ -58,21 +58,21 @@ Taking a manual backup of your server is easy and happens in a flash.
 - First, select the storage devices you wish to back up.
 - Then click the *Take backup now* button below.
 
-![On demand backups view](img/image-3.png)
+![Table showing on-demand backups with options to select storage devices, view backup names, sizes, and prices.](media/on-demand-backups.png)
 
 ## Restoring from a backup
 
 Once you’ve backed up any storage device, it can be seen on the backup’s *History* list. A backup will show the time and date of when it was made, the name of the backup, and what storage device it is from.
 
-![Backups history view](img/image-4.png)
+![Backup history table showing one on-demand backup created on 12 May 2026 at 22:30 for the storage device 'ubuntu-1cpu-2gb-sg-sin1 Device 1', with options to restore or delete.](media/backup-history.png)
 
 Backups are essential to data safety, however, they would be of little use without an easy way to restore their content. Fortunately, a storage device can be restored from a backup with a couple of steps in the server settings under the Backups tab. Read our guide for [restoring backups](/docs/guides/restoring-backups.md) which includes methods of complete storage restoration, or bringing back individual files on both Linux and Windows Cloud Servers.
 
 ## Backup storage pricing
 
-Simple Backup is priced affordably according to the data retention duration and the monthly cloud server plan price it is safeguarding.
+Simple Backups are priced according to the data retention duration and the monthly cloud server plan price they are safeguarding.
 
-**Day plan** with 1 daily backup every 24 hours, included in the plan for free
+**Day plan** with 1 daily backup every 24 hours, +10% of your cloud server plan price
 
 **Week plan** with 7 daily backups a week, +20% of your cloud server plan price
 
@@ -80,8 +80,8 @@ Simple Backup is priced affordably according to the data retention duration and 
 
 **Year plan** with 12 monthly backups for a year + 7 daily and 4 weekly backups, +60% of your monthly plan price
 
-The pricing for on-demand and flexible backups is calculated similarly to other storage devices. Each backup is a carbon copy of the storage it was taken from, including the size, and priced accordingly per GB of storage per month. We recommend scheduling backups either with Simple or Flexible backups for the best safety of your data.
+For Cloud Native plans, GPU Server plans, and additional storage devices attached to a server, Simple Backups are charged per GB of stored data per month rather than as a percentage of the plan price. The per-GB rate increases with the retention period (Day, Week, Month, Year), and the Helsinki region is priced separately from other regions.
 
-Additional storage outside any plan is charged at standard rates.
+The pricing for on-demand and flexible backups is calculated similarly to other storage devices. Each backup is a carbon copy of the storage it was taken from, including the size, and priced accordingly per GB of storage per month. We recommend scheduling backups either with Simple or Flexible backups for the best safety of your data.
 
 You can find the [full details on our pricing page](https://upcloud.com/pricing/).

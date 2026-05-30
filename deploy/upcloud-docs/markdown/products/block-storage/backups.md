@@ -18,14 +18,12 @@ Simple Backup is charged on top of the Cloud Server's plan price, as a percentag
 
 | Plan name | API/CLI flag\* | Price | Daily backups | Weekly backups | Monthly backups |
 | --- | --- | --- | --- | --- | --- |
-| Day Plan | `daily` | Free / +10%\*\* | 1 day |  |  |
+| Day Plan | `daily` | +10% | 1 day |  |  |
 | Week Plan | `dailies` | +20% | 7 days |  |  |
 | Month Plan | `weeklies` | +40% | 7 days | 4 weeks |  |
 | Year Plan | `monthlies` | +60% | 7 days | 4 weeks | 12 months |
 
 \* The API/CLI flag column shows the value to use with the API or CLI.
-
-\*\* The Day Plan is included for General Purpose, High CPU, and High Memory plans. For Developer plans, the Day Plan has an additional cost of +10%.
 
 Cloud Native and GPU Server plans as well as any additional storage devices attached to Cloud Servers of all plans are billed per GB according to the selected retention period. [See the detailed pricing table for exact costs.](https://upcloud.com/pricing/#simple-backups)
 

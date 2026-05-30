@@ -31,13 +31,13 @@ git clone https://github.com/UpCloudLtd/upcloud-ansible-collection.git
 
 ## Setup
 
-1. Set UpCloud credentials by using `upctl account login` command or with environment variables:
+1. Set UpCloud credentials by using the `upctl account login` command or with environment variables. There are two methods to authenticate with the UpCloud API: using an API token (recommended) or using the username and password of a dedicated UpCloud subaccount. See our [API Tokens guide](/docs/guides/managing-api-tokens.md) for full details on creating and managing tokens, or our [HTTP Basic authentication guide](/docs/guides/getting-started-upcloud-api-basic-auth#creating-an-api-subaccount.md) for subaccount creation.
 
    ```
-   # Use API token...
+   # Option 1 (recommended): Use an API token
    export UPCLOUD_TOKEN="ucat_..."
 
-   # ...or username and password
+   # Option 2: Use username and password
    export UPCLOUD_USERNAME="your-username"
    export UPCLOUD_PASSWORD="your-password"
    ```

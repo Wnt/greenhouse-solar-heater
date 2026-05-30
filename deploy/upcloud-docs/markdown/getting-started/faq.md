@@ -149,7 +149,7 @@ If GDPR applies to your organization and you need a DPA to satisfy the GDPR requ
 
 **How can I delete or retrieve the data UpCloud has about me?**
 
-You may exercise your right to view, modify, or delete your personal data through your UpCloud control panel. Reach out to [[email protected]](https://upcloud.com/cdn-cgi/l/email-protection#e0939590908f9294a09590838c8f9584ce838f8d) if you wish to completely erase your account and all associated data.
+You may exercise your right to view, modify, or delete your personal data through your UpCloud control panel. Reach out to [[email protected]](https://upcloud.com/cdn-cgi/l/email-protection#fd8e888d8d928f89bd888d9e91928899d39e9290) if you wish to completely erase your account and all associated data.
 
 ## Support
 

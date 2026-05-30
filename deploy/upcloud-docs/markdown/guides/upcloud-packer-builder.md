@@ -32,9 +32,23 @@ packer --version
 1.7.3
 ```
 
-The Packer builder leverages the UpCloud Go API to interface with the UpCloud API. You will need to provide a username and password with access rights to the API functions to authenticate. We recommend setting up a new workspace member account with only the API privileges for security purposes. You can do this at your UpCloud Control Panel. Learn more about creating API credentials in our guide for [getting started with UpCloud API](/docs/guides/getting-started-upcloud-api.md).
+The Packer builder leverages the UpCloud Go API to interface with the UpCloud API. There are two methods to authenticate: using an API token (recommended) or using the username and password of a dedicated UpCloud subaccount. We recommend setting up a new subaccount with only the API privileges for security purposes, rather than using your main account credentials. Learn more about tokens in our [getting started with UpCloud API](/docs/guides/getting-started-upcloud-api.md) guide, or see the [HTTP Basic authentication guide](/docs/guides/getting-started-upcloud-api-basic-auth#creating-an-api-subaccount.md) for subaccount setup.
 
-Enter the API user credentials in your terminal with the following two commands. Replace the `username` and `password` with your user details.
+#### Option 1: Using API tokens (Recommended)
+
+[API tokens](https://developers.upcloud.com/1.3/24-api-tokens/) provide a more secure authentication method as they have configurable expiration dates, can be restricted to specific IP addresses, and can be easily revoked if compromised. For full details on creating and managing tokens, see our [API Tokens guide](/docs/guides/managing-api-tokens.md).
+
+Once you have created a token through the UpCloud Control Panel, export it as an environment variable:
+
+```
+export UPCLOUD_TOKEN=ucat_Your_API_Token
+```
+
+Replace the token above with your actual UpCloud API token.
+
+#### Option 2: Using username and password
+
+If you prefer to use the traditional authentication method or don't have access to API tokens yet, enter the API user credentials in your terminal with the following two commands. Replace the `username` and `password` with your user details.
 
 ```
 export PKR_VAR_UPCLOUD_USERNAME=username
@@ -106,7 +120,7 @@ build {
 
 The basic template is almost ready to deploy. However, you should take a look at the parameters in the source and `build` segments.
 
-The username and password are rather self-explanatory and should be the same for every template. Since we already set our actual UpCloud API credentials in the environmental variables, there’s no need to include them in the configuration file. Packer will then find the credentials from your environmental variables at run time and set them in the username and password variables as defined in your configuration.
+The username and password are rather self-explanatory and should be the same for every template. Since we already set our actual UpCloud API credentials in the environmental variables, there’s no need to include them in the configuration file. Packer will then find the credentials from your environmental variables at run time and set them in the username and password variables as defined in your configuration.
 
 The important parts are the target `zone` and the source `storage-name`. These tell Packer which public template you wish to use as the basis for generating your own and where it should be made available.
 
@@ -119,8 +133,8 @@ Europe
 - Amsterdam `nl-ams1`
 - Copenhagen `dk-cph1`
 - Frankfurt `de-fra1`
-- Helsinki `fi-hel1`
-- Helsinki `fi-hel2`
+- Helsinki `fi-hel1`
+- Helsinki `fi-hel2`
 - London `uk-lon1`
 - Madrid `es-mad1`
 - Stavanger `no-svg1`
@@ -140,9 +154,9 @@ Asia-Pacific
 
 The second bit you should select is the public template that will be used to generate your custom template. The example configuration below uses the Ubuntu 20.04 image, but you can use any Linux template you wish available as a [public template on UpCloud](https://hub.upcloud.com/storage/templates).
 
-With the basic configuration done, the customization to the template can then be added to the provisioners segment. The example provisioner runs the basic update and upgrades commands in the shell.
+With the basic configuration done, the customization to the template can then be added to the provisioners segment. The example provisioner runs the basic update and upgrades commands in the shell.
 
-Additionally, if you want to log into a server deployed with the template, you need to include an SSH key to your root user by replacing the ssh-rsa-key with your public key or provisioning another username. The Packer generates a temporary SSH key while building the template which cannot be used afterwards.
+Additionally, if you want to log into a server deployed with the template, you need to include an SSH key to your root user by replacing the ssh-rsa-key with your public key or provisioning another username. The Packer generates a temporary SSH key while building the template which cannot be used afterwards.
 
 You can find instructions on how to use different types of provisioners to customize your template in the Packer [documentation for provisioners](https://www.packer.io/docs/provisioners).
 
@@ -225,6 +239,6 @@ Note that deploying Custom images built by Packer successfully requires the Meta
 
 ## Conclusions
 
-Congratulations, you should now have your own custom template visible in your UpCloud Control Panel under the Storage and Custom Images tab. With the simple configuration process and fast deployment, you can have a purpose-built template ready in minutes.
+Congratulations, you should now have your own custom template visible in your UpCloud Control Panel under the Storage and Custom Images tab. With the simple configuration process and fast deployment, you can have a purpose-built template ready in minutes.
 
 Test it out by pressing the *Deploy* button and start a new server from the custom template to verify it was built to your specifications.

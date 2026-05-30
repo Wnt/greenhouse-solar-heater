@@ -22,7 +22,7 @@ Our live chat is available on our website and control panel for anyone seeking a
 
 You can send any support, sales or general enquiries by email to the following addresses:
 
-Support [[email protected]](https://upcloud.com/cdn-cgi/l/email-protection#75060005051a070135000516191a00115b161a18) Sales [[email protected]](https://upcloud.com/cdn-cgi/l/email-protection#592a38353c2a192c293a35362c3d773a3634) General [[email protected]](https://upcloud.com/cdn-cgi/l/email-protection#ea828f868685aa9f9a8986859f8ec4898587)
+Support [[email protected]](https://upcloud.com/cdn-cgi/l/email-protection#e695939696899492a69396858a899382c885898b) Sales [[email protected]](https://upcloud.com/cdn-cgi/l/email-protection#0d7e6c61687e4d787d6e61627869236e6260) General [[email protected]](https://upcloud.com/cdn-cgi/l/email-protection#f29a979e9e9db28782919e9d8796dc919d9f)
 
 ## What we can help with
 

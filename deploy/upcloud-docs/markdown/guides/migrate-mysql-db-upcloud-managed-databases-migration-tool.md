@@ -147,7 +147,13 @@ For those who prefer working from the command line or need to automate the migra
 
 Before using the scripts above, you'll need to set up your environment with your UpCloud API credentials. This allows the scripts to authenticate with UpCloud's API.
 
-Export your username and password as environment variables:
+We recommend authenticating with an [API token](/docs/guides/managing-api-tokens.md) by setting the `UPCLOUD_TOKEN` environment variable:
+
+```
+export UPCLOUD_TOKEN=ucat_Your_API_Token
+```
+
+Alternatively, you can export the username and password of a dedicated UpCloud subaccount ([create one](/docs/guides/getting-started-upcloud-api-basic-auth#creating-an-api-subaccount.md) if you don't have one) as environment variables:
 
 ```
 export UPCLOUD_USERNAME=Your_username

@@ -1,4 +1,4 @@
-# Encryption at Rest
+# Encryption at rest
 
 All block storage devices can be optionally encrypted at rest. Block storages include normal block storages, backups and custom images. Any block storage device can be encrypted, including the storage device holding the Cloud Server’s operating system.
 

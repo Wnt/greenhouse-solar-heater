@@ -178,7 +178,7 @@ pip3 install requests pandas sqlalchemy
 
 **Note:** If you receive a message that the environment is externally managed, you may want to install these packages via a virtual environment or install the packages via apt.
 
-Create a file called `lb-metrics.py` and add this code to it. Remember to update the `lb_uuid`, `username`, and `password` variables.
+Create a file called `lb-metrics.py` and add this code to it. Remember to update the `lb_uuid` and `token` variables. The example below authenticates with an [API token](/docs/guides/managing-api-tokens.md) (recommended). If you prefer to use the username and password of a dedicated UpCloud subaccount instead, see the alternative snippet further below.
 
 ```
 import requests
@@ -190,10 +190,10 @@ import datetime
 
 # --- Configuration ---
 lb_uuid = "CHANGE_TO_YOUR_LOAD_BALANCER_UUID"
-username = "CHANGE_TO_YOUR_USERNAME"
-password = "CHANGE_TO_YOUR_PASSWORD" # Keep your password secure
+token = "CHANGE_TO_YOUR_UPCLOUD_API_TOKEN" # Keep your token secure
 db_path = "sqlite:////home/lb-metrics.db" # Using absolute path
 api_url = f"https://api.upcloud.com/1.3/load-balancer/{lb_uuid}/metrics"
+headers = {"Authorization": f"Bearer {token}"}
 
 # --- Logging Setup ---
 # Configure basic logging: INFO level and above, specific format and date format.
@@ -206,7 +206,7 @@ engine = sqlalchemy.create_engine(db_path)
 # --- Main Logic ---
 try:
    logging.info(f"Fetching data from {api_url}...")
-   response = requests.get(api_url, auth=(username, password))
+   response = requests.get(api_url, headers=headers)
    response.raise_for_status()
    logging.info("API request successful.")
    data = response.json()
@@ -296,6 +296,17 @@ except Exception as e:
 
 logging.info("Script finished.")
 ```
+
+**Alternative: using username and password**
+
+If you prefer to use the traditional authentication method instead of an API token, replace the `token` variable and `headers` dictionary above with the following, using credentials from a dedicated UpCloud subaccount ([create one](/docs/guides/getting-started-upcloud-api-basic-auth#creating-an-api-subaccount.md) if you don't have one):
+
+```
+username = "CHANGE_TO_YOUR_USERNAME"
+password = "CHANGE_TO_YOUR_PASSWORD"
+```
+
+Then change the request line from `response = requests.get(api_url, headers=headers)` to `response = requests.get(api_url, auth=(username, password))`.
 
 Test that the Python script is working and that no errors are being printed to the console.
 

@@ -24,7 +24,7 @@ Go to your Windows server (`my-windows-server`) > Backups > Create an ‘On dema
 
 1. Create a new temporary Windows Server (`temp-windows-server`) with the storage adjusted to your desired size.
 
-   You can simply select the smaller or other Plan (General purpose, High CPU, High memory) that you want to use.
+   You can simply select the smaller or other server plan that you want to use.
 
    - The new server must be in the same zone as your Windows Server.
 2. Once you have created your temporary Windows server, you need to shut it down.

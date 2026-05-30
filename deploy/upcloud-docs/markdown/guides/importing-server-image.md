@@ -9,7 +9,7 @@ Start off by creating a new cloud server of your choice at your [UpCloud Control
 Make the required configurations by:
 
 - Selecting the location you wish to import the server
-- Choosing the configuration (the 1CPU and 1GB General Purpose plan works fine)
+- Choosing the configuration (the 1CPU and 1GB Premium plan works fine)
 - AAdding a second storage disk by clicking the "Add a new device" button and choosing the size (it can be [scaled up later](/docs/guides/increasing-storage-size.md))
 
   ![Deploy a new storage](img/image.png)

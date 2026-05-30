@@ -6,7 +6,7 @@ This article explains how the backup functions can be used by employing the UpCl
 
 ## Enabling Simple backup
 
-Simple Backup is the easiest way of setting up an expert-level backup schedule for any Cloud Server running General Purpose, High CPU or High Memory plans. It is the best place to start configuring a reliable backup method to ensure the safety of your business-critical data.
+Simple Backup is the easiest way of setting up an expert-level backup schedule for any Cloud Server. It is the best place to start configuring a reliable backup method to ensure the safety of your business-critical data.
 
 Simple Backup can be enabled with an easy API query to modify the server details. Set the `simple_backup` with the time in UTC `0000-2359` for when you wish the backup to be made, followed by your selected plan `dailies|weeklies|monthlies`. Replace the <server\_UUID> with the unique identity of your Cloud Server. Below is an example of enabling the Week plan for daily backups.
 

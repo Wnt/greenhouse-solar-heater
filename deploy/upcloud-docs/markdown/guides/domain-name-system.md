@@ -61,16 +61,7 @@ Name                       Type            Address                   TTL
 git.example.com            A               83.136.253.111            300
 ```
 
-The actual process of creating domain name records will depend on the domain name registrar you are using to manage your domain. Luckily, most registrars provide instructions or documentation on how to configure your domain name records. Below is a list of popular registrars with links to relevant instructions.
-
-|  |  |  |  |
-| --- | --- | --- | --- |
-| DNSMadeEasy | Domain.com | Dotster | DreamHost |
-| EasyDNS | Enom | FlokiNET | Gandi |
-| GoDaddy | Google Domains | HostGator | HostMonster |
-| iPage | MediaTemple | MelbourneIT | Moniker |
-| Namecheap | Name.com | Network Solutions | OVH |
-| Rackspace | Register | Tucows | Yola |
+The actual process of creating domain name records will depend on the domain name registrar you are using to manage your domain. Luckily, most registrars provide instructions or documentation on how to configure your domain name records.
 
 Setting up a domain name record will take a moment to propagate to other DNS servers so it is good to get them done early. Contact your registrar’s support centre for the most accurate information.
 

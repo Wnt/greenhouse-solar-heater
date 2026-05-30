@@ -6,6 +6,8 @@ This operation can be used to move Cloud Servers from the Public Cloud to a Priv
 
 It can also be used to move Cloud Servers from one Private Cloud zone to another.
 
+Cloud Servers retain all non-customer owned IP addresses when moved.
+
 ## Requirements
 
 For the relocation to succeed, both source and destination zones need to reside in the same physical location, i.e. data center. Relocating a server between data centers is not currently supported.
@@ -14,7 +16,6 @@ Before relocating a Cloud Server, it must adhere to the following limitations.
 
 ### Network limitations
 
-- The server cannot be attached to an SDN Private Network
 - The server cannot have IP addresses from a dedicated, customer-owned IP network
 
 ### Operation limitations

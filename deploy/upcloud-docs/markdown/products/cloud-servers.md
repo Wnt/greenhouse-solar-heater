@@ -1,6 +1,6 @@
 # Cloud Servers
 
-Cloud Servers offer on-demand availability of computer system resources, including data storage and computational capacity without the need to directly manage the server hardware. UpCloud users are able to deploy Cloud Servers by selecting from the predefined configuration options; Developer, General Purpose, High CPU, High Memory or Cloud Native plans.
+Cloud Servers offer on-demand availability of computer system resources, including data storage and computational capacity without the need to directly manage the server hardware. UpCloud users are able to deploy Cloud Servers by selecting from the predefined configuration options; Starter, Premium or Cloud Native plans.
 
 ## Guides
 

@@ -4,7 +4,7 @@ UpCloud GPU Servers are designed to provide dedicated GPU resources for your wor
 
 ## GPU access and passthrough
 
-GPUs are exposed to cloud servers as PCIe passthrough devices. This means your server has direct, exclusive access to the physical GPU, allowing you to utilize its full capabilities for compute, AI/ML, or graphics workloads. The GPU is not shared with other customers - each GPU is always dedicated to a single server.
+GPUs are exposed to cloud servers as passthrough devices. This means your server has direct, exclusive access to the physical GPU, allowing you to utilize its full capabilities for compute, AI/ML, or graphics workloads. The GPU is not shared with other customers - each GPU is always dedicated to a single server.
 
 ## Server management
 

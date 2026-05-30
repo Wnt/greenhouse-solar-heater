@@ -1,6 +1,6 @@
 # Increasing storage size
 
-Scalability is one of the key benefits of cloud services allowing you to grow your usage along with your company. Going up in General Purpose plans affords you not only more CPU cores and memory but also storage.
+Scalability is one of the key benefits of cloud services allowing you to grow your usage along with your company. Going up in server plans affords you not only more CPU cores and memory but also storage.
 
 However, increasing storage size also requires increasing the partition on the operating system level. Luckily, increasing storage size is quick and easy thanks to automated filesystem resizing!
 
@@ -10,7 +10,7 @@ However, if you just need more storage space for data files, we suggest [adding 
 
 ## Increasing storage device size
 
-If you’ve scaled up your Cloud Server by changing up to a higher tier General Purpose plan, you might want to also take advantage of the included additional storage space.
+If you’ve scaled up your Cloud Server by changing up to a higher tier server plan, you might want to also take advantage of the included additional storage space.
 
 Increasing storage size is a two-phase operation:
 
@@ -219,7 +219,7 @@ tmpfs           490M     0  490M   0% /sys/fs/cgroup
 tmpfs            98M     0   98M   0% /run/user/0
 ```
 
-The example here demonstrates the process to extend a single 25GB storage to 50 GB. These steps are necessary when upgrading your cloud server to a higher-tier General Purpose plan, which comes with additional storage space. However, note that the process to decrease storage size is not this easy. If you are upgrading your Cloud Server only temporarily, you may wish to keep the storage size as is to be able to quickly downscale the server later on.
+The example here demonstrates the process to extend a single 25GB storage to 50 GB. These steps are necessary when upgrading your cloud server to a higher-tier server plan, which comes with additional storage space. However, note that the process to decrease storage size is not this easy. If you are upgrading your Cloud Server only temporarily, you may wish to keep the storage size as is to be able to quickly downscale the server later on.
 
 ## Manually extending a partition on Windows
 

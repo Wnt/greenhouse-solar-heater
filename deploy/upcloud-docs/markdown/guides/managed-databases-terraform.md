@@ -10,7 +10,7 @@ Building your cloud setup around Terraform is a great way to configure something
 
 Terraform integrates with UpCloud’s infrastructure via our [verified provider module](/docs/guides/upcloud-terraform-provider.md). Using the UpCloud Terraform provider is as simple as declaring the required providers in a configuration file and then adding the desired resources.
 
-To begin with, you need to allow Terraform to access your UpCloud account by setting an account name and password in your environmental variables. If you haven’t done so already, check out our [Terraform intro guide](/docs/guides/get-started-terraform.md) to set your API credentials before continuing with the rest of this guide.
+To begin with, you need to allow Terraform to access your UpCloud account by setting your API credentials in your environmental variables. We recommend authenticating with an API token (set via `UPCLOUD_TOKEN`), but username and password authentication is also supported. If you haven’t done so already, check out our [Terraform intro guide](/docs/guides/get-started-terraform.md) and [API Tokens guide](/docs/guides/managing-api-tokens.md) to set up your credentials before continuing with the rest of this guide.
 
 ## Setting up a configuration directory
 
@@ -42,10 +42,13 @@ terraform {
 }
 
 provider "upcloud" {
-  # Your UpCloud credentials are read from the environment variables
+  # Your UpCloud credentials are read from the environment variables.
+  # Recommended: set an API token
+  # export UPCLOUD_TOKEN="Your UpCloud API token"
+  # Or alternatively, set a username and password
   # export UPCLOUD_USERNAME="Username for Upcloud API user"
   # export UPCLOUD_PASSWORD="Password for Upcloud API user"
-  # Optional configuration settings can be depclared here
+  # Optional configuration settings can be declared here
 }
 ```
 

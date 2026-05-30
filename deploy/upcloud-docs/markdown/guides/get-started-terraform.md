@@ -39,16 +39,40 @@ That is it for Terraform itself. Next, continue below with the instructions for 
 
 ## Setting up UpCloud user credentials
 
-Deploying servers to your UpCloud account requires you to have your username and password safely stored in your environmental variables. Use the commands below to include an account name and password in your profile. Replace the `username` and `password` with your UpCloud account username and password.
+Deploying servers to your UpCloud account requires you to authenticate with the UpCloud API. There are two methods to authenticate: using an API token (recommended) or using the username and password of a dedicated UpCloud subaccount.
+
+Regardless of the method used, **we recommend creating a separate subaccount with only the necessary API permissions, rather than using the main account owner's credentials.** See our [getting started with UpCloud API using HTTP Basic authentication](/docs/guides/getting-started-upcloud-api-basic-auth#creating-an-api-subaccount.md) guide for step-by-step subaccount creation instructions.
+
+#### Option 1: Using API tokens (Recommended)
+
+[API tokens](https://developers.upcloud.com/1.3/24-api-tokens/) provide a more secure authentication method as they have configurable expiration dates, can be restricted to specific IP addresses, and can be easily revoked if compromised. For full details on creating and managing tokens, see our [API Tokens guide](/docs/guides/managing-api-tokens.md).
+
+Create a token through the UpCloud Control Panel, then store it in your environmental variables:
+
+```
+echo 'export UPCLOUD_TOKEN=ucat_Your_API_Token' | tee -a ~/.bashrc
+```
+
+Replace the token above with your actual UpCloud API token.
+
+Then reload your profile to apply the new addition:
+
+```
+source ~/.bashrc
+```
+
+#### Option 2: Using username and password
+
+If you prefer to use the traditional authentication method or don't have access to API tokens yet, you can store the username and password of a dedicated UpCloud subaccount ([create one](/docs/guides/getting-started-upcloud-api-basic-auth#creating-an-api-subaccount.md) if you don't have one) in environmental variables:
 
 ```
 echo 'export UPCLOUD_USERNAME=username' | tee -a ~/.bashrc
 echo 'export UPCLOUD_PASSWORD=password' | tee -a ~/.bashrc
 ```
 
-We recommend you create a new workspace member for API access. Find out more about [how to do this at our API guide](/docs/guides/getting-started-upcloud-api.md).
+Replace `username` and `password` with your UpCloud account credentials.
 
-Then reload the profile to apply the new additions.
+Then reload your profile to apply the new additions:
 
 ```
 source ~/.bashrc
@@ -63,7 +87,7 @@ Each Terraform project is organised in its own directory. When invoking any comm
 Create a new directory for your Terraform project and change into it.
 
 ```
-mkdir -p ~/terraform/base && cd ~/terraform/base
+mkdir -p ~/terraform/base && cd ~/terraform/base
 ```
 
 Deploying Cloud Servers on UpCloud using Terraform works using the [verified provider module](https://registry.terraform.io/providers/UpCloudLtd/upcloud/latest).
@@ -87,7 +111,10 @@ terraform {
 }
 
 provider "upcloud" {
-  # Your UpCloud credentials are read from the environment variables
+  # Your UpCloud credentials are read from the environment variables.
+  # Recommended: set an API token
+  # export UPCLOUD_TOKEN="Your UpCloud API token"
+  # Or alternatively, set a username and password
   # export UPCLOUD_USERNAME="Username for Upcloud API user"
   # export UPCLOUD_PASSWORD="Password for Upcloud API user"
   # Optional configuration settings can be declared here
@@ -132,7 +159,7 @@ rerun this command to reinitialize your working directory. If you forget, other
 commands will detect it and remind you to do so if necessary.
 ```
 
-The initialisation process creates a directory for the plugins in your Terraform folder under `.terraform/providers` and installs the UpCloud provider module.
+The initialisation process creates a directory for the plugins in your Terraform folder under `.terraform/providers` and installs the UpCloud provider module.
 
 The Terraform installation for UpCloud is then all set. You are now ready to start planning your first Terraform deployment. Continue on with the rest of the guide to learn how to create and deploy Terraform plans.
 
@@ -148,7 +175,7 @@ touch server1.tf
 
 Open the file in your favourite text editor, then include a provider segment for UpCloud and any number of resources as described in the example plan below.
 
-Replace the `ssh-rsa public key` in the login segment with your public SSH key and path to your private SSH key in the connection settings.
+Replace the `ssh-rsa public key` in the login segment with your public SSH key and path to your private SSH key in the connection settings.
 
 ```
 resource "upcloud_server" "server1" {
@@ -211,7 +238,7 @@ Error: Failed to parse ssh private key: ssh: this private key is passphrase prot
 
 Make sure it’s available and unlocked in your SSH agent or use a key that’s not password protected.
 
-If you don’t have an SSH key at hand, check out our quick guide about [using SSH keys for authentication](/docs/guides/use-ssh-keys-authentication.md) to generate a key pair for Terraform.
+If you don’t have an SSH key at hand, check out our quick guide about [using SSH keys for authentication](/docs/guides/use-ssh-keys-authentication.md) to generate a key pair for Terraform.
 
 ## Deploying your configuration
 
@@ -309,7 +336,7 @@ Next, deploy the configuration by executing the plan with the command below.
 terraform apply
 ```
 
-Reply `yes` when asked to confirm the deployment. Example output is shown below.
+Reply `yes` when asked to confirm the deployment. Example output is shown below.
 
 ```
 upcloud_server.server1: Creating...
@@ -425,9 +452,9 @@ upcloud_server.server1: Still modifying... [id=00be4aad-9b82-435a-97f7-5d1496a11
 upcloud_server.server1: Modifications complete after 1m6s [id=00be4aad-9b82-435a-97f7-5d1496a11c81]
 ```
 
-You will see Terraform modify the server resources according to the differences between the server’s current state and the new plan.
+You will see Terraform modify the server resources according to the differences between the server’s current state and the new plan.
 
-In the same way, you could decrease the resources allocated to your cloud server by changing the plan back to `1xCPU-1GB`. However, note that this does not automatically resize the disk. As while increasing the disk is simple, decreasing storage is not quite straightforward. We recommend keeping your storage small if you wish to vertically scale the server and retain the preconfigured pricing.
+In the same way, you could decrease the resources allocated to your cloud server by changing the plan back to `1xCPU-1GB`. However, note that this does not automatically resize the disk. As while increasing the disk is simple, decreasing storage is not quite straightforward. We recommend keeping your storage small if you wish to vertically scale the server and retain the preconfigured pricing.
 
 When you are done with the test server, it can be deleted using the command underneath.
 
@@ -473,3 +500,5 @@ Check that the action about to be taken is correct and confirm the command by en
 ## Summary
 
 Great job completing this guide! You should now have some resources and the basic knowledge to start building upon. This is but an introduction to Terraform which has many advanced features. Check out the Terraform [documentation to learn more](https://www.terraform.io/docs).
+
+By default, Terraform stores its state on your local machine. Once you start working in a team or running Terraform from a CI/CD pipeline, you'll want to move the state to a shared location - see [How to use Managed Object Storage as an S3 state backend for Terraform](/docs/guides/managed-object-storage-s3-state-backend.md) for how to store your `.tfstate` file in UpCloud Managed Object Storage.

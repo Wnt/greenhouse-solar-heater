@@ -1,10 +1,10 @@
 # Managing floating IPs using the UpCloud API
 
-[Our SDN](https://upcloud.com/products/software-defined-networking/) enables a transferable IP address called a floating IP that can be used to build advanced availability and redundancy. Floating IP is a static public IPv4 address that can be attached to your cloud server. It directs traffic to one server at a time and can be moved between multiple servers in a blink of an eye.
+[Our SDN](https://upcloud.com/products/software-defined-networking/) enables a transferable IP address called a floating IP that can be used to build advanced availability and redundancy. Floating IP is a static public IPv4 address that can be attached to your cloud server. It directs traffic to one server at a time and can be moved between multiple servers in a blink of an eye.
 
 Using the UpCloud API to manage your floating IP addresses allows you to perform all necessary operations programmatically and automate failover. In this guide, we’ll show you how to attach new floating IP addresses, transfer them on request, and delete the IPs once they are no longer needed.
 
-If you are not yet familiar with the UpCloud API, we would suggest taking a quick look at our guide to [getting started with UpCloud API](/docs/guides/getting-started-upcloud-api.md) to set up your API user account and access rights.
+If you are not yet familiar with the UpCloud API, we would suggest taking a quick look at our guide to [getting started with UpCloud API](/docs/guides/getting-started-upcloud-api.md) to set up your API user account and access rights.
 
 ## Attaching a new floating IP
 
@@ -19,7 +19,7 @@ POST /1.3/server/server_UUID/stop
 Replace the IP address highlighted below with the floating IP you wish to attach to a new cloud server, and then enter the MAC address of the network interface on the target. You can find the MAC address in your cloud server details by querying the API with the target UUID.
 
 ```
-GET /1.3/server/server_uuid
+GET /1.3/server/server_uuid
 ```
 
 Then, create and attach a new IP address defined by setting the floating property to yes.
@@ -36,7 +36,7 @@ POST /1.3/ip_address
 }
 ```
 
-You must also configure the floating IP at the operating system level. You can find instructions in our guides for [CentOS](/docs/guides/configure-floating-ip-centos.md), [Debian](/docs/guides/configure-floating-ip-debian.md), [Ubuntu](/docs/guides/configure-floating-ip-ubuntu.md), or [Windows](/docs/guides/configure-floating-ip-windows.md) on how to configure the floating IP on your servers.
+You must also configure the floating IP at the operating system level. You can find instructions in our guides for [CentOS](/docs/guides/configure-floating-ip-centos.md), [Debian](/docs/guides/configure-floating-ip-debian.md), [Ubuntu](/docs/guides/configure-floating-ip-ubuntu.md), or [Windows](/docs/guides/configure-floating-ip-windows.md) on how to configure the floating IP on your servers.
 
 ## Transferring an existing floating IP
 
@@ -47,7 +47,7 @@ Transferring a floating IP address using the UpCloud API is simple. While attach
 First, you need to know the network interface MAC address to which you wish to transfer the floating IP. For example, you can find the MAC address in your cloud server details by querying the API with the target server’s UUID.
 
 ```
-GET /1.3/server/server_uuid
+GET /1.3/server/server_uuid
 ```
 
 Then, use the following command to transfer the floating IP. Replace the IP address highlighted below with the floating IP address you wish to attach to a new cloud server, and then enter the MAC address of the network interface on the target.
@@ -62,9 +62,30 @@ PATCH /1.3/ip_address/0.0.0.0
 }
 ```
 
-If you haven’t yet used the floating IP on the new cloud server, you will also need to configure the floating IP at the operating system level. You can find instructions in our guides for [CentOS](/docs/guides/configure-floating-ip-centos.md), [Debian](/docs/guides/configure-floating-ip-debian.md), [Ubuntu](/docs/guides/configure-floating-ip-ubuntu.md) or [Windows](/docs/guides/configure-floating-ip-windows.md) on how to configure the floating IP on your servers.
+If you haven’t yet used the floating IP on the new cloud server, you will also need to configure the floating IP at the operating system level. You can find instructions in our guides for [CentOS](/docs/guides/configure-floating-ip-centos.md), [Debian](/docs/guides/configure-floating-ip-debian.md), [Ubuntu](/docs/guides/configure-floating-ip-ubuntu.md) or [Windows](/docs/guides/configure-floating-ip-windows.md) on how to configure the floating IP on your servers.
 
 It’s also possible to do this directly from the target cloud server if, for example, it notices a failure in the current server the floating IP is pointing to.
+
+The recommended way to authenticate the request is to use an [API token](/docs/guides/managing-api-tokens.md):
+
+```
+#!/bin/bash
+
+# Export your UpCloud API token to the environmental variables
+# export UPCLOUD_TOKEN=ucat_Your_API_Token
+
+# Enter the floating ip address you want to attach
+ip=0.0.0.0
+# Select the target network interface, commonly eth0
+interface=eth0
+
+# API command to transfer the floating IP
+curl -H "Authorization: Bearer $UPCLOUD_TOKEN" -X PATCH \
+-H Content-Type:application/json https://api.upcloud.com/1.3/ip_address/$ip \
+--data-binary '{"ip_address":{"mac":"'`cat /sys/class/net/$interface/address`'"}}'
+```
+
+Alternatively, you can still authenticate using the username and password of a dedicated UpCloud subaccount ([create one](/docs/guides/getting-started-upcloud-api-basic-auth#creating-an-api-subaccount.md) if you don't have one) via HTTP Basic Auth:
 
 ```
 #!/bin/bash
@@ -79,8 +100,8 @@ ip=0.0.0.0
 interface=eth0
 
 # API command to transfer the floating IP
-curl -u "$UPCLOUD_USERNAME:$UPCLOUD_PASSWORD" -X PATCH
--H Content-Type:application/json https://api.upcloud.com/1.3/ip_address/$ip
+curl -u "$UPCLOUD_USERNAME:$UPCLOUD_PASSWORD" -X PATCH \
+-H Content-Type:application/json https://api.upcloud.com/1.3/ip_address/$ip \
 --data-binary '{"ip_address":{"mac":"'`cat /sys/class/net/$interface/address`'"}}'
 ```
 
@@ -88,7 +109,7 @@ Then, execute the script whenever you need the floating IP transferred. This all
 
 ## Detaching a floating IP
 
-Detaching a floating IP without attaching it to another interface, pass an explicit null or empty string as a mac value.
+Detaching a floating IP without attaching it to another interface, pass an explicit null or empty string as a mac value.
 
 Replace the IP address highlighted below with the floating IP you wish to detach.
 

@@ -1,6 +1,6 @@
-# Downsize Cloud Servers to Developer Plan
+# Downsize Cloud Servers to Starter Plan
 
-Are you looking to optimise your cloud resources and reduce costs? This comprehensive tutorial will guide you through the process of downsizing your UpCloud server from a higher-tier plan to a more cost-effective Developer option.
+Are you looking to optimise your cloud resources and reduce costs? This comprehensive tutorial will guide you through the process of downsizing your UpCloud server from a higher-tier plan to a more cost-effective Starter option.
 
 In this tutorial, we'll cover:
 
@@ -45,9 +45,9 @@ If verified, **Shutdown** the server.
 
 ### 3. Creating and cloning to a smaller storage device
 
-Navigate to the **Storage** tab of your server and add a new storage device. The size of the new device should match the size on the plan you are downsizing to. In this example, we will be downsizing to the 20GB Developer plan - so we'll add a new 20GB storage device.
+Navigate to the **Storage** tab of your server and add a new storage device. The size of the new device should match the size on the plan you are downsizing to. In this example, we will be downsizing to the 20GB Starter plan - so we'll add a new 20GB storage device.
 
-Ensure that you select the **Standard** storage tier to match the storage type of the Developer plans. Enable encryption if required, and leave the Storage controller set to VirtIO.
+Ensure that you select the **Standard** storage tier to match the storage type of the Starter plans. Enable encryption if required, and leave the Storage controller set to VirtIO.
 
 ![Adding a new Standard storage device](image.png)
 
@@ -96,7 +96,7 @@ If boot errors appear, please **Shutdown** the server and follow the decreasing 
 
 ### 6. Changing your server plan to a lower tier
 
-If everything functions as intended, we can go ahead and change our server plan to the lower tier we want. First, shutdown the server and navigate to the **Plan** tab. Then, select the new Developer plan.
+If everything functions as intended, we can go ahead and change our server plan to the lower tier we want. First, shutdown the server and navigate to the **Plan** tab. Then, select the new Starter plan.
 
 ![Plan selection page in the control panel](image-6.png)
 

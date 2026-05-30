@@ -1,5 +1,7 @@
 # How to set up free backups for Cloud Servers
 
+**Note** This article applies to discontinued General Purpose server plans. Newer plans no longer include free backups.
+
 Backing up your Cloud Servers is crucial for data protection and business continuity. Regular backups ensure your data is safe and can be restored in case of software failure, cyber-attacks, or human errors.
 
 UpCloud offers a convenient solution with its free 24-hour backup options, making it easy for anyone to secure their data without incurring additional costs. This guide will walk you through the process of setting up free backups for your Cloud Servers on UpCloud.

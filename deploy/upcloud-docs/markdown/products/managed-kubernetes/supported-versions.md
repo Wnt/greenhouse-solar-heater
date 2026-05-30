@@ -2,7 +2,8 @@
 
 We currently support the following Kubernetes versions with full SLA guarantees and regular security patching:
 
-- Kubernetes 1.34 with Cilium v1.18.1
+- Kubernetes 1.35 with Cilium v1.18.6
+- Kubernetes 1.34 with Cilium v1.18.6
 - Kubernetes 1.33 with Cilium v1.18.1
 - Kubernetes 1.32 with Cilium v1.18.0
 - Kubernetes 1.31 with Cilium v1.17.0

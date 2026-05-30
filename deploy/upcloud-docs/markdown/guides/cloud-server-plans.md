@@ -1,18 +1,14 @@
 # Managing Cloud Server plans
 
-One of the advantages of our cloud computing platform is the ability to freely change your server configuration, adding or removing CPU cores, RAM, and storage to best suit your needs. UpCloud offers a number of Cloud Server plans, including Developer, General Purpose, High CPU, High Memory and Cloud Native options for you to choose from at server creation.
+One of the advantages of our cloud computing platform is the ability to freely change your server configuration, adding or removing CPU cores, RAM, and storage to best suit your needs. UpCloud offers a number of Cloud Server plans, including Starter, Premium and Cloud Native options for you to choose from at server creation.
 
 However, selecting one does not exclude you from the others. This article explains the differences between these configuration options and how to easily move between them at will.
 
 ## Differences between the plans
 
-**Developer plans** are designed to offer inexpensive servers for development, testing and hosting non-critical workloads. These plans include all the required components of a functional server, and also a public IPv4 address. Storage is provided with the Standard storage tier, offering a general purpose performance.
+**Starter plans** are designed to offer inexpensive servers for development, testing and hosting non-critical workloads. These plans include all the required components of a functional server, and also a public IPv4 address. Storage is provided with the Standard storage tier, offering a general purpose performance.
 
-**General Purpose plans** offer balanced resource configurations that allow predictability in usage and costs throughout the server’s lifetime. These plans comprise a public network IPv4 address, an optional IPv6 address, and a monthly public network transfer quota, as well as the CPU, RAM, and storage – all included for a cost-effective price billed hourly during the lifetime of the server.
-
-**High CPU plans** increase the number of CPU cores in relation to the allocated system memory and storage. These plans are ideal for more CPU-intensive workloads which might not require much from the other resources. Similarly to the General Purpose plans, High CPU configurations include a public network IPv4 address, an optional IPv6 address, and a monthly public network transfer quota.
-
-**High Memory plans** are offered as an alternative configuration with a greater allocation of system memory as opposed to CPU core count. These plans are perfect for hosting applications that benefit from keeping more data in RAM. Just like General Purpose and High CPU plans, High Memory plans also bundle in a public network IPv4 address, an optional IPv6 address, and a monthly public network transfer quota.
+**Premium plans** offer balanced resource configurations that allow predictability in usage and costs throughout the server’s lifetime. These plans comprise a public network IPv4 address, an optional IPv6 address, and a monthly public network transfer quota, as well as the CPU, RAM, and storage – all included for a cost-effective price billed hourly during the lifetime of the server.
 
 **Cloud Native plans** offer the best possible price by unbundling storage and IPv4 addresses from the plans. Cloud Native plan servers can be used with any storage tier, and network connectivity can be provided either via SDN Private Networks or public IPv4/IPv6 addresses that can be attached at extra cost. Cloud Native plans are designed for ephemeral workloads, containerised applications and hosting microservices architectures.
 
@@ -40,7 +36,7 @@ When you have finished making adjustments to your configuration, start the serve
 
 ## Switching plans
 
-Most of the time, using General Purpose plans is the most cost-efficient option while the other plans give further options. If you require additional memory or CPU temporarily, you can always upgrade to any higher plan and downgrade later. However, note that the storage devices are not automatically resized to allow you to easily return to the original configuration plan. This is because the process of decreasing storage size is a more complex task than increasing storage.
+Most of the time, using Premium plans is the most cost-efficient option while the other plans give further options. If you require additional memory or CPU temporarily, you can always upgrade to any higher plan and downgrade later. However, note that the storage devices are not automatically resized to allow you to easily return to the original configuration plan. This is because the process of decreasing storage size is a more complex task than increasing storage.
 
 **Switching between plans** is as easy as choosing your new configuration and clicking the Save button. Note that your server needs to be powered down, then select one of the plans with the same or more storage capacity as your server currently has and click the Save changes button.
 
@@ -48,7 +44,7 @@ If you need more server resources, you can always select a larger plan and then 
 
 ## Pricing of the plans
 
-The Cloud Server plans include resource options for many use cases conveniently combined to a single price while the Flexible configurations calculate hourly pricing purely by usage. Selecting a General Purpose plan is a cost-effective way to get started, but advanced users might wish to make use of the more targeted High CPU and High Memory plans.
+The Cloud Server plans include resource options for many use cases conveniently combined to a single price while the Flexible configurations calculate hourly pricing purely by usage. Selecting a Premium plan is a cost-effective way to get started, but advanced users might wish to make use of the more targeted High CPU and High Memory plans.
 
 In case you need to add storage, more than is bundled in the Cloud Server plan of your choice, you can always attach additional storage devices. This way your server retains the plan pricing while any extra storage is billed per GB.
 

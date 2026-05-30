@@ -2,7 +2,7 @@
 
 ## Block storage
 
-Cloud Server plans include storage up to the allocated quota. Developer Plans use Standard storage and all other plans use MaxIOPS® storage.
+Cloud Server plans include storage up to the allocated quota. Starter plans use Standard storage and Premium plans use MaxIOPS® storage.
 
 If the server has multiple storage devices, the largest storage that fits within the plan quota is counted as part of the plan. Any additional storage devices are billed per GB per hour, as shown in the table below. Please refer to our [pricing page](https://upcloud.com/pricing/#block-storage) for the exact costs in your currency.
 
@@ -20,7 +20,7 @@ Simple Backups are billed at a fixed monthly rate according to the selected plan
 
 Backups of storage devices that are not part of a plan are billed as an additional storage at per GB per hour. This is analogous to how excess storage is billed for Cloud Servers.
 
-Additional backups and backups of storage devices outside the General Purpose, High CPU and High Memory plans are billed at per GB per hour.
+Additional backups and backups of storage devices outside the amount included in the server plans are billed at per GB per hour.
 
 Flexible Backups are billed at per GB per hour. With Flexible Backups, the total monthly cost depends on the number of backups taken, their retention period and the size of the storage devices being backed up. This means that the monthly cost accumulates over time as the schedule creates new backups until the retention period is reached and the oldest backup is deleted.
 

@@ -2,26 +2,26 @@
 
 UpCloud offers a variety of Cloud Server plans tailored to different needs and use cases. This guide helps you understand the different plans and choose the best option for your requirements.
 
-## Developer Plans
+## Starter Plans
 
 These plans are designed with a low price in mind, but still delivering good performance for running small scale projects, testing and developing.
 
 **Use cases:** Optimised for experimentation, learning, and small-scale projects with moderate traffic.
 
-Balanced CPU, memory, and storage resources. Developer plans use [Standard tier Block Storage](/docs/products/block-storage/tiers.md), which offers a good compromise on price over performance. Developer plans offer affordable pricing with predictable monthly costs.
+Balanced CPU, memory, and storage resources. Starter plans use [Standard tier Block Storage](/docs/products/block-storage/tiers.md), which offers a good compromise on price over performance. Starter plans offer affordable pricing with predictable monthly costs.
 
 **When to choose:**
 When affordability and ease of use are primary concerns.
 When you need a balanced server configuration for general-purpose tasks.
 When you prefer predictable monthly billing.
 
-**Reconsider if:** For business-critical workloads, consider using General Purpose or Cloud Native plans for better performance and higher 99.999% SLA.
+**Reconsider if:** For business-critical workloads, consider using Premium or Cloud Native plans for better performance and higher 99.999% SLA.
 
-## General Purpose Plans
+## Premium Plans
 
-General Purpose plans offer versatile resources for a wide range of applications. These plans have been designed for high performance in production workloads and business-critical applications.
+Premium plans offer versatile resources for a wide range of applications. These plans have been designed for high performance in production workloads and business-critical applications.
 
-General Purpose plans include the outstanding 99.999% SLA and a free 24 hour backup for the included storage. General Purpose plans utilize high performance [MaxIOPS block storage](/docs/products/block-storage/tiers.md).
+Premium plans include the outstanding 99.999% SLA and a free 24 hour backup for the included storage. Premium plans utilize high performance [MaxIOPS block storage](/docs/products/block-storage/tiers.md).
 
 *High CPU* and *High Memory* options offer more resources for CPU and memory intensive applications, such as high performance transactions, or persistent and in-memory databases.
 
@@ -35,7 +35,7 @@ Cloud Native plans unbundle storage and IP addresses from the server plan, and w
 
 **Use cases:** Optimised for the best possible unit price without paying for ununsed resources. For cloud-native setups, especially for Kubernetes worker nodes. For automatically scaling setups without need for public IP connectivity or bundled storage.
 
-**Reconsider if:** For stable workloads with a large amount of bundled resources, such as ample included storage space, consider using General Purpose plans instead.
+**Reconsider if:** For stable workloads with a large amount of bundled resources, such as ample included storage space, consider using Premium plans instead.
 
 ## Pricing
 
@@ -45,7 +45,7 @@ Cloud Servers are billed by the hour. Refer to [Pricing](https://upcloud.com/pri
 
 Consider the following factors when selecting a Cloud Server plan:
 
-**Workload requirements:** CPU, memory and storage needs. Developer plans offer good options for small use cases, while General Purpose and Cloud Native plans have a wider support for resources.
+**Workload requirements:** CPU, memory and storage needs. Starter plans offer good options for small use cases, while Premium and Cloud Native plans have a wider support for resources.
 
 **Application type:** Web server, database, application hosting, etc. Your application requirements dictate whether the workload is bottlenecked first by CPU or memory.
 
