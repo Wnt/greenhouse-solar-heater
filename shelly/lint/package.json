@@ -11,6 +11,6 @@
   },
   "dependencies": {
     "acorn": "^8.11.3",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.2.0"
   }
 }
