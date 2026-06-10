@@ -35,7 +35,7 @@
     "istanbul-lib-coverage": "^3.2.2",
     "istanbul-lib-report": "^3.0.1",
     "istanbul-reports": "^3.2.0",
-    "knip": "^6.15.0",
+    "knip": "^6.16.1",
     "pg-mem": "^3.0.14",
     "serve": "^14.2.6",
     "v8-to-istanbul": "^9.3.0"
