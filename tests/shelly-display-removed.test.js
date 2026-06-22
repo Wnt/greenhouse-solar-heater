@@ -28,18 +28,16 @@ function createRuntime() {
   function shellyCall(method, params, cb) {
     calls.push(method);
     setImmediate(function () {
-      let response = null;
+      if (method === 'HTTP.GET') {
+        if (cb) cb({ code: 200, body: '{"tC":20}' }, null);
+        return;
+      }
+      let response = {};
       if (method === 'KVS.Get') {
         const val = kvs[(params || {}).key];
         response = val !== undefined ? { value: val } : null;
       } else if (method === 'KVS.Set') {
         kvs[(params || {}).key] = (params || {}).value;
-        response = {};
-      } else if (method === 'HTTP.GET') {
-        if (cb) cb({ code: 200, body: '{"tC":20}' }, null);
-        return;
-      } else {
-        response = {};
       }
       if (cb) cb(response, null);
     });
