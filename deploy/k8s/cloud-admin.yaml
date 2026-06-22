@@ -1,0 +1,54 @@
+# Cloud-admin RBAC for the Claude cloud environment / incident-automation routine.
+#
+# These resources give the Claude cloud env full cluster-admin access so it can
+# auto-remediate incidents (restart pods, inspect logs, exec into the app container
+# to run Shelly RPC commands over the VPN, etc.).
+#
+# SECURITY NOTES — treat this token as a crown-jewel secret:
+#   - The cloud-admin-token Secret holds a long-lived, cluster-admin bearer token.
+#     Anyone who obtains it has unrestricted access to the cluster.
+#   - INSTANT REVOCATION: delete the ClusterRoleBinding (kubectl delete clusterrolebinding cloud-admin).
+#     The SA and token can stay; without the binding the token has zero permissions.
+#   - ROTATION: delete the cloud-admin-token Secret. The controller recreates it with a
+#     fresh token within seconds. Re-run scripts/cloud-admin-kubeconfig.sh --base64 and
+#     update the KUBECONFIG_B64 env var in the cloud env.
+#   - INDEPENDENTLY REVOCABLE from the CI/CD deployer ServiceAccount — deleting either
+#     does not affect the other.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloud-admin
+  labels:
+    app: greenhouse
+    purpose: cloud-admin
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cloud-admin
+  labels:
+    app: greenhouse
+    purpose: cloud-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: cloud-admin
+    namespace: default
+---
+# Long-lived token for the cloud-admin ServiceAccount.
+# Used by the Claude cloud env / incident-automation routine.
+# Rotate by deleting this Secret; the controller recreates it automatically.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloud-admin-token
+  labels:
+    app: greenhouse
+    purpose: cloud-admin
+  annotations:
+    kubernetes.io/service-account.name: cloud-admin
+type: kubernetes.io/service-account-token

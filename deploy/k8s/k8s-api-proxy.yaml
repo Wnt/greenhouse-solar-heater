@@ -1,0 +1,43 @@
+# Exposes the in-cluster Kubernetes API server on 443 via NGINX Ingress.
+#
+# WHY: The Claude cloud env can only egress on ports 80/443. The UpCloud managed
+# control plane listens on :7443 (unreachable from the cloud env). This Ingress
+# routes k8s.greenhouse.madekivi.fi:443 → kubernetes.default.svc:443 (the
+# in-cluster apiserver alias), terminating TLS at NGINX with a LE cert.
+#
+# L7 PROXY (no ssl-passthrough): kubectl WebSocket streams (port-forward, exec)
+# carry through plain NGINX L7 termination — ssl-passthrough is not required.
+# Confirmed working with kubectl 1.35: get, auth can-i, port-forward, exec.
+#
+# DNS: k8s.greenhouse.madekivi.fi is covered by the existing *.greenhouse.madekivi.fi
+# wildcard CNAME; no additional DNS record is needed.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: k8s-api-proxy
+  labels:
+    app: greenhouse
+    purpose: cloud-admin
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - k8s.greenhouse.madekivi.fi
+      secretName: k8s-api-proxy-tls
+  rules:
+    - host: k8s.greenhouse.madekivi.fi
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kubernetes
+                port:
+                  number: 443
