@@ -22,7 +22,16 @@ const { buildDataset } = require('../../../../scripts/forecast-ml/dataset.js');
 
 const RETRAIN_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
 const INITIAL_DELAY_MS = 3 * 60 * 1000;          // first run 3 min after boot
-const TRAIN_RANGE = 'all';
+// Rolling training window — NOT 'all'. sensor_readings_30s accumulates
+// forever (CLAUDE.md: never pruned), so range 'all' grew the in-memory
+// training set without bound and eventually OOM-killed the app's V8 heap
+// (~250 MB) on the 3-min initial run, crash-looping the pod (nginx 503s,
+// 2026-06-22). '7d' bounds memory to a constant regardless of uptime and
+// re-buckets to 5-minute resolution — exactly STEP_FINE_MS — so the
+// fine-step dynamics the model learns are preserved (coarser windows like
+// '30d' bucket to 30 min and smear the 5-min step). 7 days yields well
+// over MIN_SAMPLES anchors, and the promotion gate guards quality.
+const TRAIN_RANGE = '7d';
 const MIN_SAMPLES = 300;     // refuse to train on too little history
 const TANK_R2_FLOOR = 0.55;  // absolute sanity floors
 const GH_R2_FLOOR = 0.30;

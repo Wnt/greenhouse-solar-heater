@@ -325,25 +325,6 @@ function pollAllSensors(cb) {
   next(0);
 }
 
-// ── Display ──
-
-function updateDisplay(cb) {
-  var labels = buildDisplayLabels({
-    mode: state.mode,
-    modeDurationMs: Date.now() - state.mode_start,
-    temps: state.temps,
-    lastError: state.last_error,
-    collectorsDrained: state.collectors_drained,
-  });
-  function nextLabel(i) {
-    if (i >= 4) { if (cb) cb(); return; }
-    Shelly.call("Switch.SetConfig", {id: i, config: {name: labels[i]}}, function() {
-      nextLabel(i + 1);
-    });
-  }
-  nextLabel(0);
-}
-
 // ── State snapshot for evaluate() and events ──
 
 function buildEvalState() {
@@ -1040,54 +1021,52 @@ function processRelayCmdQueue() {
 function controlLoop() {
   if (state.transitioning) return;
   pollAllSensors(function() {
-    updateDisplay(function() {
-      if (state.transitioning) return;
+    if (state.transitioning) return;
 
-      // Manual override is HARD (2026-04-21): automation — including
-      // freeze/overheat drain — is fully suspended until the user
-      // clears override or the TTL expires. The user asked for this
-      // explicitly, trading safety-net behaviour for deterministic
-      // manual control. Freeze hazard is mitigated by the confirmation
-      // dialog + TTL countdown in the playground, not by server-side
-      // preemption.
-      if (isManualOverrideActive()) {
-        emitStateUpdate();
-        return;
-      }
+    // Manual override is HARD (2026-04-21): automation — including
+    // freeze/overheat drain — is fully suspended until the user
+    // clears override or the TTL expires. The user asked for this
+    // explicitly, trading safety-net behaviour for deterministic
+    // manual control. Freeze hazard is mitigated by the confirmation
+    // dialog + TTL countdown in the playground, not by server-side
+    // preemption.
+    if (isManualOverrideActive()) {
+      emitStateUpdate();
+      return;
+    }
 
-      var evalState = buildEvalState();
-      var result = evaluate(evalState, null, deviceConfig);
-      // Refresh the live `held` diagnostic every tick — independent of
-      // whether the tick produces a mode transition. Consumed by
-      // buildSnapshotFromState so the playground can render
-      // "held by X" without stale data.
-      state.last_held = result.held || null;
-      // Same lifecycle for the live evaluator reason — refreshed every
-      // tick so the playground mode-card status text reflects the
-      // current decision ("greenhouse still cold") rather than the
-      // entry reason carried by snapshot.reason.
-      state.last_eval_reason = result.reason || null;
+    var evalState = buildEvalState();
+    var result = evaluate(evalState, null, deviceConfig);
+    // Refresh the live `held` diagnostic every tick — independent of
+    // whether the tick produces a mode transition. Consumed by
+    // buildSnapshotFromState so the playground can render
+    // "held by X" without stale data.
+    state.last_held = result.held || null;
+    // Same lifecycle for the live evaluator reason — refreshed every
+    // tick so the playground mode-card status text reflects the
+    // current decision ("greenhouse still cold") rather than the
+    // entry reason carried by snapshot.reason.
+    state.last_eval_reason = result.reason || null;
 
-      if (result.nextMode !== state.mode) {
-        if (result.safetyOverride) {
-          transitionTo(result, "safety_override");
-        } else if (result.suppressed) {
-          applyFlags(result.flags);
-          emitStateUpdate();
-        } else {
-          transitionTo(result, "automation");
-        }
-      } else {
+    if (result.nextMode !== state.mode) {
+      if (result.safetyOverride) {
+        transitionTo(result, "safety_override");
+      } else if (result.suppressed) {
         applyFlags(result.flags);
-        setSpaceHeater(!!result.actuators.space_heater);
-        // Fan-cool overlay can flip the fan on/off without a mode change.
-        setFan(!!result.actuators.fan);
         emitStateUpdate();
+      } else {
+        transitionTo(result, "automation");
       }
+    } else {
+      applyFlags(result.flags);
+      setSpaceHeater(!!result.actuators.space_heater);
+      // Fan-cool overlay can flip the fan on/off without a mode change.
+      setFan(!!result.actuators.fan);
+      emitStateUpdate();
+    }
 
-      // ── Watchdog tick block ──
-      watchdogTick();
-    });
+    // ── Watchdog tick block ──
+    watchdogTick();
   });
 }
 
