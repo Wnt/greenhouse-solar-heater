@@ -631,7 +631,7 @@ describe('mqtt-bridge', () => {
       const original = notifications.evaluate;
       let called = false;
       notifications.evaluate = function () { called = true; };
-      bridge._setPushRefForTest({ sendByCategory: function () { return Promise.resolve(); } });
+      bridge._setPushRefForTest({ sendNotification: function () { return Promise.resolve(); } });
 
       try {
         bridge.handleStateMessage({

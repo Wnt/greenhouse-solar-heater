@@ -139,8 +139,8 @@ async function _handleFired(msg) {
   };
 
   // Push notification (fire-and-forget, logged on failure)
-  if (_deps.push && typeof _deps.push.sendByCategory === 'function') {
-    Promise.resolve(_deps.push.sendByCategory('watchdog_fired',
+  if (_deps.push && typeof _deps.push.sendNotification === 'function') {
+    Promise.resolve(_deps.push.sendNotification('watchdog_fired',
       _buildNotificationPayload(_pending)
     )).catch(err => {
       if (_deps.log && _deps.log.error) {
@@ -185,7 +185,7 @@ async function _handleResolved(msg) {
 }
 
 function _dispatchSnoozeAckPush(id, pendingSnapshot) {
-  if (!_deps.push || typeof _deps.push.sendByCategory !== 'function') return;
+  if (!_deps.push || typeof _deps.push.sendNotification !== 'function') return;
   const meta = getWatchdog(id);
   const label = meta ? meta.shortLabel : id;
   const reason = pendingSnapshot.snoozeReason || '(no reason provided)';
@@ -212,7 +212,7 @@ function _dispatchSnoozeAckPush(id, pendingSnapshot) {
     }
   };
 
-  Promise.resolve(_deps.push.sendByCategory('watchdog_fired', payload))
+  Promise.resolve(_deps.push.sendNotification('watchdog_fired', payload))
     .catch(err => {
       if (_deps.log && _deps.log.error) {
         _deps.log.error('watchdog ack push failed', { error: err.message });
