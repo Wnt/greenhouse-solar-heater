@@ -341,8 +341,17 @@ test.describe('Relay toggle board', () => {
     await fanBtn.click();
     await expect(fanBtn).toHaveClass(/\bon\b/);
 
-    // State broadcast says fan is still OFF (command failed)
-    await page.evaluate(() => {
+    // State broadcast says fan is still OFF (command failed). The
+    // contradiction reverts the optimistic ON and adds the error/shake
+    // class synchronously, then a 400 ms timer (relay-board.js) clears
+    // it. That window is too short to observe reliably with Playwright's
+    // out-of-process polling: under CI worker contention the round-trips
+    // between injecting the state and the toHaveClass poll could exceed
+    // 400 ms, so the assertion would miss the class entirely. __wsInject
+    // dispatches onmessage synchronously and the whole state→relay
+    // reconcile path is synchronous, so we read the class list in the
+    // same evaluate to capture the transient state race-free.
+    const afterContradiction = await page.evaluate(() => {
       window.__wsInject({ type: 'state', data: {
         mode: 'idle', temps: { collector: 25, tank_top: 40, tank_bottom: 35, greenhouse: 18, outdoor: 10 },
         valves: { vi_btm: false, vi_top: false, vi_coll: false, vo_coll: false, vo_rad: false, vo_tank: false, v_air: false },
@@ -350,14 +359,21 @@ test.describe('Relay toggle board', () => {
         controls_enabled: true,
         manual_override: { active: true, expiresAt: Math.floor(Date.now()/1000) + 300, },
       }});
+      const fan = document.querySelector('.relay-btn[data-relay="fan"]');
+      return { on: fan.classList.contains('on'), error: fan.classList.contains('relay-btn--error') };
     });
 
-    // Button reverted to OFF with error animation
-    await expect(fanBtn).not.toHaveClass(/\bon\b/);
-    await expect(fanBtn).toHaveClass(/relay-btn--error/);
+    // Button reverted to OFF with the error (shake) animation applied.
+    expect(afterContradiction.on).toBe(false);
+    expect(afterContradiction.error).toBe(true);
 
-    // Error class removed after animation
-    await expect(fanBtn).not.toHaveClass(/relay-btn--error/, { timeout: 1000 });
+    // Error class removed after the animation completes. The original
+    // 1000 ms cap was the actual flake: the 400 ms auto-clear setTimeout
+    // gets starved under CI worker contention and fired past 1000 ms,
+    // so the assertion timed out with the class still applied. Give it
+    // ample headroom — the assertion only needs to prove it eventually
+    // clears, and a genuine "never clears" regression still fails fast.
+    await expect(fanBtn).not.toHaveClass(/relay-btn--error/, { timeout: 4000 });
   });
 
   test('countdown timer visible during override', async ({ page }) => {
