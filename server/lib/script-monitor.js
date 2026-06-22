@@ -67,9 +67,21 @@ function createScriptMonitor(options) {
   // Injectable so tests can mock the Shelly without real HTTP.
   const rpc = options.rpc || rpcCall;
 
+  // Reactive auto-restart: on a genuine crash, restart the control script
+  // automatically instead of waiting for a human (the 2026-06-22 episode
+  // left the collector to stagnate to ~90 °C for hours), capped so a true
+  // crash-loop can't spin forever, escalating to one device reboot when
+  // script-restarts don't take. Off unless explicitly enabled.
+  const autoRestartEnabled = options.autoRestart === true;
+  const maxAutoRestarts = options.maxAutoRestarts || 3;
+  const autoRestartWindowMs = options.autoRestartWindowMs || 15 * 60 * 1000;
+
   let timer = null;
   let inflight = false;
   let recentStates = []; // newest-last
+  let autoRestartTimes = [];      // epoch-ms of recent auto-restart attempts
+  let autoRestartExhausted = false;
+  let rebootEscalated = false;
   const lastStatus = {
     running: null,         // true / false / null (unknown)
     checkedAt: null,       // last poll epoch ms
@@ -99,7 +111,56 @@ function createScriptMonitor(options) {
       crashId: lastStatus.crashId,
       host,
       scriptId,
+      autoRestart: {
+        enabled: autoRestartEnabled,
+        attempts: autoRestartTimes.length,
+        exhausted: autoRestartExhausted,
+        rebootEscalated,
+      },
     };
+  }
+
+  // Restart the control script (Stop then Start). No status repoll — the
+  // caller decides whether to schedule one.
+  function restartScript(callback) {
+    rpc(host, 'Script.Stop', { id: scriptId }, rpcTimeoutMs, function (stopErr) {
+      rpc(host, 'Script.Start', { id: scriptId }, rpcTimeoutMs, function (startErr, startResult) {
+        if (startErr) { callback(startErr, null); return; }
+        callback(null, { ok: true, stopError: stopErr ? stopErr.message : null, result: startResult });
+      });
+    });
+  }
+
+  // Called on every poll while the script is observed crashed. Restarts it
+  // (capped per window); once the cap is hit, marks exhausted and fires one
+  // device reboot. Only acts on genuine crashes (an error trace is present)
+  // — a clean stop, e.g. a deploy's Script.Stop/Start, has none and must
+  // not trigger a fight with the deployer. Does NOT emit status; the poll
+  // loop emits once after calling this so the snapshot reflects new state.
+  function maybeAutoRestart() {
+    if (!autoRestartEnabled) return;
+    if (!lastStatus.error_trace) return;
+    const now = Date.now();
+    autoRestartTimes = autoRestartTimes.filter(function (ts) { return now - ts < autoRestartWindowMs; });
+    if (autoRestartTimes.length >= maxAutoRestarts) {
+      if (!autoRestartExhausted) {
+        autoRestartExhausted = true;
+        log.error('auto-restart exhausted — control script will not stay up', { attempts: autoRestartTimes.length, host });
+        if (!rebootEscalated) {
+          rebootEscalated = true;
+          log.warn('escalating to device reboot', { host });
+          rpc(host, 'Shelly.Reboot', {}, rpcTimeoutMs, function (err) {
+            if (err) log.error('device reboot failed', { error: err.message });
+          });
+        }
+      }
+      return;
+    }
+    autoRestartTimes.push(now);
+    log.warn('auto-restarting control script', { attempt: autoRestartTimes.length, host });
+    restartScript(function (err) {
+      if (err) log.error('auto-restart failed', { error: err.message });
+    });
   }
 
   function onStatusChange(cb) {
@@ -195,6 +256,11 @@ function createScriptMonitor(options) {
           lastStatus.error_msg = null;
           lastStatus.error_trace = null;
           lastStatus.crashId = null;
+          // Recovery — clear the auto-restart episode so a later crash can
+          // be auto-restarted again from scratch.
+          autoRestartTimes = [];
+          autoRestartExhausted = false;
+          rebootEscalated = false;
           log.info('script running', { host });
           emitStatus();
         }
@@ -207,12 +273,14 @@ function createScriptMonitor(options) {
       // already observed as not-running, the crashId stays the same.
       const justCrashed = wasRunning === true || (wasRunning === null && lastStatus.crashId === null);
       if (!justCrashed) {
+        maybeAutoRestart();
         emitStatus();
         if (callback) callback(null, getStatus());
         return;
       }
 
       captureCrash(result, function () {
+        maybeAutoRestart();
         emitStatus();
         if (callback) callback(null, getStatus());
       });
@@ -233,15 +301,12 @@ function createScriptMonitor(options) {
   }
 
   function triggerRestart(callback) {
-    rpc(host, 'Script.Stop', { id: scriptId }, rpcTimeoutMs, function (stopErr) {
-      // Ignore stop errors — script may already be stopped.
-      rpc(host, 'Script.Start', { id: scriptId }, rpcTimeoutMs, function (startErr, startResult) {
-        if (startErr) { callback(startErr, null); return; }
-        // Kick an immediate re-poll so the WS status flips to running ASAP
-        // rather than waiting for the 30 s cadence.
-        setTimeout(pollOnce, 500);
-        callback(null, { ok: true, stopError: stopErr ? stopErr.message : null, result: startResult });
-      });
+    restartScript(function (err, result) {
+      if (err) { callback(err, null); return; }
+      // Kick an immediate re-poll so the WS status flips to running ASAP
+      // rather than waiting for the 30 s cadence.
+      setTimeout(pollOnce, 500);
+      callback(null, result);
     });
   }
 

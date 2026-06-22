@@ -394,11 +394,18 @@ function clearRateLimit(type) {
   delete lastSentAt[type];
 }
 
-function sendNotification(type, payload) {
+// opts (all optional):
+//   force           — deliver to every subscription regardless of the
+//                     per-category opt-in. For safety-critical alerts the
+//                     user must receive even if they never enabled the
+//                     category (control script down → collector can stagnate).
+//   ignoreRateLimit — bypass the 1-per-hour-per-type throttle.
+function sendNotification(type, payload, opts) {
+  opts = opts || {};
   if (!pushData || !pushData.subscriptions || pushData.subscriptions.length === 0) return;
   if (!webpush) return;
 
-  if (isRateLimited(type)) {
+  if (!opts.ignoreRateLimit && isRateLimited(type)) {
     log.info('notification rate-limited', { type });
     return;
   }
@@ -410,7 +417,7 @@ function sendNotification(type, payload) {
 
   for (let i = 0; i < pushData.subscriptions.length; i++) {
     const sub = pushData.subscriptions[i];
-    if (sub.categories.indexOf(type) < 0) continue;
+    if (!opts.force && sub.categories.indexOf(type) < 0) continue;
 
     const pushSub = {
       endpoint: sub.endpoint,

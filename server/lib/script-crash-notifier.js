@@ -44,15 +44,50 @@ function buildPayload(status) {
   };
 }
 
+// Critical alert when reactive auto-restart has given up: the control
+// loop is stopped and won't come back on its own — a human must act before
+// the collector stagnates. Always delivered (force + ignore rate limit).
+function buildCriticalPayload(status) {
+  const attempts = (status.autoRestart && status.autoRestart.attempts) || 0;
+  return {
+    title: 'Control system DOWN — action needed',
+    body: 'Automatic restart failed after ' + attempts + ' attempt'
+      + (attempts === 1 ? '' : 's')
+      + '. The controller is stopped and the collector can overheat — restart it now.',
+    tag: 'script-crash-critical-' + (status.crashId != null ? status.crashId : 'unknown'),
+    icon: 'assets/notif-script-crash.png',
+    badge: 'assets/badge-72.png',
+    url: '/#status',
+    requireInteraction: true,
+    renotify: true,
+    actions: [
+      { action: 'restart', type: 'button', title: 'Restart script' },
+    ],
+    data: { kind: 'script_crash_critical', crashId: status.crashId || null, url: '/#status' },
+  };
+}
+
 // Returns a function suitable for scriptMonitor.onStatusChange(). The
-// closure tracks the previous `running` value so we only fire on real
-// transitions, not on every poll.
+// closure tracks the previous `running` and `exhausted` values so we only
+// fire on real transitions, not on every poll.
 function createScriptCrashNotifier(push) {
-  let prevRunning = null; // null = no observation yet
+  let prevRunning = null;    // null = no observation yet
+  let prevExhausted = false;
   return function onStatusChange(status) {
     const isRunning = status.running;
     const wasRunning = prevRunning;
     prevRunning = isRunning;
+
+    // Critical escalation — fire once on the false → true edge, independent
+    // of running transitions. Bypasses opt-in AND the rate limit so it can
+    // never be suppressed by an earlier crash notification.
+    const exhausted = !!(status.autoRestart && status.autoRestart.exhausted);
+    const wasExhausted = prevExhausted;
+    prevExhausted = exhausted;
+    if (exhausted && !wasExhausted) {
+      push.sendNotification('script_crash', buildCriticalPayload(status), { force: true, ignoreRateLimit: true });
+      log.error('auto-restart exhausted — sent critical push');
+    }
 
     if (isRunning === true) {
       // Recovery (or first observation that's healthy). Reset the rate-
@@ -70,12 +105,13 @@ function createScriptCrashNotifier(push) {
     // observed not-running, the script-monitor already wrote the crash
     // row on the original transition; the listener fires again on
     // every poll while down (script-monitor.emitStatus()) and we must
-    // not push on each poll.
+    // not push on each poll. Forced: control-script-down is safety-
+    // critical, so deliver regardless of the per-category opt-in.
     const justCrashed = wasRunning === true || wasRunning === null;
     if (!justCrashed) return;
 
-    push.sendNotification('script_crash', buildPayload(status));
+    push.sendNotification('script_crash', buildPayload(status), { force: true });
   };
 }
 
-module.exports = { createScriptCrashNotifier, buildPayload };
+module.exports = { createScriptCrashNotifier, buildPayload, buildCriticalPayload };
