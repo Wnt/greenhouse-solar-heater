@@ -205,7 +205,7 @@ provider "kubernetes" {
 }
 
 provider "helm" {
-  kubernetes {
+  kubernetes = {
     host                   = data.upcloud_kubernetes_cluster.main.host
     client_certificate     = data.upcloud_kubernetes_cluster.main.client_certificate
     client_key             = data.upcloud_kubernetes_cluster.main.client_key
@@ -223,28 +223,27 @@ resource "helm_release" "ingress_nginx" {
   chart      = "ingress-nginx"
   namespace  = "ingress-nginx"
   create_namespace = true
-  version    = "4.12.0"
+  version    = "4.15.1"
 
-  set {
-    name  = "controller.kind"
-    value = "DaemonSet"
-  }
-
-  set {
-    name  = "controller.hostNetwork"
-    value = "true"
-  }
-
-  set {
-    name  = "controller.service.type"
-    value = "ClusterIP"
-  }
-
-  # Use host ports directly (80/443) — no NodePort mapping
-  set {
-    name  = "controller.dnsPolicy"
-    value = "ClusterFirstWithHostNet"
-  }
+  set = [
+    {
+      name  = "controller.kind"
+      value = "DaemonSet"
+    },
+    {
+      name  = "controller.hostNetwork"
+      value = "true"
+    },
+    {
+      name  = "controller.service.type"
+      value = "ClusterIP"
+    },
+    # Use host ports directly (80/443) — no NodePort mapping
+    {
+      name  = "controller.dnsPolicy"
+      value = "ClusterFirstWithHostNet"
+    },
+  ]
 
   depends_on = [upcloud_kubernetes_node_group.default]
 }
@@ -258,12 +257,14 @@ resource "helm_release" "cert_manager" {
   chart      = "cert-manager"
   namespace  = "cert-manager"
   create_namespace = true
-  version    = "v1.17.1"
+  version    = "v1.20.2"
 
-  set {
-    name  = "crds.enabled"
-    value = "true"
-  }
+  set = [
+    {
+      name  = "crds.enabled"
+      value = "true"
+    },
+  ]
 
   depends_on = [upcloud_kubernetes_node_group.default]
 }

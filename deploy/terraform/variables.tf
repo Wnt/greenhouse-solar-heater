@@ -57,7 +57,7 @@ variable "shelly_cloud_api_url" {
 variable "k8s_version" {
   description = "Kubernetes version for the UKS cluster (check UpCloud docs for versions supported by your plan)"
   type        = string
-  default     = "1.34"
+  default     = "1.35"
 }
 
 variable "node_plan" {
