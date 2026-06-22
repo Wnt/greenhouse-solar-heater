@@ -102,7 +102,13 @@ Aedes.createBroker().then((broker) => {
   // Register teardown hooks once the broker is live.
   const shutdown = () => {
     try { mqttServer.close(); } catch (_) { /* noop */ }
-    broker.close().then(() => process.exit(0), () => process.exit(1));
+    // aedes' broker.close() is callback-style and returns undefined —
+    // calling .then() on its return value threw a TypeError that crashed
+    // teardown (exit 1) on every SIGTERM. Pass a callback; the unref'd
+    // timer is a fallback so a stalled close still lets the harness exit.
+    const done = () => process.exit(0);
+    try { broker.close(done); } catch (_) { done(); }
+    setTimeout(done, 1000).unref();
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
