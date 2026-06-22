@@ -22,16 +22,24 @@ const { buildDataset } = require('../../../../scripts/forecast-ml/dataset.js');
 
 const RETRAIN_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
 const INITIAL_DELAY_MS = 3 * 60 * 1000;          // first run 3 min after boot
-// Rolling training window — NOT 'all'. sensor_readings_30s accumulates
-// forever (CLAUDE.md: never pruned), so range 'all' grew the in-memory
-// training set without bound and eventually OOM-killed the app's V8 heap
-// (~250 MB) on the 3-min initial run, crash-looping the pod (nginx 503s,
-// 2026-06-22). '7d' bounds memory to a constant regardless of uptime and
-// re-buckets to 5-minute resolution — exactly STEP_FINE_MS — so the
-// fine-step dynamics the model learns are preserved (coarser windows like
-// '30d' bucket to 30 min and smear the 5-min step). 7 days yields well
-// over MIN_SAMPLES anchors, and the promotion gate guards quality.
-const TRAIN_RANGE = '7d';
+// Training window — NOT 'all'. sensor_readings_30s accumulates forever
+// (CLAUDE.md: never pruned), so range 'all' grew the in-memory training set
+// without bound and OOM-killed the app's V8 heap (~250 MB) on the 3-min
+// initial run, crash-looping the pod (nginx 503s, 2026-06-22).
+//
+// We pull a rolling 30-day window at a FIXED 5-minute resolution via
+// db.getTrainingHistory. Decoupling span from bucket size is what makes
+// this cheap: the dominant memory cost is the raw point rows, which scale
+// as sensors × days × (1440/bucketMinutes) — ~30 d at 5 min is ~20× lighter
+// than the old all-history-at-30s load, yet it keeps the full month of
+// behavioural diversity (a 7-day window under-fit the tank R2 floor and the
+// gate kept rejecting). 5 minutes == STEP_FINE_MS, so near-term fine-step
+// fidelity is preserved (UI ranges like '30d' would coarsen to 30-min
+// buckets and smear it). TRAIN_RANGE is the matching window key for the
+// sparse loaders (events + forecast inputs), which need no re-bucketing.
+const TRAIN_WINDOW_DAYS = 30;
+const TRAIN_BUCKET = '5 minutes';
+const TRAIN_RANGE = '30d';
 const MIN_SAMPLES = 300;     // refuse to train on too little history
 const TANK_R2_FLOOR = 0.55;  // absolute sanity floors
 const GH_R2_FLOOR = 0.30;
@@ -98,6 +106,7 @@ function createMlTrainer(opts) {
   const db = opts.db;
   const log = opts.log;
   const getForecastDataset = opts.getForecastDataset;
+  const getTrainingHistory = opts.getTrainingHistory;
   const modelStore = opts.modelStore;
 
   const status = {
@@ -115,7 +124,7 @@ function createMlTrainer(opts) {
   // Assemble the training payload — the same shape /api/public/history
   // serves, so the shared buildDataset consumes it unchanged.
   function loadTrainingData(callback) {
-    db.getHistory(TRAIN_RANGE, null, function gotPoints(err, points) {
+    getTrainingHistory(TRAIN_WINDOW_DAYS, TRAIN_BUCKET, function gotPoints(err, points) {
       if (err) { callback(err); return; }
       db.getEvents(TRAIN_RANGE, 'mode', function gotMode(e2, events) {
         db.getEvents(TRAIN_RANGE, 'actuator', function gotAct(e3, actuators) {
