@@ -33,6 +33,18 @@ function loadSystemYaml(repoRoot, log) {
   }
 }
 
+// Whether the in-process ML trainer should run. Pure so the incident
+// responder's kill-switch contract is unit-testable: the trainer OOM'd the
+// app pod (2026-06-22), so `DISABLE_ML_TRAINER=true` lets a rollout-restart
+// quarantine it at runtime without a code deploy. Disabled in tests and
+// preview (a preview pod must never overwrite prod's shared S3 model).
+function mlTrainerEnabled(env, isPreviewMode) {
+  if (env.NODE_ENV === 'test') return false;
+  if (isPreviewMode) return false;
+  if (env.DISABLE_ML_TRAINER === 'true') return false;
+  return true;
+}
+
 function start({ pool, db, log, repoRoot, isPreviewMode }) {
   const systemYaml = loadSystemYaml(repoRoot, log);
   const isTestEnv = process.env.NODE_ENV === 'test';
@@ -116,7 +128,7 @@ function start({ pool, db, log, repoRoot, isPreviewMode }) {
     getForecastDataset: dataset.getDataset,
     getTrainingHistory: createTrainingDataLoader(db),
   });
-  if (!isTestEnv && !isPreviewMode) trainer.start();
+  if (mlTrainerEnabled(process.env, isPreviewMode)) trainer.start();
 
   // Alternative ML-driven forecast engine — /api/forecast?engine=ml.
   const mlHandler = createMlForecastHandler({
@@ -145,4 +157,4 @@ function start({ pool, db, log, repoRoot, isPreviewMode }) {
   };
 }
 
-module.exports = { start };
+module.exports = { start, mlTrainerEnabled };
