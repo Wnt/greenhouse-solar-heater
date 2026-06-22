@@ -1,48 +1,66 @@
 'use strict';
 
-// Regression guard: the in-process ML trainer must pull a BOUNDED
-// history window, never the full 'all' range.
+// Regression guard: the in-process ML trainer must pull a BOUNDED but
+// SUFFICIENT history window at a FINE resolution — never the full 'all'
+// range, and not so short it starves the model.
 //
-// `sensor_readings_30s` accumulates forever (see CLAUDE.md — it is never
-// pruned), so training on range 'all' grows the in-memory dataset without
-// bound. On 2026-06-22 this finally exceeded the app container's V8 heap
-// (~250 MB): the trainer's initial run (3 min after boot) OOM-killed the
-// process, which CrashLoopBackOff'd and surfaced as nginx 503s. The fix
-// bounds the training window so memory stays constant regardless of how
-// long the system has been collecting data.
+// Background: training on range 'all' loaded every row of
+// sensor_readings_30s (a table that grows forever, never pruned) and
+// OOM-killed the app's V8 heap (~250 MB) on the 3-min initial run,
+// crash-looping the pod (nginx 503s, 2026-06-22). Bounding to a 7-day
+// window fixed the memory but starved the model (gate rejected: tank R2
+// below floor). The trainer now uses db.getTrainingHistory to pull ~1
+// month at a fixed 5-minute resolution (= STEP_FINE_MS) — span decoupled
+// from bucket size, so memory stays bounded while the model gets enough
+// behavioural diversity to promote.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
 
 const { createMlTrainer } = require('../server/lib/forecast/ml/ml-trainer');
 
-test('trainer requests a bounded history window, not the full "all" range', async () => {
-  const ranges = [];
+test('trainer pulls >= 1 month of history at a fine, fixed resolution — never "all"', async () => {
+  let trainCall = null;
+  const eventRanges = [];
+  let datasetRange = null;
   const db = {
-    getHistory(range, _sensor, cb) { ranges.push(range); cb(null, []); },
-    getEvents(range, _type, cb) { ranges.push(range); cb(null, []); },
+    // getHistory must NOT be the trainer's path (it couples span to bucket
+    // size). If it is called, fail loudly.
+    getHistory(range, _sensor, cb) { trainCall = { illegalRange: range }; cb(null, []); },
+    getEvents(range, _type, cb) { eventRanges.push(range); cb(null, []); },
   };
+  const getTrainingHistory = (days, bucket, cb) => { trainCall = { days, bucket }; cb(null, []); };
   const getForecastDataset = (opts, cb) => {
-    ranges.push(opts && opts.range);
+    datasetRange = opts && opts.range;
     cb(null, { weather: [], generations: [] });
   };
   const trainer = createMlTrainer({
     db,
     log: { info() {}, warn() {}, error() {} },
     getForecastDataset,
+    getTrainingHistory,
     modelStore: { get() { return null; }, set(_m, cb) { cb && cb(); } },
   });
 
   await new Promise((resolve) => trainer.retrainOnce(resolve));
 
-  assert.ok(ranges.length > 0, 'trainer should query history at least once');
-  for (const r of ranges) {
-    assert.notStrictEqual(r, 'all',
-      'trainer must not load the unbounded "all" range — it grows the heap without limit');
+  assert.ok(trainCall && trainCall.days != null,
+    'trainer must load history via getTrainingHistory, not getHistory');
+  assert.ok(trainCall.days >= 28,
+    'training window must be at least ~1 month; got ' + trainCall.days + ' days');
+  assert.ok(trainCall.days <= 366,
+    'training window must stay bounded (not effectively "all"); got ' + trainCall.days);
+  assert.match(String(trainCall.bucket), /minute/,
+    'resolution must be fine (minutes, ~STEP_FINE_MS), not coarse; got ' + trainCall.bucket);
+
+  // Sparse loaders (events + forecast inputs) must share a bounded window,
+  // never 'all'.
+  assert.ok(eventRanges.length > 0, 'should load state events');
+  for (const r of eventRanges) {
+    assert.notStrictEqual(r, 'all', 'event loader must use a bounded range');
   }
-  // All loaders must share the same bounded window so events/weather align
-  // with the sensor history.
-  const unique = Array.from(new Set(ranges));
-  assert.strictEqual(unique.length, 1,
-    'all loaders should use one consistent bounded range; got ' + JSON.stringify(unique));
+  assert.notStrictEqual(datasetRange, 'all', 'forecast-dataset loader must use a bounded range');
+  const allRanges = Array.from(new Set([...eventRanges, datasetRange]));
+  assert.strictEqual(allRanges.length, 1,
+    'event + forecast loaders should share one bounded window; got ' + JSON.stringify(allRanges));
 });

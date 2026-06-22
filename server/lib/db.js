@@ -584,6 +584,7 @@ module.exports = {
   getScriptCrash,
   resolveScriptCrash,
   getHistory,
+  pivotReadings,
   getEvents,
   getEventsPaginated,
   close,

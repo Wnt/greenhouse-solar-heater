@@ -20,6 +20,7 @@ const { create: createForecastDataset } = require('./forecast-dataset');
 const { createMlForecastHandler } = require('./ml/ml-forecast-handler');
 const { createModelStore } = require('./ml/model-store');
 const { createMlTrainer } = require('./ml/ml-trainer');
+const { createTrainingDataLoader } = require('./ml/training-data');
 const fmiClient = require('./fmi-client');
 const spotPriceClient = require('./spot-price-client');
 
@@ -113,6 +114,7 @@ function start({ pool, db, log, repoRoot, isPreviewMode }) {
   const trainer = createMlTrainer({
     db, log, modelStore,
     getForecastDataset: dataset.getDataset,
+    getTrainingHistory: createTrainingDataLoader(db),
   });
   if (!isTestEnv && !isPreviewMode) trainer.start();
 
