@@ -504,9 +504,12 @@ function startMqttBridge() {
   // Script monitor runs alongside the MQTT bridge so its snapshot buffer
   // is fed by the same stream. Status changes broadcast "script-status"
   // (drives the in-app banner) and feed the push notifier.
-  // PREVIEW_MODE: pass db=null + skip crashNotifier so previews don't
-  // write crash rows or double-fire push notifications.
-  scriptMonitor = createScriptMonitor({ db: PREVIEW_MODE ? null : db });
+  // PREVIEW_MODE: db=null + skip crashNotifier. Auto-restart is prod-only
+  // (previews/tests must not actuate the real device).
+  scriptMonitor = createScriptMonitor({
+    db: PREVIEW_MODE ? null : db,
+    autoRestart: !PREVIEW_MODE && process.env.NODE_ENV !== 'test',
+  });
   const crashNotifier = PREVIEW_MODE ? null : createScriptCrashNotifier(push);
   scriptMonitor.onStatusChange(function (s) {
     broadcastToWebSockets({ type: 'script-status', data: s });
