@@ -121,4 +121,38 @@ describe('script-crash-notifier', () => {
     assert.ok(action, 'expected a restart action');
     assert.strictEqual(action.type, 'button');
   });
+
+  it('calls routineTrigger.fire with shelly_script_crash on crash transition', () => {
+    const push = makeFakePush();
+    const fired = [];
+    const fakeRoutineTrigger = {
+      fire(kind, text) { fired.push({ kind, text }); return true; },
+    };
+    const listener = createScriptCrashNotifier(push, fakeRoutineTrigger);
+
+    listener({ running: true });
+    assert.strictEqual(fired.length, 0, 'no fire on healthy state');
+
+    listener({ running: false, error_msg: 'script OOM', crashId: 42 });
+    assert.strictEqual(fired.length, 1, 'must fire once on crash transition');
+    assert.strictEqual(fired[0].kind, 'shelly_script_crash');
+    assert.match(fired[0].text, /Shelly script crash detected/);
+    assert.match(fired[0].text, /script OOM/);
+  });
+
+  it('does not call routineTrigger.fire on repeated polls while down', () => {
+    const push = makeFakePush();
+    const fired = [];
+    const fakeRoutineTrigger = {
+      fire(kind, text) { fired.push({ kind, text }); return true; },
+    };
+    const listener = createScriptCrashNotifier(push, fakeRoutineTrigger);
+
+    listener({ running: true });
+    listener({ running: false, error_msg: 'boom', crashId: 1 });
+    listener({ running: false, error_msg: 'boom', crashId: 1 }); // poll while down
+    listener({ running: false, error_msg: 'boom', crashId: 1 }); // poll while down
+
+    assert.strictEqual(fired.length, 1, 'routine must fire only once per crash event');
+  });
 });

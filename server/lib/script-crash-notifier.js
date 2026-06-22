@@ -14,6 +14,7 @@
 'use strict';
 
 const createLogger = require('./logger');
+const routineTrigger = require('./routine-trigger');
 const log = createLogger('script-crash-notifier');
 
 function truncate(str, max) {
@@ -70,7 +71,13 @@ function buildCriticalPayload(status) {
 // Returns a function suitable for scriptMonitor.onStatusChange(). The
 // closure tracks the previous `running` and `exhausted` values so we only
 // fire on real transitions, not on every poll.
-function createScriptCrashNotifier(push) {
+//
+// @param {object} push              - push notification module (required)
+// @param {object} [trigger]         - routine trigger (optional, defaults to
+//                                     require('./routine-trigger')); injectable
+//                                     for testing
+function createScriptCrashNotifier(push, trigger) {
+  const rt = trigger !== undefined ? trigger : routineTrigger;
   let prevRunning = null;    // null = no observation yet
   let prevExhausted = false;
   return function onStatusChange(status) {
@@ -111,6 +118,11 @@ function createScriptCrashNotifier(push) {
     if (!justCrashed) return;
 
     push.sendNotification('script_crash', buildPayload(status), { force: true });
+
+    // Also trigger the cloud incident-response routine so the responder
+    // can triage and (if idle) auto-reboot the control script.
+    const description = truncate(status.error_msg || 'Unknown error', 200);
+    rt.fire('shelly_script_crash', 'Shelly script crash detected: ' + description);
   };
 }
 
