@@ -40,7 +40,7 @@ function buildForecast(geT) {
       greenhouseTrajectory: gh,
       modeForecast,
       hoursUntilBackupNeeded: null,
-      electricKwh: 0,
+      electricKwh: 3.25,
       electricCostEur: 0,
       modelConfidence: 'medium',
       notes: [],
@@ -261,6 +261,7 @@ test.describe('Tuning forecast preview', () => {
     // Both badges are populated with a "min…max" range in °.
     await expect(page.locator('#tfl-tank-range')).toHaveText(/\d+\.\d+°…\d+\.\d+°/);
     await expect(page.locator('#tfl-gh-range')).toHaveText(/\d+\.\d+°…\d+\.\d+°/);
+    await expect(page.locator('#tfl-emergency-kwh')).toHaveText(/\d+\.\d+ kWh\/48h/);
   });
 
   test('hover shows the crosshair inspector with projected values', async ({ page }) => {
