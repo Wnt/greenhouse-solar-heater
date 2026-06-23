@@ -118,7 +118,9 @@ describe('routine-trigger', () => {
       if (savedPreview === undefined) delete process.env.PREVIEW_MODE;
       else process.env.PREVIEW_MODE = savedPreview;
 
-      const result = mod.fire('shelly_crash', 'Script crashed!');
+      // No durable store → fail-open path (still fires); the daily cap is
+      // covered by its own tests below.
+      const result = mod.fire('shelly_crash', 'Script crashed!', { db: { getPool: () => null } });
       assert.strictEqual(result, true, 'fire() must return true when configured');
 
       // Give the async HTTP request time to land
@@ -183,9 +185,10 @@ describe('routine-trigger', () => {
       if (savedPreview === undefined) delete process.env.PREVIEW_MODE;
       else process.env.PREVIEW_MODE = savedPreview;
 
-      const first = mod.fire('some_kind', 'first fire');
-      const second = mod.fire('some_kind', 'second fire — should be suppressed');
-      const different = mod.fire('other_kind', 'different kind — must not be rate-limited');
+      const noDb = { db: { getPool: () => null } };
+      const first = mod.fire('some_kind', 'first fire', noDb);
+      const second = mod.fire('some_kind', 'second fire — should be suppressed', noDb);
+      const different = mod.fire('other_kind', 'different kind — must not be rate-limited', noDb);
 
       assert.strictEqual(first, true, 'first call must return true');
       assert.strictEqual(second, false, 'second call within interval must return false');
@@ -199,6 +202,66 @@ describe('routine-trigger', () => {
             2,
             'only 2 HTTP requests should reach the server'
           );
+          done();
+        });
+      }, 300);
+    });
+  });
+
+  it('suppresses the fire when the durable daily cap is reached (no HTTP call)', (t, done) => {
+    const requests = [];
+    const server = http.createServer((req, res) => { requests.push(req.url); res.writeHead(200); res.end('ok'); });
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      const mod = freshModule({
+        CLAUDE_ROUTINE_FIRE_URL: `http://127.0.0.1:${port}/fire`,
+        CLAUDE_ROUTINE_FIRE_TOKEN: 'tok',
+        PREVIEW_MODE: '',
+      });
+      // DB reports the default cap (10) already reached in the last 24h.
+      const queries = [];
+      const db = { getPool: () => ({ query: (sql, params, cb) => {
+        queries.push(sql);
+        if (/COUNT/i.test(sql)) cb(null, { rows: [{ n: 10 }] });
+        else cb(null, { rows: [] });
+      } }) };
+
+      mod.fire('cap_kind', 'over budget', { db });
+
+      setTimeout(() => {
+        server.close(() => {
+          assert.strictEqual(requests.length, 0, 'no HTTP fire when the daily cap is reached');
+          assert.ok(queries.some(s => /COUNT/i.test(s)), 'budget count query must run');
+          assert.ok(!queries.some(s => /INSERT/i.test(s)), 'must not record a fire when suppressed');
+          done();
+        });
+      }, 300);
+    });
+  });
+
+  it('fires and records the fire when under the daily cap', (t, done) => {
+    const requests = [];
+    const server = http.createServer((req, res) => { requests.push(req.url); res.writeHead(200); res.end('ok'); });
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      const mod = freshModule({
+        CLAUDE_ROUTINE_FIRE_URL: `http://127.0.0.1:${port}/fire`,
+        CLAUDE_ROUTINE_FIRE_TOKEN: 'tok',
+        PREVIEW_MODE: '',
+      });
+      const queries = [];
+      const db = { getPool: () => ({ query: (sql, params, cb) => {
+        queries.push(sql);
+        if (/COUNT/i.test(sql)) cb(null, { rows: [{ n: 0 }] });
+        else cb(null, { rows: [] });
+      } }) };
+
+      mod.fire('under_kind', 'under budget', { db });
+
+      setTimeout(() => {
+        server.close(() => {
+          assert.strictEqual(requests.length, 1, 'one HTTP fire when under the cap');
+          assert.ok(queries.some(s => /INSERT INTO routine_fires/i.test(s)), 'must record the fire');
           done();
         });
       }, 300);
