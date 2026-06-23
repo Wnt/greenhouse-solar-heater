@@ -1,6 +1,20 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const anomalyManager = require('../server/lib/anomaly-manager.js');
+const realPush = require('../server/lib/push.js');
+
+describe('anomaly-manager push interface contract', () => {
+  // Regression guard: anomaly-manager dispatches watchdog pushes through the
+  // push module. It must call a method the REAL push.js actually exports, or
+  // the `typeof ... === 'function'` guards in anomaly-manager silently skip
+  // the push (the original bug: it called the non-existent `sendByCategory`).
+  it('the real push module exposes the method anomaly-manager calls', () => {
+    assert.strictEqual(typeof realPush.sendNotification, 'function',
+      'push.js must export sendNotification(type, payload)');
+    assert.strictEqual(typeof realPush.sendByCategory, 'undefined',
+      'push.js does not export sendByCategory — anomaly-manager must not call it');
+  });
+});
 
 describe('anomaly-manager formatReason', () => {
   it('formats scs reason', () => {
@@ -48,8 +62,13 @@ function makeMocks() {
     },
     list: (_limit) => Promise.resolve([])
   };
+  // Mirror the REAL push.js interface (sendNotification). Using the wrong
+  // method name here is what hid the production no-op: the mock invented a
+  // `sendByCategory` method push.js never exported, so the suite stayed green
+  // while every watchdog push silently dropped. See the interface-contract
+  // guard test below.
   const push = {
-    sendByCategory: (category, payload) => {
+    sendNotification: (category, payload) => {
       calls.push.push({ category, payload });
       return Promise.resolve();
     }
