@@ -117,6 +117,29 @@ Include the cloud session URL (from the `CLAUDE_CODE_REMOTE_SESSION_ID` environm
 
 ## Guardrails
 
-- **Cooldown** — do not repeat the same remediation within **30 minutes**. If the same incident recurs inside that window, notify about the recurrence but take no automated action.
-- **Action budget** — at most **3 automated actions per 60-minute window**. After that, notify and stop. Track action timestamps in your scratchpad.
-- **Kill switch** — before acting, check for a pause signal: `RESPONDER_PAUSED=1` in the environment, or a `~/responder-paused` file. If set, take no action, notify that you fired but were paused, and stop. (Pause: `touch ~/responder-paused`; resume: `rm ~/responder-paused`.)
+Each run is a brand-new session — the working directory is wiped and the repo re-cloned every time, and the VM is reclaimed afterward — so you **cannot remember anything in a local scratchpad or file between runs**. Cooldown, budget, and the pause flag must live in durable cluster state. Use a ConfigMap `responder-state` in `default` (you have cluster-admin).
+
+**At the start of every run, before any action**, read the state:
+
+```bash
+kubectl get configmap responder-state -n default -o jsonpath='{.data.actions}' 2>/dev/null || echo '[]'
+kubectl get configmap responder-state -n default -o jsonpath='{.data.paused}'  2>/dev/null
+```
+
+`actions` is a JSON array of `{ "ts": <unix-seconds>, "kind": "<action>" }`. Enforce, in order:
+
+- **Kill switch** — if `paused` is `true` (or `RESPONDER_PAUSED=1` is set in the environment), take no action, send a notification that you fired but are paused, and stop. Pause from anywhere with `kubectl patch configmap responder-state -n default --type merge -p '{"data":{"paused":"true"}}'`; resume by setting it to `false`.
+- **Cooldown** — if `actions` already contains the same `kind` with a `ts` within the last **30 minutes**, do not repeat it; notify about the recurrence and stop.
+- **Action budget** — if `actions` contains **3 or more** entries with a `ts` in the last **60 minutes**, take no action; notify and stop.
+
+**After taking an action**, append `{ "ts": <now>, "kind": "<action>" }` to `actions` (drop entries older than ~2 h to keep it small) and write it back:
+
+```bash
+kubectl create configmap responder-state -n default \
+  --from-literal=actions='<updated JSON array>' --from-literal=paused='<unchanged value>' \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+This survives across runs because the ConfigMap lives in the cluster, not in the per-run session. (Concurrent runs for the same incident are unlikely given the upstream limits below; treat the log as best-effort.)
+
+Two independent upstream limits complement this and need no action from you here: the app's `routine-trigger.js` only fires a given incident `kind` once per 15 minutes (so app-detected incidents can't invoke the routine more often than that — note this resets if the app pod restarts and does not cover the external health monitor), and the platform enforces a daily routine-run cap plus hourly caps on GitHub triggers.
