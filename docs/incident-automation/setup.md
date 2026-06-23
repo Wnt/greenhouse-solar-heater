@@ -172,56 +172,47 @@ kubectl get secret app-secrets -n default -o jsonpath='{.data}' | \
 
 ---
 
-## Step 4 — Set up an external dead-man's-switch health monitor
+## Step 4 — Set up the dead-man's-switch: in-cluster watcher + Better Stack email awareness
 
-Even when the app is down (crash-loop or OOM), the health-check monitor can fire the routine directly. Use a free external uptime monitor.
+Two complementary mechanisms cover health monitoring. They handle different failure modes and are set up independently.
 
-### Option A: Healthchecks.io (recommended, free tier)
+### Part A — In-cluster "watcher" Deployment (routine-firing dead-man's-switch)
 
-1. Create a free account at [healthchecks.io](https://healthchecks.io)
-2. Create a new check:
-   - **Name**: `greenhouse-health`
-   - **Period**: 1 minute
-   - **Grace time**: 2 minutes
-3. Under **Integrations**, add a **Webhook** that fires on DOWN:
-   - **URL**: `<CLAUDE_ROUTINE_FIRE_URL>` (from Step 2)
-   - **Method**: POST
-   - **Headers**: `Authorization: Bearer <CLAUDE_ROUTINE_FIRE_TOKEN>`, `Content-Type: application/json`, `anthropic-version: 2023-06-01`, `anthropic-beta: experimental-cc-routine-2026-04-01`
-   - **Body**: `{"text": "Health check failed: greenhouse.madekivi.fi/health is DOWN"}`
+The `watcher` Deployment (`deploy/k8s/watcher-deployment.yaml`) runs `server/watcher.js` in a **separate pod** using the same app image. Because it is a distinct Deployment, it keeps running if the `app` pod crash-loops or OOMs — the failure case it is designed to catch.
 
-4. Set Healthchecks.io to monitor `https://greenhouse.madekivi.fi/health` by pinging the check URL every minute from a cron job or using their built-in URL monitoring:
+**What it does:**
+- Polls `https://greenhouse.madekivi.fi/health` every 30 s via an outbound HTTPS GET.
+- After 5 minutes of continuous failure (configurable via `WATCH_DOWN_THRESHOLD_MIN`) it fires the routine **once per outage** via `server/lib/routine-trigger`, reusing the `CLAUDE_ROUTINE_FIRE_URL` / `CLAUDE_ROUTINE_FIRE_TOKEN` already in `app-secrets` and the shared daily-budget table.
+- Any 2xx response resets the down-streak and the fired flag, so a later outage fires again.
+- Exposes `GET /healthz` (port 8080) for Kubernetes liveness probes.
 
-   ```bash
-   # Add to system crontab or a monitoring service:
-   * * * * * curl -fsS --retry 3 \
-     https://hc-ping.com/<your-check-uuid> \
-     -w "%{http_code}" \
-     --output /dev/null \
-     || true
-   ```
+**What it does NOT cover:** whole-node death. If the UpCloud worker node itself goes down, the watcher pod dies too and cannot fire the routine. Better Stack (Part B) covers awareness of that case.
 
-   Alternatively, use Healthchecks.io's **URL monitoring** feature (requires a paid plan) to monitor `https://greenhouse.madekivi.fi/health` directly.
+**Deployment:** the watcher is wired into kustomize (`deploy/k8s/kustomization.yaml`) and CD (`deploy.yml`) so it is deployed automatically on every push to main. No manual steps required beyond having `watcher-deployment.yaml` applied to the cluster (happens on next CD run).
 
-### Option B: Better Stack (BetterUptime, free tier)
+**Env vars** (all already in `app-secrets` or `app-config` from earlier steps — no new secrets needed):
+- `CLAUDE_ROUTINE_FIRE_URL`, `CLAUDE_ROUTINE_FIRE_TOKEN` — from `app-secrets` (Step 3)
+- `DATABASE_URL` — from `app-secrets` (needed by routine-trigger's daily-budget check)
+- `WATCH_URL` — defaults to `https://greenhouse.madekivi.fi/health`; override in `app-config` if needed
+- `WATCH_INTERVAL_MS`, `WATCH_DOWN_THRESHOLD_MIN`, `WATCH_TIMEOUT_MS` — defaults are 30000 / 5 / 10000; tunable via `app-config`
+
+### Part B — Better Stack monitor (email awareness, especially for whole-node death)
+
+Better Stack's **Free plan supports email alerts only** — outgoing webhooks are a paid feature. Set it up purely for awareness; it will not fire the routine directly.
 
 1. Create a free account at [betterstack.com](https://betterstack.com)
 2. Add a new **Monitor**:
    - **URL**: `https://greenhouse.madekivi.fi/health`
    - **Check frequency**: 1 minute
    - **Expected HTTP status**: 200
-3. Under **Escalation policies**, add an **HTTP webhook** on incident:
-   - **URL**: `<CLAUDE_ROUTINE_FIRE_URL>`
-   - **Method**: POST
-   - **Headers**: same as Healthchecks.io above
-   - **Body**: `{"text": "Better Stack: greenhouse.madekivi.fi/health is DOWN — trigger incident response"}`
+   - **Confirmation period**: 5 minutes — this means Better Stack emails you only after 5+ consecutive minutes of failure, filtering out transient blips and matching the watcher's threshold.
+3. Under **Notifications**, add your email address. Leave outgoing webhooks unconfigured (they require a paid plan).
 
-### Keep each outage to ~one fire
+This gives you an email when the endpoint has been down for ≥5 min — including the whole-node-death scenario where the watcher cannot act. The in-cluster watcher handles the auto-remediable case (app crash-loop / OOM while the node is healthy); Better Stack's email covers the rest.
 
-Routine runs are a capped daily resource (see your allowance at [claude.ai/code/routines](https://claude.ai/code/routines)) and every `/fire` spends one. Configure the monitor to fire **once per outage, not once per failed check**:
+### Keep each outage to ~one routine fire
 
-- **Confirmation / grace** — require the check to fail for ~2–3 minutes before it declares an incident (Healthchecks.io **Grace time**; Better Stack **confirmation period** / consecutive failed checks). This ignores transient blips.
-- **One webhook per incident** — both tools fire the webhook on the DOWN transition, not on every probe. Leave re-notification/escalation **off**, or set a long repeat (≥1 h), so a multi-hour outage fires the routine ~once rather than dozens of times.
-- The monitor still alerts you natively (its own app/email), so a suppressed re-fire never leaves you blind — the `/fire` is only the auto-remediation attempt.
+Routine runs are a capped daily resource (see your allowance at [claude.ai/code/routines](https://claude.ai/code/routines)) and every `/fire` spends one. The watcher fires **once per outage** by design (the fired flag is only reset on UP), and the shared `routine_fires` daily-budget table enforces the cap cluster-wide. No extra configuration needed.
 
 ---
 
@@ -251,7 +242,12 @@ After completing all steps:
 - [ ] `curl -s https://greenhouse.madekivi.fi/health` returns `{"status":"ok"}`
 - [ ] A test POST to the routine fire URL (with correct headers and body `{"text":"test"}`) triggers the routine and it responds
 - [ ] The Kubernetes secret includes `CLAUDE_ROUTINE_FIRE_URL` and `CLAUDE_ROUTINE_FIRE_TOKEN`
-- [ ] The uptime monitor fires a DOWN webhook when the health endpoint is unreachable (test by temporarily blocking the health endpoint in a preview deploy, or by manually triggering the webhook from the monitor's dashboard)
-- [ ] `PREVIEW_MODE` pods never fire the routine (gated in `server/lib/routine-trigger.js`)
-- [ ] The uptime monitor is set to fire **once per outage** (confirmation/grace + no aggressive re-notify), not once per failed check
-- [ ] `ROUTINE_FIRE_DAILY_CAP` is set to ~half your daily routine-run allowance, leaving headroom for the monitor and manual runs
+- [ ] `kubectl get deployment watcher -n default` shows the watcher Deployment as available (1/1 Ready)
+- [ ] `kubectl get pods -n default -l app=watcher` shows the watcher pod Running
+- [ ] `kubectl exec deployment/watcher -- curl -s http://localhost:8080/healthz` returns HTTP 200
+- [ ] Killing the `app` pod (e.g. `kubectl delete pod -l app=greenhouse`) and leaving it crash-looping for >5 min causes the watcher to fire the routine (check `kubectl logs deployment/watcher` for "fired routine" log line and verify the routine ran)
+- [ ] Any UP result after a down-streak resets the watcher state so a subsequent outage fires again (visible in watcher logs)
+- [ ] `PREVIEW_MODE` pods never fire the routine (gated in `server/lib/routine-trigger.js`); the watcher Deployment does not set `PREVIEW_MODE`
+- [ ] Better Stack monitor is configured with a **5-minute Confirmation period** so it emails only after a real outage (not transient blips)
+- [ ] Better Stack sends an email alert for whole-node death scenarios (watcher cannot cover this case)
+- [ ] `ROUTINE_FIRE_DAILY_CAP` is set to ~half your daily routine-run allowance, leaving headroom for the watcher and manual runs
