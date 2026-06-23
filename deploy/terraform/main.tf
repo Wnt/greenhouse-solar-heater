@@ -169,12 +169,12 @@ resource "upcloud_network" "k8s" {
 }
 
 resource "upcloud_kubernetes_cluster" "main" {
-  name                 = "${replace(var.domain, ".", "-")}-k8s"
-  network              = upcloud_network.k8s.id
-  zone                 = var.upcloud_zone
-  plan                 = "dev-md"
-  version              = var.k8s_version
-  private_node_groups  = false
+  name                    = "${replace(var.domain, ".", "-")}-k8s"
+  network                 = upcloud_network.k8s.id
+  zone                    = var.upcloud_zone
+  plan                    = "dev-md"
+  version                 = var.k8s_version
+  private_node_groups     = false
   control_plane_ip_filter = var.control_plane_ip_filter
 }
 
@@ -218,12 +218,12 @@ provider "helm" {
 # on the worker node's public IP. No managed load balancer needed.
 
 resource "helm_release" "ingress_nginx" {
-  name       = "ingress-nginx"
-  repository = "https://kubernetes.github.io/ingress-nginx"
-  chart      = "ingress-nginx"
-  namespace  = "ingress-nginx"
+  name             = "ingress-nginx"
+  repository       = "https://kubernetes.github.io/ingress-nginx"
+  chart            = "ingress-nginx"
+  namespace        = "ingress-nginx"
   create_namespace = true
-  version    = "4.15.1"
+  version          = "4.15.1"
 
   set = [
     {
@@ -252,12 +252,12 @@ resource "helm_release" "ingress_nginx" {
 # Manages TLS certificates via Let's Encrypt HTTP-01 challenge.
 
 resource "helm_release" "cert_manager" {
-  name       = "cert-manager"
-  repository = "https://charts.jetstack.io"
-  chart      = "cert-manager"
-  namespace  = "cert-manager"
+  name             = "cert-manager"
+  repository       = "https://charts.jetstack.io"
+  chart            = "cert-manager"
+  namespace        = "cert-manager"
   create_namespace = true
-  version    = "v1.20.2"
+  version          = "v1.20.2"
 
   set = [
     {
@@ -282,16 +282,18 @@ resource "kubernetes_secret" "app_secrets" {
   }
 
   data = {
-    DATABASE_URL         = upcloud_managed_database_postgresql.timeseries.service_uri
-    SESSION_SECRET       = var.session_secret
-    S3_ENDPOINT          = "https://${[for e in upcloud_managed_object_storage.credentials.endpoint : e.domain_name if e.type == "public"][0]}"
-    S3_BUCKET            = upcloud_managed_object_storage_bucket.credentials.name
-    S3_ACCESS_KEY_ID     = upcloud_managed_object_storage_user_access_key.app.access_key_id
-    S3_SECRET_ACCESS_KEY = upcloud_managed_object_storage_user_access_key.app.secret_access_key
-    S3_REGION            = var.objsto_region
-    NEW_RELIC_LICENSE_KEY = var.new_relic_license_key
+    DATABASE_URL               = upcloud_managed_database_postgresql.timeseries.service_uri
+    SESSION_SECRET             = var.session_secret
+    S3_ENDPOINT                = "https://${[for e in upcloud_managed_object_storage.credentials.endpoint : e.domain_name if e.type == "public"][0]}"
+    S3_BUCKET                  = upcloud_managed_object_storage_bucket.credentials.name
+    S3_ACCESS_KEY_ID           = upcloud_managed_object_storage_user_access_key.app.access_key_id
+    S3_SECRET_ACCESS_KEY       = upcloud_managed_object_storage_user_access_key.app.secret_access_key
+    S3_REGION                  = var.objsto_region
+    NEW_RELIC_LICENSE_KEY      = var.new_relic_license_key
     SHELLY_CLOUD_REFRESH_TOKEN = var.shelly_cloud_refresh_token
     SHELLY_CLOUD_API_URL       = var.shelly_cloud_api_url
+    CLAUDE_ROUTINE_FIRE_URL    = var.claude_routine_fire_url
+    CLAUDE_ROUTINE_FIRE_TOKEN  = var.claude_routine_fire_token
   }
 
   depends_on = [upcloud_kubernetes_node_group.default]
