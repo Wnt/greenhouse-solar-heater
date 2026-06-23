@@ -52,6 +52,20 @@ variable "shelly_cloud_api_url" {
   default     = "https://shelly-249-eu.shelly.cloud"
 }
 
+variable "claude_routine_fire_url" {
+  description = "Claude incident-response routine /fire endpoint (api.anthropic.com/v1/claude_code/routines/<id>/fire). Consumed by server/lib/routine-trigger.js. Leave empty to disable cluster-side routine firing."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "claude_routine_fire_token" {
+  description = "Bearer token (sk-ant-oat...) for the Claude incident-response routine /fire endpoint. Leave empty to disable cluster-side routine firing."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 # ── Kubernetes variables ──
 
 variable "k8s_version" {
