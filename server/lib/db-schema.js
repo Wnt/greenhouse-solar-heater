@@ -58,6 +58,19 @@ const SCHEMA_SQL = [
 
   "CREATE INDEX IF NOT EXISTS script_crashes_ts ON script_crashes (ts DESC)",
 
+  // Routine-fire log. Each row = one POST to the Claude incident-response
+  // routine's /fire endpoint, i.e. one routine run — a daily-capped
+  // subscription resource. routine-trigger.js reads the rolling-24h count
+  // to enforce a DURABLE daily budget that survives pod restarts; an
+  // in-process counter would reset on exactly the crash-loops that fire.
+  "CREATE TABLE IF NOT EXISTS routine_fires (\n" +
+  "  id   BIGSERIAL PRIMARY KEY,\n" +
+  "  ts   TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n" +
+  "  kind TEXT\n" +
+  ")",
+
+  "CREATE INDEX IF NOT EXISTS routine_fires_ts ON routine_fires (ts DESC)",
+
   // Config-mutation events. Captures every wb (mode-ban) and mo (manual-
   // override) change so the System Logs view can render an audit trail
   // alongside mode transitions. Sources:

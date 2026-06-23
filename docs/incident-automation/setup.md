@@ -215,6 +215,32 @@ Even when the app is down (crash-loop or OOM), the health-check monitor can fire
    - **Headers**: same as Healthchecks.io above
    - **Body**: `{"text": "Better Stack: greenhouse.madekivi.fi/health is DOWN — trigger incident response"}`
 
+### Keep each outage to ~one fire
+
+Routine runs are a capped daily resource (see your allowance at [claude.ai/code/routines](https://claude.ai/code/routines)) and every `/fire` spends one. Configure the monitor to fire **once per outage, not once per failed check**:
+
+- **Confirmation / grace** — require the check to fail for ~2–3 minutes before it declares an incident (Healthchecks.io **Grace time**; Better Stack **confirmation period** / consecutive failed checks). This ignores transient blips.
+- **One webhook per incident** — both tools fire the webhook on the DOWN transition, not on every probe. Leave re-notification/escalation **off**, or set a long repeat (≥1 h), so a multi-hour outage fires the routine ~once rather than dozens of times.
+- The monitor still alerts you natively (its own app/email), so a suppressed re-fire never leaves you blind — the `/fire` is only the auto-remediation attempt.
+
+---
+
+## Step 5 — Budget the cluster-side fires
+
+The app fires the routine for control-system anomalies via `server/lib/routine-trigger.js`, which enforces its own budget so a recurring anomaly can't drain your daily allowance:
+
+- **`ROUTINE_FIRE_DAILY_CAP`** (default `10`) — hard limit on `/fire` calls per rolling 24 h, counted in a `routine_fires` DB table. It is **durable across pod restarts** (an in-process counter would reset on exactly the crash-loops that fire). Over the cap, the fire is suppressed and only the PWA push is sent — push is free.
+- **`ROUTINE_FIRE_COOLDOWN_MIN`** (default `15`) — per-kind cooldown; the same incident kind fires at most once per window.
+
+Set these in `app-config` (they aren't secrets). Size the daily cap to roughly **half** your subscription's daily routine-run allowance, leaving headroom for the dead-man's-switch monitor and your own manual/test runs:
+
+```
+ROUTINE_FIRE_DAILY_CAP=10
+ROUTINE_FIRE_COOLDOWN_MIN=15
+```
+
+The two sources fire for mutually-exclusive incident types — Better Stack only when the server is **down**, the cluster only when the server is **up** with a control anomaly — so they rarely both fire for one incident and their budgets are effectively independent. Worst-case daily fires ≈ (distinct outages) + `ROUTINE_FIRE_DAILY_CAP`; size both to stay under your allowance.
+
 ---
 
 ## Verification checklist
@@ -227,3 +253,5 @@ After completing all steps:
 - [ ] The Kubernetes secret includes `CLAUDE_ROUTINE_FIRE_URL` and `CLAUDE_ROUTINE_FIRE_TOKEN`
 - [ ] The uptime monitor fires a DOWN webhook when the health endpoint is unreachable (test by temporarily blocking the health endpoint in a preview deploy, or by manually triggering the webhook from the monitor's dashboard)
 - [ ] `PREVIEW_MODE` pods never fire the routine (gated in `server/lib/routine-trigger.js`)
+- [ ] The uptime monitor is set to fire **once per outage** (confirmation/grace + no aggressive re-notify), not once per failed check
+- [ ] `ROUTINE_FIRE_DAILY_CAP` is set to ~half your daily routine-run allowance, leaving headroom for the monitor and manual runs
