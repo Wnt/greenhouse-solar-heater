@@ -11,3 +11,4 @@ resources:
   - preview-gc-cronjob.yaml
   - cloud-admin.yaml
   - k8s-api-proxy.yaml
+  - watcher-deployment.yaml
