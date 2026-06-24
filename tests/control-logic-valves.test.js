@@ -1,7 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const { evaluate, MODES, VALVE_TIMING, planValveTransition,
-        buildSnapshotFromState, runBoundedPool } = require('../shelly/control-logic.js');
+        buildSnapshotFromState, buildSnapshotJson, runBoundedPool } = require('../shelly/control-logic.js');
 
 const VALVE_NAMES = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
 
@@ -1007,5 +1007,86 @@ describe('v_air has no polarity inversion (physical valve is normally-closed lik
     assert.strictEqual(typeof require('../shelly/control-logic').fromSchedulerView, 'undefined');
     // The logical map is the canonical form — no wrapper is needed.
     assert.strictEqual(logical.v_air, true);
+  });
+});
+
+describe('buildSnapshotJson — hand-serialized, byte-identical to the object form', () => {
+  // Richly-populated state exercising every field type: null temps, negative
+  // and fractional temps, active manual_override, a nested `held` object, a
+  // populated pending_closes, and an eval_reason containing characters that
+  // MUST be JSON-escaped (a quote and a backslash).
+  function richState(now) {
+    return {
+      mode: MODES.SOLAR_CHARGING,
+      transitioning: true,
+      transition_step: 'valves_opening',
+      temps: { collector: 78.5, tank_top: null, tank_bottom: 30, greenhouse: 15.25, outdoor: -3 },
+      valve_states: { vi_btm: true, vo_coll: true },
+      pump_on: true, fan_on: false, space_heater_on: false, immersion_heater_on: false,
+      collectors_drained: false, emergency_heating_active: false, greenhouse_fan_cooling_active: true,
+      valveOpenSince: { vo_rad: now - 60000 },
+      valveOpening: { vi_btm: now + 10000 },
+      valvePendingOpen: ['vi_top'],
+      valvePendingClose: ['vo_rad'],
+      lastTransitionCause: 'automation',
+      lastTransitionReason: 'solar_enter',
+      last_eval_reason: 'collector "hot" \\ rising',
+      last_held: { refill_cooldown: 12 }
+    };
+  }
+  const dc = { ce: true, ea: 31, mo: { a: true, ex: 1700003600, fm: 'GH' }, v: 1 };
+
+  it('returns a JSON string byte-identical to JSON.stringify(object form)', () => {
+    const now = 1000000;
+    const st = richState(now);
+    const json = buildSnapshotJson(st, dc, now);
+    assert.strictEqual(typeof json, 'string');
+    // The device publishes this string verbatim; the wrapper parses it. The
+    // contract is that it equals JSON.stringify of the object the rest of the
+    // stack expects — same fields, same order, same escaping.
+    assert.strictEqual(json, JSON.stringify(buildSnapshotFromState(st, dc, now)));
+  });
+
+  it('matches an explicit expected object exactly (no field omitted/reordered/mis-escaped)', () => {
+    const now = 1000000;
+    const st = richState(now);
+    const expected = {
+      ts: now,
+      mode: 'solar_charging',
+      transitioning: true,
+      transition_step: 'valves_opening',
+      temps: { collector: 78.5, tank_top: null, tank_bottom: 30, greenhouse: 15.25, outdoor: -3 },
+      valves: { vi_btm: true, vi_top: false, vi_coll: false, vo_coll: true, vo_rad: false, vo_tank: false, v_air: false },
+      actuators: { pump: true, fan: false, space_heater: false, immersion_heater: false },
+      flags: { collectors_drained: false, emergency_heating_active: false, greenhouse_fan_cooling_active: true },
+      controls_enabled: true,
+      manual_override: { active: true, expiresAt: 1700003600, forcedMode: 'GH' },
+      opening: ['vi_btm'],
+      queued_opens: ['vi_top'],
+      pending_closes: [{ valve: 'vo_rad', readyAt: Math.floor((now - 60000 + VALVE_TIMING.minOpenMs) / 1000) }],
+      cause: 'automation',
+      reason: 'solar_enter',
+      eval_reason: 'collector "hot" \\ rising',
+      held: { refill_cooldown: 12 }
+    };
+    // Byte-identical to the canonical serialization of the expected object.
+    assert.strictEqual(buildSnapshotJson(st, dc, now), JSON.stringify(expected));
+    // And parses back to it.
+    assert.deepStrictEqual(JSON.parse(buildSnapshotJson(st, dc, now)), expected);
+  });
+
+  it('null temps serialize as null (not omitted) and survive round-trip', () => {
+    const now = 1000000;
+    const st = richState(now);
+    const parsed = JSON.parse(buildSnapshotJson(st, dc, now));
+    assert.strictEqual(parsed.temps.tank_top, null);
+    assert.ok('tank_top' in parsed.temps, 'null temp key must be present, not dropped');
+  });
+
+  it('manual_override is null when not active', () => {
+    const now = 1000000;
+    const st = richState(now);
+    const parsed = JSON.parse(buildSnapshotJson(st, { ce: true, ea: 31, mo: null, v: 1 }, now));
+    assert.strictEqual(parsed.manual_override, null);
   });
 });

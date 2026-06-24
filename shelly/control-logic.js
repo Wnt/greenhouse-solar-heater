@@ -973,7 +973,7 @@ function runBoundedPool(items, limit, dispatch, done) {
 //   queued_opens   — FIFO of valves waiting for an opening slot
 //   pending_closes — valves deferred due to the minimum-open hold, with
 //                    their ready-at timestamps (unix seconds)
-function buildSnapshotFromState(st, dc, now) {
+function buildSnapshotJson(st, dc, now) {
   // Iterate VALVE_NAMES_SORTED to produce a deterministic order without
   // calling Array.prototype.sort() (unsupported on Shelly Espruino).
   var opening = [];
@@ -993,19 +993,32 @@ function buildSnapshotFromState(st, dc, now) {
     pendingCloses.push({ valve: pv, readyAt: readyAt });
   }
   var queuedOpens = st.valvePendingOpen ? st.valvePendingOpen.slice(0) : [];
-  return {
-    ts: now,
-    mode: st.mode.toLowerCase(),
-    transitioning: st.transitioning,
-    transition_step: st.transition_step || null,
-    temps: {
+  var mo = (dc.mo && dc.mo.a) ? { active: true, expiresAt: dc.mo.ex, forcedMode: dc.mo.fm || null } : null;
+  // Hand-serialized to a JSON string WITHOUT first materializing the full
+  // ~40-field snapshot object. The old buildSnapshotFromState built that
+  // object and then JSON.stringify'd it, leaving the whole object graph AND
+  // its serialized string co-resident — a >2x transient spike that, fired
+  // during peak-solar transitions, pushed the script over its ~25 KB JsVar
+  // ceiling (the 2026-06 out_of_memory episode; ~880 B/emit measured on a
+  // spare Pro 2PM). Here each field is appended via small, immediately-freed
+  // JSON.stringify calls, so the live peak is the growing result string plus
+  // at most one small sub-object — never the full graph. Output is
+  // byte-identical to JSON.stringify(buildSnapshotFromState(...)) because
+  // JSON.stringify is compositional: '"key":' + JSON.stringify(value) is
+  // exactly what the parent stringify emits for that key, and the field
+  // order below matches the old object literal exactly.
+  return "{\"ts\":" + JSON.stringify(now) +
+    ",\"mode\":" + JSON.stringify(st.mode.toLowerCase()) +
+    ",\"transitioning\":" + JSON.stringify(st.transitioning) +
+    ",\"transition_step\":" + JSON.stringify(st.transition_step || null) +
+    ",\"temps\":" + JSON.stringify({
       collector: st.temps.collector,
       tank_top: st.temps.tank_top,
       tank_bottom: st.temps.tank_bottom,
       greenhouse: st.temps.greenhouse,
       outdoor: st.temps.outdoor
-    },
-    valves: {
+    }) +
+    ",\"valves\":" + JSON.stringify({
       vi_btm: !!st.valve_states.vi_btm,
       vi_top: !!st.valve_states.vi_top,
       vi_coll: !!st.valve_states.vi_coll,
@@ -1013,52 +1026,47 @@ function buildSnapshotFromState(st, dc, now) {
       vo_rad: !!st.valve_states.vo_rad,
       vo_tank: !!st.valve_states.vo_tank,
       v_air: !!st.valve_states.v_air
-    },
-    actuators: {
+    }) +
+    ",\"actuators\":" + JSON.stringify({
       pump: st.pump_on,
       fan: st.fan_on,
       space_heater: st.space_heater_on,
       immersion_heater: st.immersion_heater_on
-    },
-    flags: {
+    }) +
+    ",\"flags\":" + JSON.stringify({
       collectors_drained: st.collectors_drained,
       emergency_heating_active: st.emergency_heating_active,
       greenhouse_fan_cooling_active: !!st.greenhouse_fan_cooling_active
-    },
-    controls_enabled: dc.ce,
-    manual_override: (dc.mo && dc.mo.a) ? {
-      active: true,
-      expiresAt: dc.mo.ex,
-      forcedMode: dc.mo.fm || null
-    } : null,
-    opening: opening,
-    queued_opens: queuedOpens,
-    pending_closes: pendingCloses,
-    // What triggered the most recent mode transition. Consumed by the
-    // server's mqtt-bridge on mode-change detection and written to
-    // state_events.cause. One of: boot | automation | forced |
-    // safety_override | watchdog_auto | user_shutdown | drain_complete
-    // | failed.
-    cause: st.lastTransitionCause || "boot",
-    // Finer-grained decision code from the evaluator (solar_enter,
-    // solar_stall, freeze_drain, greenhouse_enter, ...). Null when the
-    // transition was not produced by evaluate() — e.g. user_shutdown,
-    // drain_complete, failed. Written to state_events.reason on mode
-    // change. See REASON_LABELS in playground/js/main.js for UI mapping.
-    reason: st.lastTransitionReason || null,
-    // Live per-tick evaluator reason — refreshed every control loop
-    // regardless of mode transitions. Distinct from `reason` above
-    // (which is the transition-tied reason consumed by mqtt-bridge to
-    // populate state_events.reason on mode changes). The playground's
-    // mode-card status reads this so the line under the mode title
-    // shows "Greenhouse still cold" instead of the generic "System
-    // Active". Null on first boot before evaluate() has run a tick.
-    eval_reason: st.last_eval_reason || null,
-    // Live diagnostic — see attachHeld() / pruneHeld() in evaluate().
-    // Populated from state.last_held, refreshed every control tick.
-    // Null when no guard is suppressing a wanted action this tick.
-    held: st.last_held || null
-  };
+    }) +
+    ",\"controls_enabled\":" + JSON.stringify(dc.ce) +
+    ",\"manual_override\":" + JSON.stringify(mo) +
+    ",\"opening\":" + JSON.stringify(opening) +
+    ",\"queued_opens\":" + JSON.stringify(queuedOpens) +
+    ",\"pending_closes\":" + JSON.stringify(pendingCloses) +
+    // cause: what triggered the most recent transition (boot | automation |
+    // forced | safety_override | watchdog_auto | user_shutdown |
+    // drain_complete | failed) — consumed by mqtt-bridge mode-change
+    // detection, written to state_events.cause.
+    ",\"cause\":" + JSON.stringify(st.lastTransitionCause || "boot") +
+    // reason: finer evaluator decision code (solar_enter, solar_stall,
+    // freeze_drain, ...); null for non-evaluator paths. Written to
+    // state_events.reason on mode change. See REASON_LABELS in main.js.
+    ",\"reason\":" + JSON.stringify(st.lastTransitionReason || null) +
+    // eval_reason: live per-tick evaluator reason (distinct from `reason`),
+    // drives the playground mode-card status line.
+    ",\"eval_reason\":" + JSON.stringify(st.last_eval_reason || null) +
+    // held: live guard diagnostic (attachHeld/pruneHeld); null when nothing
+    // is suppressing a wanted action this tick.
+    ",\"held\":" + JSON.stringify(st.last_held || null) +
+    "}";
+}
+
+// Object form for the playground simulator and unit tests. The device path
+// (emitStateUpdate) calls buildSnapshotJson directly to skip building this
+// object at all; this thin wrapper keeps the two in lockstep so any field
+// change is made once, in buildSnapshotJson.
+function buildSnapshotFromState(st, dc, now) {
+  return JSON.parse(buildSnapshotJson(st, dc, now));
 }
 
 // ── Display label helpers (pure, no Shelly calls) ──
@@ -1156,6 +1164,7 @@ if (typeof module !== "undefined" && module.exports) {
     VALVE_TIMING: VALVE_TIMING,
     planValveTransition: planValveTransition,
     buildSnapshotFromState: buildSnapshotFromState,
+    buildSnapshotJson: buildSnapshotJson,
     runBoundedPool: runBoundedPool,
     formatDuration: formatDuration,
     formatTemp: formatTemp,

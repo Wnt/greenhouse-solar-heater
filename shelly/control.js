@@ -360,12 +360,15 @@ function buildEvalState() {
   };
 }
 
-// buildSnapshotFromState is the pure snapshot builder (defined in
-// control-logic.js so it is unit-testable in Node). Called once from
-// emitStateUpdate below — inlined directly, no wrapper.
+// buildSnapshotJson (in control-logic.js) hand-serializes the state snapshot
+// straight to a JSON string. We publish that string directly — NOT
+// JSON.stringify(buildSnapshotFromState(...)) — to avoid materializing the
+// full ~40-field object and its serialized string at the same time, the >2x
+// transient JsVar spike that OOM-crashed the script during peak-solar
+// transitions (2026-06). The string is byte-identical to the old payload.
 function emitStateUpdate() {
   if (!MQTT.isConnected()) return;
-  MQTT.publish(STATE_TOPIC, JSON.stringify(buildSnapshotFromState(state, deviceConfig, Date.now())), 1, true);
+  MQTT.publish(STATE_TOPIC, buildSnapshotJson(state, deviceConfig, Date.now()), 1, true);
 }
 
 function applyFlags(flags) {
