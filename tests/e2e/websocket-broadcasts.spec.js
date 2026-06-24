@@ -55,7 +55,7 @@ test.describe('WebSocket /ws lifecycle', () => {
     const sentinel = -123.456 - (process.pid % 1000) / 1000;
     await new Promise((resolve, reject) => {
       mqttClient.publish(
-        'greenhouse/state',
+        'greenhouse/state/min',
         JSON.stringify({ ts: new Date().toISOString(), mode: 'idle', temps: { outdoor: sentinel } }),
         { qos: 1 },
         (err) => err ? reject(err) : resolve(),
@@ -79,7 +79,7 @@ test.describe('WebSocket /ws lifecycle', () => {
     const sentinel = -200 - (process.pid % 1000);
     await new Promise((resolve, reject) => {
       mqttClient.publish(
-        'greenhouse/state',
+        'greenhouse/state/min',
         JSON.stringify({ ts: new Date().toISOString(), mode: 'idle', temps: { outdoor: sentinel } }),
         { qos: 1 },
         (err) => err ? reject(err) : resolve(),

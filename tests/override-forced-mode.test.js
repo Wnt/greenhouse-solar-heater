@@ -433,10 +433,11 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
     // and from any unrelated automation tick.
     const rt = createOrderingRuntime();
     bootScript(rt, function() {
-      // Capture greenhouse/state publishes after boot.
+      // Capture greenhouse/state/min publishes after boot (Epic #254 #258:
+      // the device emits the minimal payload; mode + reason survive in it).
       const stateMsgs = [];
       rt.globals.MQTT.publish = function(topic, payload) {
-        if (topic === 'greenhouse/state') {
+        if (topic === 'greenhouse/state/min') {
           try { stateMsgs.push(JSON.parse(payload)); } catch (e) {}
         }
       };

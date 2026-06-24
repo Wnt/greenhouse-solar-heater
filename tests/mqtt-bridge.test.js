@@ -232,6 +232,150 @@ describe('mqtt-bridge', () => {
     });
   });
 
+  describe('handleStateMin (device-minimal → assembled greenhouse/state)', () => {
+    const TOPIC_MAP = { p4pm: '192.168.30.50', p51: '192.168.30.51' };
+    let prevRelayEnv;
+    let relay;
+
+    beforeEach(() => {
+      prevRelayEnv = process.env.RELAY_TOPIC_MAP;
+      process.env.RELAY_TOPIC_MAP = JSON.stringify(TOPIC_MAP);
+      delete require.cache[require.resolve('../server/lib/relay-status.js')];
+      delete require.cache[require.resolve('../server/lib/mqtt-bridge.js')];
+      relay = require('../server/lib/relay-status.js');
+      bridge = require('../server/lib/mqtt-bridge.js');
+      bridge._reset();
+      relay.reset();
+    });
+
+    afterEach(() => {
+      if (prevRelayEnv === undefined) delete process.env.RELAY_TOPIC_MAP;
+      else process.env.RELAY_TOPIC_MAP = prevRelayEnv;
+    });
+
+    // Use a near-now timestamp so freshly-ingested relay entries are inside
+    // RELAY_STALE_MS of the assemble-time Date.now() (handleStateMin uses real
+    // time). A baked-in 2024 epoch would read as stale and fall through.
+    const NOW = Date.now();
+    const MIN = {
+      ts: NOW,
+      mode: 'solar_charging',
+      transitioning: false,
+      transition_step: null,
+      temps: { collector: 62, tank_top: 41, tank_bottom: 29, greenhouse: 12, outdoor: 8 },
+      flags: { collectors_drained: false, emergency_heating_active: false, greenhouse_fan_cooling_active: false },
+      opening: [], queued_opens: [], pending_closes: [],
+      cause: 'automation', reason: 'solar_enter', eval_reason: 'solar_active', held: null,
+    };
+
+    it('assembles valves/actuators from relay cache and broadcasts the full payload', () => {
+      relay.ingestStatus('p4pm/status/switch:0', { output: true }, MIN.ts);
+      relay.ingestStatus('p51/status/switch:0', { output: true }, MIN.ts);
+
+      const sent = [];
+      bridge._setWsServerForTest({ clients: [{ readyState: 1, send: (m) => sent.push(JSON.parse(m)) }] });
+      bridge._setDeviceConfigRefForTest({ getConfig: () => ({ ce: true, ea: 31 }) });
+
+      bridge.handleStateMin(MIN);
+
+      assert.strictEqual(sent.length, 1);
+      const data = sent[0].data;
+      assert.strictEqual(data.mode, 'solar_charging');
+      assert.strictEqual(data.actuators.pump, true);
+      assert.strictEqual(data.valves.vi_btm, true);
+      assert.strictEqual(data.valves.vi_top, false);
+      assert.strictEqual(data.controls_enabled, true);
+      assert.ok(Object.prototype.hasOwnProperty.call(data, 'manual_override'));
+    });
+
+    it('re-publishes the assembled payload to greenhouse/state (retained) when connected', () => {
+      const publishCalls = [];
+      bridge._setMqttClientForTest({
+        connected: true,
+        publish: (topic, msg, opts) => publishCalls.push({ topic, msg, opts }),
+      });
+      bridge._setDeviceConfigRefForTest({ getConfig: () => ({ ce: true }) });
+
+      bridge.handleStateMin(MIN);
+
+      const re = publishCalls.filter((c) => c.topic === 'greenhouse/state');
+      assert.strictEqual(re.length, 1, 'must re-publish assembled state');
+      assert.strictEqual(re[0].opts.retain, true);
+      assert.strictEqual(re[0].opts.qos, 1);
+      const parsed = JSON.parse(re[0].msg);
+      assert.strictEqual(parsed.mode, 'solar_charging');
+      assert.ok('valves' in parsed && 'actuators' in parsed && 'controls_enabled' in parsed);
+    });
+
+    it('fires mode/valve/actuator events off the assembled payload', () => {
+      const events = [];
+      bridge._setDbForTest({
+        insertSensorReadings: () => {},
+        insertStateEvent: function (ts, type, id, oldVal, newVal, optsOrCb, maybeCb) {
+          const cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb;
+          events.push({ type, id, oldVal, newVal });
+          if (cb) cb(null);
+        },
+      });
+      bridge._setDeviceConfigRefForTest({ getConfig: () => ({ ce: true }) });
+
+      // First frame: idle, all relays off (establishes previousState).
+      bridge.handleStateMin(Object.assign({}, MIN, { mode: 'idle' }));
+      // Second frame: solar_charging with pump + vi_btm on.
+      relay.ingestStatus('p4pm/status/switch:0', { output: true }, MIN.ts);
+      relay.ingestStatus('p51/status/switch:0', { output: true }, MIN.ts);
+      bridge.handleStateMin(MIN);
+
+      assert.ok(events.find((e) => e.type === 'mode' && e.newVal === 'solar_charging'));
+      assert.ok(events.find((e) => e.type === 'actuator' && e.id === 'pump' && e.newVal === 'on'));
+      assert.ok(events.find((e) => e.type === 'valve' && e.id === 'vi_btm' && e.newVal === 'open'));
+    });
+  });
+
+  describe('handleStateMin PREVIEW_MODE', () => {
+    let prevPreview;
+    let prevRelayEnv;
+    let relay;
+
+    beforeEach(() => {
+      prevPreview = process.env.PREVIEW_MODE;
+      prevRelayEnv = process.env.RELAY_TOPIC_MAP;
+      process.env.PREVIEW_MODE = 'true';
+      process.env.RELAY_TOPIC_MAP = JSON.stringify({ p4pm: '192.168.30.50' });
+      delete require.cache[require.resolve('../server/lib/relay-status.js')];
+      delete require.cache[require.resolve('../server/lib/mqtt-bridge.js')];
+      relay = require('../server/lib/relay-status.js');
+      bridge = require('../server/lib/mqtt-bridge.js');
+      bridge._reset();
+      relay.reset();
+    });
+
+    afterEach(() => {
+      if (prevPreview === undefined) delete process.env.PREVIEW_MODE;
+      else process.env.PREVIEW_MODE = prevPreview;
+      if (prevRelayEnv === undefined) delete process.env.RELAY_TOPIC_MAP;
+      else process.env.RELAY_TOPIC_MAP = prevRelayEnv;
+      bridge._reset();
+    });
+
+    it('does NOT re-publish to greenhouse/state but still broadcasts to WS', () => {
+      const publishCalls = [];
+      bridge._setMqttClientForTest({
+        connected: true,
+        publish: (topic, msg, opts) => publishCalls.push({ topic, msg, opts }),
+      });
+      const sent = [];
+      bridge._setWsServerForTest({ clients: [{ readyState: 1, send: (m) => sent.push(JSON.parse(m)) }] });
+
+      bridge.handleStateMin({ ts: 1, mode: 'idle', temps: {}, flags: {} });
+
+      assert.strictEqual(publishCalls.filter((c) => c.topic === 'greenhouse/state').length, 0,
+        'preview must not re-publish greenhouse/state');
+      assert.strictEqual(sent.length, 1, 'preview still broadcasts to its own WS clients');
+      assert.strictEqual(sent[0].data.mode, 'idle');
+    });
+  });
+
   describe('getConnectionStatus', () => {
     it('returns disconnected by default', () => {
       assert.strictEqual(bridge.getConnectionStatus(), 'disconnected');

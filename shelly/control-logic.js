@@ -961,19 +961,41 @@ function runBoundedPool(items, limit, dispatch, done) {
   drain();
 }
 
-// ── State snapshot builder (pure) ──
+// ── Minimal device-telemetry payload builder (pure) ──
 //
-// Extracted from control.js so the JSON shape broadcast over MQTT is
+// Extracted from control.js so the JSON shape published over MQTT is
 // testable in Node. Takes the shell's state object, the device config
-// object, and the current epoch-ms timestamp; returns the snapshot the
-// telemetry layer publishes on greenhouse/state.
+// object (kept for signature stability — see below), and the current
+// epoch-ms timestamp; returns the MINIMAL payload the telemetry layer
+// publishes on greenhouse/state/min.
 //
-// US5 adds three fields used by the playground:
+// Epic #254 (issue #258) slimmed this from the full ~40-field snapshot to
+// just the DECISION/TRANSIENT state the device uniquely knows. The server
+// (mqtt-bridge) reassembles the full greenhouse/state payload from this
+// plus native Shelly relay status — see contracts/telemetry.md §2. The
+// fields DROPPED here (server-derived) are:
+//   valves, actuators       — server reads them from native relay status
+//   controls_enabled        — server already owns it (device-config.js)
+//   manual_override         — server overwrites it via enrichState (cfg.mo)
+// Removing valves+actuators (the two largest objects on the wire) is the
+// memory fix: it cuts the per-emit JsVar transient that OOM-crashed the
+// 4PM during peak-solar transitions (2026-06). The `dc` argument is now
+// unused for serialization but kept in the signature so the call site and
+// the buildSnapshotFromState wrapper need no churn.
+//
+// Fields KEPT (device-only / cheap):
+//   ts, mode, transitioning, transition_step, temps, flags,
+//   opening, queued_opens, pending_closes, cause, reason, eval_reason, held
+// US5 fields used by the playground:
 //   opening        — list of valves currently inside their 20 s window
 //   queued_opens   — FIFO of valves waiting for an opening slot
 //   pending_closes — valves deferred due to the minimum-open hold, with
 //                    their ready-at timestamps (unix seconds)
-function buildSnapshotJson(st, dc, now) {
+//
+// This is the EXACT function the spare-2PM memory harness loads as its PASS
+// variant (scripts/spare-2pm-memcheck.mjs) — keep the two field sets in
+// lockstep so the harness proves what the device actually ships.
+function buildMinPayload(st, dc, now) {
   // Iterate VALVE_NAMES_SORTED to produce a deterministic order without
   // calling Array.prototype.sort() (unsupported on Shelly Espruino).
   var opening = [];
@@ -993,20 +1015,20 @@ function buildSnapshotJson(st, dc, now) {
     pendingCloses.push({ valve: pv, readyAt: readyAt });
   }
   var queuedOpens = st.valvePendingOpen ? st.valvePendingOpen.slice(0) : [];
-  var mo = (dc.mo && dc.mo.a) ? { active: true, expiresAt: dc.mo.ex, forcedMode: dc.mo.fm || null } : null;
   // Hand-serialized to a JSON string WITHOUT first materializing the full
-  // ~40-field snapshot object. The old buildSnapshotFromState built that
-  // object and then JSON.stringify'd it, leaving the whole object graph AND
-  // its serialized string co-resident — a >2x transient spike that, fired
+  // payload object. The old buildSnapshotFromState built that object and
+  // then JSON.stringify'd it, leaving the whole object graph AND its
+  // serialized string co-resident — a >2x transient spike that, fired
   // during peak-solar transitions, pushed the script over its ~25 KB JsVar
   // ceiling (the 2026-06 out_of_memory episode; ~880 B/emit measured on a
   // spare Pro 2PM). Here each field is appended via small, immediately-freed
   // JSON.stringify calls, so the live peak is the growing result string plus
-  // at most one small sub-object — never the full graph. Output is
-  // byte-identical to JSON.stringify(buildSnapshotFromState(...)) because
-  // JSON.stringify is compositional: '"key":' + JSON.stringify(value) is
-  // exactly what the parent stringify emits for that key, and the field
-  // order below matches the old object literal exactly.
+  // at most one small sub-object — never the full graph. The output is the
+  // canonical serialization of the object buildSnapshotFromState returns
+  // (JSON.stringify is compositional: '"key":' + JSON.stringify(value) is
+  // exactly what the parent stringify emits for that key). The four
+  // server-derived fields (valves, actuators, controls_enabled,
+  // manual_override) are intentionally absent — see the header comment.
   return "{\"ts\":" + JSON.stringify(now) +
     ",\"mode\":" + JSON.stringify(st.mode.toLowerCase()) +
     ",\"transitioning\":" + JSON.stringify(st.transitioning) +
@@ -1018,28 +1040,11 @@ function buildSnapshotJson(st, dc, now) {
       greenhouse: st.temps.greenhouse,
       outdoor: st.temps.outdoor
     }) +
-    ",\"valves\":" + JSON.stringify({
-      vi_btm: !!st.valve_states.vi_btm,
-      vi_top: !!st.valve_states.vi_top,
-      vi_coll: !!st.valve_states.vi_coll,
-      vo_coll: !!st.valve_states.vo_coll,
-      vo_rad: !!st.valve_states.vo_rad,
-      vo_tank: !!st.valve_states.vo_tank,
-      v_air: !!st.valve_states.v_air
-    }) +
-    ",\"actuators\":" + JSON.stringify({
-      pump: st.pump_on,
-      fan: st.fan_on,
-      space_heater: st.space_heater_on,
-      immersion_heater: st.immersion_heater_on
-    }) +
     ",\"flags\":" + JSON.stringify({
       collectors_drained: st.collectors_drained,
       emergency_heating_active: st.emergency_heating_active,
       greenhouse_fan_cooling_active: !!st.greenhouse_fan_cooling_active
     }) +
-    ",\"controls_enabled\":" + JSON.stringify(dc.ce) +
-    ",\"manual_override\":" + JSON.stringify(mo) +
     ",\"opening\":" + JSON.stringify(opening) +
     ",\"queued_opens\":" + JSON.stringify(queuedOpens) +
     ",\"pending_closes\":" + JSON.stringify(pendingCloses) +
@@ -1061,12 +1066,14 @@ function buildSnapshotJson(st, dc, now) {
     "}";
 }
 
-// Object form for the playground simulator and unit tests. The device path
-// (emitStateUpdate) calls buildSnapshotJson directly to skip building this
-// object at all; this thin wrapper keeps the two in lockstep so any field
-// change is made once, in buildSnapshotJson.
+// Object form for unit tests. The device path (emitStateUpdate) calls
+// buildMinPayload directly to skip building this object at all; this thin
+// wrapper keeps the two in lockstep so any field change is made once, in
+// buildMinPayload. Note: this is the MINIMAL device-telemetry shape (no
+// valves/actuators/controls_enabled/manual_override — those are server-
+// derived, see contracts/telemetry.md §2), not the full greenhouse/state.
 function buildSnapshotFromState(st, dc, now) {
-  return JSON.parse(buildSnapshotJson(st, dc, now));
+  return JSON.parse(buildMinPayload(st, dc, now));
 }
 
 // ── Display label helpers (pure, no Shelly calls) ──
@@ -1164,7 +1171,7 @@ if (typeof module !== "undefined" && module.exports) {
     VALVE_TIMING: VALVE_TIMING,
     planValveTransition: planValveTransition,
     buildSnapshotFromState: buildSnapshotFromState,
-    buildSnapshotJson: buildSnapshotJson,
+    buildMinPayload: buildMinPayload,
     runBoundedPool: runBoundedPool,
     formatDuration: formatDuration,
     formatTemp: formatTemp,

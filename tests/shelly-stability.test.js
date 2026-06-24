@@ -398,7 +398,7 @@ describe('Shelly merged-control MQTT stability', function() {
     setImmediate(loop);
   });
 
-  it('publishes greenhouse/state directly via MQTT.publish (no emitEvent IPC bridge)', function(t, done) {
+  it('publishes greenhouse/state/min directly via MQTT.publish (no emitEvent IPC bridge)', function(t, done) {
     const rt = createShellyRuntime({ mqttConnected: true });
     const publishes = [];
     const realPublish = rt.globals.MQTT.publish;
@@ -407,9 +407,11 @@ describe('Shelly merged-control MQTT stability', function() {
       return realPublish.apply(null, arguments);
     };
     bootAndSettle(rt, function() {
-      const stateTopics = publishes.filter(function(p) { return p.topic === 'greenhouse/state'; });
+      // Epic #254 (#258): device emits the minimal payload on
+      // greenhouse/state/min; the server reassembles the full greenhouse/state.
+      const stateTopics = publishes.filter(function(p) { return p.topic === 'greenhouse/state/min'; });
       assert.ok(stateTopics.length >= 1,
-        'merged control must publish greenhouse/state directly — topics seen: ' +
+        'merged control must publish greenhouse/state/min directly — topics seen: ' +
         publishes.map(function(p) { return p.topic; }).join(', '));
       done();
     });

@@ -21,7 +21,7 @@ This codebase is dense with short codes — `wb`, `mo`, `ce`, `ea`, `we`, `wz` (
 ## Repository Layout
 
 - `system.yaml` — authoritative hardware spec
-- `shelly/` — device scripts (`control.js`, `control-logic.js`, `telemetry.js`, `deploy.sh`)
+- `shelly/` — device scripts (`control.js`, `control-logic.js`, `watchdogs-meta.js`, `deploy.sh`). Telemetry lives in `control.js` (`emitStateUpdate`) + `control-logic.js` (`buildMinPayload`); there is no separate `telemetry.js`.
 - `shelly/lint/` — Shelly platform conformance linter (standalone Node.js CLI, Acorn-based)
 - `playground/` — SPA/PWA: 5 hash-routed views (`#status`, `#components`, `#controls`, `#device`, `#settings`). Passkey-protected in cloud mode. Legacy `#schematic` → `#components` and `#sensors` → `#device` aliases live in `js/actions/navigation.js`. Cross-cutting **data-sync framework** in `playground/js/sync/` — new full-stack features that fetch from the server should register a source there so they refresh automatically on Android resume / focus / network recovery (see `playground/js/sync/README.md`).
 - `playground/public/` — assets served without auth (login page, shared CSS/font, libraries needed by unauthenticated views). The server whitelists `/public/*`, so anything placed here is reachable without a session — do not put sensitive data here.
@@ -71,6 +71,8 @@ Convention (not linter-enforced): use `var`, not `const`/`let`. The `SH-014` arr
 ### Device communication flows through MQTT (two exceptions: sensor discovery and sensor apply)
 
 No direct HTTP RPC to Shelly from the server for state, config pushes, or relay commands. The `mqtt-bridge` routes all of those through `greenhouse/*` topics. Adding a new mutating or stateful device operation = new MQTT topic, not a new HTTP endpoint.
+
+**Telemetry is server-assembled (Epic #254).** The device no longer publishes the full state snapshot. It publishes a slimmed decision/transient payload (`buildMinPayload` in `control-logic.js`) on `greenhouse/state/min` — 13 fields: `ts`, `mode`, `transitioning`, `transition_step`, `temps`, `flags`, `opening`, `queued_opens`, `pending_closes`, `cause`, `reason`, `eval_reason`, `held`. The server (`server/lib/relay-status.js` → `assembleState`, invoked from `mqtt-bridge.js` `handleStateMin`) reconstructs the full, byte-compatible `greenhouse/state` payload by adding `valves`/`actuators` from **native Shelly Gen2 relay status** (subscribed via the `+/status/+` wildcard, cached per `(ip,id)`; NOT HTTP polling) and `controls_enabled`/`manual_override` from device config, then re-publishes it (retained, gated by `PREVIEW_MODE`) and feeds it through the unchanged `handleStateMessage` pipeline. **The on-wire `greenhouse/state` shape and the WS `{type:'state', data}` frame are unchanged**, so every downstream consumer (playground `data-source.js` `_handleState`, DB event derivation, notifications, anomaly ring buffer, System Logs export) is untouched. The motivation was an Espruino JsVar-pool OOM on the memory-constrained Pro 4PM driven by the per-emit JSON transient. Full contract: `contracts/telemetry.md`. Relay prefix→IP resolution needs `RELAY_TOPIC_MAP` in prod config (or each device's `topic_prefix` set to its IP); without it valves/actuators fall back to previous-state/`false` with a per-prefix warning.
 
 **Exceptions**:
 

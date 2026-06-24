@@ -108,7 +108,9 @@ describe('Shelly platform-limit 24 h simulation', () => {
     setNow: n => { now = n; },
     mqttConnected: true,
     onPublish: (topic, payload) => {
-      if (topic === 'greenhouse/state') lastStateJson = payload;
+      // Epic #254 (#258): device emits the minimal payload on
+      // greenhouse/state/min; the server reassembles greenhouse/state.
+      if (topic === 'greenhouse/state/min') lastStateJson = payload;
     },
     httpResponder: (url) => {
       if (url && url.indexOf('Temperature.GetStatus') >= 0) {

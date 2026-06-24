@@ -7,6 +7,13 @@ const { trace } = require('@opentelemetry/api');
 const tracer = trace.getTracer('mqtt-bridge');
 
 const notifications = require('./notifications');
+const relayStatus = require('./relay-status');
+
+// Topic the device publishes its slimmed decision-state payload on
+// (Epic #254). The server assembles the full byte-compatible greenhouse/state
+// from this + native relay status + device config, then re-publishes it.
+const STATE_MIN_TOPIC = 'greenhouse/state/min';
+const STATE_TOPIC = 'greenhouse/state';
 
 let mqttClient = null;
 let wsServer = null;
@@ -54,8 +61,12 @@ function start(options) {
   mqttClient.on('connect', function () {
     connectionStatus = 'connected';
     log.info('MQTT connected');
-    mqttClient.subscribe('greenhouse/state', { qos: 1 }, function (err) {
-      if (err) log.error('subscribe failed', { error: err.message });
+    mqttClient.subscribe(STATE_MIN_TOPIC, { qos: 1 }, function (err) {
+      if (err) log.error('subscribe state/min failed', { error: err.message });
+    });
+    // Native Shelly Gen2 per-switch status — the source of valves/actuators.
+    mqttClient.subscribe(relayStatus.STATUS_WILDCARD, { qos: 1 }, function (err) {
+      if (err) log.error('subscribe relay status failed', { error: err.message });
     });
     mqttClient.subscribe('greenhouse/watchdog/event', { qos: 1 }, function (err) {
       if (err) log.error('subscribe watchdog/event failed', { error: err.message });
@@ -92,6 +103,18 @@ function start(options) {
       handleResponseMessage(topic, message);
       return;
     }
+    // Native Shelly relay status → cache (the source of valves/actuators).
+    if (relayStatus.parseStatusTopic(topic)) {
+      let body;
+      try {
+        body = JSON.parse(message.toString());
+      } catch (e) {
+        log.warn('invalid JSON on relay status topic', { topic, error: e.message });
+        return;
+      }
+      relayStatus.ingestStatus(topic, body);
+      return;
+    }
     if (topic === 'greenhouse/watchdog/event') {
       let wdMsg;
       try {
@@ -110,23 +133,65 @@ function start(options) {
       }
       return;
     }
-    if (topic !== 'greenhouse/state') return;
+    if (topic !== STATE_MIN_TOPIC) return;
 
     const span = tracer.startSpan('mqtt.message', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': topic } });
-    let payload;
+    let minPayload;
     try {
-      payload = JSON.parse(message.toString());
+      minPayload = JSON.parse(message.toString());
     } catch (e) {
-      log.warn('invalid JSON on greenhouse/state', { error: e.message });
+      log.warn('invalid JSON on ' + STATE_MIN_TOPIC, { error: e.message });
       span.end();
       return;
     }
 
-    handleStateMessage(payload);
+    handleStateMin(minPayload);
     span.end();
   });
 
   return mqttClient;
+}
+
+// Assemble the full, byte-compatible greenhouse/state from a device-minimal
+// payload (greenhouse/state/min) + native relay status + device config, then:
+//   1. re-publish to greenhouse/state (retained; gated by PREVIEW_MODE), and
+//   2. feed it through the EXISTING handleStateMessage pipeline unchanged
+//      (insertSensorReadings, detectStateChanges, enrichState, broadcast,
+//      notifications, anomaly ring buffer).
+function handleStateMin(minPayload) {
+  let controlsEnabled = false;
+  // manual_override is recomputed from device config so the RE-PUBLISHED
+  // retained greenhouse/state is itself complete (matches what the device
+  // used to emit). For WS clients, enrichState recomputes it again at
+  // broadcast time and OVERWRITES this value, so the two never diverge.
+  let manualOverride = null;
+  if (deviceConfigRef && typeof deviceConfigRef.getConfig === 'function') {
+    const cfg = deviceConfigRef.getConfig();
+    if (cfg && typeof cfg.ce !== 'undefined') controlsEnabled = !!cfg.ce;
+    if (cfg && cfg.mo && cfg.mo.a) {
+      manualOverride = { active: true, expiresAt: cfg.mo.ex, forcedMode: cfg.mo.fm || null };
+    }
+  }
+
+  const assembled = relayStatus.assembleState(minPayload, {
+    previousState,
+    controlsEnabled,
+    manualOverride,
+  });
+
+  // Re-publish the complete retained state so late subscribers / debuggers /
+  // preview pods see the full picture. NEW publish — gated by PREVIEW_MODE.
+  if (!isPreviewMode() && mqttClient && mqttClient.connected) {
+    const span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': STATE_TOPIC } });
+    try {
+      mqttClient.publish(STATE_TOPIC, JSON.stringify(assembled), { qos: 1, retain: true });
+    } catch (e) {
+      log.error('re-publish greenhouse/state failed', { error: e.message });
+    }
+    span.end();
+  }
+
+  handleStateMessage(assembled);
 }
 
 function handleStateMessage(payload) {
@@ -453,6 +518,7 @@ module.exports = {
   publishSensorConfigApply,
   publishDiscoveryRequest,
   handleStateMessage,
+  handleStateMin,
   detectStateChanges,
   _setDeviceConfigRefForTest: function (ref) { deviceConfigRef = ref; },
   _setDbForTest: function (val) { db = val; },
@@ -470,6 +536,7 @@ module.exports = {
     stateSnapshotListener = null;
     connectionStatus = 'disconnected';
     notifications._reset();
+    relayStatus.reset();
     // Clear any pending requests
     for (const id in pendingRequests) {
       clearTimeout(pendingRequests[id].timer);
