@@ -26,6 +26,16 @@ var SHELL_CFG = {
 // overflow recursion cannot re-establish itself from a new pathway.
 var MIN_RESUME_MS = 20;
 
+// Device uptime past which the script triggers a full reboot to defragment
+// the Espruino JsVar pool. Over long uptime that pool fragments and the
+// script's contiguous headroom shrinks; a Script.Stop/Start does NOT
+// defragment it (only a device reboot does), which is why the server-side
+// auto-restart never cleared the 2026-06 out_of_memory crash-loop while the
+// device stayed up ~50 days. The reboot only fires while safely IDLE (see
+// maybeScheduledReboot), so it lands in a quiet night window and never
+// interrupts a transition, an active drain, or manual override.
+var REBOOT_UPTIME_S = 7 * 24 * 3600; // 7 days
+
 // ── MQTT topics and KVS keys (absorbed from former telemetry.js) ──
 var CONFIG_TOPIC = "greenhouse/config";
 var SENSOR_CONFIG_TOPIC = "greenhouse/sensor-config";
@@ -717,7 +727,18 @@ function scheduleStep() {
     state.valveOpenSince[cv] = 0;
   }
 
-  emitStateUpdate();
+  // NOTE: no emitStateUpdate() here. scheduleStep runs once per resume
+  // cycle, and broadcasting a fresh snapshot on every resume was the
+  // dominant JsVar-pool allocation spike behind the 2026-06 out_of_memory
+  // episode — buildSnapshotFromState() builds a ~40-field object AND
+  // JSON.stringify materializes its string co-resident (>2× transient),
+  // fired N× per transition (measured: 5 emits for a single SC→GH flip) on
+  // a script idling ~300 B from its ceiling. The transition is still
+  // announced: transitionTo() emits the pump_stop step on entry, the
+  // targetReached branch above emits the valves_opening result, and
+  // finalizeTransitionOK() emits pump_start + the final running state. The
+  // playground loses only the per-batch mid-transition animation frames;
+  // it sees the steady state on the next 30 s tick.
 
   // Schedules the next resumeTransition. The minimum delay is kept
   // generous (20 ms) so Timer.set is guaranteed to yield to the
@@ -1016,6 +1037,23 @@ function processRelayCmdQueue() {
   }
 }
 
+// Reboot the device once it has been up past REBOOT_UPTIME_S, but only
+// from a fully safe resting state: not mid-transition, parked in IDLE (no
+// pump/fan/heaters running, valves closed), and not under manual override.
+// This clears Espruino JsVar-pool fragmentation that a script restart
+// cannot (the 2026-06 episode). boot() re-closes every valve and turns all
+// actuators off on the way back up, so a reboot from IDLE is safe by
+// construction; gating on IDLE keeps it from ever interrupting solar
+// charging, greenhouse heating, or — critically — a freeze/overheat drain.
+function maybeScheduledReboot() {
+  if (state.transitioning) return;
+  if (state.mode !== MODES.IDLE) return;
+  if (deviceConfig.mo && deviceConfig.mo.a) return;
+  var sys = Shelly.getComponentStatus("sys");
+  if (!sys || !sys.uptime || sys.uptime < REBOOT_UPTIME_S) return;
+  Shelly.call("Shelly.Reboot", {});
+}
+
 // ── Control loop ──
 
 function controlLoop() {
@@ -1067,6 +1105,12 @@ function controlLoop() {
 
     // ── Watchdog tick block ──
     watchdogTick();
+
+    // ── Periodic JsVar-defrag reboot ──
+    // Reached only on the steady-state (non-transitioning) tick. Self-gates
+    // on IDLE + uptime, so it can fire at most once the device is old and
+    // quiet — typically overnight.
+    maybeScheduledReboot();
   });
 }
 
