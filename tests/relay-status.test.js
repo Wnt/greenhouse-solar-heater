@@ -64,7 +64,7 @@ describe('relay-status', () => {
       relay.ingestStatus('shellypro2pm-aabbccddee51/status/switch:0', { id: 0, output: true }, now);
 
       const min = { ts: now, mode: 'solar_charging', temps: {}, flags: {} };
-      const out = relay.assembleState(min, { now });
+      const { payload: out } = relay.assembleState(min, { now });
       assert.strictEqual(out.actuators.pump, true);
       assert.strictEqual(out.valves.vi_btm, true);
       assert.strictEqual(out.valves.vi_top, false); // never seen → false
@@ -74,7 +74,7 @@ describe('relay-status', () => {
       const now = 5000;
       relay.ingestStatus('shellypro4pm-aabbccddee50/status/switch:2', { output: true }, now);
       relay.ingestStatus('shellypro4pm-aabbccddee50/status/switch:3', { output: false }, now);
-      const out = relay.assembleState({ temps: {}, flags: {} }, { now });
+      const { payload: out } = relay.assembleState({ temps: {}, flags: {} }, { now });
       assert.strictEqual(out.actuators.immersion_heater, true);
       assert.strictEqual(out.actuators.space_heater, false);
     });
@@ -88,7 +88,7 @@ describe('relay-status', () => {
     });
 
     it('emits valves/actuators in the fixed byte-compatible key order', () => {
-      const out = relay.assembleState({ temps: {}, flags: {} }, {});
+      const { payload: out } = relay.assembleState({ temps: {}, flags: {} }, {});
       assert.deepStrictEqual(Object.keys(out.valves),
         ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air']);
       assert.deepStrictEqual(Object.keys(out.actuators),
@@ -100,7 +100,7 @@ describe('relay-status', () => {
     it('uses cached output when fresh', () => {
       const t0 = 1000000;
       relay.ingestStatus('shellypro4pm-aabbccddee50/status/switch:0', { output: true }, t0);
-      const out = relay.assembleState({ temps: {}, flags: {} }, { now: t0 + 1000 });
+      const { payload: out } = relay.assembleState({ temps: {}, flags: {} }, { now: t0 + 1000 });
       assert.strictEqual(out.actuators.pump, true);
     });
 
@@ -110,12 +110,12 @@ describe('relay-status', () => {
       // now is RELAY_STALE_MS + 1 past lastSeen → stale
       const now = t0 + relay.RELAY_STALE_MS + 1;
       const previousState = { actuators: { pump: false }, valves: {} };
-      const out = relay.assembleState({ temps: {}, flags: {} }, { previousState, now });
+      const { payload: out } = relay.assembleState({ temps: {}, flags: {} }, { previousState, now });
       assert.strictEqual(out.actuators.pump, false, 'stale cache → previousState wins');
     });
 
     it('falls back to false when never seen and no previousState', () => {
-      const out = relay.assembleState({ temps: {}, flags: {} }, { now: 1 });
+      const { payload: out } = relay.assembleState({ temps: {}, flags: {} }, { now: 1 });
       assert.strictEqual(out.actuators.pump, false);
       assert.strictEqual(out.valves.v_air, false);
     });
@@ -124,7 +124,7 @@ describe('relay-status', () => {
       const t0 = 1000000;
       relay.ingestStatus('shellypro4pm-aabbccddee50/status/switch:1', { output: true }, t0);
       const previousState = { actuators: { fan: false }, valves: {} };
-      const out = relay.assembleState({ temps: {}, flags: {} }, { previousState, now: t0 + 10 });
+      const { payload: out } = relay.assembleState({ temps: {}, flags: {} }, { previousState, now: t0 + 10 });
       assert.strictEqual(out.actuators.fan, true);
     });
   });
@@ -151,13 +151,15 @@ describe('relay-status', () => {
         eval_reason: 'solar_active',
         held: null,
       };
-      const out = relay.assembleState(min, { controlsEnabled: true, manualOverride: null, now });
+      const { payload: out } = relay.assembleState(min, { controlsEnabled: true, manualOverride: null, now });
 
       assert.deepStrictEqual(Object.keys(out), [
         'ts', 'mode', 'transitioning', 'transition_step', 'temps', 'valves', 'actuators',
         'flags', 'controls_enabled', 'manual_override', 'opening', 'queued_opens',
         'pending_closes', 'cause', 'reason', 'eval_reason', 'held',
       ]);
+      // KEY_ORDER is the exported single source of truth for the field order.
+      assert.deepStrictEqual(Object.keys(out), relay.KEY_ORDER);
       assert.deepStrictEqual(Object.keys(out.temps),
         ['collector', 'tank_top', 'tank_bottom', 'greenhouse', 'outdoor']);
       assert.strictEqual(out.controls_enabled, true);
@@ -165,6 +167,126 @@ describe('relay-status', () => {
       assert.strictEqual(out.actuators.pump, true);
       assert.strictEqual(out.cause, 'automation');
       assert.strictEqual(out.reason, 'solar_enter');
+    });
+  });
+
+  describe('canonical exports (single source of truth)', () => {
+    it('exports RELAY_MAP, VALVE_KEYS, ACTUATOR_KEYS, KEY_ORDER', () => {
+      assert.ok(relay.RELAY_MAP && typeof relay.RELAY_MAP === 'object');
+      assert.ok(Array.isArray(relay.VALVE_KEYS));
+      assert.ok(Array.isArray(relay.ACTUATOR_KEYS));
+      assert.ok(Array.isArray(relay.KEY_ORDER));
+    });
+
+    it('RELAY_MAP covers all 5 wired controllers and skips the spare', () => {
+      assert.deepStrictEqual(Object.keys(relay.RELAY_MAP).sort(), [
+        '192.168.30.50', '192.168.30.51', '192.168.30.52', '192.168.30.53', '192.168.30.54',
+      ]);
+      // .54 only has switch 0 (id 1 reserved); .55 spare not present.
+      assert.deepStrictEqual(Object.keys(relay.RELAY_MAP['192.168.30.54']), ['0']);
+    });
+
+    it('RELAY_MAP valve entries match VALVE_KEYS exactly', () => {
+      const valveNames = [];
+      Object.keys(relay.RELAY_MAP).forEach((ip) => {
+        const dm = relay.RELAY_MAP[ip];
+        Object.keys(dm).forEach((id) => {
+          if (dm[id].group === 'valves') valveNames.push(dm[id].name);
+        });
+      });
+      assert.deepStrictEqual(valveNames.sort(), relay.VALVE_KEYS.slice().sort());
+    });
+
+    it('encodes the 4PM id↔key inversion in ONE place (id2=immersion, id3=space)', () => {
+      assert.strictEqual(relay.ACTUATOR_4PM_BY_ID[2], 'immersion_heater');
+      assert.strictEqual(relay.ACTUATOR_4PM_BY_ID[3], 'space_heater');
+      // RELAY_MAP derives its 4PM names from ACTUATOR_4PM_BY_ID.
+      assert.strictEqual(relay.RELAY_MAP[relay.ACTUATOR_4PM_IP][2].name, relay.ACTUATOR_4PM_BY_ID[2]);
+      assert.strictEqual(relay.RELAY_MAP[relay.ACTUATOR_4PM_IP][3].name, relay.ACTUATOR_4PM_BY_ID[3]);
+      // but the wire key order lists space BEFORE immersion.
+      assert.ok(relay.ACTUATOR_KEYS.indexOf('space_heater') < relay.ACTUATOR_KEYS.indexOf('immersion_heater'));
+    });
+  });
+
+  describe('freshness map (sidecar)', () => {
+    it('classifies a freshly-ingested relay as fresh with a small ageMs', () => {
+      const now = 1000000;
+      relay.ingestStatus('shellypro4pm-aabbccddee50/status/switch:0', { output: true }, now);
+      const { freshness } = relay.assembleState({ temps: {}, flags: {} }, { now: now + 500 });
+      assert.strictEqual(freshness.pump.status, relay.FRESH);
+      assert.strictEqual(freshness.pump.ageMs, 500);
+    });
+
+    it('classifies a cached-but-old relay as stale with its age', () => {
+      const t0 = 1000000;
+      relay.ingestStatus('shellypro4pm-aabbccddee50/status/switch:0', { output: true }, t0);
+      const now = t0 + relay.RELAY_STALE_MS + 7;
+      const { freshness } = relay.assembleState({ temps: {}, flags: {} }, { now });
+      assert.strictEqual(freshness.pump.status, relay.STALE);
+      assert.strictEqual(freshness.pump.ageMs, relay.RELAY_STALE_MS + 7);
+    });
+
+    it('classifies a never-seen relay as missing with null ageMs', () => {
+      const { freshness } = relay.assembleState({ temps: {}, flags: {} }, { now: 1 });
+      assert.strictEqual(freshness.v_air.status, relay.MISSING);
+      assert.strictEqual(freshness.v_air.ageMs, null);
+    });
+
+    it('reports freshness for every valve and actuator', () => {
+      const { freshness } = relay.assembleState({ temps: {}, flags: {} }, { now: 1 });
+      relay.VALVE_KEYS.concat(relay.ACTUATOR_KEYS).forEach((name) => {
+        assert.ok(freshness[name], 'missing freshness for ' + name);
+        assert.ok(['fresh', 'stale', 'missing'].indexOf(freshness[name].status) >= 0);
+      });
+    });
+
+    it('freshness is NOT folded into the byte-compatible payload', () => {
+      const { payload } = relay.assembleState({ temps: {}, flags: {} }, { now: 1 });
+      assert.strictEqual(typeof payload.freshness, 'undefined');
+      assert.deepStrictEqual(Object.keys(payload), relay.KEY_ORDER);
+    });
+  });
+
+  describe('checkTopicMapCoverage (#2a)', () => {
+    it('reports ok when every RELAY_MAP IP is resolvable', () => {
+      // TOPIC_MAP in this file maps prefixes for .50–.55. All .50–.54 IPs are
+      // RELAY_MAP values, so coverage is complete.
+      const cov = relay.checkTopicMapCoverage();
+      assert.strictEqual(cov.ok, true);
+      assert.deepStrictEqual(cov.missing, []);
+    });
+
+    it('reports the missing IPs when the map is incomplete', () => {
+      process.env.RELAY_TOPIC_MAP = JSON.stringify({
+        'shellypro4pm-aabbccddee50': '192.168.30.50',
+        // .51–.54 deliberately omitted
+      });
+      relay.reset();
+      const cov = relay.checkTopicMapCoverage();
+      assert.strictEqual(cov.ok, false);
+      assert.deepStrictEqual(cov.missing.sort(), [
+        '192.168.30.51', '192.168.30.52', '192.168.30.53', '192.168.30.54',
+      ]);
+    });
+
+    it('reports all IPs missing when the map is unset', () => {
+      delete process.env.RELAY_TOPIC_MAP;
+      relay.reset();
+      const cov = relay.checkTopicMapCoverage();
+      assert.strictEqual(cov.ok, false);
+      assert.strictEqual(cov.missing.length, 5);
+    });
+
+    it('accepts topic_prefix==IP entries as coverage', () => {
+      process.env.RELAY_TOPIC_MAP = JSON.stringify({
+        '192.168.30.50': '192.168.30.50',
+        '192.168.30.51': '192.168.30.51',
+        '192.168.30.52': '192.168.30.52',
+        '192.168.30.53': '192.168.30.53',
+        '192.168.30.54': '192.168.30.54',
+      });
+      relay.reset();
+      assert.strictEqual(relay.checkTopicMapCoverage().ok, true);
     });
   });
 });

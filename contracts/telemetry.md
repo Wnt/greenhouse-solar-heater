@@ -4,7 +4,7 @@
 
 ## Problem this contract solves
 
-The device emits a full ~40-field snapshot on `greenhouse/state` on every tick (`buildSnapshotJson`, `shelly/control-logic.js` L976–1062). On a memory-constrained Pro 4PM the per-emit transient (the growing JSON result string) is proportional to payload length; during peak-solar transitions this pushed the Espruino JsVar pool over its ceiling and produced `out_of_memory` (the 2026-06 episode). W0 reproduced the FAIL on the spare Pro 2PM (`192.168.30.55`, pool 25186 B, identical to the 4PM) and proved that a **slimmed device payload** restores ≥3 KB headroom (PASS variant: `mem_free 4270 B`).
+The device emits a full ~40-field snapshot on `greenhouse/state` on every tick (the pre-#254 hand-serializer in `shelly/control-logic.js` L976–1062, slimmed and renamed to `buildMinPayload` by this change). On a memory-constrained Pro 4PM the per-emit transient (the growing JSON result string) is proportional to payload length; during peak-solar transitions this pushed the Espruino JsVar pool over its ceiling and produced `out_of_memory` (the 2026-06 episode). W0 reproduced the FAIL on the spare Pro 2PM (`192.168.30.55`, pool 25186 B, identical to the 4PM) and proved that a **slimmed device payload** restores ≥3 KB headroom (PASS variant: `mem_free 4270 B`).
 
 **Design decision (W0 (c), confirmed here):** the device drops the *physically observable* state (`valves`, `actuators`) — the server reassembles those natively from Shelly relay status — and keeps the *decision/transient* state it uniquely knows. Raw `temps` stay on the device payload (the device already polls them; they are cheap and are the canonical source the server persists). The byte-shape that WebSocket clients and `mqtt-bridge` consume on `greenhouse/state` is **unchanged** — reassembly happens server-side before broadcast/persist.
 
@@ -34,7 +34,7 @@ W0 left the topic choice to W1. **Use a new topic `greenhouse/state/min` for the
 | Topic | `greenhouse/state/min` | NEW. Device-internal → server only. |
 | QoS | `1` | Same as today's `greenhouse/state`. |
 | retain | `true` | A reconnecting server must immediately see the last device decision state; matches today's behaviour. |
-| Publisher | device `emitStateUpdate()` in `shelly/control.js` | Replaces today's `MQTT.publish(STATE_TOPIC, buildSnapshotJson(...), 1, true)`. |
+| Publisher | device `emitStateUpdate()` in `shelly/control.js` | Replaces the pre-#254 `MQTT.publish(STATE_TOPIC, buildMinPayload(...), 1, true)` (the builder was a full-snapshot serializer before this change; same call site). |
 
 ### Field schema
 
@@ -48,9 +48,9 @@ The device emits **exactly** these top-level keys, in **exactly this order** (or
 | 4 | `transition_step` | string \| null | current scheduler step label, or `null` | `st.transition_step \|\| null` |
 | 5 | `temps` | object (5 keys) | `{ collector, tank_top, tank_bottom, greenhouse, outdoor }`, each `number \| null` | `st.temps.*` (device polls `Temperature.GetStatus`) |
 | 6 | `flags` | object (3 keys) | `{ collectors_drained: bool, emergency_heating_active: bool, greenhouse_fan_cooling_active: bool }` | `st.collectors_drained`, `st.emergency_heating_active`, `!!st.greenhouse_fan_cooling_active` |
-| 7 | `opening` | string[] | valve names currently inside their 20 s opening window, ordered by `VALVE_NAMES_SORTED` | `buildSnapshotJson` `opening` loop |
+| 7 | `opening` | string[] | valve names currently inside their 20 s opening window, ordered by `VALVE_NAMES_SORTED` | `buildMinPayload` `opening` loop |
 | 8 | `queued_opens` | string[] | FIFO of valves waiting for an opening slot | `st.valvePendingOpen.slice(0)` |
-| 9 | `pending_closes` | object[] | `[{ valve: string, readyAt: number /* unix SECONDS */ }]` | `buildSnapshotJson` `pendingCloses` loop |
+| 9 | `pending_closes` | object[] | `[{ valve: string, readyAt: number /* unix SECONDS */ }]` | `buildMinPayload` `pendingCloses` loop |
 | 10 | `cause` | string | transition cause: `boot` \| `automation` \| `forced` \| `safety_override` \| `watchdog_auto` \| `user_shutdown` \| `drain_complete` \| `failed` | `st.lastTransitionCause \|\| "boot"` |
 | 11 | `reason` | string \| null | evaluator decision code (`solar_enter`, `freeze_drain`, `ggr_shutdown`, …), `null` for non-evaluator paths | `st.lastTransitionReason \|\| null` |
 | 12 | `eval_reason` | string \| null | live per-tick evaluator reason (distinct from `reason`) | `st.last_eval_reason \|\| null` |
@@ -60,7 +60,7 @@ The device emits **exactly** these top-level keys, in **exactly this order** (or
 
 ### Exact serialization the device must emit
 
-W3 keeps the hand-serialized, append-per-field style of the current `buildSnapshotJson` (no full-object materialization — that is the whole point of the memory fix). Concretely, a renamed/slimmed `buildSnapshotJson` returns:
+W3 keeps the hand-serialized, append-per-field style of the pre-#254 serializer (no full-object materialization — that is the whole point of the memory fix). Concretely, the slimmed builder, named `buildMinPayload`, returns:
 
 ```js
 return "{\"ts\":" + JSON.stringify(now) +
@@ -115,7 +115,7 @@ The removed `valves`+`actuators` objects are the bulk of the fixed cost; the kep
 
 ### Full payload field shape (UNCHANGED from today)
 
-Top-level key order as emitted today (`buildSnapshotJson` L1010–1061). The server SHOULD emit in this order for diff-stability, but consumers do not depend on order:
+Top-level key order as emitted by the pre-#254 full serializer (L1010–1061). The server SHOULD emit in this order for diff-stability, but consumers do not depend on order:
 
 ```
 ts, mode, transitioning, transition_step, temps, valves, actuators,
@@ -212,20 +212,75 @@ The fallback MUST NOT block assembly: a missing relay never drops the whole payl
 
 **PREVIEW_MODE:** preview pods subscribe to the same native status topics (read-only) and assemble for their own WS clients, but MUST NOT re-publish to `greenhouse/state` and MUST NOT persist — identical gating to the existing `isPreviewMode()` checks.
 
+#### Per-relay freshness classification (as shipped)
+
+`assembleState(min, opts)` returns `{ payload, freshness }` (the `payload` is the byte-identical full state of §2; **`freshness` is never folded into `payload`** — asserted by test). `freshness` is `{ [logicalName]: { status, ageMs } }` for every valve + actuator, with `status ∈ { 'fresh', 'stale', 'missing' }` (the `FRESH` / `STALE` / `MISSING` string constants exported from `relay-status.js`):
+
+- **`fresh`** — cached `lastSeen` within the staleness window; `ageMs` = cache age. Cached `output` is used.
+- **`stale`** — cached but older than the window; `ageMs` = cache age. Served from the §3 fallback chain (previous-state, else `false`).
+- **`missing`** — never seen for that `(ip,id)`; `ageMs` = `null`. Served from fallback.
+
+#### RELAY_TOPIC_MAP fail-loud startup assertion
+
+Relay status arrives on `<topic_prefix>/status/switch:<id>`; the server must resolve each prefix back to the device IP keyed in the §3 wiring map (`RELAY_MAP` in `relay-status.js`) before any relay value can be placed. That resolution needs `RELAY_TOPIC_MAP` in prod config (or each device's `topic_prefix` set equal to its IP). To stop a silently-misconfigured deployment from serving an entire device from fallback unnoticed:
+
+- `mqtt-bridge.start()` calls `assertRelayTopicCoverage()` **first, before `mqtt.connect`**. It evaluates `checkTopicMapCoverage()` → `{ ok, missing }` (the set of `RELAY_MAP` IPs not resolvable via `prefixToIp` or `topic_prefix == IP`).
+- **Non-preview:** if `ok === false`, `start()` **throws** `Error('RELAY_TOPIC_MAP does not resolve every device IP in RELAY_MAP … Missing: <ips>')` and aborts boot. Fail-loud — a prod pod will not come up partially blind.
+- **Preview:** logs at `error` level and continues (a passive observer may legitimately lack the prod map).
+- `mqttBridge.getRelayTopicCoverage()` exposes the same `{ ok, missing }` for health probes.
+
+#### Stale-relay event suppression (state_events)
+
+Per-relay freshness gates whether a valve/actuator change is written to `state_events`. `detectStateChanges(ts, prev, curr, _db, prevFreshness, currFreshness)` takes the freshness maps of the prior and current assembled ticks; `handleStateMessage` threads them through and `mqtt-bridge` keeps `previousFreshness` alongside `previousState`. A valve/actuator row is written **only when the relay was `fresh` on BOTH sides** (`bothFresh(prev, curr, name)`):
+
+- **cold-cache restart burst** (`missing` → `fresh`): suppressed — prev not fresh. Prevents a flood of synthetic "valve opened" events when the relay cache repopulates after a server restart.
+- **stale-window flip** (curr `stale` or `missing`): suppressed — curr not fresh. A relay served from fallback never authors an event.
+- **genuine `fresh` → `fresh` transition:** logged as before.
+- **legacy callers passing neither freshness map** (device-authored full-state callers, e.g. a direct `handleStateMessage` in a test): fall back to diff-everything — unchanged behaviour.
+
+`mode` and `overlay` events are **device-authored** and are never gated by relay freshness — they are detected exactly as before.
+
+---
+
+## 4. Relay-health sidecar (ADDITIVE — `greenhouse/state` stays byte-identical)
+
+The per-relay freshness map (§3) is surfaced to clients and operators through a **fully additive sidecar**: a new WS frame type and a new MQTT topic. **No freshness/health signal is ever folded into `greenhouse/state` or its WS `state` frame — both remain byte-identical to today** (asserted by test). A client that ignores the new frame type / topic is completely unaffected.
+
+### WS frame
+
+```
+{ type: 'relay_health', data: { ts, relays } }
+```
+
+- `relays` = the §3 freshness map: `{ [logicalName]: { status: 'fresh'|'stale'|'missing', ageMs: number|null } }` for every valve + actuator.
+- Broadcast on every WS-broadcasting tick, **immediately AFTER the `{ type:'state', data }` frame** (frame ordering is asserted). Additive type — existing consumers that switch on `type` and don't handle `relay_health` skip it.
+- **Not PREVIEW_MODE-gated** — preview pods still feed their own dashboards, the same policy as the WS `state` frame.
+
+### MQTT topic
+
+| Property | Value |
+|---|---|
+| Topic | `greenhouse/relay-health` (NEW) |
+| Payload | `{ ts, relays }` (same `relays` shape as the WS frame) |
+| QoS / retain | `{ qos: 1, retain: true }` |
+| Publisher | server `publishRelayHealth` |
+
+**PREVIEW_MODE:** the MQTT publish is gated **exactly like the `greenhouse/state` republish** — `publishRelayHealth` early-returns in preview mode / when disconnected, so preview pods never publish. (The WS broadcast above is the un-gated half; the split mirrors the existing state-frame vs. state-republish policy.)
+
 ---
 
 ## Test obligations (for W2 / W3, enforced per repo test-first policy)
 
-- **W3 (device):** unit test that the slimmed `buildSnapshotJson` emits exactly the §1 keys and omits `valves`/`actuators`/`controls_enabled`/`manual_override`; regenerate `playground/assets/bootstrap-history.json` (`npm run bootstrap-history`) so the drift test passes; re-run the spare-2PM PASS harness and record `mem_free ≥ 3072 B` (label hardware-measured, date-stamped).
+- **W3 (device):** unit test that the slimmed `buildMinPayload` emits exactly the §1 keys and omits `valves`/`actuators`/`controls_enabled`/`manual_override`; regenerate `playground/assets/bootstrap-history.json` (`npm run bootstrap-history`) so the drift test passes; re-run the spare-2PM PASS harness and record `mem_free ≥ 3072 B` (label hardware-measured, date-stamped).
 - **W2 (server):** unit test that, given a §1 minimal payload + a populated relay cache, the assembled payload is byte-identical (per-field) to a reference full payload; test the staleness fallback chain (fresh → previous-state → false); test that `detectStateChanges` still fires mode/valve/actuator/overlay events off the assembled payload; test PREVIEW_MODE does not re-publish. Existing `mqtt-bridge` tests that feed a full `greenhouse/state` payload should be repointed to feed `greenhouse/state/min` + relay cache.
 
 ---
 
 ## Implementation notes (post-contract, W4)
 
-The wire shapes, topics, field order, QoS/retain, and source maps above shipped **exactly as specified**. Two naming details differ from the contract prose (implementation choices, not contract changes):
+The wire shapes, topics, field order, QoS/retain, and source maps above shipped **exactly as specified**. One implementation detail differs from the original W1 prose (an implementation choice, not a contract change):
 
-- **Device builder name.** §1/§2 refer to the slimmed builder as `buildSnapshotJson` (its historical name). W3 renamed it to **`buildMinPayload`** in `shelly/control-logic.js` (with `buildSnapshotFromState` retained as the playground/test wrapper). The emitted bytes are unchanged. References to `buildSnapshotJson` remaining in `server/lib/relay-status.js` comments are deliberate historical anchors describing the full-payload shape the server reassembles to.
-- **Server assembler location.** §2/§3 describe assembly "in `mqtt-bridge`". The assembler itself lives in **`server/lib/relay-status.js`** (`assembleState` + the relay cache + topic parsing); `mqtt-bridge.js` `handleStateMin` orchestrates it. The relay-status wildcard subscription is `+/status/+` (the narrower `+/status/switch:+` is an invalid MQTT filter — `+` matches a whole level — so it cannot match the partial `switch:<id>` segment); `parseStatusTopic` then matches only `*/status/switch:<digits>` so it never collides with `greenhouse/*` topics.
+- **Device builder name.** The slimmed device serializer ships as **`buildMinPayload`** in `shelly/control-logic.js` (with `buildSnapshotFromState` retained as the playground/test wrapper) — §1/§2 are written against that name. The pre-#254 builder was a full-snapshot serializer at the same call site; the emitted bytes of the §1 minimal payload are exactly as specified above. The full-payload key order in §2 is the shape the server reassembles to; `server/lib/relay-status.js` comments anchor to that historical full-snapshot shape, not to a separate device function.
+- **Server assembler location.** §2/§3 describe assembly "in `mqtt-bridge`". The assembler itself lives in **`server/lib/relay-status.js`** (`assembleState` + the relay cache + topic parsing + the canonical wiring constants — `RELAY_MAP`, `VALVE_KEYS`, `ACTUATOR_KEYS`, `KEY_ORDER`, `ACTUATOR_4PM_BY_ID` — that encode the §3 relay→logical-name maps and the §2 full-payload key order as the single source of truth, with `ACTUATOR_4PM_BY_ID` the one place encoding the id↔key inversion noted in §3); `mqtt-bridge.js` `handleStateMin` orchestrates it. The relay-status wildcard subscription is `+/status/+` (the narrower `+/status/switch:+` is an invalid MQTT filter — `+` matches a whole level — so it cannot match the partial `switch:<id>` segment); `parseStatusTopic` then matches only `*/status/switch:<digits>` so it never collides with `greenhouse/*` topics.
 
 **Consumer verification (W4).** The playground consumes the server-assembled WS `{type:'state', data}` frame in `playground/js/data-source.js` `_handleState`, which reads `data.valves`/`data.actuators`/`data.controls_enabled`/`data.manual_override` plus the device pass-through fields — all present on the assembled frame. No playground source change was required (verified no-op). The System Logs export (`playground/js/main/logs-clipboard.js`) reads only pass-through/assembled fields. Full-chain coverage: `tests/e2e/state-assembly.spec.js` (device-min publish + relay status → assembled 17-key WS frame), `tests/state-assembly.test.js` (byte-golden of the assembled payload vs. the historical shape), and the frontend `tests/frontend/copy-logs.spec.js` + `live-display.spec.js` (assembled WS frame → render + System Logs export). The e2e harness does not serve the SPA, so "real server → browser render" is covered by the byte-golden guaranteeing the assembled frame is identical to the shape the frontend suite feeds.

@@ -53,6 +53,13 @@ export const store = createStore({
   // the crash banner.
   scriptStatus: null,
 
+  // Per-relay freshness from the `relay_health` WS sidecar (Epic #254).
+  // null = not yet known (default, e.g. sim mode or pre-first-frame).
+  // Otherwise { [logicalName]: { status: 'fresh'|'stale'|'missing', ageMs } }
+  // keyed by valve/actuator logical name. Read by display-update.js to
+  // mark a stale/missing relay's rendered state as not-trusted.
+  relayHealth: null,
+
   // Internal: staleness tick for periodic re-evaluation
   _staleTick: 0,
 

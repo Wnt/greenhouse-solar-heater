@@ -11,6 +11,7 @@ import { appendBalanceLivePoint } from './balance-card.js';
 import { modeAt } from './mode-events.js';
 import { formatHeldLines } from './logs-clipboard.js';
 import { formatReasonLabel } from './time-format.js';
+import { relayIsStale } from '../actions/relay-health.js';
 
 // Live data may have null sensors when a role is unassigned — show "—".
 const TEMP_PLACEHOLDER = '—';
@@ -327,37 +328,9 @@ export function updateDisplay(state, result) {
     return `<tr><td>${n}</td><td class="val">${valText}${trend}</td></tr>`;
   }).join('');
 
-  // Valve grid
-  const VALVE_LABELS = {
-    vi_btm: 'In: Tank Btm',
-    vi_top: 'In: Reservoir',
-    vi_coll: 'In: Collector',
-    vo_coll: 'Out: Collector',
-    vo_rad: 'Out: Radiator',
-    vo_tank: 'Out: Tank',
-    v_air: 'Air Intake',
-  };
-  const valveNames = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
-  document.getElementById('valve-grid').innerHTML = valveNames.map(v => {
-    const raw = result.valves[v];
-    const isOpen = raw === true || raw === 'OPEN';
-    const cls = isOpen ? 'valve-chip-open' : 'valve-chip-closed';
-    return `<div class="valve-chip"><span class="valve-chip-name">${VALVE_LABELS[v]}</span><span class="valve-chip-state ${cls}">${isOpen ? 'OPEN' : 'CLOSED'}</span></div>`;
-  }).join('');
-
-  // Actuator grid
-  const actuators = [
-    ['Pump', result.actuators.pump, 'cyclone'],
-    ['Fan', result.actuators.fan, 'mode_fan'],
-    ['Space Heater', result.actuators.space_heater, 'heat_pump'],
-  ];
-  document.getElementById('actuator-grid').innerHTML = actuators.map(([name, on, icon]) => {
-    const cls = on ? 'component-value-active' : 'component-value-off';
-    return `<div class="component-card">
-      <div><div class="component-label">${name}</div><div class="component-value ${cls}">${on ? 'ON' : 'OFF'}</div></div>
-      <span class="material-symbols-outlined component-icon">${icon}</span>
-    </div>`;
-  }).join('');
+  // Valve + actuator grids (factored out so the relay_health sidecar can
+  // re-render them on its own cadence without a full display refresh).
+  renderRelayGrids(result);
 
   // ── Transition status (live mode) ──
   const transEl = document.getElementById('transition-status');
@@ -462,6 +435,78 @@ function updateComponent(id, on, onLabel, offLabel) {
   el.textContent = on ? onLabel : offLabel;
   el.className = 'component-value ' + (on ? 'component-value-active' : 'component-value-off');
 }
+
+const VALVE_LABELS = {
+  vi_btm: 'In: Tank Btm',
+  vi_top: 'In: Reservoir',
+  vi_coll: 'In: Collector',
+  vo_coll: 'Out: Collector',
+  vo_rad: 'Out: Radiator',
+  vo_tank: 'Out: Tank',
+  v_air: 'Air Intake',
+};
+const VALVE_NAMES = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
+const ACTUATOR_ROWS = [
+  ['Pump', 'pump', 'cyclone'],
+  ['Fan', 'fan', 'mode_fan'],
+  ['Space Heater', 'space_heater', 'heat_pump'],
+];
+const STALE_BADGE = '<span class="relay-stale-badge" title="No fresh status from this relay — last-known shown">?</span>';
+
+// Renders the Components-view valve + actuator grids. Pulled out of
+// updateDisplay so the relay_health sidecar (which arrives in its own WS
+// frame right after each state frame) can repaint the freshness markers
+// without a full display refresh — see rerenderRelayHealth().
+export function renderRelayGrids(result) {
+  if (!result) return;
+  const valves = result.valves || {};
+  const valveGrid = document.getElementById('valve-grid');
+  if (valveGrid) {
+    valveGrid.innerHTML = VALVE_NAMES.map(v => {
+      const raw = valves[v];
+      const isOpen = raw === true || raw === 'OPEN';
+      const cls = isOpen ? 'valve-chip-open' : 'valve-chip-closed';
+      // relay_health sidecar (Epic #254): when the relay's native Shelly
+      // status is stale/missing, the assembled OPEN/CLOSED is a fallback,
+      // not a confirmed reading. Dim the chip + flag it so the operator
+      // doesn't read a dead relay as a confident state.
+      const stale = relayIsStale(v);
+      const staleCls = stale ? ' relay-stale' : '';
+      const badge = stale ? STALE_BADGE : '';
+      return `<div class="valve-chip${staleCls}" data-relay="${v}"><span class="valve-chip-name">${VALVE_LABELS[v]}</span><span class="valve-chip-state ${cls}">${isOpen ? 'OPEN' : 'CLOSED'}${badge}</span></div>`;
+    }).join('');
+  }
+
+  const actuators = result.actuators || {};
+  const actuatorGrid = document.getElementById('actuator-grid');
+  if (actuatorGrid) {
+    actuatorGrid.innerHTML = ACTUATOR_ROWS.map(([name, relay, icon]) => {
+      const on = !!actuators[relay];
+      const cls = on ? 'component-value-active' : 'component-value-off';
+      const stale = relayIsStale(relay);
+      const staleCls = stale ? ' relay-stale' : '';
+      const badge = stale ? ' ' + STALE_BADGE : '';
+      return `<div class="component-card${staleCls}" data-relay="${relay}">
+      <div><div class="component-label">${name}</div><div class="component-value ${cls}">${on ? 'ON' : 'OFF'}${badge}</div></div>
+      <span class="material-symbols-outlined component-icon">${icon}</span>
+    </div>`;
+    }).join('');
+  }
+}
+
+// Repaint just the relay grids from the last live frame. Called when a
+// relay_health frame updates store.relayHealth after the matching state
+// frame already rendered, so the freshness markers don't lag a tick.
+export function rerenderRelayHealth() {
+  if (store.get('phase') !== 'live' || !liveFrameSeen) return;
+  if (lastResult) renderRelayGrids(lastResult);
+}
+
+// The relay_health sidecar lands in its own WS frame immediately after
+// each state frame, so by the time it updates store.relayHealth the
+// matching state frame has already painted the grids. Repaint on change
+// so the freshness markers track the latest sidecar without a 30 s lag.
+store.subscribe('relayHealth', () => rerenderRelayHealth());
 
 // Append an incoming live state frame to the history store so the
 // graph ticks forward in real time. Rate-limited to one sample

@@ -86,15 +86,25 @@ function minify(src) {
 
 // ── The PURE busy-tick harness (verbatim shape from issue #255). The ONLY
 // line that differs between FAIL and PASS is which snapshot builder feeds
-// SINK. buildMinPayload's field set is the FINAL shipped W3 payload
-// (contracts/telemetry.md §1) — byte-for-byte the same fields and order as
-// the slimmed buildMinPayload in shelly/control-logic.js:
+// SINK.
+//
+// PASS uses the REAL buildMinPayload — the function declaration is already in
+// scope from the minified shelly/control-logic.js blob prepended ahead of this
+// harness (it ships to the device and emits greenhouse/state/min). We do NOT
+// re-inline it: an inlined copy could silently diverge from the shipped builder
+// and skew the hardware PASS measurement away from what actually runs. The
+// unit test scripts/../tests/spare-harness-drift.test.js asserts this harness's
+// PASS-builder source IS the real one (no local `function buildMinPayload`) so
+// a field drift fails CI instead of a hand-run measurement. Its field set is
+// the FINAL shipped W3 payload (contracts/telemetry.md §1):
 //   {ts, mode, transitioning, transition_step, temps, flags, opening,
 //    queued_opens, pending_closes, cause, reason, eval_reason, held}
 // The server reassembles valves/actuators/controls_enabled/manual_override
-// from native relay status + device config, so they are absent here. Keeping
-// this in lockstep with the device builder means the PASS measurement reflects
-// exactly what the device ships, not an over-optimistic floor.
+// from native relay status + device config, so they are absent.
+//
+// FAIL keeps an INLINED buildFullPayload below — the pre-#254 full snapshot was
+// genuinely removed from control-logic.js, so the OOM repro must carry its own
+// copy to stay self-contained.
 function buildHarness(snapLine) {
   return `
 // ── OOM reproduction harness (PURE: no Shelly.call, no MQTT). pad=${PAD} → baseline ~19.5–20 KB ──
@@ -106,33 +116,8 @@ var ST={mode:"SOLAR_CHARGING",transitioning:true,transition_step:"valves_opening
   valveOpenSince:{vo_rad:940000},valveOpening:{vi_btm:1010000},valvePendingOpen:["vi_top"],valvePendingClose:["vo_rad"],
   lastTransitionCause:"automation",lastTransitionReason:"solar_enter",last_eval_reason:"collector still climbing",last_held:null};
 var DC={ce:true,ea:31,fm:null,we:{},wz:{},wb:{},tu:{},mo:null,v:1};
-// PASS variant (W3): the FINAL minimal payload — identical field set & order
-// to buildMinPayload in shelly/control-logic.js (contracts/telemetry.md §1).
-// Server-derived fields (valves/actuators/controls_enabled/manual_override)
-// are absent; temps/flags/opening/queued_opens/pending_closes are kept.
-function buildMinPayload(st,dc,now){
-  var opening=[];var oi;for(oi=0;oi<VALVE_NAMES_SORTED.length;oi++){var oname=VALVE_NAMES_SORTED[oi];
-    if(st.valveOpening[oname]!==undefined&&st.valveOpening[oname]>now){opening.push(oname);}}
-  var pendingCloses=[];var pj;var pending=st.valvePendingClose||[];
-  for(pj=0;pj<pending.length;pj++){var pv=pending[pj];var since=(st.valveOpenSince&&st.valveOpenSince[pv])||0;
-    var readyAt=since>0?Math.floor((since+VALVE_TIMING.minOpenMs)/1000):0;pendingCloses.push({valve:pv,readyAt:readyAt});}
-  var queuedOpens=st.valvePendingOpen?st.valvePendingOpen.slice(0):[];
-  return "{\\"ts\\":"+JSON.stringify(now)+
-    ",\\"mode\\":"+JSON.stringify(st.mode.toLowerCase())+
-    ",\\"transitioning\\":"+(st.transitioning?"true":"false")+
-    ",\\"transition_step\\":"+JSON.stringify(st.transition_step||null)+
-    ",\\"temps\\":"+JSON.stringify({collector:st.temps.collector,tank_top:st.temps.tank_top,
-      tank_bottom:st.temps.tank_bottom,greenhouse:st.temps.greenhouse,outdoor:st.temps.outdoor})+
-    ",\\"flags\\":"+JSON.stringify({collectors_drained:st.collectors_drained,
-      emergency_heating_active:st.emergency_heating_active,greenhouse_fan_cooling_active:!!st.greenhouse_fan_cooling_active})+
-    ",\\"opening\\":"+JSON.stringify(opening)+
-    ",\\"queued_opens\\":"+JSON.stringify(queuedOpens)+
-    ",\\"pending_closes\\":"+JSON.stringify(pendingCloses)+
-    ",\\"cause\\":"+JSON.stringify(st.lastTransitionCause||"boot")+
-    ",\\"reason\\":"+JSON.stringify(st.lastTransitionReason||null)+
-    ",\\"eval_reason\\":"+JSON.stringify(st.last_eval_reason||null)+
-    ",\\"held\\":"+JSON.stringify(st.last_held||null)+"}";
-}
+// PASS variant (W3): the real buildMinPayload from the control-logic.js blob
+// above feeds SINK — see the function-level comment. NOT re-inlined here.
 // FAIL variant: the PRE-#254 full device snapshot (the shape control-logic.js
 // shipped before Epic #254 slimmed it). Inlined here so the OOM repro stays
 // self-contained even though shelly/control-logic.js no longer builds it.
@@ -188,7 +173,7 @@ Timer.set(3600000,false,function(){});
 }
 
 const SNAP_FAIL = 'var snap=buildFullPayload(ST,DC,1000000);      // FAIL: pre-#254 full device snapshot';
-const SNAP_PASS = 'var snap=buildMinPayload(ST,DC,1000000);       // PASS: minimal payload (target, W3)';
+const SNAP_PASS = 'var snap=buildMinPayload(ST,DC,1000000);       // PASS: REAL buildMinPayload from the control-logic blob (target, W3)';
 
 function rpc(path, body) {
   return new Promise((resolve, reject) => {

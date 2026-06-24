@@ -114,4 +114,38 @@ test.describe('greenhouse/state/min + relay status → assembled greenhouse/stat
     expect(onFrame).not.toBeNull();
     ws.close();
   });
+
+  test('an additive relay_health sidecar frame accompanies the assembled state frame', async ({ mqttClient }) => {
+    // The relay-health sidecar is a SEPARATE WS frame type ({type:'relay_health'})
+    // carrying the per-relay freshness map. It is fully additive: greenhouse/state
+    // (the {type:'state'} frame) stays byte-identical and never carries freshness.
+    const { ws, messages, ready } = connectWs();
+    await ready;
+
+    await pub(mqttClient, 'fake-4pm/status/switch:0', { id: 0, output: true });
+    const sentinel = -500 - (process.pid % 1000);
+    await pub(mqttClient, 'greenhouse/state/min', {
+      ts: Date.now(),
+      mode: 'solar_charging',
+      temps: { outdoor: sentinel },
+      flags: { collectors_drained: false, emergency_heating_active: false, greenhouse_fan_cooling_active: false },
+    });
+
+    const stateFrame = await waitFor(() => messages.find(
+      (m) => m.type === 'state' && m.data && m.data.temps && m.data.temps.outdoor === sentinel));
+    expect(stateFrame).not.toBeNull();
+    // No freshness leakage into greenhouse/state.
+    expect(stateFrame.data.freshness).toBeUndefined();
+    expect(stateFrame.data.relay_health).toBeUndefined();
+
+    // The sidecar frame carries the per-relay freshness map. The pump we just
+    // published is fresh; a never-published valve is missing.
+    const healthFrame = await waitFor(() => messages.find(
+      (m) => m.type === 'relay_health' && m.data && m.data.relays && m.data.relays.pump
+        && m.data.relays.pump.status === 'fresh'));
+    expect(healthFrame).not.toBeNull();
+    expect(healthFrame.data.relays.pump.status).toBe('fresh');
+    expect(healthFrame.data.relays.v_air.status).toBe('missing');
+    ws.close();
+  });
 });

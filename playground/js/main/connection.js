@@ -4,6 +4,7 @@ import { LiveSource } from '../data-source.js';
 import { store } from '../app-state.js';
 import { initSyncCoordinator } from '../sync/coordinator.js';
 import { attachScriptStatusWebSocket } from '../actions/script-monitor.js';
+import { attachRelayHealthWebSocket } from '../actions/relay-health.js';
 import { graphRange, timeSeriesStore, trendStore, running } from './state.js';
 import { attachWatchdogWebSocket } from './watchdog-ui.js';
 import { handleOverrideResponse, updateRelayBoard } from './relay-board.js';
@@ -366,6 +367,7 @@ function ensureLiveSource() {
     // Re-attach the watchdog broadcast listener now that liveSource exists.
     attachWatchdogWebSocket();
     attachScriptStatusWebSocket(liveSource);
+    attachRelayHealthWebSocket(liveSource);
   }
   liveSource.start();
 }

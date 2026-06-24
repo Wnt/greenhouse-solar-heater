@@ -2,6 +2,17 @@ const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert');
 const { EventEmitter } = require('node:events');
 
+// A RELAY_TOPIC_MAP that resolves EVERY device IP in RELAY_MAP (.50–.54), so
+// the #2a startup coverage assertion passes when bridge.start() runs. Tests
+// that exercise the assertion's failure path override this locally.
+const FULL_TOPIC_MAP = {
+  '192.168.30.50': '192.168.30.50',
+  '192.168.30.51': '192.168.30.51',
+  '192.168.30.52': '192.168.30.52',
+  '192.168.30.53': '192.168.30.53',
+  '192.168.30.54': '192.168.30.54',
+};
+
 describe('mqtt-bridge', () => {
   let bridge;
 
@@ -232,6 +243,151 @@ describe('mqtt-bridge', () => {
     });
   });
 
+  // #3: valve/actuator events must only be logged when the relay reading was
+  // FRESH on both the prev and curr sides. A fallback (stale/missing) read this
+  // tick or last tick means the value came from cache-convergence, not a live
+  // device — flips against it are artefacts and must be suppressed.
+  describe('detectStateChanges freshness gating (#3)', () => {
+    function mkDb(events) {
+      return {
+        insertStateEvent: function (ts, type, id, oldVal, newVal, optsOrCb, maybeCb) {
+          const cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb;
+          events.push({ type, id, oldVal, newVal });
+          if (cb) cb(null);
+        },
+      };
+    }
+    // Build a freshness map marking the listed names fresh, the rest missing.
+    function fresh(names) {
+      const m = {};
+      ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air',
+        'pump', 'fan', 'space_heater', 'immersion_heater'].forEach(function (n) {
+        m[n] = { status: names.indexOf(n) >= 0 ? 'fresh' : 'missing', ageMs: names.indexOf(n) >= 0 ? 0 : null };
+      });
+      return m;
+    }
+
+    it('suppresses the cold-cache restart burst (missing→fresh)', () => {
+      // After a server restart the cache is cold: first assembled tick reads
+      // every relay as MISSING (→ false). The next tick the real reads land
+      // fresh (→ true). The false→true flip never happened on the device.
+      const events = [];
+      const prev = { mode: 'solar_charging', valves: { vi_btm: false }, actuators: { pump: false } };
+      const curr = { mode: 'solar_charging', valves: { vi_btm: true }, actuators: { pump: true } };
+      const prevF = fresh([]);          // cold cache: all missing
+      const currF = fresh(['vi_btm', 'pump']); // now fresh
+      bridge.detectStateChanges(new Date(), prev, curr, mkDb(events), prevF, currF);
+      assert.strictEqual(events.filter((e) => e.type === 'valve' || e.type === 'actuator').length, 0,
+        'no fabricated valve/actuator events on the cold-cache burst');
+    });
+
+    it('suppresses a stale-window flip (fresh→stale)', () => {
+      // The controller went silent; this tick the cache is stale and falls back
+      // to a different previousState-derived value. Not a real transition.
+      const events = [];
+      const prev = { mode: 'solar_charging', valves: {}, actuators: { pump: true } };
+      const curr = { mode: 'solar_charging', valves: {}, actuators: { pump: false } };
+      const prevF = fresh(['pump']);
+      const currF = { pump: { status: 'stale', ageMs: 999999 } };
+      bridge.detectStateChanges(new Date(), prev, curr, mkDb(events), prevF, currF);
+      assert.strictEqual(events.filter((e) => e.type === 'actuator').length, 0,
+        'a stale read this tick must not log an actuator transition');
+    });
+
+    it('still logs a genuine fresh→fresh transition', () => {
+      const events = [];
+      const prev = { mode: 'solar_charging', valves: { vi_btm: false }, actuators: { pump: false } };
+      const curr = { mode: 'solar_charging', valves: { vi_btm: true }, actuators: { pump: true } };
+      const prevF = fresh(['vi_btm', 'pump']);
+      const currF = fresh(['vi_btm', 'pump']);
+      bridge.detectStateChanges(new Date(), prev, curr, mkDb(events), prevF, currF);
+      assert.ok(events.find((e) => e.type === 'valve' && e.id === 'vi_btm' && e.newVal === 'open'));
+      assert.ok(events.find((e) => e.type === 'actuator' && e.id === 'pump' && e.newVal === 'on'));
+    });
+
+    it('falls back to diff-everything when no freshness maps are supplied (legacy callers)', () => {
+      // Direct full-state callers carry device-authored valves/actuators and
+      // pass no freshness — keep the prior behaviour.
+      const events = [];
+      const prev = { mode: 'idle', valves: { vi_btm: false }, actuators: { pump: false } };
+      const curr = { mode: 'idle', valves: { vi_btm: true }, actuators: { pump: false } };
+      bridge.detectStateChanges(new Date(), prev, curr, mkDb(events));
+      assert.ok(events.find((e) => e.type === 'valve' && e.id === 'vi_btm' && e.newVal === 'open'));
+    });
+
+    it('mode + overlay events are unaffected by freshness (device-authored)', () => {
+      const events = [];
+      const prev = { mode: 'idle', valves: {}, actuators: {}, flags: { greenhouse_fan_cooling_active: false } };
+      const curr = { mode: 'solar_charging', valves: {}, actuators: {}, flags: { greenhouse_fan_cooling_active: true } };
+      // Empty freshness maps (would suppress every valve/actuator) — mode/overlay
+      // must still fire.
+      bridge.detectStateChanges(new Date(), prev, curr, mkDb(events), fresh([]), fresh([]));
+      assert.ok(events.find((e) => e.type === 'mode' && e.newVal === 'solar_charging'));
+      assert.ok(events.find((e) => e.type === 'overlay' && e.id === 'greenhouse_fan_cooling'));
+    });
+  });
+
+  // #2a: fail loud on incomplete RELAY_TOPIC_MAP coverage at startup.
+  describe('relay topic-map coverage assertion (#2a)', () => {
+    let prevRelayEnv;
+    let prevPreview;
+
+    beforeEach(() => {
+      prevRelayEnv = process.env.RELAY_TOPIC_MAP;
+      prevPreview = process.env.PREVIEW_MODE;
+    });
+    afterEach(() => {
+      if (prevRelayEnv === undefined) delete process.env.RELAY_TOPIC_MAP;
+      else process.env.RELAY_TOPIC_MAP = prevRelayEnv;
+      if (prevPreview === undefined) delete process.env.PREVIEW_MODE;
+      else process.env.PREVIEW_MODE = prevPreview;
+    });
+
+    function freshBridge() {
+      delete require.cache[require.resolve('../server/lib/relay-status.js')];
+      delete require.cache[require.resolve('../server/lib/mqtt-bridge.js')];
+      const b = require('../server/lib/mqtt-bridge.js');
+      b._reset();
+      return b;
+    }
+
+    it('throws in non-preview mode when the map is incomplete', () => {
+      delete process.env.PREVIEW_MODE;
+      process.env.RELAY_TOPIC_MAP = JSON.stringify({ '192.168.30.50': '192.168.30.50' });
+      const b = freshBridge();
+      assert.throws(() => b.assertRelayTopicCoverage(), /RELAY_TOPIC_MAP/);
+      const cov = b.getRelayTopicCoverage();
+      assert.strictEqual(cov.ok, false);
+      assert.ok(cov.missing.indexOf('192.168.30.51') >= 0);
+    });
+
+    it('throws from start() in non-preview mode with an unset map', () => {
+      delete process.env.PREVIEW_MODE;
+      delete process.env.RELAY_TOPIC_MAP;
+      const b = freshBridge();
+      assert.throws(() => b.start({ mqttHost: '127.0.0.1' }), /RELAY_TOPIC_MAP/);
+    });
+
+    it('does NOT throw in non-preview mode when the map covers every IP', () => {
+      delete process.env.PREVIEW_MODE;
+      process.env.RELAY_TOPIC_MAP = JSON.stringify(FULL_TOPIC_MAP);
+      const b = freshBridge();
+      assert.doesNotThrow(() => b.assertRelayTopicCoverage());
+      assert.strictEqual(b.getRelayTopicCoverage().ok, true);
+    });
+
+    it('does NOT throw in PREVIEW_MODE even with an incomplete map (warns + records)', () => {
+      process.env.PREVIEW_MODE = 'true';
+      process.env.RELAY_TOPIC_MAP = JSON.stringify({ '192.168.30.50': '192.168.30.50' });
+      const b = freshBridge();
+      assert.doesNotThrow(() => b.assertRelayTopicCoverage());
+      const cov = b.getRelayTopicCoverage();
+      assert.strictEqual(cov.ok, false, 'preview still records the gap as queryable health');
+      assert.ok(cov.missing.length > 0);
+      delete process.env.PREVIEW_MODE;
+    });
+  });
+
   describe('handleStateMin (device-minimal → assembled greenhouse/state)', () => {
     const TOPIC_MAP = { p4pm: '192.168.30.50', p51: '192.168.30.51' };
     let prevRelayEnv;
@@ -278,14 +434,60 @@ describe('mqtt-bridge', () => {
 
       bridge.handleStateMin(MIN);
 
-      assert.strictEqual(sent.length, 1);
-      const data = sent[0].data;
+      // Two frames: the state frame, then the relay_health sidecar frame.
+      const stateFrame = sent.find((f) => f.type === 'state');
+      const healthFrame = sent.find((f) => f.type === 'relay_health');
+      assert.ok(stateFrame, 'expected a state frame');
+      assert.ok(healthFrame, 'expected a relay_health sidecar frame');
+      const data = stateFrame.data;
       assert.strictEqual(data.mode, 'solar_charging');
       assert.strictEqual(data.actuators.pump, true);
       assert.strictEqual(data.valves.vi_btm, true);
       assert.strictEqual(data.valves.vi_top, false);
       assert.strictEqual(data.controls_enabled, true);
       assert.ok(Object.prototype.hasOwnProperty.call(data, 'manual_override'));
+      // greenhouse/state stays byte-identical — no freshness leakage.
+      assert.strictEqual(typeof data.freshness, 'undefined');
+      assert.strictEqual(typeof data.relay_health, 'undefined');
+      // The sidecar carries per-relay freshness for the live relays.
+      assert.strictEqual(healthFrame.data.relays.pump.status, 'fresh');
+      assert.strictEqual(healthFrame.data.relays.vi_btm.status, 'fresh');
+      assert.strictEqual(healthFrame.data.relays.vi_top.status, 'missing');
+    });
+
+    it('broadcasts the relay_health frame AFTER the state frame', () => {
+      const sent = [];
+      bridge._setWsServerForTest({ clients: [{ readyState: 1, send: (m) => sent.push(JSON.parse(m)) }] });
+      bridge._setDeviceConfigRefForTest({ getConfig: () => ({ ce: true }) });
+      bridge.handleStateMin(MIN);
+      const stateIdx = sent.findIndex((f) => f.type === 'state');
+      const healthIdx = sent.findIndex((f) => f.type === 'relay_health');
+      assert.ok(stateIdx >= 0 && healthIdx >= 0);
+      assert.ok(healthIdx > stateIdx, 'relay_health must come after state');
+    });
+
+    it('publishes the relay-health sidecar to greenhouse/relay-health (retained)', () => {
+      const publishCalls = [];
+      bridge._setMqttClientForTest({
+        connected: true,
+        publish: (topic, msg, opts) => publishCalls.push({ topic, msg, opts }),
+      });
+      bridge._setDeviceConfigRefForTest({ getConfig: () => ({ ce: true }) });
+      relay.ingestStatus('p4pm/status/switch:0', { output: true }, MIN.ts);
+
+      bridge.handleStateMin(MIN);
+
+      const health = publishCalls.filter((c) => c.topic === 'greenhouse/relay-health');
+      assert.strictEqual(health.length, 1, 'must publish the relay-health sidecar');
+      assert.strictEqual(health[0].opts.retain, true);
+      assert.strictEqual(health[0].opts.qos, 1);
+      const parsed = JSON.parse(health[0].msg);
+      assert.ok(parsed.relays, 'sidecar carries a relays map');
+      assert.strictEqual(parsed.relays.pump.status, 'fresh');
+      // The greenhouse/state republish is unchanged (byte-identical, no freshness).
+      const state = publishCalls.filter((c) => c.topic === 'greenhouse/state');
+      assert.strictEqual(state.length, 1);
+      assert.strictEqual(typeof JSON.parse(state[0].msg).freshness, 'undefined');
     });
 
     it('re-publishes the assembled payload to greenhouse/state (retained) when connected', () => {
@@ -319,9 +521,12 @@ describe('mqtt-bridge', () => {
       });
       bridge._setDeviceConfigRefForTest({ getConfig: () => ({ ce: true }) });
 
-      // First frame: idle, all relays off (establishes previousState).
+      // First frame: idle, pump + vi_btm FRESH-off (establishes a fresh prev).
+      relay.ingestStatus('p4pm/status/switch:0', { output: false }, MIN.ts);
+      relay.ingestStatus('p51/status/switch:0', { output: false }, MIN.ts);
       bridge.handleStateMin(Object.assign({}, MIN, { mode: 'idle' }));
-      // Second frame: solar_charging with pump + vi_btm on.
+      // Second frame: solar_charging with pump + vi_btm FRESH-on. A genuine
+      // fresh→fresh transition MUST be logged (#3 only suppresses fallback reads).
       relay.ingestStatus('p4pm/status/switch:0', { output: true }, MIN.ts);
       relay.ingestStatus('p51/status/switch:0', { output: true }, MIN.ts);
       bridge.handleStateMin(MIN);
@@ -371,8 +576,14 @@ describe('mqtt-bridge', () => {
 
       assert.strictEqual(publishCalls.filter((c) => c.topic === 'greenhouse/state').length, 0,
         'preview must not re-publish greenhouse/state');
-      assert.strictEqual(sent.length, 1, 'preview still broadcasts to its own WS clients');
-      assert.strictEqual(sent[0].data.mode, 'idle');
+      assert.strictEqual(publishCalls.filter((c) => c.topic === 'greenhouse/relay-health').length, 0,
+        'preview must not publish the relay-health sidecar either');
+      // Preview still broadcasts to its own WS clients — both the state frame
+      // and the relay_health sidecar frame.
+      const stateFrame = sent.find((f) => f.type === 'state');
+      assert.ok(stateFrame, 'preview still broadcasts the state frame');
+      assert.strictEqual(stateFrame.data.mode, 'idle');
+      assert.ok(sent.find((f) => f.type === 'relay_health'), 'preview still broadcasts relay_health to its WS clients');
     });
   });
 
@@ -517,8 +728,12 @@ describe('mqtt-bridge', () => {
     let fakeClient;
     let mqttModulePath;
     let originalCacheEntry;
+    let prevRelayEnv;
 
     beforeEach(() => {
+      prevRelayEnv = process.env.RELAY_TOPIC_MAP;
+      process.env.RELAY_TOPIC_MAP = JSON.stringify(FULL_TOPIC_MAP);
+      delete require.cache[require.resolve('../server/lib/relay-status.js')];
       fakeClient = new EventEmitter();
       fakeClient.connected = false;
       fakeClient.subscribe = function (topic, opts, cb) {
@@ -552,6 +767,8 @@ describe('mqtt-bridge', () => {
       } else {
         delete require.cache[mqttModulePath];
       }
+      if (prevRelayEnv === undefined) delete process.env.RELAY_TOPIC_MAP;
+      else process.env.RELAY_TOPIC_MAP = prevRelayEnv;
       bridge._reset();
     });
 
