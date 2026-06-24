@@ -57,8 +57,8 @@
     "@opentelemetry/sdk-logs": "^0.219.0",
     "@opentelemetry/sdk-metrics": "^2.8.0",
     "@opentelemetry/sdk-node": "^0.219.0",
-    "@simplewebauthn/server": "^13.3.1",
+    "@simplewebauthn/server": "^13.3.2",
     "mqtt": "^5.15.1",
-    "pg": "^8.21.0"
+    "pg": "^8.22.0"
   }
 }
