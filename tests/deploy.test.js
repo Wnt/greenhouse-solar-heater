@@ -99,6 +99,11 @@ function createMockServer(handler) {
     } else if (url.includes('Sys.SetConfig') || url.includes('Switch.SetConfig')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ restart_required: false }));
+    } else if (url.includes('Mqtt.GetConfig')) {
+      // Default: not yet provisioned, so provision_mqtt proceeds. The
+      // idempotency describe below overrides this with a matching config.
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ enable: false, status_ntf: false, topic_prefix: '' }));
     } else if (url.includes('Mqtt.SetConfig')) {
       // Epic #254: native relay-status provisioning. MQTT config changes need
       // a reboot to apply, hence restart_required.
@@ -393,6 +398,81 @@ describe('deploy.sh', () => {
       .filter(Boolean);
     assert.ok(deviceNames.includes('GH Sensors 1'), 'sensor hub 1 should be named');
     assert.ok(deviceNames.includes('GH Sensors 2'), 'sensor hub 2 should be named');
+  });
+});
+
+// MQTT provisioning is idempotent: CD runs on every merge, but the MQTT config
+// persists across reboots, so a device already carrying the desired config must
+// NOT be reconfigured + rebooted. Otherwise routine deploys would reboot the
+// whole valve manifold mid-operation. When Mqtt.GetConfig already reports
+// enable+status_ntf+topic_prefix matching, provision_mqtt must skip both
+// Mqtt.SetConfig and Shelly.Reboot for that device.
+describe('deploy.sh MQTT provisioning idempotency', () => {
+  let mock;
+  let port;
+
+  before(async () => {
+    // Custom handler: report every device as already correctly provisioned.
+    mock = createMockServer((req, res) => {
+      const url = req.url;
+      const addr = `127.0.0.1:${port}`;
+      if (url.includes('Mqtt.GetConfig')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ enable: true, status_ntf: true, topic_prefix: addr }));
+      } else if (url.includes('Script.List')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ scripts: [{ id: 1 }] }));
+      } else if (url.includes('Script.PutCode')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ len: 1 }));
+      } else {
+        // Everything else (Script.Stop/SetConfig/Start, Sys/Switch.SetConfig)
+        // succeeds trivially. Mqtt.SetConfig + Shelly.Reboot also land here if
+        // wrongly called — the assertions below catch that.
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('{}');
+      }
+    });
+    await new Promise((resolve) => {
+      mock.server.listen(0, '127.0.0.1', () => {
+        port = mock.server.address().port;
+        resolve();
+      });
+    });
+    const addr = `127.0.0.1:${port}`;
+    fs.writeFileSync(CONF_PATH, [
+      `PRO4PM=${addr}`,
+      `PRO2PM_1=${addr}`,
+      `PRO2PM_2=${addr}`,
+      `PRO2PM_3=${addr}`,
+      `PRO2PM_4=${addr}`,
+      `PRO4PM_VPN=${addr}`,
+      '',
+    ].join('\n'));
+    await runDeployNoArg();
+  });
+
+  after(async () => {
+    fs.writeFileSync(CONF_PATH, ORIGINAL_CONF);
+    await new Promise((resolve) => mock.server.close(resolve));
+  });
+
+  it('reads Mqtt.GetConfig before deciding to reconfigure', () => {
+    const getCalls = mock.calls.filter(c => c.url.includes('Mqtt.GetConfig'));
+    assert.ok(getCalls.length >= 5,
+      `should check each relay device's MQTT config, got ${getCalls.length}`);
+  });
+
+  it('does NOT call Mqtt.SetConfig when the config already matches', () => {
+    const setCalls = mock.calls.filter(c => c.url.includes('Mqtt.SetConfig'));
+    assert.strictEqual(setCalls.length, 0,
+      'an already-provisioned device must not be reconfigured');
+  });
+
+  it('does NOT reboot an already-provisioned device', () => {
+    const rebootCalls = mock.calls.filter(c => c.url.includes('Shelly.Reboot'));
+    assert.strictEqual(rebootCalls.length, 0,
+      'an already-provisioned device must not be rebooted on routine deploys');
   });
 });
 

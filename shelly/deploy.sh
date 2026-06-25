@@ -200,6 +200,25 @@ wait_reachable() {
 
 provision_mqtt() {
   local device_ip="$1"
+  # Idempotency: MQTT config persists across reboots, and CD runs on every
+  # merge — so reconfigure + reboot ONLY when something actually differs.
+  # Without this guard every deploy would reboot the whole valve manifold
+  # (.50–.54) out from under the running control loop. Skip when enable,
+  # status_ntf and topic_prefix already match the desired values.
+  local cur
+  cur=$(curl -sf -m 10 "http://$device_ip/rpc/Mqtt.GetConfig" 2>/dev/null) || cur=""
+  if [ -n "$cur" ] && printf '%s' "$cur" | python3 -c "
+import json, sys
+try:
+    c = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+ok = c.get('enable') is True and c.get('status_ntf') is True and c.get('topic_prefix') == '$device_ip'
+sys.exit(0 if ok else 1)
+"; then
+    echo "MQTT already provisioned on $device_ip (enable+status_ntf+topic_prefix match) — skipping reconfigure/reboot"
+    return 0
+  fi
   echo "Provisioning MQTT status reporting on $device_ip (topic_prefix=$device_ip, status_ntf=true)..."
   # -sf: fail loud on any non-2xx so set -e aborts the deploy before scripts.
   curl -sf -m 10 -X POST "http://$device_ip/rpc/Mqtt.SetConfig" \
