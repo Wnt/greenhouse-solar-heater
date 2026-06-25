@@ -78,6 +78,15 @@ function evaluateGate(candTank, candGh, current, Xte, yTankTe, yGhTe) {
   const cg = evalForest(candGh, Xte, yGhTe);
   const reasons = [];
   if (!ct.finite || !cg.finite) reasons.push('non-finite predictions');
+  // A non-finite RMSE/R2 means the TEST TARGETS carried NaN (a missing
+  // sensor reading in the window) even though predictions were finite.
+  // `NaN < FLOOR` is false, so without this guard a degenerate model
+  // slips past the accuracy floors — the bug that took the ML forecast
+  // offline. Reject explicitly.
+  if (!Number.isFinite(ct.rmse) || !Number.isFinite(ct.r2)
+    || !Number.isFinite(cg.rmse) || !Number.isFinite(cg.r2)) {
+    reasons.push('non-finite metrics (NaN in test targets)');
+  }
   if (ct.r2 < TANK_R2_FLOOR) reasons.push('tank R2 ' + ct.r2.toFixed(3) + ' below floor ' + TANK_R2_FLOOR);
   if (cg.r2 < GH_R2_FLOOR) reasons.push('greenhouse R2 ' + cg.r2.toFixed(3) + ' below floor ' + GH_R2_FLOOR);
   if (current && current.tank && current.greenhouse) {

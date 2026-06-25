@@ -281,6 +281,15 @@ function computeMlForecast(opts) {
   if (oodHours > HORIZON_HOURS / 4) confidence = 'low';
   else if (oodHours === 0 && weatherFresh) confidence = 'high';
 
+  // A NaN-poisoned model (e.g. leaves trained on NaN ΔT targets) emits
+  // non-finite predictions, which propagate through the rollout. Fail
+  // with a clear, handler-recognized message ("model not available" →
+  // 503) instead of letting NaN crash the notes lookup below with a
+  // cryptic "Cannot read properties of undefined (reading 'ts')" 500.
+  if (!isFinite(tankAvg) || !isFinite(gh)) {
+    throw new Error('ML model not available: produced non-finite predictions');
+  }
+
   // ── Notes ──
   const ghTemps = greenhouseTrajectory.map(function temp(p) { return p.temp; });
   const ghMin = Math.min.apply(null, ghTemps);

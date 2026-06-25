@@ -116,6 +116,23 @@ test('computeMlForecast throws without a loaded model', () => {
   }), /model not loaded/);
 });
 
+test('computeMlForecast throws a clear error when the model yields non-finite predictions', () => {
+  // A NaN-poisoned forest (a leaf whose value is NaN) must not crash the
+  // rollout with a cryptic "Cannot read properties of undefined" — it
+  // must throw a model-not-available error the handler maps to a clean
+  // 503 instead of a 500. This was the "ML forecast unavailable" bug.
+  const nanForest = { trees: [{ leaf: true, value: NaN }], nFeatures: FEATURE_NAMES.length };
+  const model = { tank: nanForest, greenhouse: nanForest, featureRanges: [] };
+  assert.throws(() => computeMlForecast({
+    now: new Date('2026-05-18T18:00:00Z'),
+    tankTop: 36, tankBottom: 30, greenhouseTemp: 16,
+    currentMode: 'idle',
+    weather48h: makeWeather(9, true),
+    prices48h: makePrices(),
+    model,
+  }), /model not available|non-finite/i);
+});
+
 test('computeMlForecast flags a cold greenhouse as needing backup now', () => {
   const model = loadModel();
   const fc = computeMlForecast({

@@ -63,6 +63,25 @@ test('evaluateGate passes an equally-good candidate against a current model', ()
   assert.strictEqual(res.pass, true, res.reasons.join('; '));
 });
 
+test('evaluateGate rejects a candidate whose metrics are non-finite', () => {
+  // Mirrors the production failure: a missing sensor reading in the
+  // 30-day window produced NaN ΔT labels. The forest still emits finite
+  // predictions (it was trained on the clean rows that landed in its
+  // leaves), so the existing finite-prediction check passes — but the
+  // test targets carry NaN, so RMSE/R2 come out NaN. NaN < FLOOR is
+  // false, which silently slipped a degenerate model past the gate.
+  const tr = synth(400, learnable, 21);
+  const te = synth(120, learnable, 22);
+  const candTank = rf.trainForest(tr.X, tr.y, { nTrees: 30, seed: 23 });
+  const candGh = rf.trainForest(tr.X, tr.y, { nTrees: 30, seed: 24 });
+  const yTank = te.y.slice(); yTank[3] = NaN;
+  const yGh = te.y.slice(); yGh[7] = NaN;
+  const res = evaluateGate(candTank, candGh, null, te.X, yTank, yGh);
+  assert.strictEqual(res.pass, false);
+  assert.ok(res.reasons.some(function r(x) { return /non-finite/.test(x); }),
+    res.reasons.join('; '));
+});
+
 test('contractOk validates the model feature contract', () => {
   const ok = { tank: {}, greenhouse: {}, version: MODEL_VERSION, featureNames: FEATURE_NAMES.slice() };
   assert.strictEqual(contractOk(ok), true);
