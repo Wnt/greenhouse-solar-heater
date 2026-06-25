@@ -127,6 +127,17 @@ process.env.MQTT_PORT = String(MQTT_PORT);
 // error handler — the test harness doesn't need a fake controller.
 process.env.CONTROLLER_IP = '127.0.0.1:1';
 process.env.AUTH_ENABLED = 'false';
+// Map the fake device topic prefixes the e2e specs publish under to the real
+// device IPs, so the relay-status assembler (Epic #254) resolves them and
+// reconstructs valves/actuators. Real deployments set this to the actual
+// Shelly MQTT topic prefixes.
+process.env.RELAY_TOPIC_MAP = JSON.stringify({
+  'fake-4pm': '192.168.30.50',
+  'fake-51': '192.168.30.51',
+  'fake-52': '192.168.30.52',
+  'fake-53': '192.168.30.53',
+  'fake-54': '192.168.30.54',
+});
 process.env.DEVICE_CONFIG_PATH = path.join(tmpRoot, 'device-config.json');
 // sensor-config + push writes land in server/ by default. Point them at tmp.
 process.env.SENSOR_CONFIG_PATH = path.join(tmpRoot, 'sensor-config.json');

@@ -7,6 +7,18 @@ const { trace } = require('@opentelemetry/api');
 const tracer = trace.getTracer('mqtt-bridge');
 
 const notifications = require('./notifications');
+const relayStatus = require('./relay-status');
+const stateEvents = require('./state-events');
+
+// Topic the device publishes its slimmed decision-state payload on
+// (Epic #254). The server assembles the full byte-compatible greenhouse/state
+// from this + native relay status + device config, then re-publishes it.
+const STATE_MIN_TOPIC = 'greenhouse/state/min';
+const STATE_TOPIC = 'greenhouse/state';
+// Additive sidecar: per-relay freshness/health. NEVER folded into
+// greenhouse/state (which stays byte-identical). Retained, server-published,
+// PREVIEW_MODE-gated exactly like the greenhouse/state republish.
+const RELAY_HEALTH_TOPIC = 'greenhouse/relay-health';
 
 let mqttClient = null;
 let wsServer = null;
@@ -17,6 +29,11 @@ let pushRef = null;
 let anomalyManagerRef = null;
 let stateSnapshotListener = null;
 let previousState = null;
+// Per-relay freshness from the PREVIOUS assembled tick (logical-name →
+// { status, ageMs }). Threaded into detectStateChanges so a valve/actuator
+// state_events row is only written when BOTH the prior and current reads were
+// fresh — fallback (stale/missing) reads never fabricate a transition.
+let previousFreshness = null;
 let connectionStatus = 'disconnected';
 
 // PREVIEW_MODE: this server is a preview/branch deploy that shares the
@@ -28,6 +45,31 @@ function isPreviewMode() {
   return process.env.PREVIEW_MODE === 'true';
 }
 
+// Persistent, queryable health flag for relay topic-map coverage. In prod we
+// throw (start() aborts), so this stays { ok:true } there; it exists for
+// preview mode, where we warn-and-continue but still expose the gap.
+let relayTopicCoverage = { ok: true, missing: [] };
+
+function getRelayTopicCoverage() {
+  return relayTopicCoverage;
+}
+
+// #2a: verify RELAY_TOPIC_MAP (or topic_prefix==IP) resolves every device IP in
+// RELAY_MAP. Prod → throw (fail loud). Preview → record + log at error, but do
+// not abort (preview is a passive observer that may lack the prod map).
+function assertRelayTopicCoverage() {
+  const cov = relayStatus.checkTopicMapCoverage();
+  relayTopicCoverage = cov;
+  if (cov.ok) return;
+  const msg = 'RELAY_TOPIC_MAP does not resolve every device IP in RELAY_MAP — '
+    + 'unmapped relays would silently read false. Missing: ' + cov.missing.join(', ');
+  if (isPreviewMode()) {
+    log.error('relay topic-map coverage incomplete (preview: continuing)', { missing: cov.missing });
+    return;
+  }
+  throw new Error(msg);
+}
+
 function start(options) {
   const mqtt = require('mqtt');
   db = options.db || null;
@@ -37,6 +79,14 @@ function start(options) {
   pushRef = options.push || null;
   anomalyManagerRef = options.anomalyManager || null;
   stateSnapshotListener = options.onStateSnapshot || null;
+
+  // Fail loud on incomplete relay topic mapping (#2a). An unmapped device's
+  // status notifications are silently dropped → every one of its relays falls
+  // back to false, rendering a dead/unmapped controller as a confident
+  // "closed/off". In prod we refuse to start rather than serve that lie.
+  // Preview pods are passive observers (never publish, never persist) and may
+  // run without the prod RELAY_TOPIC_MAP, so they only warn.
+  assertRelayTopicCoverage();
 
   notifications.init({ push: pushRef, deviceConfig: deviceConfigRef, db });
 
@@ -54,8 +104,12 @@ function start(options) {
   mqttClient.on('connect', function () {
     connectionStatus = 'connected';
     log.info('MQTT connected');
-    mqttClient.subscribe('greenhouse/state', { qos: 1 }, function (err) {
-      if (err) log.error('subscribe failed', { error: err.message });
+    mqttClient.subscribe(STATE_MIN_TOPIC, { qos: 1 }, function (err) {
+      if (err) log.error('subscribe state/min failed', { error: err.message });
+    });
+    // Native Shelly Gen2 per-switch status — the source of valves/actuators.
+    mqttClient.subscribe(relayStatus.STATUS_WILDCARD, { qos: 1 }, function (err) {
+      if (err) log.error('subscribe relay status failed', { error: err.message });
     });
     mqttClient.subscribe('greenhouse/watchdog/event', { qos: 1 }, function (err) {
       if (err) log.error('subscribe watchdog/event failed', { error: err.message });
@@ -92,6 +146,18 @@ function start(options) {
       handleResponseMessage(topic, message);
       return;
     }
+    // Native Shelly relay status → cache (the source of valves/actuators).
+    if (relayStatus.parseStatusTopic(topic)) {
+      let body;
+      try {
+        body = JSON.parse(message.toString());
+      } catch (e) {
+        log.warn('invalid JSON on relay status topic', { topic, error: e.message });
+        return;
+      }
+      relayStatus.ingestStatus(topic, body);
+      return;
+    }
     if (topic === 'greenhouse/watchdog/event') {
       let wdMsg;
       try {
@@ -110,26 +176,106 @@ function start(options) {
       }
       return;
     }
-    if (topic !== 'greenhouse/state') return;
+    if (topic !== STATE_MIN_TOPIC) return;
 
     const span = tracer.startSpan('mqtt.message', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': topic } });
-    let payload;
+    let minPayload;
     try {
-      payload = JSON.parse(message.toString());
+      minPayload = JSON.parse(message.toString());
     } catch (e) {
-      log.warn('invalid JSON on greenhouse/state', { error: e.message });
+      log.warn('invalid JSON on ' + STATE_MIN_TOPIC, { error: e.message });
       span.end();
       return;
     }
 
-    handleStateMessage(payload);
+    handleStateMin(minPayload);
     span.end();
   });
 
   return mqttClient;
 }
 
-function handleStateMessage(payload) {
+// Assemble the full, byte-compatible greenhouse/state from a device-minimal
+// payload (greenhouse/state/min) + native relay status + device config, then:
+//   1. re-publish to greenhouse/state (retained; gated by PREVIEW_MODE), and
+//   2. feed it through the EXISTING handleStateMessage pipeline unchanged
+//      (insertSensorReadings, detectStateChanges, enrichState, broadcast,
+//      notifications, anomaly ring buffer).
+function handleStateMin(minPayload) {
+  let controlsEnabled = false;
+  // manual_override is recomputed from device config so the RE-PUBLISHED
+  // retained greenhouse/state is itself complete (matches what the device
+  // used to emit). For WS clients, enrichState recomputes it again at
+  // broadcast time and OVERWRITES this value, so the two never diverge.
+  let manualOverride = null;
+  if (deviceConfigRef && typeof deviceConfigRef.getConfig === 'function') {
+    const cfg = deviceConfigRef.getConfig();
+    if (cfg && typeof cfg.ce !== 'undefined') controlsEnabled = !!cfg.ce;
+    if (cfg && cfg.mo && cfg.mo.a) {
+      manualOverride = { active: true, expiresAt: cfg.mo.ex, forcedMode: cfg.mo.fm || null };
+    }
+  }
+
+  const result = relayStatus.assembleState(minPayload, {
+    previousState,
+    controlsEnabled,
+    manualOverride,
+  });
+  const assembled = result.payload;
+  const freshness = result.freshness;
+
+  // Re-publish the complete retained state so late subscribers / debuggers /
+  // preview pods see the full picture. NEW publish — gated by PREVIEW_MODE.
+  if (!isPreviewMode() && mqttClient && mqttClient.connected) {
+    const span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': STATE_TOPIC } });
+    try {
+      mqttClient.publish(STATE_TOPIC, JSON.stringify(assembled), { qos: 1, retain: true });
+    } catch (e) {
+      log.error('re-publish greenhouse/state failed', { error: e.message });
+    }
+    span.end();
+  }
+
+  // Sidecar: publish relay-health (retained MQTT topic) + broadcast a separate
+  // WS frame. greenhouse/state itself is untouched. Done AFTER the state
+  // republish; the WS relay_health frame is broadcast right after the state
+  // frame inside handleStateMessage's pipeline (see below).
+  publishRelayHealth(freshness, assembled.ts);
+
+  handleStateMessage(assembled, freshness);
+}
+
+// Publish the per-relay freshness sidecar to the retained greenhouse/relay-health
+// MQTT topic. PREVIEW_MODE-gated exactly like the greenhouse/state republish.
+function publishRelayHealth(freshness, ts) {
+  if (isPreviewMode() || !mqttClient || !mqttClient.connected) return;
+  const span = tracer.startSpan('mqtt.publish', { attributes: { 'messaging.system': 'mqtt', 'messaging.destination': RELAY_HEALTH_TOPIC } });
+  try {
+    mqttClient.publish(RELAY_HEALTH_TOPIC, JSON.stringify({ ts, relays: freshness }), { qos: 1, retain: true });
+  } catch (e) {
+    log.error('publish greenhouse/relay-health failed', { error: e.message });
+  }
+  span.end();
+}
+
+// Broadcast the relay-health sidecar as a separate WS frame (type:relay_health).
+function broadcastRelayHealth(freshness, ts) {
+  if (!wsServer || !freshness) return;
+  const msg = JSON.stringify({ type: 'relay_health', data: { ts, relays: freshness } });
+  wsServer.clients.forEach(function (client) {
+    if (client.readyState === 1) { // WebSocket.OPEN
+      client.send(msg);
+    }
+  });
+}
+
+// `freshness` (optional) is the per-relay freshness map from assembleState for
+// THIS tick. When present it is threaded into detectStateChanges (#3) and
+// broadcast as the relay_health sidecar. Absent for direct handleStateMessage
+// callers (tests / legacy full-state paths) — those skip freshness gating and
+// fall back to the prior diff-everything behaviour, which is correct because
+// they carry device-authored valves/actuators (no relay-cache convergence).
+function handleStateMessage(payload, freshness) {
   const ts = payload.ts ? new Date(payload.ts) : new Date();
   const preview = isPreviewMode();
 
@@ -142,10 +288,11 @@ function handleStateMessage(payload) {
 
   // Detect state changes and persist events (skipped in PREVIEW_MODE)
   if (db && previousState && !preview) {
-    detectStateChanges(ts, previousState, payload);
+    stateEvents.detectStateChanges(ts, previousState, payload, db, previousFreshness, freshness);
   }
 
   previousState = payload;
+  if (typeof freshness !== 'undefined') previousFreshness = freshness;
 
   // Feed the script-monitor ring buffer so a later crash row captures
   // what the device was doing in the lead-up.
@@ -167,71 +314,18 @@ function handleStateMessage(payload) {
   // Broadcast to WebSocket clients (always — this is what makes preview
   // dashboards tick in real time).
   broadcastState(payload);
+  // Sidecar WS frame right after the state frame (additive; clients that don't
+  // know the type ignore it). Only when this tick carried freshness.
+  if (typeof freshness !== 'undefined') broadcastRelayHealth(freshness, payload.ts);
 }
 
-function detectStateChanges(ts, prev, curr, _db) {
-  const d = _db || db;
-  if (!d) return;
-  // cause / reason / sensors carry transition context for the log view
-  // ("automation fired SOLAR_CHARGING at collector=62 °C"). All
-  // nullable for back-compat with older payloads.
-  if (prev.mode !== curr.mode) {
-    const modeOpts = {
-      cause: (typeof curr.cause === 'string' && curr.cause) || null,
-      reason: (typeof curr.reason === 'string' && curr.reason) || null,
-      sensors: (curr.temps && typeof curr.temps === 'object') ? curr.temps : null,
-    };
-    d.insertStateEvent(ts, 'mode', 'mode', prev.mode, curr.mode, modeOpts, function (err) {
-      if (err) log.error('db insert mode event failed', { error: err.message });
-    });
-  }
-
-  // Valve changes
-  if (prev.valves && curr.valves) {
-    const valveNames = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
-    for (let i = 0; i < valveNames.length; i++) {
-      const v = valveNames[i];
-      if (prev.valves[v] !== curr.valves[v]) {
-        const oldVal = prev.valves[v] ? 'open' : 'closed';
-        const newVal = curr.valves[v] ? 'open' : 'closed';
-        d.insertStateEvent(ts, 'valve', v, oldVal, newVal, function (err) {
-          if (err) log.error('db insert valve event failed', { error: err.message });
-        });
-      }
-    }
-  }
-
-  // Actuator changes
-  if (prev.actuators && curr.actuators) {
-    const actuatorNames = ['pump', 'fan', 'space_heater', 'immersion_heater'];
-    for (let j = 0; j < actuatorNames.length; j++) {
-      const a = actuatorNames[j];
-      if (prev.actuators[a] !== curr.actuators[a]) {
-        const oldA = prev.actuators[a] ? 'on' : 'off';
-        const newA = curr.actuators[a] ? 'on' : 'off';
-        d.insertStateEvent(ts, 'actuator', a, oldA, newA, function (err) {
-          if (err) log.error('db insert actuator event failed', { error: err.message });
-        });
-      }
-    }
-  }
-
-  // Overlay flag flips. Mode-driven actuator changes are already covered
-  // above, but overlays (fan-cool, emergency heat) can flip the actuator
-  // *within* the same mode and the operator has no way to tell from the
-  // mode log why the fan came on. Persist a separate `overlay` row so
-  // System Logs can render "Fan cooling started/stopped" entries.
-  const prevFlags = prev.flags || {};
-  const currFlags = curr.flags || {};
-  if (prevFlags.greenhouse_fan_cooling_active !== undefined &&
-      currFlags.greenhouse_fan_cooling_active !== undefined &&
-      prevFlags.greenhouse_fan_cooling_active !== currFlags.greenhouse_fan_cooling_active) {
-    const oldO = prevFlags.greenhouse_fan_cooling_active ? 'on' : 'off';
-    const newO = currFlags.greenhouse_fan_cooling_active ? 'on' : 'off';
-    d.insertStateEvent(ts, 'overlay', 'greenhouse_fan_cooling', oldO, newO, function (err) {
-      if (err) log.error('db insert overlay event failed', { error: err.message });
-    });
-  }
+// Thin delegate to the extracted state-events module. Kept on the bridge's
+// public surface because direct callers (tests, legacy full-state paths) invoke
+// bridge.detectStateChanges(ts, prev, curr, _db, …) and rely on the `_db || db`
+// fallback to the module-level db handle. The freshness-gating contract (#3)
+// lives in state-events.js.
+function detectStateChanges(ts, prev, curr, _db, prevFreshness, currFreshness) {
+  stateEvents.detectStateChanges(ts, prev, curr, _db || db, prevFreshness, currFreshness);
 }
 
 // Adds manual_override (from device config) to a greenhouse/state payload.
@@ -437,6 +531,7 @@ function stop(callback) {
   mqttClient.end(false, {}, function () {
     mqttClient = null;
     previousState = null;
+    previousFreshness = null;
     connectionStatus = 'disconnected';
     if (callback) callback();
   });
@@ -453,7 +548,10 @@ module.exports = {
   publishSensorConfigApply,
   publishDiscoveryRequest,
   handleStateMessage,
+  handleStateMin,
   detectStateChanges,
+  assertRelayTopicCoverage,
+  getRelayTopicCoverage,
   _setDeviceConfigRefForTest: function (ref) { deviceConfigRef = ref; },
   _setDbForTest: function (val) { db = val; },
   _setWsServerForTest: function (val) { wsServer = val; },
@@ -467,9 +565,12 @@ module.exports = {
     sensorConfigRef = null;
     pushRef = null;
     previousState = null;
+    previousFreshness = null;
     stateSnapshotListener = null;
     connectionStatus = 'disconnected';
+    relayTopicCoverage = { ok: true, missing: [] };
     notifications._reset();
+    relayStatus.reset();
     // Clear any pending requests
     for (const id in pendingRequests) {
       clearTimeout(pendingRequests[id].timer);

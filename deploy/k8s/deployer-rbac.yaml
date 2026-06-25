@@ -57,6 +57,17 @@ rules:
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates"]
     verbs: ["get", "list", "watch"]
+  # Epic #254 deploy preflight: run a one-shot Job (on the new image, fed the
+  # live app-config) that validates RELAY_TOPIC_MAP coverage BEFORE the running
+  # pod is replaced. A coverage gap aborts the deploy without disturbing the
+  # current deployment or the Shelly control scripts. pods/log lets CD surface
+  # the Job's output. Scoped to the default namespace via this Role.
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

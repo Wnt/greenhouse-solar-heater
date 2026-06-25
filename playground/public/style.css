@@ -1347,6 +1347,26 @@ select, input, textarea { max-width: 100%; }
 
 .valve-chip-closed { color: var(--on-surface-variant); }
 
+/* relay_health sidecar (Epic #254): dim a valve/actuator whose native
+   Shelly status is stale or missing — its rendered state is a fallback,
+   not a confirmed reading. Subtle: lowered opacity + a small "?" badge. */
+.relay-stale { opacity: 0.55; }
+
+.relay-stale-badge {
+  display: inline-block;
+  margin-left: 4px;
+  width: 13px;
+  height: 13px;
+  line-height: 13px;
+  text-align: center;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--on-surface-variant);
+  background: var(--surface-container-high, rgba(255, 255, 255, 0.08));
+  cursor: help;
+}
+
 /* ── Status table ── */
 .status-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 

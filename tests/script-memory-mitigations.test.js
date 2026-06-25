@@ -84,8 +84,12 @@ function createRuntime() {
     kvs,
     rebootCount: function () { return calls.filter(function (m) { return m === 'Shelly.Reboot'; }).length; },
     stateSnapshots: function () {
+      // Epic #254 (#258): the device now publishes the MINIMAL decision-state
+      // payload on greenhouse/state/min (the server reassembles the full
+      // greenhouse/state). These assertions read mode/transitioning/
+      // transition_step, all of which survive in the minimal payload.
       return publishes
-        .filter(function (p) { return p.topic === 'greenhouse/state'; })
+        .filter(function (p) { return p.topic === 'greenhouse/state/min'; })
         .map(function (p) { return JSON.parse(p.payload); });
     },
     setUptime: function (s) { sysUptime = s; },

@@ -128,6 +128,14 @@ export class LiveSource extends DataSource {
           if (this._scriptStatusCallbacks) {
             for (const cb of this._scriptStatusCallbacks) cb(msg.data);
           }
+        } else if (msg.type === 'relay_health') {
+          // Additive sidecar (Epic #254): per-relay freshness emitted
+          // immediately after each `state` frame. `greenhouse/state` stays
+          // byte-identical — freshness is never folded into it. Consumed by
+          // relay-health.js to dim/flag stale or missing valves/actuators.
+          if (this._relayHealthCallbacks) {
+            for (const cb of this._relayHealthCallbacks) cb(msg.data);
+          }
         }
       } catch (e) {
         // ignore parse errors
@@ -176,6 +184,11 @@ export class LiveSource extends DataSource {
   onScriptStatus(callback) {
     this._scriptStatusCallbacks = this._scriptStatusCallbacks || [];
     this._scriptStatusCallbacks.push(callback);
+  }
+
+  onRelayHealth(callback) {
+    this._relayHealthCallbacks = this._relayHealthCallbacks || [];
+    this._relayHealthCallbacks.push(callback);
   }
 
   _handleState(data) {

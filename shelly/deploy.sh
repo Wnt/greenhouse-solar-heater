@@ -166,6 +166,80 @@ print('Upload OK (%d bytes in %d chunks)' % (total, chunk_num))
 " "${files[@]}" "$script_id" "$device_ip"
 }
 
+# ── Provision native MQTT status reporting (Epic #254 telemetry reassembly) ──
+# The server reconstructs the full greenhouse/state from each relay's native
+# Shelly Gen2 status, published on "<topic_prefix>/status/switch:<id>". For
+# that to work every relay device must:
+#   1. have MQTT enabled with status_ntf:true  → it actually publishes status,
+#   2. set topic_prefix to its own IP          → the server resolves the prefix
+#      back to a device IP via its topic_prefix==IP path (no out-of-band
+#      MAC→IP map needed; mirrors RELAY_TOPIC_MAP coverage in relay-status.js).
+# MQTT config changes require a reboot to apply, so we provision + reboot +
+# wait for each device to come back. This runs BEFORE the control script is
+# touched: if a device cannot be provisioned the deploy fails here (set -e),
+# leaving the previously-deployed control script in place.
+#
+# Gated on a full deploy (no explicit target) with MQTT_BROKER_HOST set — the
+# cloud CD path. Single-device test deploys and local runs without a broker
+# skip provisioning.
+MQTT_REBOOT_TIMEOUT="${MQTT_REBOOT_TIMEOUT:-60}"
+
+wait_reachable() {
+  local device_ip="$1" elapsed=0
+  while [ "$elapsed" -lt "$MQTT_REBOOT_TIMEOUT" ]; do
+    if curl -sf -m 3 "http://$device_ip/rpc/Shelly.GetStatus" > /dev/null 2>&1; then
+      echo "  $device_ip back up (${elapsed}s)"
+      return 0
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  echo "Error: $device_ip did not come back after its MQTT reboot (${MQTT_REBOOT_TIMEOUT}s)" >&2
+  return 1
+}
+
+provision_mqtt() {
+  local device_ip="$1"
+  # Idempotency: MQTT config persists across reboots, and CD runs on every
+  # merge — so reconfigure + reboot ONLY when something actually differs.
+  # Without this guard every deploy would reboot the whole valve manifold
+  # (.50–.54) out from under the running control loop. Skip when enable,
+  # status_ntf and topic_prefix already match the desired values.
+  local cur
+  cur=$(curl -sf -m 10 "http://$device_ip/rpc/Mqtt.GetConfig" 2>/dev/null) || cur=""
+  if [ -n "$cur" ] && printf '%s' "$cur" | python3 -c "
+import json, sys
+try:
+    c = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+ok = c.get('enable') is True and c.get('status_ntf') is True and c.get('topic_prefix') == '$device_ip'
+sys.exit(0 if ok else 1)
+"; then
+    echo "MQTT already provisioned on $device_ip (enable+status_ntf+topic_prefix match) — skipping reconfigure/reboot"
+    return 0
+  fi
+  echo "Provisioning MQTT status reporting on $device_ip (topic_prefix=$device_ip, status_ntf=true)..."
+  # -sf: fail loud on any non-2xx so set -e aborts the deploy before scripts.
+  curl -sf -m 10 -X POST "http://$device_ip/rpc/Mqtt.SetConfig" \
+    -H "Content-Type: application/json" \
+    -d "{\"config\":{\"enable\":true,\"server\":\"$MQTT_BROKER_HOST:${MQTT_BROKER_PORT:-1883}\",\"status_ntf\":true,\"topic_prefix\":\"$device_ip\"}}" > /dev/null
+  echo "  rebooting to apply MQTT config..."
+  curl -sf -m 10 "http://$device_ip/rpc/Shelly.Reboot" > /dev/null || true
+  wait_reachable "$device_ip"
+}
+
+if [ -z "$USER_TARGET" ] && [ -n "${MQTT_BROKER_HOST:-}" ]; then
+  echo ""
+  echo "Provisioning native relay-status MQTT on all relay devices..."
+  # Relay devices only: the Pro 4PM (actuators) + the four valve Pro 2PMs.
+  # The .55 spare has no mapped relays and the sensor hubs publish via the
+  # sensor-config path, so neither needs status_ntf.
+  for relay_ip in "$PRO4PM" "${PRO2PM_1:-}" "${PRO2PM_2:-}" "${PRO2PM_3:-}" "${PRO2PM_4:-}"; do
+    [ -n "$relay_ip" ] && provision_mqtt "$relay_ip"
+  done
+fi
+
 # ── Deploy control script (slot 1) ──
 echo "Deploying control-logic.js + control.js to $DEVICE (script $CONTROL_SCRIPT_ID)..."
 
@@ -182,16 +256,6 @@ curl -s -X POST "http://$DEVICE/rpc/Script.SetConfig" \
 echo "Control script auto-start enabled"
 curl -s "http://$DEVICE/rpc/Script.Start?id=$CONTROL_SCRIPT_ID" > /dev/null
 echo "Control script started on $DEVICE"
-
-# ── Configure MQTT on device (if MQTT_BROKER_HOST is set) ──
-if [ -n "${MQTT_BROKER_HOST:-}" ]; then
-  echo ""
-  echo "Configuring MQTT broker: $MQTT_BROKER_HOST:${MQTT_BROKER_PORT:-1883}"
-  curl -s -X POST "http://$DEVICE/rpc/Mqtt.SetConfig" \
-    -H "Content-Type: application/json" \
-    -d "{\"config\":{\"enable\":true,\"server\":\"$MQTT_BROKER_HOST:${MQTT_BROKER_PORT:-1883}\"}}" > /dev/null
-  echo "MQTT configured — device may reboot to apply"
-fi
 
 # ── Device + channel naming ──
 # Sets the device-level name (shown in Shelly app under "All Devices") and

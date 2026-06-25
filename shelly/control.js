@@ -40,7 +40,12 @@ var REBOOT_UPTIME_S = 7 * 24 * 3600; // 7 days
 var CONFIG_TOPIC = "greenhouse/config";
 var SENSOR_CONFIG_TOPIC = "greenhouse/sensor-config";
 var RELAY_COMMAND_TOPIC = "greenhouse/relay-command";
-var STATE_TOPIC = "greenhouse/state";
+// Epic #254 (#258): the device publishes the MINIMAL decision-state payload
+// (buildMinPayload) to greenhouse/state/min. The server (mqtt-bridge)
+// reassembles the full greenhouse/state from this + native Shelly relay
+// status and re-publishes the retained public payload. The device no longer
+// writes greenhouse/state. See contracts/telemetry.md.
+var STATE_TOPIC = "greenhouse/state/min";
 // Watchdog events are device→server only. User ack and shutdownnow round-trip
 // via the existing greenhouse/config retained topic — no matching watchdog/cmd
 // subscription, which keeps the device within its MQTT subscription budget.
@@ -360,15 +365,18 @@ function buildEvalState() {
   };
 }
 
-// buildSnapshotJson (in control-logic.js) hand-serializes the state snapshot
-// straight to a JSON string. We publish that string directly — NOT
-// JSON.stringify(buildSnapshotFromState(...)) — to avoid materializing the
-// full ~40-field object and its serialized string at the same time, the >2x
-// transient JsVar spike that OOM-crashed the script during peak-solar
-// transitions (2026-06). The string is byte-identical to the old payload.
+// buildMinPayload (in control-logic.js) hand-serializes the MINIMAL device
+// decision-state payload straight to a JSON string. We publish that string
+// directly — NOT JSON.stringify(buildSnapshotFromState(...)) — to avoid
+// materializing the object and its serialized string at the same time, the
+// >2x transient JsVar spike that OOM-crashed the script during peak-solar
+// transitions (2026-06). Epic #254 (#258) further slimmed the payload:
+// valves/actuators/controls_enabled/manual_override are now reassembled
+// server-side from native relay status + device config, so they are absent
+// here. Published on greenhouse/state/min (retain) — see contracts/telemetry.md.
 function emitStateUpdate() {
   if (!MQTT.isConnected()) return;
-  MQTT.publish(STATE_TOPIC, buildSnapshotJson(state, deviceConfig, Date.now()), 1, true);
+  MQTT.publish(STATE_TOPIC, buildMinPayload(state, deviceConfig, Date.now()), 1, true);
 }
 
 function applyFlags(flags) {

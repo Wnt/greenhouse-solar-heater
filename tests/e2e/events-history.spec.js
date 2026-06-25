@@ -24,7 +24,7 @@ test.describe('GET /api/events + /api/history', () => {
 
     function publish(payload) {
       return new Promise((resolve, reject) => {
-        mqttClient.publish('greenhouse/state', JSON.stringify(payload), { qos: 1 },
+        mqttClient.publish('greenhouse/state/min', JSON.stringify(payload), { qos: 1 },
           (err) => err ? reject(err) : resolve());
       });
     }
@@ -79,7 +79,7 @@ test.describe('GET /api/events + /api/history', () => {
     const sentinel = 99 + (process.pid % 1000) / 1000;
     await new Promise((resolve, reject) => {
       mqttClient.publish(
-        'greenhouse/state',
+        'greenhouse/state/min',
         JSON.stringify({ ts: new Date().toISOString(), mode: 'idle', temps: { tank_top: sentinel } }),
         { qos: 1 },
         (err) => err ? reject(err) : resolve(),

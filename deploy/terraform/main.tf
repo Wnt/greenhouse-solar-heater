@@ -335,6 +335,21 @@ resource "kubernetes_config_map" "app_config" {
     NODE_ENV                    = "production"
     MQTT_HOST                   = "localhost"
     SENSOR_HOST_IPS             = "192.168.30.20,192.168.30.21"
+    # Resolves each relay's native-status topic prefix back to a device IP so
+    # the server can reassemble greenhouse/state (Epic #254). deploy.sh sets
+    # every relay device's topic_prefix to its own IP, so this is an identity
+    # map over the RELAY_MAP IPs (.50 = Pro 4PM actuators, .51–.54 = valve
+    # 2PMs). It MUST cover every IP in relay-status.js RELAY_MAP — mqtt-bridge
+    # start() fails loud (throws, aborting boot) on a gap, and the deploy
+    # workflow preflights this same coverage before replacing the running pod.
+    # Add a new device's IP here whenever RELAY_MAP grows.
+    RELAY_TOPIC_MAP = jsonencode({
+      "192.168.30.50" = "192.168.30.50"
+      "192.168.30.51" = "192.168.30.51"
+      "192.168.30.52" = "192.168.30.52"
+      "192.168.30.53" = "192.168.30.53"
+      "192.168.30.54" = "192.168.30.54"
+    })
     OTEL_SERVICE_NAME           = "greenhouse-monitor"
     OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp.eu01.nr-data.net"
   }
@@ -415,6 +430,22 @@ resource "kubernetes_role" "deployer" {
     api_groups = [""]
     resources  = ["pods/exec"]
     verbs      = ["create"]
+  }
+
+  # Epic #254 deploy preflight: run a one-shot Job (on the new image, fed the
+  # live app-config) that validates RELAY_TOPIC_MAP coverage BEFORE the running
+  # pod is replaced. A coverage gap aborts the deploy without disturbing the
+  # current deployment or the Shelly control scripts. pods/log surfaces output.
+  rule {
+    api_groups = ["batch"]
+    resources  = ["jobs"]
+    verbs      = ["get", "list", "watch", "create", "delete"]
+  }
+
+  rule {
+    api_groups = [""]
+    resources  = ["pods/log"]
+    verbs      = ["get"]
   }
 
   depends_on = [upcloud_kubernetes_node_group.default]

@@ -91,6 +91,70 @@ jobs:
       - name: Lowercase image name
         run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
+      # Epic #254 preflight: validate that the LIVE app-config resolves a
+      # native-status topic for every relay device (relay-status.js RELAY_MAP)
+      # BEFORE replacing the running pod. The in-pod gate (mqtt-bridge start())
+      # throws on a coverage gap, which under the Recreate strategy would
+      # crash-loop the new pod with no fallback. Running the SAME check here —
+      # on the new image, fed the same app-config the pod will boot with, in a
+      # throwaway Job that never binds the openvpn hostPort — lets a gap abort
+      # the deploy while the previous deployment (and the Shelly control
+      # scripts) keep running untouched.
+      - name: Preflight relay topic-map coverage
+        run: |
+          set -euo pipefail
+          JOB="relay-coverage-preflight-${GITHUB_SHA:0:12}"
+          IMG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          kubectl delete job "$JOB" --ignore-not-found --wait=true
+          cat <<EOF | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: $JOB
+            labels: { app.kubernetes.io/part-of: greenhouse, purpose: relay-coverage-preflight }
+          spec:
+            backoffLimit: 0
+            ttlSecondsAfterFinished: 300
+            activeDeadlineSeconds: 120
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: preflight
+                    image: $IMG
+                    envFrom:
+                      - configMapRef:
+                          name: app-config
+                    command:
+                      - node
+                      - -e
+                      - |
+                        const r = require('/app/server/lib/relay-status');
+                        const c = r.checkTopicMapCoverage();
+                        if (!c.ok) {
+                          console.error('RELAY_TOPIC_MAP coverage gap — refusing to deploy. Unresolvable RELAY_MAP IPs: ' + c.missing.join(', '));
+                          console.error('Apply the app-config RELAY_TOPIC_MAP (terraform) before deploying this code.');
+                          process.exit(1);
+                        }
+                        console.log('relay topic-map coverage OK — every RELAY_MAP IP resolves');
+          EOF
+          ok=0
+          for _ in $(seq 1 60); do
+            succ=$(kubectl get job "$JOB" -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
+            fail=$(kubectl get job "$JOB" -o jsonpath='{.status.failed}' 2>/dev/null || echo "")
+            if [ "$succ" = "1" ]; then ok=1; break; fi
+            if [ -n "$fail" ] && [ "$fail" != "0" ]; then ok=0; break; fi
+            sleep 2
+          done
+          echo "----- preflight logs -----"
+          kubectl logs "job/$JOB" || true
+          echo "--------------------------"
+          kubectl delete job "$JOB" --ignore-not-found --wait=false || true
+          if [ "$ok" != "1" ]; then
+            echo "::error::Relay topic-map coverage preflight FAILED — current deployment left untouched."
+            exit 1
+          fi
+
       - name: Deploy to Kubernetes
         run: |
           kubectl set image deployment/app \

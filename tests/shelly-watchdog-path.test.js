@@ -82,7 +82,7 @@ describe('Shelly watchdog: scs fire → auto-shutdown', () => {
     mqttConnected: true,
     onPublish: (topic, payload) => {
       if (topic === 'greenhouse/watchdog/event') watchdogEvents.push(JSON.parse(payload));
-      else if (topic === 'greenhouse/state') stateEvents.push(JSON.parse(payload));
+      else if (topic === 'greenhouse/state/min') stateEvents.push(JSON.parse(payload));
     },
     httpResponder: (url) => {
       if (url.indexOf('Temperature.GetStatus') >= 0) {

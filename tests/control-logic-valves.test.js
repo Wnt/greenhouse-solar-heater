@@ -1,7 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const { evaluate, MODES, VALVE_TIMING, planValveTransition,
-        buildSnapshotFromState, buildSnapshotJson, runBoundedPool } = require('../shelly/control-logic.js');
+        buildSnapshotFromState, buildMinPayload, runBoundedPool } = require('../shelly/control-logic.js');
 
 const VALVE_NAMES = ['vi_btm', 'vi_top', 'vi_coll', 'vo_coll', 'vo_rad', 'vo_tank', 'v_air'];
 
@@ -731,7 +731,7 @@ describe('buildSnapshotFromState — US5 staged-transition fields', () => {
     assert.deepStrictEqual(snap.opening, []);
   });
 
-  it('preserves existing snapshot fields (ts, mode, valves, actuators)', () => {
+  it('preserves device-only snapshot fields (ts, mode) and omits server-derived ones', () => {
     const st = baseShellState();
     st.mode = MODES.SOLAR_CHARGING;
     st.valve_states = { vi_btm: true, vo_coll: true };
@@ -739,10 +739,12 @@ describe('buildSnapshotFromState — US5 staged-transition fields', () => {
     const snap = buildSnapshotFromState(st, baseDc, 1234567);
     assert.strictEqual(snap.ts, 1234567);
     assert.strictEqual(snap.mode, 'solar_charging');
-    assert.strictEqual(snap.valves.vi_btm, true);
-    assert.strictEqual(snap.valves.vo_coll, true);
-    assert.strictEqual(snap.valves.vi_top, false);
-    assert.strictEqual(snap.actuators.pump, true);
+    // Epic #254 (#258): valves/actuators are reassembled server-side from
+    // native relay status — the device payload must NOT carry them.
+    assert.ok(!('valves' in snap), 'valves must be absent (server-derived)');
+    assert.ok(!('actuators' in snap), 'actuators must be absent (server-derived)');
+    assert.ok(!('controls_enabled' in snap), 'controls_enabled must be absent (server-derived)');
+    assert.ok(!('manual_override' in snap), 'manual_override must be absent (server-derived)');
   });
 });
 
@@ -1010,11 +1012,12 @@ describe('v_air has no polarity inversion (physical valve is normally-closed lik
   });
 });
 
-describe('buildSnapshotJson — hand-serialized, byte-identical to the object form', () => {
+describe('buildMinPayload — hand-serialized, byte-identical to the object form', () => {
   // Richly-populated state exercising every field type: null temps, negative
-  // and fractional temps, active manual_override, a nested `held` object, a
-  // populated pending_closes, and an eval_reason containing characters that
-  // MUST be JSON-escaped (a quote and a backslash).
+  // and fractional temps, a nested `held` object, a populated pending_closes,
+  // and an eval_reason containing characters that MUST be JSON-escaped (a
+  // quote and a backslash). Epic #254 (#258): the minimal payload drops
+  // valves/actuators/controls_enabled/manual_override (server-derived).
   function richState(now) {
     return {
       mode: MODES.SOLAR_CHARGING,
@@ -1039,7 +1042,7 @@ describe('buildSnapshotJson — hand-serialized, byte-identical to the object fo
   it('returns a JSON string byte-identical to JSON.stringify(object form)', () => {
     const now = 1000000;
     const st = richState(now);
-    const json = buildSnapshotJson(st, dc, now);
+    const json = buildMinPayload(st, dc, now);
     assert.strictEqual(typeof json, 'string');
     // The device publishes this string verbatim; the wrapper parses it. The
     // contract is that it equals JSON.stringify of the object the rest of the
@@ -1047,20 +1050,19 @@ describe('buildSnapshotJson — hand-serialized, byte-identical to the object fo
     assert.strictEqual(json, JSON.stringify(buildSnapshotFromState(st, dc, now)));
   });
 
-  it('matches an explicit expected object exactly (no field omitted/reordered/mis-escaped)', () => {
+  it('matches the contract §1 minimal shape exactly (no field omitted/reordered/mis-escaped)', () => {
     const now = 1000000;
     const st = richState(now);
+    // contracts/telemetry.md §1 field set + order. valves/actuators/
+    // controls_enabled/manual_override are intentionally ABSENT (server
+    // reassembles them — §2).
     const expected = {
       ts: now,
       mode: 'solar_charging',
       transitioning: true,
       transition_step: 'valves_opening',
       temps: { collector: 78.5, tank_top: null, tank_bottom: 30, greenhouse: 15.25, outdoor: -3 },
-      valves: { vi_btm: true, vi_top: false, vi_coll: false, vo_coll: true, vo_rad: false, vo_tank: false, v_air: false },
-      actuators: { pump: true, fan: false, space_heater: false, immersion_heater: false },
       flags: { collectors_drained: false, emergency_heating_active: false, greenhouse_fan_cooling_active: true },
-      controls_enabled: true,
-      manual_override: { active: true, expiresAt: 1700003600, forcedMode: 'GH' },
       opening: ['vi_btm'],
       queued_opens: ['vi_top'],
       pending_closes: [{ valve: 'vo_rad', readyAt: Math.floor((now - 60000 + VALVE_TIMING.minOpenMs) / 1000) }],
@@ -1070,23 +1072,25 @@ describe('buildSnapshotJson — hand-serialized, byte-identical to the object fo
       held: { refill_cooldown: 12 }
     };
     // Byte-identical to the canonical serialization of the expected object.
-    assert.strictEqual(buildSnapshotJson(st, dc, now), JSON.stringify(expected));
+    assert.strictEqual(buildMinPayload(st, dc, now), JSON.stringify(expected));
     // And parses back to it.
-    assert.deepStrictEqual(JSON.parse(buildSnapshotJson(st, dc, now)), expected);
+    assert.deepStrictEqual(JSON.parse(buildMinPayload(st, dc, now)), expected);
+  });
+
+  it('omits the four server-derived fields', () => {
+    const now = 1000000;
+    const parsed = JSON.parse(buildMinPayload(richState(now), dc, now));
+    assert.ok(!('valves' in parsed), 'valves must be absent');
+    assert.ok(!('actuators' in parsed), 'actuators must be absent');
+    assert.ok(!('controls_enabled' in parsed), 'controls_enabled must be absent');
+    assert.ok(!('manual_override' in parsed), 'manual_override must be absent');
   });
 
   it('null temps serialize as null (not omitted) and survive round-trip', () => {
     const now = 1000000;
     const st = richState(now);
-    const parsed = JSON.parse(buildSnapshotJson(st, dc, now));
+    const parsed = JSON.parse(buildMinPayload(st, dc, now));
     assert.strictEqual(parsed.temps.tank_top, null);
     assert.ok('tank_top' in parsed.temps, 'null temp key must be present, not dropped');
-  });
-
-  it('manual_override is null when not active', () => {
-    const now = 1000000;
-    const st = richState(now);
-    const parsed = JSON.parse(buildSnapshotJson(st, { ce: true, ea: 31, mo: null, v: 1 }, now));
-    assert.strictEqual(parsed.manual_override, null);
   });
 });

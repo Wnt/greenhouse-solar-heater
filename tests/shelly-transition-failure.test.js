@@ -79,7 +79,10 @@ describe('Shelly transition: valve HTTP failure → finalizeTransitionFail', () 
     setNow: n => { now = n; },
     mqttConnected: true,
     onPublish: (topic, payload) => {
-      if (topic === 'greenhouse/state') stateEvents.push(JSON.parse(payload));
+      // Epic #254 (#258): device publishes the minimal payload on
+      // greenhouse/state/min (server reassembles greenhouse/state). mode +
+      // transitioning are still present in the minimal payload.
+      if (topic === 'greenhouse/state/min') stateEvents.push(JSON.parse(payload));
     },
     httpResponder: (url) => {
       // Sensor polls succeed; valve switch commands fail.
@@ -159,14 +162,18 @@ describe('Shelly transition: valve HTTP failure → finalizeTransitionFail', () 
       'expected transitioning=false after finalizeTransitionFail');
   });
 
-  it('all valves are closed in the final state', () => {
-    // finalizeTransitionFail leaves state.valve_states as-is from the
-    // failed attempt. Since setValve only updates valve_states on
-    // HTTP success, and our HTTP fails, no valve ever flipped to open.
-    const last = stateEvents[stateEvents.length - 1];
-    for (const [name, open] of Object.entries(last.valves)) {
-      assert.strictEqual(open, false,
-        `expected valve ${name} to stay closed after failed transition; got ${open}`);
+  it('no valve was ever opened (every post-boot Switch.Set failed)', () => {
+    // Epic #254 (#258): the device payload no longer carries `valves` (the
+    // server reassembles it from native relay status). The device-observable
+    // proof that no valve flipped to open is the HTTP side: setValve only
+    // updates state.valve_states on HTTP success, and every post-boot valve
+    // Switch.Set in this test returns 500 (see httpResponder). So at least one
+    // open was attempted and none could have succeeded.
+    assert.ok(valveHttpCalls.length > 0,
+      'expected at least one post-boot valve Switch.Set attempt');
+    for (const url of valveHttpCalls) {
+      assert.ok(url.indexOf('Switch.Set') >= 0,
+        `expected only Switch.Set calls on valve hosts; got ${url}`);
     }
   });
 });

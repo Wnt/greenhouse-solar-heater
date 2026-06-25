@@ -1,13 +1,14 @@
 import { test, expect } from './fixtures.js';
 
-// Shelly → MQTT → server → pg-mem → HTTP round-trip. The frontend
-// suite stubs /api/history with canned payloads; here the reading
-// flows through the real mqtt-bridge parser and db.insertSensorReadings.
+// Shelly → MQTT → server → pg-mem → HTTP round-trip. The device now
+// publishes the slimmed decision payload on greenhouse/state/min; the
+// server assembles the full greenhouse/state and runs insertSensorReadings
+// off its temps. The reading flows through the real mqtt-bridge assembler.
 //
-// If this goes red, either the state-message parser changed shape or
+// If this goes red, either the state-message assembler changed shape or
 // the pg-mem schema stub in tests/e2e/_setup/start.cjs drifted from
 // server/lib/db-schema.js.
-test.describe('greenhouse/state publish → /api/history', () => {
+test.describe('greenhouse/state/min publish → /api/history', () => {
   test('a state message with temps shows up in history within the range window', async ({ page, mqttClient }) => {
     // insertSensorReadings whitelists sensor ids to the five roles
     // the app ships with (collector, tank_top, tank_bottom,
@@ -18,7 +19,7 @@ test.describe('greenhouse/state publish → /api/history', () => {
 
     await new Promise((resolve, reject) => {
       mqttClient.publish(
-        'greenhouse/state',
+        'greenhouse/state/min',
         JSON.stringify({ ts: new Date().toISOString(), mode: 'idle', temps: { [sensorId]: value } }),
         { qos: 1 },
         (err) => err ? reject(err) : resolve(),
