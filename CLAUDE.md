@@ -55,6 +55,18 @@ Physical facts about the hardware that are NOT discoverable from code:
 
 Generally true, enforced by `transitionTo()` in `shelly/control.js` (stops pump/fan/heaters, then actuates valves). **The one named exception is exit from `ACTIVE_DRAIN`**, which reverses the order (close valves → wait 20 s via `DRAIN_EXIT_PUMP_RUN_MS` → stop pump) so the pump evacuates residual water from the manifold before the valves seal. Don't simplify the transition scheduler assuming pump-first is always safe.
 
+### The on-device control loop is local-HTTP and offline-first — never broker-dependent
+
+The MQTT broker is in the **cloud pod** (reached over VPN at `10.10.10.1`); there is **no local broker**. So the device control loop must keep working with the ISP/VPN/cloud down: **sensor reads and valve actuation are LAN HTTP RPC** (`Shelly.call("HTTP.GET", …)` to the sensor hubs `.20/.21` and valve controllers `.51`–`.54`), never MQTT. The only MQTT on the device is best-effort telemetry/config (`emitStateUpdate`, `publishWatchdogEvent`, `setupMqttSubscriptions`), each gated by `MQTT.isConnected()` and never reached from the decision/actuation path. **Do not introduce any broker/VPN/internet dependency into `pollSensor`/`pollAllSensors`/`setValve`/`setValves`/`controlLoop`/`runControlDecision`.**
+
+That local path is hardened against a **degraded WiFi link** (#262 — heat-shielding the controller box attenuated WiFi, and the per-tick connection churn ratcheted the JsVar pool until the transition peak OOM'd). In `shelly/control.js`:
+- Every sensor/valve `HTTP.GET` carries an explicit short `timeout: SENSOR_HTTP_TIMEOUT_S` (~3 s) so a lost packet fails fast instead of holding firmware buffers on the long default.
+- `sensorPollInFlight` / `valveCycleInFlight` guards: `controlLoop` never starts a poll cycle that overlaps a prior poll or a valve cycle (overlap was the route to the 5-concurrent-RPC crash). Both clear deterministically because every HTTP.GET times out.
+- **Staleness cache**: `pollSensor` overwrites `state.temps`/`sensor_last_valid` only on a good read; `expireStaleTemps()` (called at the top of `runControlDecision`, pure timestamp math, no I/O) nulls any role older than `SENSOR_MAX_AGE_MS` (~180 s), so a transient gap rides on last-good without thrash and a sustained loss degrades cleanly to IDLE.
+- **Valves**: `setValve` does ≤`VALVE_SET_ATTEMPTS` Set attempts with `VALVE_RETRY_BACKOFF_MS` backoff, then verifies **OPENs** via `Switch.GetStatus` (a definitive opposite-of-commanded read downgrades the 200 to a retry; an inconclusive read trusts the Set). The existing fail-safe is preserved: exhausted attempts → `setValves` bails (pump off, mode IDLE, `lastTransitionCause="failed"`).
+
+The decision step (`runControlDecision`) is cache-only — no blocking I/O between the poll completing and `evaluate()`. Spare-hardware validation lives in `scripts/spare-wifi-testbed.mjs` (`.55` only; authored here, run by the main session).
+
 ### Only edit `shelly/control-logic.js` for control decisions
 
 `shelly/control-logic.js` is pure ES5 decision logic (no side effects, no Shelly APIs). It runs on the device AND in the browser — the playground simulator loads it via `playground/js/control-logic-loader.js` with a CommonJS shim. When changing control logic, **edit this file only** — the playground picks it up automatically, and the bootstrap-history drift test ensures the pre-baked snapshot stays in sync.
