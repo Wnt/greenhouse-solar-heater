@@ -99,11 +99,14 @@ function featureRow(tankAvg, greenhouse, outdoor, wx, frac, aux, t, stepMs) {
 }
 
 function weatherUsable(w) {
+  // Note: NaN is `typeof 'number'`, so a forecast gap that surfaces as a
+  // NaN field would slip through a bare typeof check and poison the
+  // feature row — require finite values.
   return !!w
-    && typeof w.temperature === 'number'
-    && typeof w.radiationGlobal === 'number'
-    && typeof w.windSpeed === 'number'
-    && typeof w.precipitation === 'number';
+    && isFinite(w.temperature)
+    && isFinite(w.radiationGlobal)
+    && isFinite(w.windSpeed)
+    && isFinite(w.precipitation);
 }
 
 // Per-feature [min, max] over a feature matrix — shipped with the model

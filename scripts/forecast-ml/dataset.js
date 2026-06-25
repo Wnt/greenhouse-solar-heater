@@ -178,9 +178,9 @@ function buildStateIndex(points) {
 
   function stateAt(t) {
     if (ts.length === 0) return null;
-    if (t < ts[0]) return (ts[0] - t) <= MAX_GAP_MS ? sample(pts[0]) : null;
+    if (t < ts[0]) return (ts[0] - t) <= MAX_GAP_MS ? finiteState(sample(pts[0])) : null;
     if (t > ts[ts.length - 1]) {
-      return (t - ts[ts.length - 1]) <= MAX_GAP_MS ? sample(pts[pts.length - 1]) : null;
+      return (t - ts[ts.length - 1]) <= MAX_GAP_MS ? finiteState(sample(pts[pts.length - 1])) : null;
     }
     let lo = 0, hi = ts.length - 1;
     while (lo < hi - 1) {
@@ -190,11 +190,11 @@ function buildStateIndex(points) {
     const a = pts[lo], b = pts[hi];
     if ((t - a.ts) > MAX_GAP_MS || (b.ts - t) > MAX_GAP_MS) return null;
     const w = b.ts === a.ts ? 0 : (t - a.ts) / (b.ts - a.ts);
-    return {
+    return finiteState({
       tankAvg: lerp((a.tank_top + a.tank_bottom) / 2, (b.tank_top + b.tank_bottom) / 2, w),
       greenhouse: lerp(a.greenhouse, b.greenhouse, w),
       outdoor: lerp(a.outdoor, b.outdoor, w),
-    };
+    });
   }
 
   return {
@@ -210,6 +210,17 @@ function sample(p) {
     greenhouse: p.greenhouse,
     outdoor: p.outdoor,
   };
+}
+
+// A bucket where a sensor dropped out has a missing (undefined) reading,
+// so the carried state comes out non-finite. Treat it like a sensor gap
+// (return null) rather than letting NaN flow into the training targets —
+// a NaN ΔT poisons random-forest leaves and the model then emits NaN
+// predictions at serving time (the "ML forecast unavailable" failure).
+function finiteState(st) {
+  if (!st) return null;
+  if (!isFinite(st.tankAvg) || !isFinite(st.greenhouse) || !isFinite(st.outdoor)) return null;
+  return st;
 }
 
 // ── weather index ───────────────────────────────────────────────────
