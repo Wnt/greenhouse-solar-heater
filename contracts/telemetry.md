@@ -162,9 +162,9 @@ Rationale:
 
 ### Native topics to subscribe
 
-Each Shelly Gen2 device publishes its switch status to `<device-topic>/status/switch:<id>` (RPC-status notification, JSON body `{ "id": <n>, "output": <bool>, ... }`). The `<device-topic>` is the MQTT topic prefix configured on each device (Shelly default is the device id, e.g. `shellypro4pm-<mac>`; this deployment's configured prefixes must be filled in by W2 from the device MQTT config — they are the same prefixes the devices already use). W2 subscribes to the wildcard `+/status/switch:+` (or the explicit per-device topics) at QoS 1.
+Each Shelly Gen2 device publishes its switch status to `<device-topic>/status/switch:<id>` (RPC-status notification, JSON body `{ "id": <n>, "output": <bool>, ... }`). The `<device-topic>` is the MQTT topic prefix configured on each device. The server subscribes to the wildcard `+/status/+` at QoS 1 and filters to switch-status topics.
 
-> **W2 action item:** confirm each device's configured MQTT topic prefix (4PM + the four valve 2PMs) from the device config / `shelly/deploy.sh` provisioning, and subscribe to its `…/status/switch:<id>` topics. If MQTT status reporting is not yet enabled on a device, W2 enables it as part of provisioning. The relay→logical-name map below is keyed by **(device IP/identity, switch id)**, independent of the topic-prefix string.
+> **Provisioning (implemented in `shelly/deploy.sh`).** Native per-switch status is published **only** when a device has MQTT enabled with `status_ntf:true`. `deploy.sh`'s provisioning step (`provision_mqtt`) sets, on the 4PM + the four valve 2PMs, `Mqtt.SetConfig {enable:true, status_ntf:true, topic_prefix:<device-ip>}` and reboots each device to apply (MQTT config changes require a reboot). Setting **`topic_prefix` to the device's own IP** is deliberate: it lets the server resolve a status topic back to a device IP via its `topic_prefix == IP` path, so no out-of-band MAC→IP map is needed. The relay→logical-name map below is keyed by **(device IP, switch id)**, independent of the topic-prefix string. Provisioning runs **before** the control script is updated, so a device that cannot be provisioned aborts the deploy with the previous control script still in place.
 
 ### Relay → logical-name map
 
@@ -228,6 +228,10 @@ Relay status arrives on `<topic_prefix>/status/switch:<id>`; the server must res
 - **Non-preview:** if `ok === false`, `start()` **throws** `Error('RELAY_TOPIC_MAP does not resolve every device IP in RELAY_MAP … Missing: <ips>')` and aborts boot. Fail-loud — a prod pod will not come up partially blind.
 - **Preview:** logs at `error` level and continues (a passive observer may legitimately lack the prod map).
 - `mqttBridge.getRelayTopicCoverage()` exposes the same `{ ok, missing }` for health probes.
+
+**Prod coverage is supplied by config, not left to chance.** Because the server cannot observe a device's `topic_prefix` at boot, the gate keys off `RELAY_TOPIC_MAP`. The prod app-config (`deploy/terraform/main.tf`) therefore sets `RELAY_TOPIC_MAP` to an **identity map over the RELAY_MAP IPs** (`.50`–`.54`) — which both satisfies the gate and (redundantly with the `topic_prefix == IP` provisioning) resolves status at runtime. Whenever `RELAY_MAP` gains a device, add its IP here.
+
+**Deploy ordering (fail-loud without an outage).** Under the `Recreate` rollout strategy (forced by the openvpn `hostPort`), an in-pod `throw` would crash-loop the new pod with no serving fallback. So the deploy workflow (`.github/workflows/deploy.yml`) **preflights the same `checkTopicMapCoverage()`** — on the new image, fed the **live** app-config, in a throwaway `Job` that never binds the hostPort — **before** `kubectl set image`. A coverage gap fails the preflight and aborts the deploy, leaving the previous deployment **and** the Shelly control scripts untouched. The in-pod gate remains as the last line of defense.
 
 #### Stale-relay event suppression (state_events)
 

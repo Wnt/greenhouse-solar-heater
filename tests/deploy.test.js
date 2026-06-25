@@ -34,7 +34,9 @@ function spawnDeploy(args) {
   return new Promise((resolve, reject) => {
     const child = spawn('bash', [DEPLOY_SH, ...args], {
       cwd: SCRIPTS_DIR,
-      env: { ...process.env, DEPLOY_STOP_DELAY: '0' },
+      // MQTT_BROKER_HOST drives the native-status provisioning phase (Epic
+      // #254). Set it so deploy runs exercise that path against the mock.
+      env: { ...process.env, DEPLOY_STOP_DELAY: '0', MQTT_BROKER_HOST: '10.10.10.1' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -97,6 +99,18 @@ function createMockServer(handler) {
     } else if (url.includes('Sys.SetConfig') || url.includes('Switch.SetConfig')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ restart_required: false }));
+    } else if (url.includes('Mqtt.SetConfig')) {
+      // Epic #254: native relay-status provisioning. MQTT config changes need
+      // a reboot to apply, hence restart_required.
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ restart_required: true }));
+    } else if (url.includes('Shelly.Reboot')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({}));
+    } else if (url.includes('Shelly.GetStatus')) {
+      // deploy.sh polls this to confirm a device is back after its MQTT reboot.
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ sys: { uptime: 5 } }));
     } else {
       res.writeHead(404);
       res.end('Not found');
@@ -261,10 +275,65 @@ describe('deploy.sh', () => {
       'No id=2 PutCode should occur after the telemetry merge');
   });
 
+  // ── Native relay-status provisioning (Epic #254) ──
+  // The server reassembles greenhouse/state from each relay's native Shelly
+  // status, published on "<topic_prefix>/status/switch:<id>" only when MQTT is
+  // enabled with status_ntf:true. deploy.sh must enable that AND set
+  // topic_prefix=IP (so the server resolves the prefix back to a device IP),
+  // on every relay device, BEFORE the control script is updated.
+  it('provisions MQTT status reporting on every relay device (4PM + 4 valve 2PMs)', () => {
+    const mqttCalls = mock.calls
+      .filter(c => c.url.includes('Mqtt.SetConfig'))
+      .map(c => { try { return JSON.parse(c.body).config; } catch (_) { return null; } })
+      .filter(Boolean);
+    // .50 (4PM) + .51–.54 (valve controllers) = 5 relay devices.
+    assert.ok(mqttCalls.length >= 5,
+      `expected MQTT provisioning on >=5 relay devices, got ${mqttCalls.length}`);
+    for (const cfg of mqttCalls) {
+      assert.strictEqual(cfg.enable, true, 'MQTT must be enabled');
+      assert.strictEqual(cfg.status_ntf, true,
+        'status_ntf:true is required for native per-switch status to be published');
+      assert.ok(cfg.server, 'MQTT server must be set');
+    }
+  });
+
+  it('sets topic_prefix to each device IP so the server can resolve relay status', () => {
+    // All mock devices share one addr; deploy.sh sets topic_prefix to that addr
+    // (a real IP in prod). The server\'s topic_prefix==IP path then resolves it.
+    const addr = `127.0.0.1:${port}`;
+    const prefixes = mock.calls
+      .filter(c => c.url.includes('Mqtt.SetConfig'))
+      .map(c => { try { return JSON.parse(c.body).config.topic_prefix; } catch (_) { return null; } })
+      .filter(p => p !== null && p !== undefined);
+    assert.ok(prefixes.length >= 5, 'every provisioned device sets a topic_prefix');
+    for (const p of prefixes) {
+      assert.strictEqual(p, addr,
+        `topic_prefix must equal the device IP (${addr}), got "${p}"`);
+    }
+  });
+
+  it('provisions MQTT BEFORE updating the control script (fail-loud ordering)', () => {
+    // The user requirement: a provisioning failure must abort the deploy
+    // before any control script is touched. So every Mqtt.SetConfig must
+    // precede the first control-script PutCode.
+    const firstMqttIdx = mock.calls.findIndex(c => c.url.includes('Mqtt.SetConfig'));
+    const firstPutIdx = mock.calls.findIndex(c => c.url.includes('Script.PutCode'));
+    assert.ok(firstMqttIdx >= 0, 'should provision MQTT at least once');
+    assert.ok(firstPutIdx >= 0, 'should upload the control script');
+    assert.ok(firstMqttIdx < firstPutIdx,
+      'MQTT provisioning must run before the control script is uploaded');
+  });
+
+  it('reboots each provisioned device to apply MQTT config', () => {
+    const rebootCalls = mock.calls.filter(c => c.url.includes('Shelly.Reboot'));
+    assert.ok(rebootCalls.length >= 5,
+      `each provisioned relay device must be rebooted to apply MQTT config, got ${rebootCalls.length}`);
+  });
+
   // Device + channel naming phase. The deploy run in before() was launched
   // with no arg so naming executes against every device in devices.conf
   // (all pointed at the mock). Naming ordering is not asserted — it runs
-  // after MQTT config, which runs after script upload.
+  // after MQTT provisioning and the control-script upload.
   it('names the Pro 4PM and its four switches with meaningful labels', () => {
     const sysCalls = mock.calls.filter(c => c.url.includes('Sys.SetConfig'));
     assert.ok(sysCalls.length >= 1, 'should call Sys.SetConfig at least once');
