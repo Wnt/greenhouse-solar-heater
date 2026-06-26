@@ -66,22 +66,44 @@ function createScriptMonitor(options) {
   const db = options.db || null;
   // Injectable so tests can mock the Shelly without real HTTP.
   const rpc = options.rpc || rpcCall;
+  // Injectable clock (defaults to Date.now) so backoff windows are
+  // deterministic in tests.
+  const now = typeof options.now === 'function' ? options.now : Date.now;
 
   // Reactive auto-restart: on a genuine crash, restart the control script
   // automatically instead of waiting for a human (the 2026-06-22 episode
-  // left the collector to stagnate to ~90 °C for hours), capped so a true
-  // crash-loop can't spin forever, escalating to one device reboot when
-  // script-restarts don't take. Off unless explicitly enabled.
+  // left the collector to stagnate to ~90 °C for hours). Off unless
+  // explicitly enabled.
+  //
+  // NEVER-GIVE-UP recovery (#262, 2026-06-25): the Pro 4PM OOM'd even at
+  // IDLE/BOOT and crash-looped so hard that the old "3 restarts then one
+  // reboot then stop" path exhausted and left the controller permanently
+  // DOWN. The hardened loop instead:
+  //   - spaces restart attempts by exponential backoff (no Stop/Start storm
+  //     every 30 s poll — that itself adds HTTP churn to a sick device),
+  //   - after `maxAutoRestarts` restarts inside a window, escalates to a
+  //     device reboot and KEEPS escalating (repeated reboots, each spaced by
+  //     an exponential, capped cooldown) — recovery is a loop, not a one-shot,
+  //   - treats `exhausted` as informational ("currently in backoff /
+  //     escalating"), never as a terminal stop.
   const autoRestartEnabled = options.autoRestart === true;
   const maxAutoRestarts = options.maxAutoRestarts || 3;
-  const autoRestartWindowMs = options.autoRestartWindowMs || 15 * 60 * 1000;
+  // Base spacing between successive script restarts; doubles each attempt up
+  // to maxBackoffMs.
+  const restartBackoffMs = options.restartBackoffMs != null ? options.restartBackoffMs : 30 * 1000;
+  // Base spacing between successive device-reboot escalations; doubles each
+  // reboot up to maxBackoffMs.
+  const rebootBackoffMs = options.rebootBackoffMs != null ? options.rebootBackoffMs : 5 * 60 * 1000;
+  const maxBackoffMs = options.maxBackoffMs != null ? options.maxBackoffMs : 30 * 60 * 1000;
 
   let timer = null;
   let inflight = false;
   let recentStates = []; // newest-last
-  let autoRestartTimes = [];      // epoch-ms of recent auto-restart attempts
-  let autoRestartExhausted = false;
-  let rebootEscalated = false;
+  let restartAttempts = 0;        // script restarts this crash episode (reset on recovery)
+  let autoRestartExhausted = false; // informational: in backoff / escalating
+  let lastRestartAt = 0;          // epoch-ms of the most recent restart attempt
+  let lastRebootAt = 0;           // epoch-ms of the most recent reboot escalation
+  let rebootCount = 0;            // device reboots fired this crash episode
   const lastStatus = {
     running: null,         // true / false / null (unknown)
     checkedAt: null,       // last poll epoch ms
@@ -113,9 +135,10 @@ function createScriptMonitor(options) {
       scriptId,
       autoRestart: {
         enabled: autoRestartEnabled,
-        attempts: autoRestartTimes.length,
+        attempts: restartAttempts,
         exhausted: autoRestartExhausted,
-        rebootEscalated,
+        rebootEscalated: rebootCount > 0,
+        rebootCount,
       },
     };
   }
@@ -131,35 +154,62 @@ function createScriptMonitor(options) {
     });
   }
 
-  // Called on every poll while the script is observed crashed. Restarts it
-  // (capped per window); once the cap is hit, marks exhausted and fires one
-  // device reboot. Only acts on genuine crashes (an error trace is present)
-  // — a clean stop, e.g. a deploy's Script.Stop/Start, has none and must
-  // not trigger a fight with the deployer. Does NOT emit status; the poll
-  // loop emits once after calling this so the snapshot reflects new state.
+  // Exponential backoff: base * 2^step, capped at maxBackoffMs.
+  function backoff(base, step) {
+    if (base <= 0) return 0;
+    const ms = base * Math.pow(2, step);
+    return ms > maxBackoffMs ? maxBackoffMs : ms;
+  }
+
+  // Called on every poll while the script is observed crashed. Drives the
+  // never-give-up recovery loop: backoff-spaced script restarts, then
+  // backoff-spaced device-reboot escalations that keep firing until the
+  // script comes back. Only acts on genuine crashes (an error trace is
+  // present) — a clean stop, e.g. a deploy's Script.Stop/Start, has none and
+  // must not trigger a fight with the deployer. Does NOT emit status; the
+  // poll loop emits once after calling this so the snapshot reflects new
+  // state.
   function maybeAutoRestart() {
     if (!autoRestartEnabled) return;
     if (!lastStatus.error_trace) return;
-    const now = Date.now();
-    autoRestartTimes = autoRestartTimes.filter(function (ts) { return now - ts < autoRestartWindowMs; });
-    if (autoRestartTimes.length >= maxAutoRestarts) {
-      if (!autoRestartExhausted) {
-        autoRestartExhausted = true;
-        log.error('auto-restart exhausted — control script will not stay up', { attempts: autoRestartTimes.length, host });
-        if (!rebootEscalated) {
-          rebootEscalated = true;
-          log.warn('escalating to device reboot', { host });
-          rpc(host, 'Shelly.Reboot', {}, rpcTimeoutMs, function (err) {
-            if (err) log.error('device reboot failed', { error: err.message });
-          });
-        }
-      }
+    const t = now();
+
+    if (restartAttempts < maxAutoRestarts) {
+      // Still within the per-episode restart budget — try a script restart,
+      // but only once the restart backoff since the last attempt has elapsed
+      // (avoids a Stop/Start storm that piles HTTP churn on a sick device).
+      // The budget counts CONSECUTIVE failed restarts in this crash episode
+      // (reset on recovery), not a sliding time window — so backoff can space
+      // attempts over minutes without the count silently ageing out and
+      // starving the reboot escalation.
+      if (lastRestartAt && t - lastRestartAt < backoff(restartBackoffMs, restartAttempts)) return;
+      restartAttempts += 1;
+      lastRestartAt = t;
+      log.warn('auto-restarting control script', { attempt: restartAttempts, host });
+      restartScript(function (err) {
+        if (err) log.error('auto-restart failed', { error: err.message });
+      });
       return;
     }
-    autoRestartTimes.push(now);
-    log.warn('auto-restarting control script', { attempt: autoRestartTimes.length, host });
-    restartScript(function (err) {
-      if (err) log.error('auto-restart failed', { error: err.message });
+
+    // Restart budget exhausted: escalate to a device reboot. Never a one-shot
+    // — keep escalating, each reboot spaced by an exponential (capped)
+    // cooldown, so a controller that OOMs on boot is rebooted again and again
+    // rather than abandoned. `exhausted` LATCHES true for the rest of this
+    // crash episode (cleared only on recovery) so the critical "DOWN — action
+    // needed" push fires once per episode on its rising edge, not on every
+    // post-reboot restart attempt.
+    autoRestartExhausted = true;
+    if (lastRebootAt && t - lastRebootAt < backoff(rebootBackoffMs, rebootCount)) return;
+    lastRebootAt = t;
+    rebootCount += 1;
+    // Reset the restart budget so script-level restarts resume after the
+    // reboot (the device may come back healthy and only need a Script.Start).
+    restartAttempts = 0;
+    lastRestartAt = 0;
+    log.warn('escalating to device reboot', { host, rebootCount });
+    rpc(host, 'Shelly.Reboot', {}, rpcTimeoutMs, function (err) {
+      if (err) log.error('device reboot failed', { error: err.message });
     });
   }
 
@@ -233,7 +283,7 @@ function createScriptMonitor(options) {
     inflight = true;
     rpc(host, 'Script.GetStatus', { id: scriptId }, rpcTimeoutMs, function (err, result) {
       inflight = false;
-      lastStatus.checkedAt = Date.now();
+      lastStatus.checkedAt = now();
       if (err) {
         const reachabilityChanged = lastStatus.reachable !== false;
         lastStatus.reachable = false;
@@ -258,9 +308,11 @@ function createScriptMonitor(options) {
           lastStatus.crashId = null;
           // Recovery — clear the auto-restart episode so a later crash can
           // be auto-restarted again from scratch.
-          autoRestartTimes = [];
+          restartAttempts = 0;
           autoRestartExhausted = false;
-          rebootEscalated = false;
+          lastRestartAt = 0;
+          lastRebootAt = 0;
+          rebootCount = 0;
           log.info('script running', { host });
           emitStatus();
         }
