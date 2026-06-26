@@ -5,37 +5,6 @@ var SHELL_CFG = {
   POLL_INTERVAL: 30000,
   VALVE_SETTLE_MS: 1000,
   PUMP_PRIME_MS: 5000,
-  // ── Degraded-WiFi sensor hardening (#262) ──
-  // Explicit short timeout (seconds) on every LOCAL sensor HTTP.GET. On a
-  // flaky link a lost packet otherwise holds firmware connection buffers on
-  // the long default timeout — the connection churn that ratchets JsVar-pool
-  // RAM pressure until the transition peak no longer fits (the 2026-06 OOM).
-  // 3 s fails fast while comfortably covering a healthy LAN round-trip.
-  SENSOR_HTTP_TIMEOUT_S: 3,
-  // Max age of a cached per-role temperature before it is presented to
-  // evaluate() as null. Inside this window a transient WiFi gap is ridden
-  // out on the last-good value (no mode thrash on a single failed poll);
-  // past it the role goes null so the pure control logic degrades cleanly
-  // to IDLE — fully LOCAL, no broker involvement. Kept comfortably above
-  // POLL_INTERVAL (30 s) so a few consecutive missed polls are tolerated,
-  // and above control-logic's sensorStaleThreshold (150 s) so the staleness
-  // path there fires first when only some roles are missing.
-  SENSOR_MAX_AGE_MS: 180000,
-  // ── Degraded-WiFi valve-actuation hardening (#262, WS3) ──
-  // The valve HTTP.GET timeout reuses SENSOR_HTTP_TIMEOUT_S above: same short
-  // explicit timeout on every LOCAL Switch.Set / Switch.GetStatus so a
-  // dropped/partial response on a flaky link fails fast instead of holding a
-  // firmware connection buffer open on the long default timeout (the
-  // connection churn that ratchets JsVar-pool RAM pressure).
-  // Total Switch.Set attempts per valve command (initial + retries). Bounded
-  // so a genuinely unreachable valve bails the transition (fail-safe to IDLE)
-  // instead of spinning forever. A single transient drop is ridden out by the
-  // second attempt.
-  VALVE_SET_ATTEMPTS: 2,
-  // Backoff between valve Set attempts. Short enough not to stall the
-  // transition, long enough to yield the event loop and let a transient WiFi
-  // hiccup clear before the retry.
-  VALVE_RETRY_BACKOFF_MS: 300,
   // Fixed pump run duration inside ACTIVE_DRAIN. Replaces the
   // earlier pump-power-threshold heuristic — the Wilo Star Z20/4's
   // power draw drops only a few watts when the collectors go dry,
@@ -258,83 +227,28 @@ function setActuators(states, cb) {
   next(0);
 }
 
-// Harden the LOCAL valve actuation path for degraded WiFi (#262, WS3). Stays
-// pure LAN HTTP RPC — NO broker. Per command:
-//   • every Switch.Set HTTP.GET carries VALVE_HTTP_TIMEOUT_S (fail fast),
-//   • up to VALVE_SET_ATTEMPTS attempts with VALVE_RETRY_BACKOFF_MS backoff,
-//   • after a 200-looking OPEN, VERIFY the relay actually moved via
-//     Switch.GetStatus before declaring success — a "lying 200" (relay did
-//     not switch) is counted as a failed attempt, not a success,
-//   • on exhausted attempts cb(false) so setValves preserves the existing
-//     fail-safe (pump off, mode IDLE, lastTransitionCause="failed").
-// valveCycleInFlight is held across the whole sequence so controlLoop won't
-// start an overlapping sensor poll.
-//
-// Verify is applied to OPEN commands only. Opening a valve into an active
-// flow path is where a stuck/unmoved valve is hazardous (wrong loop, pump
-// deadheading), so a lying 200 there must be caught. A CLOSE is the
-// fail-safe direction and is already covered by retries on the Set itself,
-// the boot wholesale-close retry loop, and the fact that every subsequent
-// transition re-commands the full target valve map; verifying every close
-// would also double the boot/transition HTTP round count for no safety gain.
 function setValve(name, open, cb) {
-  if (open && (!deviceConfig.ce || !(deviceConfig.ea & EA_VALVES))) { if (cb) cb(true); return; }
+  if (open && !deviceConfig.ce) { if (cb) cb(true); return; }
+  if (open && !(deviceConfig.ea & EA_VALVES)) { if (cb) cb(true); return; }
   var v = VALVES[name];
-  var base = "http://" + v.ip + "/rpc/Switch.";
-  var setUrl = base + "Set?id=" + v.id + "&on=" + (open ? "true" : "false");
-  var getUrl = base + "GetStatus?id=" + v.id;
-  var to = SHELL_CFG.SENSOR_HTTP_TIMEOUT_S;
-
-  valveCycleInFlight = true;
-  var attempt = 0;
-
-  function finish(ok) {
-    valveCycleInFlight = false;
-    if (ok) state.valve_states[name] = open; else state.last_error = "valve_" + name;
-    if (cb) cb(ok);
-  }
-
-  // Retry on a fresh Timer.set frame (backoff) so we never synchronously
-  // re-stack Shelly.call, and so a transient WiFi gap has time to clear.
-  function retryOrFail() {
-    if (attempt >= SHELL_CFG.VALVE_SET_ATTEMPTS) { finish(false); return; }
-    Timer.set(SHELL_CFG.VALVE_RETRY_BACKOFF_MS, false, tryOnce);
-  }
-
-  // Verify the relay output matches the commanded position. A 200 Set that
-  // did NOT actually move the relay (firmware/contactor fault, or a stale
-  // cached reply on a degraded link) is caught here. We only DOWNGRADE the
-  // already-accepted 200 Set to a failure on a *definitive contradiction*
-  // (a parseable status whose output is the opposite of what we commanded).
-  // An inconclusive verify — read dropped/timed out, or an unparseable/empty
-  // body — trusts the 200 Set rather than bailing the whole transition to
-  // IDLE on a verify-read hiccup. The verify is a best-effort lie-detector,
-  // not a second point of failure on a degraded link.
-  function verify() {
-    Shelly.call("HTTP.GET", {url: getUrl, timeout: to}, function(res, err) {
-      var out;
-      if (!err && res && res.code === 200 && res.body && res.body.indexOf("output") >= 0) {
-        try { out = JSON.parse(res.body).output; } catch (e) { out = undefined; }
-      }
-      // Definitive contradiction → the relay did not move; retry/fail.
-      // Confirmed match / inconclusive read → trust the 200 Set.
-      if (out === !open) { retryOrFail(); return; }
-      finish(true);
-    });
-  }
-
-  function tryOnce() {
-    attempt++;
-    Shelly.call("HTTP.GET", {url: setUrl, timeout: to}, function(res, err) {
-      if (err || !res || res.code !== 200) { retryOrFail(); return; }
-      // Verify OPENs (hazard direction); trust a 200 CLOSE without a
-      // read-back round-trip.
-      if (open) { verify(); return; }
-      finish(true);
-    });
-  }
-
-  tryOnce();
+  var url = "http://" + v.ip + "/rpc/Switch.Set?id=" + v.id +
+    "&on=" + (open ? "true" : "false");
+  Shelly.call("HTTP.GET", {url: url}, function(res, err) {
+    if (err || !res || res.code !== 200) {
+      Shelly.call("HTTP.GET", {url: url}, function(res2, err2) {
+        if (err2 || !res2 || res2.code !== 200) {
+          state.last_error = "valve_" + name;
+          if (cb) cb(false);
+          return;
+        }
+        state.valve_states[name] = open;
+        if (cb) cb(true);
+      });
+      return;
+    }
+    state.valve_states[name] = open;
+    if (cb) cb(true);
+  });
 }
 
 function setValves(pairs, idx, cb) {
@@ -389,11 +303,7 @@ function seedValveOpenSinceOnBoot() {
 
 function pollSensor(name, hostIp, componentId, cb) {
   var url = "http://" + hostIp + "/rpc/Temperature.GetStatus?id=" + componentId;
-  // Explicit short timeout (#262): a dropped/partial response on a degraded
-  // link fails fast here instead of hanging the per-tick poll chain (which
-  // would stall controlLoop's decision step entirely) or holding firmware
-  // connection buffers open.
-  Shelly.call("HTTP.GET", {url: url, timeout: SHELL_CFG.SENSOR_HTTP_TIMEOUT_S}, function(res, err) {
+  Shelly.call("HTTP.GET", {url: url}, function(res, err) {
     if (err || !res || res.code !== 200 || !res.body || res.body.indexOf("tC") < 0) {
       if (cb) cb(name, null);
       return;
@@ -402,26 +312,6 @@ function pollSensor(name, hostIp, componentId, cb) {
     if (cb) cb(name, data.tC);
   });
 }
-
-// In-flight guard (#262): set while a poll cycle is running so controlLoop
-// never launches a second overlapping cycle. Overlapping cycles were the
-// path to the 5-concurrent-call limit crash and the connection-churn RAM
-// pressure on a flaky link. A stuck cycle cannot wedge this forever: every
-// sensor HTTP.GET now carries SENSOR_HTTP_TIMEOUT_S, so the cycle always
-// completes (success or timeout) and clears the flag.
-var sensorPollInFlight = false;
-
-// Valve-cycle in-flight guard (#262, WS3). Set while any setValve HTTP work
-// (Switch.Set attempts + the Switch.GetStatus verify) is outstanding, so
-// controlLoop never launches a sensor poll cycle that would overlap valve
-// actuation. Overlap was a route to the 5-concurrent-HTTP-call limit on a
-// degraded link (valve Set + verify + 5 sensor polls all in flight). Staged
-// transitions already block controlLoop via state.transitioning; this flag
-// additionally covers the relay-command queue and boot valve closes, which
-// actuate valves outside a transition. A stuck valve cycle cannot wedge this
-// forever: every valve HTTP.GET carries VALVE_HTTP_TIMEOUT_S, so the cycle
-// always settles (success, verify-mismatch, or timeout) and clears the flag.
-var valveCycleInFlight = false;
 
 function pollAllSensors(cb) {
   // If no sensor config loaded, skip polling (safe: all temps stay null → IDLE)
@@ -433,23 +323,14 @@ function pollAllSensors(cb) {
   for (var sName in sensorConfig.s) {
     names.push(sName);
   }
-  sensorPollInFlight = true;
   function next(i) {
-    if (i >= names.length) {
-      sensorPollInFlight = false;
-      if (cb) cb();
-      return;
-    }
+    if (i >= names.length) { if (cb) cb(); return; }
     var name = names[i];
     var cfg = sensorConfig.s[name];
     var hostIp = sensorConfig.h[cfg.h];
     if (!hostIp) { next(i + 1); return; }
     pollSensor(name, hostIp, cfg.i, function(n, val) {
       if (val !== null) {
-        // Last-good staleness cache: overwrite the cached value + timestamp
-        // only on a successful read. A failed/timed-out poll leaves the
-        // prior value in place; buildEvalState() decides per-role whether it
-        // is still young enough to use (SENSOR_MAX_AGE_MS) or must go null.
         state.temps[n] = val;
         state.sensor_last_valid[n] = Date.now();
       }
@@ -460,27 +341,6 @@ function pollAllSensors(cb) {
 }
 
 // ── State snapshot for evaluate() and events ──
-
-// Expire any cached per-role temperature whose last-good read is older than
-// SENSOR_MAX_AGE_MS (#262). Called once at the top of the decision step so a
-// role that has gone unread for too long flips to null IN the cache itself —
-// the pure control logic then degrades cleanly to IDLE, and the published
-// telemetry (buildMinPayload reads state.temps) shows the role as null too.
-// Within the window the last-good value is preserved, so a single failed
-// poll (or a short burst) is ridden out without mode thrash. No I/O here —
-// pure timestamp arithmetic over the existing cache.
-function expireStaleTemps() {
-  var now = Date.now();
-  var names = ["collector","tank_top","tank_bottom","greenhouse","outdoor"];
-  for (var i = 0; i < names.length; i++) {
-    var n = names[i];
-    if (state.temps[n] === null) continue;
-    var lastValid = state.sensor_last_valid[n];
-    if (!(lastValid > 0) || (now - lastValid) > SHELL_CFG.SENSOR_MAX_AGE_MS) {
-      state.temps[n] = null;
-    }
-  }
-}
 
 function buildEvalState() {
   var now = Date.now();
@@ -1209,31 +1069,8 @@ function maybeScheduledReboot() {
 
 function controlLoop() {
   if (state.transitioning) return;
-  // In-flight guard (#262): if the previous tick's poll cycle is still
-  // resolving (slow/degraded link), OR a valve cycle is mid-flight (relay
-  // queue / boot closes — staged transitions are already gated above by
-  // state.transitioning), do NOT start a second overlapping cycle. Overlap
-  // was the route to the 5-concurrent-call crash and the connection-churn
-  // RAM pressure. Skip straight to the decision step on the cached temps;
-  // staleness expiry below still degrades roles to null if the link stays
-  // down past SENSOR_MAX_AGE_MS.
-  if (sensorPollInFlight || valveCycleInFlight) {
-    runControlDecision();
-    return;
-  }
   pollAllSensors(function() {
-    runControlDecision();
-  });
-}
-
-// Decision step (#262): pure, cache-only — no blocking I/O between the poll
-// completing and evaluate(). Expires stale cached temps, then runs the
-// evaluator, transition, overlay, and watchdog logic exactly as before.
-function runControlDecision() {
     if (state.transitioning) return;
-    // Degrade any too-old cached role to null BEFORE evaluating, so a
-    // sustained link loss collapses to IDLE rather than acting on stale data.
-    expireStaleTemps();
 
     // Manual override is HARD (2026-04-21): automation — including
     // freeze/overheat drain — is fully suspended until the user
@@ -1285,6 +1122,7 @@ function runControlDecision() {
     // on IDLE + uptime, so it can fire at most once the device is old and
     // quiet — typically overnight.
     maybeScheduledReboot();
+  });
 }
 
 // Watchdog per-tick block: lazy-prune expired bans, reset baseline on
