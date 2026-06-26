@@ -26,6 +26,38 @@ var SHELL_CFG = {
 // overflow recursion cannot re-establish itself from a new pathway.
 var MIN_RESUME_MS = 20;
 
+// ── Degraded-WiFi local-HTTP hardening (#262) ──
+// Short identifiers (HTO/pIF/vIF/VSA) are deliberate: Espruino stores a
+// variable name as an inline char list, so keeping these ≤4 chars holds each
+// in a single JsVar and keeps the added bytecode (and thus the transition
+// peak) from regressing the way the first #262 attempt did (PR #263 reverted
+// for adding ~460 B of resident baseline that OOM'd the 4PM at IDLE/boot).
+//
+// HTO — explicit short timeout (seconds) on every LOCAL sensor/valve HTTP.GET.
+// On a flaky link a lost packet otherwise pins a firmware connection buffer on
+// the long default timeout; that per-tick connection churn is what ratcheted
+// the JsVar pool until the transition peak no longer fit. 3 s fails fast while
+// covering a healthy LAN round-trip. A timed-out HTTP.GET returns err/!200, so
+// the existing failure branches (sensor→null, valve→retry/bail) clear the
+// in-flight flags deterministically — a stuck cycle can never wedge them.
+var HTO = 3;
+
+// pIF / vIF — in-flight guards. pIF is set while a sensor poll cycle is
+// running; vIF while a valve cycle (Switch.Set attempts) is outstanding.
+// controlLoop refuses to start a new poll cycle while either is set, so a
+// poll never overlaps a prior poll or a valve cycle — overlap was the route
+// to the 5-concurrent-RPC crash and the connection-churn RAM pressure.
+// Booleans, not a queue: dropping this tick is cheaper (no pending-call
+// JsVars) than buffering, and the next 30 s tick retries on fresh cache.
+var pIF = false;
+var vIF = false;
+
+// VSA — total Switch.Set attempts per valve command (initial + retries).
+// Bounded so a genuinely unreachable valve bails the transition (existing
+// fail-safe: pump off, IDLE, cause="failed") instead of spinning forever; a
+// single transient drop is ridden out by the second attempt.
+var VSA = 2;
+
 // Device uptime past which the script triggers a full reboot to defragment
 // the Espruino JsVar pool. Over long uptime that pool fragments and the
 // script's contiguous headroom shrinks; a Script.Stop/Start does NOT
@@ -67,6 +99,12 @@ var VALVES = {
   // 192.168.30.54 id 1 is a reserved spare (passive T joint at collector top — spec 024)
   v_air:   {ip: "192.168.30.54", id: 0},
 };
+
+// Canonical valve-name list, hoisted once (was duplicated in
+// closeAllValves / seedValveOpenSinceOnBoot / currentValves). One shared
+// literal instead of three trims resident bytecode — the offset that keeps
+// the #262 WiFi-hardening additions below from regressing the runtime peak.
+var VN = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_air"];
 
 // Sensor config from KVS (null = skip polling, safe IDLE default)
 var sensorConfig = null;
@@ -227,28 +265,34 @@ function setActuators(states, cb) {
   next(0);
 }
 
+// Degraded-WiFi valve actuation (#262). Stays pure LAN HTTP RPC — NO broker.
+// Every Switch.Set HTTP.GET carries the short HTO timeout (fail fast instead
+// of pinning a firmware buffer on the long default), up to VSA attempts so a
+// single transient drop is ridden out, and vIF is held across the cycle so
+// controlLoop won't overlap a sensor poll. On exhausted attempts cb(false)
+// preserves the existing fail-safe in setValves (pump off, IDLE, cause=
+// "failed"). Attempts recurse through the same callback, so VSA=2 is the
+// initial Set + one retry — identical attempt count to the prior code, now
+// generalised so a higher VSA needs no extra branch.
 function setValve(name, open, cb) {
-  if (open && !deviceConfig.ce) { if (cb) cb(true); return; }
-  if (open && !(deviceConfig.ea & EA_VALVES)) { if (cb) cb(true); return; }
+  if (open && (!deviceConfig.ce || !(deviceConfig.ea & EA_VALVES))) { if (cb) cb(true); return; }
   var v = VALVES[name];
   var url = "http://" + v.ip + "/rpc/Switch.Set?id=" + v.id +
     "&on=" + (open ? "true" : "false");
-  Shelly.call("HTTP.GET", {url: url}, function(res, err) {
-    if (err || !res || res.code !== 200) {
-      Shelly.call("HTTP.GET", {url: url}, function(res2, err2) {
-        if (err2 || !res2 || res2.code !== 200) {
-          state.last_error = "valve_" + name;
-          if (cb) cb(false);
-          return;
-        }
-        state.valve_states[name] = open;
-        if (cb) cb(true);
-      });
-      return;
-    }
-    state.valve_states[name] = open;
-    if (cb) cb(true);
-  });
+  vIF = true;
+  var n = 0;
+  function done(ok) {
+    vIF = false;
+    if (ok) state.valve_states[name] = open; else state.last_error = "valve_" + name;
+    if (cb) cb(ok);
+  }
+  function tryOnce(res, err) {
+    if (res !== undefined && !err && res && res.code === 200) { done(true); return; }
+    if (n >= VSA) { done(false); return; }
+    n++;
+    Shelly.call("HTTP.GET", {url: url, timeout: HTO}, tryOnce);
+  }
+  tryOnce(undefined, null);
 }
 
 function setValves(pairs, idx, cb) {
@@ -278,9 +322,8 @@ function setValves(pairs, idx, cb) {
 }
 
 function closeAllValves(cb) {
-  var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_air"];
   var pairs = [];
-  for (var i = 0; i < names.length; i++) pairs.push([names[i], false]);
+  for (var i = 0; i < VN.length; i++) pairs.push([VN[i], false]);
   setValves(pairs, 0, cb);
 }
 
@@ -289,9 +332,8 @@ function closeAllValves(cb) {
 // close without waiting for the min-open hold. Fresh opens after boot get a
 // real timestamp when their opening window ends.
 function seedValveOpenSinceOnBoot() {
-  var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_air"];
-  for (var i = 0; i < names.length; i++) {
-    state.valveOpenSince[names[i]] = 0;
+  for (var i = 0; i < VN.length; i++) {
+    state.valveOpenSince[VN[i]] = 0;
   }
   state.valveOpening = {};
   state.valvePendingOpen = [];
@@ -303,7 +345,9 @@ function seedValveOpenSinceOnBoot() {
 
 function pollSensor(name, hostIp, componentId, cb) {
   var url = "http://" + hostIp + "/rpc/Temperature.GetStatus?id=" + componentId;
-  Shelly.call("HTTP.GET", {url: url}, function(res, err) {
+  // Explicit short timeout (#262): a dropped/partial response fails fast
+  // instead of holding a firmware connection buffer on the long default.
+  Shelly.call("HTTP.GET", {url: url, timeout: HTO}, function(res, err) {
     if (err || !res || res.code !== 200 || !res.body || res.body.indexOf("tC") < 0) {
       if (cb) cb(name, null);
       return;
@@ -323,13 +367,23 @@ function pollAllSensors(cb) {
   for (var sName in sensorConfig.s) {
     names.push(sName);
   }
+  // In-flight guard (#262): held across the whole poll cycle so controlLoop
+  // won't launch a second overlapping cycle. Cleared on completion below.
+  pIF = true;
   function next(i) {
-    if (i >= names.length) { if (cb) cb(); return; }
+    if (i >= names.length) { pIF = false; if (cb) cb(); return; }
     var name = names[i];
     var cfg = sensorConfig.s[name];
     var hostIp = sensorConfig.h[cfg.h];
     if (!hostIp) { next(i + 1); return; }
     pollSensor(name, hostIp, cfg.i, function(n, val) {
+      // Last-good staleness cache (#262): overwrite the cached value +
+      // timestamp ONLY on a good read. A failed/timed-out poll leaves the
+      // prior value AND its sensor_last_valid in place, so a transient gap
+      // rides on last-good (no mode thrash); a sustained loss lets sensorAge
+      // grow past control-logic's sensorStaleThreshold (150 s) and degrade
+      // cleanly to IDLE via the existing anySensorStale path — no extra
+      // bytecode needed for the degrade.
       if (val !== null) {
         state.temps[n] = val;
         state.sensor_last_valid[n] = Date.now();
@@ -669,10 +723,9 @@ function finalizeTransitionFail() {
 // Build the current physical valve map. Any valve whose state is unknown
 // (e.g. never commanded) is treated as closed.
 function currentValves() {
-  var names = ["vi_btm","vi_top","vi_coll","vo_coll","vo_rad","vo_tank","v_air"];
   var cur = {};
-  for (var i = 0; i < names.length; i++) {
-    cur[names[i]] = !!state.valve_states[names[i]];
+  for (var i = 0; i < VN.length; i++) {
+    cur[VN[i]] = !!state.valve_states[VN[i]];
   }
   return cur;
 }
@@ -1069,6 +1122,14 @@ function maybeScheduledReboot() {
 
 function controlLoop() {
   if (state.transitioning) return;
+  // In-flight guard (#262): if the previous tick's poll cycle is still
+  // resolving (slow link), or a valve cycle is mid-flight (relay queue / boot
+  // closes — staged transitions are already gated above by transitioning),
+  // skip starting a second overlapping cycle. Overlap was the route to the
+  // 5-concurrent-call crash and the connection-churn RAM pressure. We simply
+  // drop this tick; the cached temps still age toward IDLE via sensorAge if
+  // the link stays down, and the next 30 s tick retries.
+  if (pIF || vIF) return;
   pollAllSensors(function() {
     if (state.transitioning) return;
 

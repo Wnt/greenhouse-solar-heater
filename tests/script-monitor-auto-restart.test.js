@@ -80,16 +80,35 @@ describe('script-monitor auto-restart', () => {
       'Script.GetStatus': [up, crash], // then repeats `crash`
       'Script.Stop': [{ result: {} }], 'Script.Start': [{ result: {} }], 'Shelly.Reboot': [{ result: {} }],
     }, sys));
-    const mon = createScriptMonitor({ host: 'x', rpc, db: makeFakeDb(), autoRestart: true, maxAutoRestarts: 2 });
-    pollTimes(mon, 5, () => {
-      const s = mon.getStatus();
-      assert.strictEqual(s.autoRestart.exhausted, true, 'marked exhausted after the cap');
-      assert.strictEqual(s.autoRestart.attempts, 2, 'attempts capped at maxAutoRestarts');
-      assert.ok(calls.some(c => c.method === 'Shelly.Reboot'), 'escalated to a device reboot');
-      const reboots = calls.filter(c => c.method === 'Shelly.Reboot').length;
-      assert.strictEqual(reboots, 1, 'device reboot fired exactly once (no reboot loop)');
-      done();
+    // Inject a clock advancing 1 min/poll so the per-attempt restart backoff
+    // is satisfied and both restarts plus the reboot escalation fire within
+    // the 5-poll budget. (Recovery never permanently gives up — the reboot
+    // loop is covered in script-monitor-recovery-loop.test.js; here we just
+    // assert the cap→reboot handoff still happens.)
+    const clock = { t: 1000 };
+    const mon = createScriptMonitor({
+      host: 'x', rpc, db: makeFakeDb(), autoRestart: true, maxAutoRestarts: 2,
+      restartBackoffMs: 1000, rebootBackoffMs: 60000, now: () => clock.t,
     });
+    // Stop right after the escalation poll (poll 4): up, crash→restart#1,
+    // crash→restart#2, crash→reboot. A 5th poll would (correctly) begin a new
+    // restart attempt — never-give-up — which the recovery-loop suite covers.
+    function step(i) {
+      if (i >= 4) {
+        const s = mon.getStatus();
+        assert.strictEqual(s.autoRestart.exhausted, true, 'marked exhausted after the cap');
+        assert.ok(calls.some(c => c.method === 'Shelly.Reboot'), 'escalated to a device reboot');
+        const reboots = calls.filter(c => c.method === 'Shelly.Reboot').length;
+        assert.strictEqual(reboots, 1, 'one reboot in this short window (rate-limited)');
+        const starts = calls.filter(c => c.method === 'Script.Start').length;
+        assert.strictEqual(starts, 2, 'two script restarts before escalating');
+        done();
+        return;
+      }
+      clock.t += 60 * 1000;
+      mon.pollOnce(() => setImmediate(() => step(i + 1)));
+    }
+    step(0);
   });
 
   it('resets after recovery so a later crash can be auto-restarted again', (t, done) => {
