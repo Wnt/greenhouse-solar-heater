@@ -348,12 +348,20 @@ function pollSensor(name, hostIp, componentId, cb) {
   // Explicit short timeout (#262): a dropped/partial response fails fast
   // instead of holding a firmware connection buffer on the long default.
   Shelly.call("HTTP.GET", {url: url, timeout: HTO}, function(res, err) {
-    if (err || !res || res.code !== 200 || !res.body || res.body.indexOf("tC") < 0) {
+    if (err || !res || res.code !== 200 || !res.body) {
       if (cb) cb(name, null);
       return;
     }
-    var data = JSON.parse(res.body);
-    if (cb) cb(name, data.tC);
+    // Scrape tC rather than JSON.parse(res.body). JSON.parse materializes the
+    // whole response tree AND needs a contiguous working block; on a JsVar pool
+    // densely packed by the resident script, that contiguous allocation is the
+    // per-tick transient that OOMs (Epic #254). parseFloat reads the leading
+    // number after the "tC": key and ignores the rest. A truncated/corrupt body
+    // (realistic on a flaky link) yields NaN -> null instead of throwing — the
+    // old JSON.parse threw uncaught in this callback, latching the poll guard.
+    var k = res.body.indexOf("\"tC\":");
+    var tc = k < 0 ? NaN : parseFloat(res.body.substring(k + 5));
+    if (cb) cb(name, isNaN(tc) ? null : tc);
   });
 }
 
