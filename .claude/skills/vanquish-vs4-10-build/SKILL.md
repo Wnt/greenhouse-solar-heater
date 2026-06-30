@@ -250,6 +250,52 @@ Component subtotals **exclude** the €854.99 kit. Verify all prices before buyi
 - LiPo bag — ~€12
 - *Optional:* servo winch (Injora INJS035-360, ~€35) + beadlock wheels
 
+### D. Performance — dig + selectable overdrive + high-voltage sensored + Spektrum (~€1,020 + kit ≈ €1,875)
+
+For the owner who wants **best-in-class slow-speed control AND a fast (~15 km/h) mode**,
+a **dig**, **more overdrive**, a **sensored** drivetrain, **maximum battery voltage**, a
+**Spektrum** radio, and **powerful servos**. Assumes you already own a multi-cell LiPo
+charger (e.g. **Robitronic Expert LD 80**, 1–6S/80W — charges 3S & 4S, no new charger).
+
+- **Transmission upgrade (the key part):** **Vanquish VFD Twin Transmission Kit
+  (VPS10200)** — ~€204 ([game-mania.it](https://game-mania.it/index.php?cPath=65_125_579&language=en&main_page=product_info&products_id=18490); ⚠️ not at rc-multistore). Replaces the kit's single VFD; gives
+  **on-the-fly selectable overdrive 6.5% ↔ 46%** (your "fast mode"), a **neutral =
+  front-disconnect/2WD**, **and a built-in 3-position dig**. ⚠️ *Not a true 2:1 high
+  gear* — 46% OD ≈ 1.4× wheel speed; the rest of ~15 km/h comes from motor KV × volts.
+  - Dig/OD servo mount: **VS4-10 Cross-Brace w/ Dig Servo Mount (VPS10126)** ~€25
+  - **2× low-profile shift servos** (overdrive + dig), ~€25 ea — need **2 aux channels**
+  - *Optional extra overdrive:* front-axle 24T/8T helical set (~22% OD), aftermarket ~€20
+  - *Dig-only alternative* (keep stock VFD, no fast-mode OD): VFD **Hurtz Dig**
+    VPS01360 (~$110, in stock AMain) + 1 servo + 1 channel
+- **Motor+ESC (sensored, max-voltage, strong BEC):** **Castle Mamba X crawler combo,
+  1406-1900kV** — ~€195 (EuroRC). Sensored SmartSense, **2–6S**, **8A adjustable BEC**.
+  - 4S-capable; run **3S + ~1900–2300kV** for the easy crawl+15 km/h balance, or **4S +
+    ~1400–1500kV** for true max voltage (under-KV the motor to keep crawl + manage heat).
+  - One-cart Hobbywing alt (**3S max**): Xerun **AXE R2 + AXE540 2300kV** (€121.59 motor
+    + ESC). For genuine **4S** in the Hobbywing family you must use the **AXE Plus R3
+    (2–6S)** combo (~€237, EuroRC) — the **AXE R2 is 3S-only**.
+- **Steering servo (powerful HV):** **Savox SW-2290SG** waterproof monster — €129.99
+  (Lindinger AT, in stock). ~50 kg·cm@7.4V (up to ~65–70@8.4V), 25T, standard size (use
+  a low-profile horn). Lighter-draw alt: Savox SW-1210SG+ (~37 kg·cm).
+- **Radio (Spektrum, dig + 2-speed):** **Spektrum DX5 Rugged + SR515** — €284.99
+  (rc-multistore). 5ch, **weatherproof**, **RX included**, assignable mixing for
+  servo-shifted OD + dig. Channel map: steering · throttle · OD-shift · dig · lights.
+  - Need a winch too (6ch + AVC + telemetry)? DX5 Rugged TX-only + **SR6100AT** (€104.49),
+    or step to the **DX6R** (€349.99 TX-only) + SR6100AT.
+- **Battery (max voltage):** 4S 5000mAh hardcase **XT60** (~€89, EuroRC) for the 4S path,
+  or ABSIMA **3S** 5000mAh XT60 (€32.36, rc-multistore) for the simpler build.
+  - **Charger:** your **Robitronic Expert LD 80** (1–6S/80W/7A, AC+DC) — covers 3S & 4S.
+- **Tires/glue:** Pro-Line Hyrax Predator 4.75" + foams (~€43) or Louise CR-CHAMP (€17) + glue €12.56.
+- **External BEC + servo saver:** ~€30. ⚠️ A monster steering servo + 2 shift servos can
+  exceed a 6A BEC at simultaneous stall — the Mamba X's 8A helps, but add an external
+  7.4V/8A BEC (or at least a glitch capacitor). The VS4-10 steering has no built-in saver.
+
+> **Voltage reality:** the **ESC is the voltage ceiling, not the charger or battery.**
+> The default Fusion Pro is **3S-only** — never run 4S on it. Only 2–6S ESCs (Mamba X,
+> AXE Plus R3) make 4S real. 6S is overkill for a 313 mm crawler (heat/weight, no crawl
+> gain). **15 km/h math:** 2300kV-on-3S tops ~11–12 km/h; reach ~15 km/h via the 46%
+> overdrive and/or a ~2700–3200kV motor, or 4S with a lower-KV motor.
+
 ---
 
 ## Optional / nice-to-have
