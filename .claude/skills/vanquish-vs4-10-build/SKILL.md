@@ -287,16 +287,16 @@ verified 2026-06-30** (Playwright through the proxy needs `--ssl-version-max=tls
   in stock** ([EuroRC](https://www.eurorc.com/product/37969/savox-sw-2290sg-servo-70kg-011s-hv-alu-brushless-steel-gear-wp)).
   ~55 kg·cm@7.4V / ~70@8.4V, 25T (⚠️ Lindinger listing is **out of stock**). Lighter-draw
   alt: Savox SW-1210SG+ €79.90 (EuroRC).
-- **Radio (Spektrum — availability caveat):** ⚠️ **rc-multistore does NOT carry Spektrum
-  surface radios**, and the **DX5 Rugged / DX5 Pro are discontinued & out of stock across
-  the EU; the DX6R is "coming soon" with no EU price.** The **receivers are in stock** —
-  **SR515** 5ch **€38.65** ([Tamico](https://tamico.de/SR515-DSMR-5-CH-Reciever)),
-  **SR6100AT** 6ch +AVC+telemetry **€89.90** ([mg-modellbau](https://www.mg-modellbau.de/Fernsteuerungen/24GHz-Empfaenger/Spektrum/SR6100AT-DSMR-6-Kanal-AVC-Telemetrie-Empfaenger.html)) —
-  but a matching in-production Spektrum pistol TX must be **US-imported or bought
-  secondhand**. In-stock-in-EU alternative if Spektrum isn't essential: **RadioMaster MT12
-  4-in-1 + R85C (5ch)** or **Flysky FS-GT5 (6ch)** — both cover steering + throttle +
-  OD/2WD + dig + lights. **Channel need: 4 minimum** (steer, throttle, OD/2WD, dig); 5–6
-  if adding a winch/lights.
+- **Radio — Flysky FS-GT5 (6ch, RX included):** **€90.89** at rc-multistore
+  ([FS054](https://www.rc-multistore.com/flysky-fs-gt5-sender-6-kanal-mit-1-empfaenger-fs054)) —
+  folds into the rc-multistore cart; ships with the FS-BS6 6ch receiver, no separate RX
+  order. 6 channels cover steering + throttle + OD/2WD-shift + dig + lights with one spare.
+  **Channel need: 4 minimum** (steer, throttle, OD/2WD, dig). ⚠️ **Spektrum was the
+  original preference but is unavailable in the EU**: rc-multistore carries no Spektrum
+  surface radios, and the DX5 Rugged / DX5 Pro are discontinued & OOS EU-wide (DX6R not yet
+  released) — only the SR515/SR6100AT receivers are in stock, so an all-Spektrum build
+  needs a US-imported/secondhand TX. Other in-stock EU alt: RadioMaster MT12 (EdgeTX,
+  deeper switch mixing).
 - **Battery (max voltage):** 4S 5000mAh hardcase **XT60** — Voltz 5000 4S 50C **£62.99
   (~€74), in stock** ([voltz-rc](https://www.voltz-rc.com/voltz-5000mah-4s-14.8v-50c-hardcase-lipo-battery-with-xt60-connector); ⚠️ ~48mm tall — check tray height; GBP). 3S
   in-stock fallback: **ABSIMA 3S 5000 hardcase T-Plug €32.36** at rc-multistore
@@ -318,11 +318,11 @@ verified 2026-06-30** (Playwright through the proxy needs `--ssl-version-max=tls
 > and/or a ~2700–3200kV motor, or 4S with a lower-KV motor.
 
 > **Sourcing reality (verified 2026-06-30):** no single cart covers this build. **One
-> rc-multistore cart** holds the kit + AXE Plus R3 combo + 3S battery + Louise tires +
-> glue + LiPo bag + servo saver. **One Tamico cart** holds the 2 shift servos + UBEC +
-> SR515 + Pro-Line foams. Then single-item orders: **game-mania** (VFD Twin), **EuroRC**
-> (Savox SW-2290SG), **voltz-rc** (4S pack). The **VPS10126 cross-brace** and a Spektrum
-> **transmitter** have no confirmed EU stock — US import / secondhand.
+> rc-multistore cart** holds the kit + AXE Plus R3 combo + **Flysky FS-GT5 radio** + 3S
+> battery + Louise tires + glue + LiPo bag + servo saver. **One Tamico cart** holds the 2
+> shift servos + UBEC (+ Pro-Line foams). Then single-item orders: **game-mania** (VFD
+> Twin), **EuroRC** (Savox SW-2290SG), **voltz-rc** (4S pack). The **VPS10126 cross-brace**
+> has no confirmed EU stock — US import or improvise a mount.
 
 ---
 
