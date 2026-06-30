@@ -42,9 +42,9 @@ product page before ordering — prices and availability drift.**
 
 **Vanquish VS4-10 Origin Classic Pro Kit, Black Axles — SKU VPS09026B**
 - rc-multistore price: **€854.99** (≈5% off €899.99).
-- ⚠️ **Stock:** was **NOT in stock** at rc-multistore at research time ("aktuell NICHT
-  verfügbar") — contact the store to confirm orderability/backorder, or use an EU
-  fallback (AMain ships from US with import; check EuroRC/other EU Vanquish dealers).
+- **Stock (verified 2026-06-30, rendered):** **low stock but orderable online**
+  ("Knapper Lagerbestand", "In den Warenkorb") — the "nicht verfügbar" line refers only to
+  the physical Friesenheim shop, not the webshop. Order promptly; stock is thin.
 - Product page: https://www.rc-multistore.com/Vanquish-VS4-10-Origin-Classic-Pro-Kit-Black-Axles-VPS09026B
 - Official spec (authoritative): https://vanquishproducts.com/products/vs4-10-origin-classic-pro
 
@@ -250,51 +250,79 @@ Component subtotals **exclude** the €854.99 kit. Verify all prices before buyi
 - LiPo bag — ~€12
 - *Optional:* servo winch (Injora INJS035-360, ~€35) + beadlock wheels
 
-### D. Performance — dig + selectable overdrive + high-voltage sensored + Spektrum (~€1,020 + kit ≈ €1,875)
+### D. Performance — dig + selectable overdrive + high-voltage sensored (~€1,050 + kit ≈ €1,900)
 
 For the owner who wants **best-in-class slow-speed control AND a fast (~15 km/h) mode**,
-a **dig**, **more overdrive**, a **sensored** drivetrain, **maximum battery voltage**, a
-**Spektrum** radio, and **powerful servos**. Assumes you already own a multi-cell LiPo
-charger (e.g. **Robitronic Expert LD 80**, 1–6S/80W — charges 3S & 4S, no new charger).
+a **dig**, **more overdrive**, a **sensored** drivetrain, **maximum battery voltage**, and
+**powerful servos**. Assumes you already own a multi-cell LiPo charger (e.g. **Robitronic
+Expert LD 80**, 1–6S/80W — charges 3S & 4S, no new charger). Prices/stock **rendered &
+verified 2026-06-30** (Playwright through the proxy needs `--ssl-version-max=tls1.2
+--disable-quic --ignore-certificate-errors` + `ignoreHTTPSErrors`).
 
 - **Transmission upgrade (the key part):** **Vanquish VFD Twin Transmission Kit
-  (VPS10200)** — ~€204 ([game-mania.it](https://game-mania.it/index.php?cPath=65_125_579&language=en&main_page=product_info&products_id=18490); ⚠️ not at rc-multistore). Replaces the kit's single VFD; gives
-  **on-the-fly selectable overdrive 6.5% ↔ 46%** (your "fast mode"), a **neutral =
-  front-disconnect/2WD**, **and a built-in 3-position dig**. ⚠️ *Not a true 2:1 high
-  gear* — 46% OD ≈ 1.4× wheel speed; the rest of ~15 km/h comes from motor KV × volts.
-  - Dig/OD servo mount: **VS4-10 Cross-Brace w/ Dig Servo Mount (VPS10126)** ~€25
-  - **2× low-profile shift servos** (overdrive + dig), ~€25 ea — need **2 aux channels**
-  - *Optional extra overdrive:* front-axle 24T/8T helical set (~22% OD), aftermarket ~€20
-  - *Dig-only alternative* (keep stock VFD, no fast-mode OD): VFD **Hurtz Dig**
-    VPS01360 (~$110, in stock AMain) + 1 servo + 1 channel
-- **Motor+ESC (sensored, max-voltage, strong BEC):** **Castle Mamba X crawler combo,
-  1406-1900kV** — ~€195 (EuroRC). Sensored SmartSense, **2–6S**, **8A adjustable BEC**.
-  - 4S-capable; run **3S + ~1900–2300kV** for the easy crawl+15 km/h balance, or **4S +
-    ~1400–1500kV** for true max voltage (under-KV the motor to keep crawl + manage heat).
-  - One-cart Hobbywing alt (**3S max**): Xerun **AXE R2 + AXE540 2300kV** (€121.59 motor
-    + ESC). For genuine **4S** in the Hobbywing family you must use the **AXE Plus R3
-    (2–6S)** combo (~€237, EuroRC) — the **AXE R2 is 3S-only**.
-- **Steering servo (powerful HV):** **Savox SW-2290SG** waterproof monster — €129.99
-  (Lindinger AT, in stock). ~50 kg·cm@7.4V (up to ~65–70@8.4V), 25T, standard size (use
-  a low-profile horn). Lighter-draw alt: Savox SW-1210SG+ (~37 kg·cm).
-- **Radio (Spektrum, dig + 2-speed):** **Spektrum DX5 Rugged + SR515** — €284.99
-  (rc-multistore). 5ch, **weatherproof**, **RX included**, assignable mixing for
-  servo-shifted OD + dig. Channel map: steering · throttle · OD-shift · dig · lights.
-  - Need a winch too (6ch + AVC + telemetry)? DX5 Rugged TX-only + **SR6100AT** (€104.49),
-    or step to the **DX6R** (€349.99 TX-only) + SR6100AT.
-- **Battery (max voltage):** 4S 5000mAh hardcase **XT60** (~€89, EuroRC) for the 4S path,
-  or ABSIMA **3S** 5000mAh XT60 (€32.36, rc-multistore) for the simpler build.
+  (VPS10200)** — **€214.90, 1 in stock** at [game-mania.it](https://www.game-mania.it/en/trasmission/18490-complete-vfd-twin-overdrive-and-dig-transmission-by-vanquish.html)
+  (only confirmed EU source; ⚠️ not at rc-multistore). Replaces the kit's single VFD.
+  Official spec gives **THREE remote drivetrain modes on the overdrive shifter** —
+  *6.5% overdrive (crawl) / 46% overdrive (fast) / **neutral = front output disconnected =
+  2WD rear-wheel-drive-only*** — **plus a separate 3-position rear dig**. Both shifters are
+  servo-actuated, so all of it is switchable from the transmitter. ⚠️ *Not a true 2:1
+  high gear* — 46% OD ≈ 1.4× wheel speed; the rest of ~15 km/h comes from motor KV × volts.
+  - Dig/OD servo mount: **VS4-10 Cross-Brace w/ Dig Servo Mount (VPS10126)** — US $21.99
+    official; **no EU stockist confirmed** (Vanquish drivetrain parts are thin in EU).
+  - **2× low-profile shift servos** (one for OD/2WD, one for dig) → **2 aux channels**:
+    **Power HD LW-20MG** (25T, waterproof, low-profile) **€27.72, in stock**
+    ([Tamico](https://tamico.de/Power-HD-Digital-Servo-LW-20MG-waterproof-20kg)).
+  - *Dig-only alternative* (keep stock VFD, no fast-mode OD/2WD): VFD **Hurtz Dig**
+    VPS01360 (US $109.99) + 1 servo + 1 channel.
+- **Motor+ESC (sensored, max-voltage):** **★ Hobbywing Xerun AXE Plus R3 540L combo**
+  (2–6S, **4S-capable**, sensored FOC, 6A BEC) — **€152.09** at rc-multistore
+  (SKU **HW38020387**, 2300kV; all 540L KVs same price) — cheapest 4S-capable path AND
+  one-cart at the primary shop. ESC-only €100.90 ([robitronic](https://shop.robitronic.com/en/hobbywing-xerun-axe-plus-r3-hw30113201)).
+  - Stronger-BEC alt: **Castle Mamba X 1406-1900kV combo** (2–6S, **8A BEC**) — **€277,
+    in stock** ([mhm-modellbau](https://www.mhm-modellbau.de/part-CC010-0155-08.php)).
+  - 3S-max alt: AXE **R2** ESC (€79.82 [Tamico](https://tamico.de/Hobbywing-Xerun-AXE-R2-Brushless-Controller-for-Rock-Crawler-2-3s-LiPo)) + AXE540 R2 2300kV (€72.90 robitronic).
+  - Run **3S + ~1900–2300kV** for the easy crawl+15 km/h balance, or **4S + ~1400–1500kV**
+    for true max voltage (under-KV the motor to keep crawl + manage heat).
+- **Steering servo (powerful HV):** **Savox SW-2290SG** waterproof monster — **€145.95,
+  in stock** ([EuroRC](https://www.eurorc.com/product/37969/savox-sw-2290sg-servo-70kg-011s-hv-alu-brushless-steel-gear-wp)).
+  ~55 kg·cm@7.4V / ~70@8.4V, 25T (⚠️ Lindinger listing is **out of stock**). Lighter-draw
+  alt: Savox SW-1210SG+ €79.90 (EuroRC).
+- **Radio (Spektrum — availability caveat):** ⚠️ **rc-multistore does NOT carry Spektrum
+  surface radios**, and the **DX5 Rugged / DX5 Pro are discontinued & out of stock across
+  the EU; the DX6R is "coming soon" with no EU price.** The **receivers are in stock** —
+  **SR515** 5ch **€38.65** ([Tamico](https://tamico.de/SR515-DSMR-5-CH-Reciever)),
+  **SR6100AT** 6ch +AVC+telemetry **€89.90** ([mg-modellbau](https://www.mg-modellbau.de/Fernsteuerungen/24GHz-Empfaenger/Spektrum/SR6100AT-DSMR-6-Kanal-AVC-Telemetrie-Empfaenger.html)) —
+  but a matching in-production Spektrum pistol TX must be **US-imported or bought
+  secondhand**. In-stock-in-EU alternative if Spektrum isn't essential: **RadioMaster MT12
+  4-in-1 + R85C (5ch)** or **Flysky FS-GT5 (6ch)** — both cover steering + throttle +
+  OD/2WD + dig + lights. **Channel need: 4 minimum** (steer, throttle, OD/2WD, dig); 5–6
+  if adding a winch/lights.
+- **Battery (max voltage):** 4S 5000mAh hardcase **XT60** — Voltz 5000 4S 50C **£62.99
+  (~€74), in stock** ([voltz-rc](https://www.voltz-rc.com/voltz-5000mah-4s-14.8v-50c-hardcase-lipo-battery-with-xt60-connector); ⚠️ ~48mm tall — check tray height; GBP). 3S
+  in-stock fallback: **ABSIMA 3S 5000 hardcase T-Plug €32.36** at rc-multistore
+  ([4140011](https://www.rc-multistore.com/absima-3s-lipo-akku-stick-pack-11-1v-45c-5000-hardcase-t-plug-v2-4140011); the XT60 variant is OOS — add a T↔XT60 adapter).
   - **Charger:** your **Robitronic Expert LD 80** (1–6S/80W/7A, AC+DC) — covers 3S & 4S.
-- **Tires/glue:** Pro-Line Hyrax Predator 4.75" + foams (~€43) or Louise CR-CHAMP (€17) + glue €12.56.
-- **External BEC + servo saver:** ~€30. ⚠️ A monster steering servo + 2 shift servos can
-  exceed a 6A BEC at simultaneous stall — the Mamba X's 8A helps, but add an external
-  7.4V/8A BEC (or at least a glitch capacitor). The VS4-10 steering has no built-in saver.
+- **Tires/glue:** **Louise CR-CHAMP 1.9 super-soft (tires-only) €17.06, in stock** at
+  rc-multistore ([T3231VI](https://www.rc-multistore.com/louise-cr-champ-1-9-supersoft-nur-reifen-mit-einlage-ohne-felge-t3231vi)) + Traxxas glue €12.56. Premium alt: **Pro-Line
+  Hyrax 1.9** (10128-03 is **~4.19" OD**, not 4.75"; the 4.75" is the Hyrax **XL** SKU) +
+  Pro-Line dual-stage foams €15.29 (Tamico).
+- **External BEC + servo saver:** **Hobbywing UBEC 10A V2** (6/7.4/8.4V, IP67) **€23.02,
+  in stock** ([Tamico](https://tamico.de/Hobbywing-BEC-10A-V2-Car-UBEC-regulator-for-2-6s)) + Kimbrough 25T servo saver €8.96 (rc-multistore). ⚠️ A monster steering
+  servo + 2 shift servos can exceed a 6A BEC at simultaneous stall — the external UBEC (or
+  Castle 8A) removes the risk. The VS4-10 steering has no built-in saver.
 
 > **Voltage reality:** the **ESC is the voltage ceiling, not the charger or battery.**
-> The default Fusion Pro is **3S-only** — never run 4S on it. Only 2–6S ESCs (Mamba X,
-> AXE Plus R3) make 4S real. 6S is overkill for a 313 mm crawler (heat/weight, no crawl
-> gain). **15 km/h math:** 2300kV-on-3S tops ~11–12 km/h; reach ~15 km/h via the 46%
-> overdrive and/or a ~2700–3200kV motor, or 4S with a lower-KV motor.
+> The default Fusion Pro is **3S-only** — never run 4S on it. Only 2–6S ESCs (AXE Plus R3,
+> Mamba X) make 4S real. 6S is overkill for a 313 mm crawler (heat/weight, no crawl gain).
+> **15 km/h math:** 2300kV-on-3S tops ~11–12 km/h; reach ~15 km/h via the 46% overdrive
+> and/or a ~2700–3200kV motor, or 4S with a lower-KV motor.
+
+> **Sourcing reality (verified 2026-06-30):** no single cart covers this build. **One
+> rc-multistore cart** holds the kit + AXE Plus R3 combo + 3S battery + Louise tires +
+> glue + LiPo bag + servo saver. **One Tamico cart** holds the 2 shift servos + UBEC +
+> SR515 + Pro-Line foams. Then single-item orders: **game-mania** (VFD Twin), **EuroRC**
+> (Savox SW-2290SG), **voltz-rc** (4S pack). The **VPS10126 cross-brace** and a Spektrum
+> **transmitter** have no confirmed EU stock — US import / secondhand.
 
 ---
 
