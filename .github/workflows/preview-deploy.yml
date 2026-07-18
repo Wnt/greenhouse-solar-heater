@@ -177,7 +177,8 @@ jobs:
         run: |
           set -euo pipefail
           # 4-hour TTL refreshed on every deploy. ISO-8601 UTC; the GC
-          # CronJob parses this with `date -u -d`.
+          # CronJob parses this with BusyBox date and this exact format
+          # string ("%Y-%m-%dT%H:%M:%SZ") — keep the two in sync.
           EXPIRES_AT=$(date -u -d "+${TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)
           export PR_NUMBER BRANCH_NAME IMAGE_TAG EXPIRES_AT
           mkdir -p rendered
