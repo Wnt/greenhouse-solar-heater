@@ -44,6 +44,12 @@ const MIN_SAMPLES = 300;     // refuse to train on too little history
 const TANK_R2_FLOOR = 0.55;  // absolute sanity floors
 const GH_R2_FLOOR = 0.30;
 const REGRESSION_FACTOR = 1.25; // candidate may not exceed current RMSE by >25%
+// Minimum size of the unseen-by-current test subset for the regression
+// guard to use it. One day of history yields ~190 samples (15-min
+// anchors × 2 step sizes), so this only trips when the current model is
+// hours old — where falling back to the (biased, conservative) full
+// test split is harmless.
+const MIN_FRESH_SAMPLES = 50;
 
 // ── metrics ──
 
@@ -71,9 +77,35 @@ function evalForest(forest, X, y) {
   return { rmse: rmse(pred, y), r2: r2(pred, y), finite: pred.every(Number.isFinite) };
 }
 
+// The subset of the test split the CURRENT model has never seen:
+// samples anchored at or after its trainedAt. The shipped model is
+// retrained on the full window at promotion, so anything older is in
+// its training set and evaluating it there just measures memorization.
+// Returns null when there is no current model (or no trainedAt) —
+// i.e. no restriction needed.
+function freshTestSubset(Xte, yTankTe, yGhTe, t0sTe, current) {
+  const trainedAtMs = current && Date.parse(current.trainedAt);
+  if (!Number.isFinite(trainedAtMs)) return null;
+  const X = [], yTank = [], yGh = [];
+  for (let i = 0; i < Xte.length; i++) {
+    if (t0sTe[i] >= trainedAtMs) {
+      X.push(Xte[i]);
+      yTank.push(yTankTe[i]);
+      yGh.push(yGhTe[i]);
+    }
+  }
+  return { X, yTank, yGh };
+}
+
 // Pure gate — exported for tests. `current` is the full model object
 // (with .tank / .greenhouse forests) or null on first ever run.
-function evaluateGate(candTank, candGh, current, Xte, yTankTe, yGhTe) {
+// `fresh` (optional) is the unseen-by-current test subset from
+// freshTestSubset; when big enough, the candidate-vs-current regression
+// comparison runs on it instead of the full test split. Without it the
+// comparison leaks: the current model was trained on most of the test
+// window and its memorized RMSE vetoes honest candidates (the 2026-07
+// staleness incident — promotions only landed every 3-5 days).
+function evaluateGate(candTank, candGh, current, Xte, yTankTe, yGhTe, fresh) {
   const ct = evalForest(candTank, Xte, yTankTe);
   const cg = evalForest(candGh, Xte, yGhTe);
   const reasons = [];
@@ -90,13 +122,20 @@ function evaluateGate(candTank, candGh, current, Xte, yTankTe, yGhTe) {
   if (ct.r2 < TANK_R2_FLOOR) reasons.push('tank R2 ' + ct.r2.toFixed(3) + ' below floor ' + TANK_R2_FLOOR);
   if (cg.r2 < GH_R2_FLOOR) reasons.push('greenhouse R2 ' + cg.r2.toFixed(3) + ' below floor ' + GH_R2_FLOOR);
   if (current && current.tank && current.greenhouse) {
-    const curT = evalForest(current.tank, Xte, yTankTe);
-    const curG = evalForest(current.greenhouse, Xte, yGhTe);
-    if (ct.rmse > curT.rmse * REGRESSION_FACTOR) {
-      reasons.push('tank RMSE regressed (' + ct.rmse.toFixed(3) + ' vs current ' + curT.rmse.toFixed(3) + ')');
+    const useFresh = fresh && fresh.X.length >= MIN_FRESH_SAMPLES;
+    const gx = useFresh ? fresh.X : Xte;
+    const gyT = useFresh ? fresh.yTank : yTankTe;
+    const gyG = useFresh ? fresh.yGh : yGhTe;
+    const where = useFresh ? ' on ' + gx.length + ' fresh samples' : '';
+    const candT = useFresh ? evalForest(candTank, gx, gyT) : ct;
+    const candG = useFresh ? evalForest(candGh, gx, gyG) : cg;
+    const curT = evalForest(current.tank, gx, gyT);
+    const curG = evalForest(current.greenhouse, gx, gyG);
+    if (candT.rmse > curT.rmse * REGRESSION_FACTOR) {
+      reasons.push('tank RMSE regressed (' + candT.rmse.toFixed(3) + ' vs current ' + curT.rmse.toFixed(3) + where + ')');
     }
-    if (cg.rmse > curG.rmse * REGRESSION_FACTOR) {
-      reasons.push('greenhouse RMSE regressed (' + cg.rmse.toFixed(3) + ' vs current ' + curG.rmse.toFixed(3) + ')');
+    if (candG.rmse > curG.rmse * REGRESSION_FACTOR) {
+      reasons.push('greenhouse RMSE regressed (' + candG.rmse.toFixed(3) + ' vs current ' + curG.rmse.toFixed(3) + where + ')');
     }
   }
   return {
@@ -190,6 +229,7 @@ function createMlTrainer(opts) {
       const tankTe = data.yTank.slice(split);
       const ghTr = data.yGh.slice(0, split);
       const ghTe = data.yGh.slice(split);
+      const t0sTe = data.t0s.slice(split);
 
       let candTank;
       let candGh;
@@ -201,7 +241,9 @@ function createMlTrainer(opts) {
         return;
       }
 
-      const gate = evaluateGate(candTank, candGh, modelStore.get(), Xte, tankTe, ghTe);
+      const current = modelStore.get();
+      const fresh = freshTestSubset(Xte, tankTe, ghTe, t0sTe, current);
+      const gate = evaluateGate(candTank, candGh, current, Xte, tankTe, ghTe, fresh);
       status.lastMetrics = gate.metrics;
       if (!gate.pass) {
         fail('gate rejected candidate: ' + gate.reasons.join('; '), done);
@@ -270,4 +312,4 @@ function createMlTrainer(opts) {
   return { start, stop, retrainOnce, getStatus };
 }
 
-module.exports = { createMlTrainer, evaluateGate };
+module.exports = { createMlTrainer, evaluateGate, freshTestSubset, MIN_FRESH_SAMPLES };

@@ -7,7 +7,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 
 const rf = require('../server/lib/forecast/ml/random-forest');
-const { evaluateGate } = require('../server/lib/forecast/ml/ml-trainer');
+const { evaluateGate, freshTestSubset, MIN_FRESH_SAMPLES } = require('../server/lib/forecast/ml/ml-trainer');
 const { createModelStore, contractOk } = require('../server/lib/forecast/ml/model-store');
 const { FEATURE_NAMES, MODEL_VERSION } = require('../server/lib/forecast/ml/features');
 
@@ -80,6 +80,82 @@ test('evaluateGate rejects a candidate whose metrics are non-finite', () => {
   assert.strictEqual(res.pass, false);
   assert.ok(res.reasons.some(function r(x) { return /non-finite/.test(x); }),
     res.reasons.join('; '));
+});
+
+// The 2026-07 staleness incident: after every promotion the shipped
+// model is retrained on the FULL 30-day window, so on the next daily
+// run most of the (time-ordered) test split is data the current model
+// has already memorized. Evaluating the regression guard there makes
+// the current model look far better than any honest candidate, and the
+// gate rejected candidates for days until enough unseen data diluted
+// the leak. The guard must compare the two models only on samples
+// newer than the current model's trainedAt.
+test('evaluateGate regression guard ignores data the current model was trained on', () => {
+  const noisy = function fn(r, rnd) { return r[0] * 2 + r[1] - r[2] + (rnd() - 0.5) * 4; };
+  const tr = synth(500, noisy, 31);
+  const te = synth(300, noisy, 32);
+  const staleN = 200; // portion of the test split the current model has seen
+  const staleX = te.X.slice(0, staleN);
+  const staleY = te.y.slice(0, staleN);
+  const freshX = te.X.slice(staleN);
+  const freshY = te.y.slice(staleN);
+
+  // Current model: trained on train data PLUS the stale test rows
+  // (exactly what full-window retraining does to the next day's split).
+  const curX = tr.X.concat(staleX);
+  const curY = tr.y.concat(staleY);
+  const cur = {
+    tank: rf.trainForest(curX, curY, { nTrees: 40, seed: 33 }),
+    greenhouse: rf.trainForest(curX, curY, { nTrees: 40, seed: 34 }),
+  };
+  const candTank = rf.trainForest(tr.X, tr.y, { nTrees: 40, seed: 35 });
+  const candGh = rf.trainForest(tr.X, tr.y, { nTrees: 40, seed: 36 });
+
+  // Sanity: on the leaked full test split the old comparison rejects
+  // the candidate — this is the production failure mode.
+  const leaky = evaluateGate(candTank, candGh, cur, te.X, te.y, te.y);
+  assert.strictEqual(leaky.pass, false, 'expected the leaky comparison to reject');
+  assert.ok(leaky.reasons.some(function r(x) { return /regressed/.test(x); }),
+    leaky.reasons.join('; '));
+
+  // With the fresh (unseen-by-current) subset supplied, the same
+  // candidate must pass — both models are strangers to those rows.
+  const fair = evaluateGate(candTank, candGh, cur, te.X, te.y, te.y,
+    { X: freshX, yTank: freshY, yGh: freshY });
+  assert.strictEqual(fair.pass, true, fair.reasons.join('; '));
+});
+
+test('evaluateGate falls back to the full test split when the fresh subset is tiny', () => {
+  const noisy = function fn(r, rnd) { return r[0] * 2 + r[1] - r[2] + (rnd() - 0.5) * 4; };
+  const tr = synth(500, noisy, 41);
+  const te = synth(300, noisy, 42);
+  const cur = {
+    tank: rf.trainForest(tr.X.concat(te.X), tr.y.concat(te.y), { nTrees: 40, seed: 43 }),
+    greenhouse: rf.trainForest(tr.X.concat(te.X), tr.y.concat(te.y), { nTrees: 40, seed: 44 }),
+  };
+  const candTank = rf.trainForest(tr.X, tr.y, { nTrees: 40, seed: 45 });
+  const candGh = rf.trainForest(tr.X, tr.y, { nTrees: 40, seed: 46 });
+  // Fewer fresh samples than MIN_FRESH_SAMPLES -> conservative fallback
+  // to the full split, i.e. same (rejecting) behavior as before.
+  const fresh = { X: te.X.slice(0, 5), yTank: te.y.slice(0, 5), yGh: te.y.slice(0, 5) };
+  assert.ok(fresh.X.length < MIN_FRESH_SAMPLES);
+  const res = evaluateGate(candTank, candGh, cur, te.X, te.y, te.y, fresh);
+  assert.strictEqual(res.pass, false);
+});
+
+test('freshTestSubset filters test samples by the current model trainedAt', () => {
+  const X = [[1], [2], [3], [4]];
+  const yTank = [10, 20, 30, 40];
+  const yGh = [11, 21, 31, 41];
+  const t0s = [1000, 2000, 3000, 4000];
+  // No current model / no trainedAt -> null (no fresh restriction)
+  assert.strictEqual(freshTestSubset(X, yTank, yGh, t0s, null), null);
+  assert.strictEqual(freshTestSubset(X, yTank, yGh, t0s, {}), null);
+  const cur = { trainedAt: new Date(3000).toISOString() };
+  const sub = freshTestSubset(X, yTank, yGh, t0s, cur);
+  assert.deepStrictEqual(sub.X, [[3], [4]]);
+  assert.deepStrictEqual(sub.yTank, [30, 40]);
+  assert.deepStrictEqual(sub.yGh, [31, 41]);
 });
 
 test('contractOk validates the model feature contract', () => {
