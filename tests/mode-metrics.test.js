@@ -170,7 +170,7 @@ describe('mode-metrics: emergency scoring', () => {
     // actual emergency hours: H05 (3600 s) + H06 (1200 s > 900 s) = 2
     // predicted: P2 (tp on H05) + P4 (fp on H07) = 2; recall 1/2
     assert.deepEqual(score.emergency,
-      { predictedHours: 2, actualHours: 2, tp: 1, recall: 0.5 });
+      { predictedSamples: 2, actualSamples: 2, tp: 1, recall: 0.5 });
   });
 });
 

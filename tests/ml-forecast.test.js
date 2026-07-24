@@ -443,6 +443,61 @@ test('solar exits on tank drop-from-peak, mirroring the device rule', () => {
     'without the drop rule the stall bypass keeps solar running');
 });
 
+test('stratified tank: a mid-band collector must not chatter solar<->idle (PR #283 review)', () => {
+  // Reviewer repro: tank top 36 / bottom 30 (spread 6 > solarEnterDelta 3),
+  // collector pinned at 35 — inside the old chatter band
+  // (tank_bottom + 3, tank_top]: the old tank_TOP-referenced stall exit
+  // fired every other step against the tank_BOTTOM-referenced entry
+  // (56 transitions, solarChargingHours ~42, modeFractions ~0.5/0.5).
+  // With entry and exit sharing the bottom reference the session must be
+  // one contiguous run.
+  const fc = computeMlForecast({
+    now: new Date('2026-05-18T08:00:00Z'),
+    tankTop: 36, tankBottom: 30, greenhouseTemp: 20,
+    currentMode: 'idle',
+    weather48h: flatWeather(15, 0),
+    prices48h: makePrices(),
+    model: stubModel([0], [0], [35]),
+  });
+  let segments = 0;
+  let prevSolar = false;
+  for (const m of fc.modeForecast) {
+    const solar = m.mode === 'solar_charging';
+    if (solar && !prevSolar) segments += 1;
+    prevSolar = solar;
+  }
+  assert.strictEqual(segments, 1,
+    'mid-band collector must produce one contiguous solar session, got ' + segments);
+});
+
+test('drop-from-peak exit does not chain fake sessions on a draining tank (PR #283 review)', () => {
+  // Amplifier from the review: after a drop-from-peak exit the old code
+  // re-entered on the very next step (collector still above the entry
+  // threshold) and reseeded the peak from the now-lower tank average —
+  // a monotonically draining tank chained back-to-back sessions. The
+  // rising-edge guard requires the collector to dip to the entry
+  // threshold before a new session can start, so a pinned-hot collector
+  // over a draining tank yields exactly one session and one exit.
+  const fc = computeMlForecast({
+    now: new Date('2026-05-18T08:00:00Z'),
+    tankTop: 40, tankBottom: 20, greenhouseTemp: 20,
+    currentMode: 'idle',
+    weather48h: flatWeather(15, 0),
+    prices48h: makePrices(),
+    model: stubModel([-0.15], [0], [60]),
+  });
+  let segments = 0;
+  let prevSolar = false;
+  for (const m of fc.modeForecast) {
+    const solar = m.mode === 'solar_charging';
+    if (solar && !prevSolar) segments += 1;
+    prevSolar = solar;
+  }
+  assert.strictEqual(segments, 1,
+    'draining tank must not re-enter solar after the drop-from-peak exit, got '
+    + segments + ' sessions');
+});
+
 test('legacy artifact without a collector forest still loads and forecasts', () => {
   // Migration safety: the committed model (and any pre-Lane-D S3 model)
   // has no collector key — the rollout must produce the full contract

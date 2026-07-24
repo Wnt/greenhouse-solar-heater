@@ -236,7 +236,7 @@ const AGGREGATE_SQL = [
 // Once the current shape is confirmed, chains into the 2026-07-24
 // engine-PK migration below (same idempotent-probe pattern).
 function migrateLegacyForecastPredictions(client, log, callback) {
-  const TBL = "table_name='forecast_predictions'";
+  const TBL = "table_schema='public' AND table_name='forecast_predictions'";
   client.query("SELECT 1 AS x FROM information_schema.tables WHERE " + TBL,
     function (err, exists) {
       if (err || !exists.rows || exists.rows.length === 0) { callback(null); return; }
@@ -276,7 +276,7 @@ function migrateForecastPredictionsEnginePk(client, log, callback) {
     "FROM information_schema.table_constraints tc " +
     "JOIN information_schema.key_column_usage kcu " +
     "  ON kcu.constraint_name = tc.constraint_name AND kcu.table_name = tc.table_name " +
-    "WHERE tc.table_name='forecast_predictions' AND tc.constraint_type='PRIMARY KEY' " +
+    "WHERE tc.table_schema='public' AND tc.table_name='forecast_predictions' AND tc.constraint_type='PRIMARY KEY' " +
     "ORDER BY kcu.ordinal_position";
   client.query(PK_SQL, function (err, pk) {
     if (err) { callback(null); return; }

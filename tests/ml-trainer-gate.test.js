@@ -124,7 +124,7 @@ function guardOpts(fx, compute) {
 
 describe('mode-schedule promotion guard (evaluateModeGuard)', () => {
   it('rejects a candidate whose dominant-mode accuracy is more than 3pp worse than serving', () => {
-    const fx = fixture(96); // 8 episodes at 12 h spacing
+    const fx = fixture(96); // 10 episodes (MAX_EPISODES cap) at 6 h spacing
     const res = modeGate.evaluateModeGuard(guardOpts(fx, stubCompute('perfect', 'always-idle')));
     assert.strictEqual(res.skipped, false);
     assert.strictEqual(res.pass, false);
@@ -153,11 +153,11 @@ describe('mode-schedule promotion guard (evaluateModeGuard)', () => {
   });
 
   // ── Margin boundary (strictly greater than 3.0 pp rejects) ────────
-  // fixture(68) yields 6 episodes joining 48+48+44+32+20+8 = 200 scored
-  // hours per side. Errors are injected as flipped predictions on the
-  // first K forecast hours of episode 0 (all of which join), giving
-  // exact integer correct-counts and therefore exact rational accuracy
-  // gaps.
+  // fixture(46) yields 8 episodes at 6 h spacing joining
+  // 46+40+34+28+22+16+10+4 = 200 scored hours per side. Errors are
+  // injected as flipped predictions on the first K forecast hours of
+  // episode 0 (all of which join), giving exact integer correct-counts
+  // and therefore exact rational accuracy gaps.
   //
   // FP caveat: accuracies are integer ratios and the comparison is on
   // raw doubles, so a rationally-exact 3.0 pp gap can round to either
@@ -183,7 +183,10 @@ describe('mode-schedule promotion guard (evaluateModeGuard)', () => {
   }
 
   it('promotes a candidate exactly 3.0 pp worse than serving (boundary is exclusive)', () => {
-    const fx = fixture(68);
+    // fixture(46) at 6 h spacing: 8 episodes (starts 0..42 h), joined
+    // samples 46+40+34+28+22+16+10+4 = 200 — same FP-safe total as the
+    // original 12 h-spacing fixture(68).
+    const fx = fixture(46);
     const res = modeGate.evaluateModeGuard(guardOpts(fx, stubComputeWithErrors(7, 13)));
     assert.strictEqual(res.skipped, false);
     assert.strictEqual(res.samples, 200);
@@ -199,7 +202,7 @@ describe('mode-schedule promotion guard (evaluateModeGuard)', () => {
     // the smallest representable step past the margin at 200 samples
     // (an exact 3.1 pp gap needs a sample count divisible by 1000) —
     // must be REJECTED.
-    const fx = fixture(68);
+    const fx = fixture(46);
     const res = modeGate.evaluateModeGuard(guardOpts(fx, stubComputeWithErrors(7, 14)));
     assert.strictEqual(res.skipped, false);
     assert.strictEqual(res.samples, 200);
@@ -208,11 +211,52 @@ describe('mode-schedule promotion guard (evaluateModeGuard)', () => {
   });
 
   it('skips cleanly (pass=true) when there are fewer than MIN_EPISODES episodes', () => {
-    const fx = fixture(30); // starts at 0/12/24 h -> only 3 episodes
+    const fx = fixture(15); // starts at 0/6/12 h -> only 3 episodes at 6 h spacing
     const res = modeGate.evaluateModeGuard(guardOpts(fx, stubCompute('perfect', 'always-idle')));
     assert.strictEqual(res.pass, true, 'a skipped guard must never block promotion');
     assert.strictEqual(res.skipped, true);
     assert.match(res.reason, /episode/);
+  });
+
+  it('is live at daily promotion cadence: a ~24 h fresh window yields enough episodes', () => {
+    // PR #283 review: with healthy DAILY promotions serving.trainedAt is
+    // ~24 h old at gate time. At the old 12 h spacing that window fit
+    // only 2-3 episode starts, so the guard skipped on every routine
+    // run — inert exactly when it mattered. At 6 h spacing the same
+    // window fits >= MIN_EPISODES and the guard actually evaluates.
+    const fx = fixture(96);
+    const opts = guardOpts(fx, stubCompute('perfect', 'always-idle'));
+    // Serving model promoted 24 h before the window end.
+    opts.serving = Object.assign({}, servingModel, {
+      trainedAt: new Date(T0 + 72 * HOUR).toISOString(),
+    });
+    const res = modeGate.evaluateModeGuard(opts);
+    assert.strictEqual(res.skipped, false,
+      'a daily-cadence fresh window must not skip: ' + res.reason);
+    assert.strictEqual(res.pass, false, 'the butchered candidate must still be caught');
+  });
+
+  it('runs through the real computeMlForecast with tiny forests (contract canary)', () => {
+    // Every other gate test stubs computeForecast, so a drift in the
+    // modeFractions contract would silently zero the join and disable
+    // the guard forever with green tests (PR #283 review). This test
+    // exercises the real rollout end-to-end: single-leaf zero-delta
+    // forests, real episode reconstruction, real scoring — and must
+    // actually evaluate (skipped === false, samples joined).
+    const leaf = (v) => ({ trees: [{ leaf: true, value: v }], nFeatures: 19 });
+    const fx = fixture(96);
+    const opts = guardOpts(fx, undefined);
+    delete opts.computeForecast; // use the real computeMlForecast
+    opts.serving = {
+      tank: leaf(0), greenhouse: leaf(0), featureRanges: [],
+      trainedAt: new Date(T0).toISOString(),
+    };
+    opts.candidate = { tank: leaf(0), greenhouse: leaf(0), featureRanges: [] };
+    const res = modeGate.evaluateModeGuard(opts);
+    assert.strictEqual(res.skipped, false,
+      'real-rollout guard must evaluate, not skip: ' + res.reason);
+    assert.ok(res.samples >= 24, 'expected a joined sample per covered hour, got ' + res.samples);
+    assert.strictEqual(res.pass, true, 'identical forests must tie, not regress');
   });
 
   it('skips cleanly when mode-event ground truth is too thin', () => {
@@ -248,6 +292,6 @@ describe('mode-schedule promotion guard (evaluateModeGuard)', () => {
     const res = modeGate.evaluateModeGuard(guardOpts(fx, flaky));
     assert.strictEqual(res.skipped, false);
     assert.strictEqual(res.pass, false); // still enough episodes to judge
-    assert.strictEqual(res.episodes, 7); // 8 built, 1 dropped
+    assert.strictEqual(res.episodes, 9); // 10 built (MAX_EPISODES cap), 1 dropped
   });
 });

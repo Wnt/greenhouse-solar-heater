@@ -308,41 +308,76 @@ describe('forecast-predictions._buildRows — ML multi-resolution capture', () =
     });
   });
 
-  it('merges fine-step mode entries per hour: heat mode wins over idle, max duty, solar overlay', () => {
+  it('collapses fine-step hours by max occupancy: order-independent, winner-only duty (PR #283 review)', () => {
     const t0 = Date.parse(HOUR0);
     const fiveMin = 5 * 60 * 1000;
     const iso = (ms) => new Date(ms).toISOString();
-    // Two hours of 5-min steps (25 points) — hour points at index 12, 24.
+    // Three hours of 5-min steps (37 points) — hour points at 12/24/36.
     const tank = [];
     const gh = [];
-    for (let k = 0; k <= 24; k++) {
+    for (let k = 0; k <= 36; k++) {
       tank.push({ ts: iso(t0 + k * fiveMin), top: 16, bottom: 14, avg: 15 });
       gh.push({ ts: iso(t0 + k * fiveMin), temp: 12 });
     }
-    // Hour 0: idle / solar / emergency(0.4) / idle / emergency(0.7) / idle…
-    const modeForecast = [
-      { ts: iso(t0 + 0 * fiveMin), mode: 'idle' },
-      { ts: iso(t0 + 1 * fiveMin), mode: 'solar_charging' },
-      { ts: iso(t0 + 2 * fiveMin), mode: 'emergency_heating', duty: 0.4 },
-      { ts: iso(t0 + 3 * fiveMin), mode: 'idle' },
-      { ts: iso(t0 + 4 * fiveMin), mode: 'emergency_heating', duty: 0.7 },
-    ];
-    for (let k = 5; k < 12; k++) modeForecast.push({ ts: iso(t0 + k * fiveMin), mode: 'idle' });
-    // Hour 1: all idle.
-    for (let k = 12; k < 24; k++) modeForecast.push({ ts: iso(t0 + k * fiveMin), mode: 'idle' });
+    const modeForecast = [];
+    // Hour 0 — the reviewer's demotion case: solar x11 with a TRAILING
+    // idle step. The old last-writer collapse labelled this hour idle;
+    // occupancy must label it solar_charging regardless of order.
+    for (let k = 0; k < 11; k++) modeForecast.push({ ts: iso(t0 + k * fiveMin), mode: 'solar_charging' });
+    modeForecast.push({ ts: iso(t0 + 11 * fiveMin), mode: 'idle' });
+    // Hour 1 — emergency holds most of the hour (7 steps, duties up to
+    // 0.7) over greenhouse_heating (5): emergency wins with ITS max duty.
+    for (let k = 12; k < 19; k++) {
+      modeForecast.push({ ts: iso(t0 + k * fiveMin), mode: 'emergency_heating', duty: k === 15 ? 0.7 : 0.4 });
+    }
+    for (let k = 19; k < 24; k++) modeForecast.push({ ts: iso(t0 + k * fiveMin), mode: 'greenhouse_heating' });
+    // Hour 2 — greenhouse-heating hour with a 2-step emergency blip
+    // (duty 0.9): the blip must NOT relabel the hour (old behaviour) and
+    // the winning greenhouse label must NOT inherit the blip's duty.
+    for (let k = 24; k < 34; k++) modeForecast.push({ ts: iso(t0 + k * fiveMin), mode: 'greenhouse_heating' });
+    for (let k = 34; k < 36; k++) modeForecast.push({ ts: iso(t0 + k * fiveMin), mode: 'emergency_heating', duty: 0.9 });
     const rows = svc._buildRows({
       generatedAt: HOUR0,
       engine: 'ml',
       weather: [], prices: [],
       forecast: { tankTrajectory: tank, greenhouseTrajectory: gh, modeForecast },
     });
-    assert.equal(rows.length, 2);
-    assert.equal(rows[0].mode, 'emergency_heating', 'a non-idle heat mode wins the hour');
-    assert.equal(rows[0].duty, 0.7, 'the hour keeps its max duty');
-    assert.equal(rows[0].hasSolarOverlay, true, 'fine-step solar entry flags the overlay');
-    assert.equal(rows[1].mode, 'idle');
-    assert.equal(rows[1].duty, null);
-    assert.equal(rows[1].hasSolarOverlay, false);
+    assert.equal(rows.length, 3);
+    assert.equal(rows[0].mode, 'solar_charging', 'a solar-dominated hour must not be demoted by a trailing idle step');
+    assert.equal(rows[0].hasSolarOverlay, false, 'solar-labelled hour keeps the overlay flag false');
+    assert.equal(rows[0].duty, null);
+    assert.equal(rows[1].mode, 'emergency_heating', 'max-occupancy mode wins the hour');
+    assert.equal(rows[1].duty, 0.7, 'the winning mode keeps its own max duty');
+    assert.equal(rows[2].mode, 'greenhouse_heating', 'a 10-minute emergency blip must not relabel the hour');
+    assert.equal(rows[2].duty, null, 'the winner must not inherit the losing blip\'s duty');
+  });
+
+  it('breaks occupancy ties by severity, preserving physics same-ts heat+solar semantics', () => {
+    const t0 = Date.parse(HOUR0);
+    const iso = (ms) => new Date(ms).toISOString();
+    const hourly = (n, fields) => {
+      const out = [];
+      for (let k = 0; k <= n; k++) out.push(Object.assign({ ts: iso(t0 + k * 3600 * 1000) }, fields));
+      return out;
+    };
+    // Physics shape: one heat entry + one solar duplicate at the same ts
+    // (a 1-1 occupancy tie) — severity tie-break keeps the heat label
+    // with the solar overlay flagged, exactly the old per-ts semantics.
+    const rows = svc._buildRows({
+      generatedAt: HOUR0,
+      weather: [], prices: [],
+      forecast: {
+        tankTrajectory: hourly(1, { top: 16, bottom: 14, avg: 15 }),
+        greenhouseTrajectory: hourly(1, { temp: 12 }),
+        modeForecast: [
+          { ts: iso(t0), mode: 'greenhouse_heating' },
+          { ts: iso(t0), mode: 'solar_charging' },
+        ],
+      },
+    });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].mode, 'greenhouse_heating');
+    assert.equal(rows[0].hasSolarOverlay, true);
   });
 });
 
@@ -538,6 +573,24 @@ describe('forecast-bootstrap.runCaptureCycle (dual-engine HH:30 capture)', () =>
       log,
     }, function () {
       assert.ok(log.warns.length > 0);
+      done();
+    });
+  });
+
+  it('tolerates a physics compute that throws synchronously (symmetric guard, PR #283 review)', (t, done) => {
+    // Runs inside the HH:30 setTimeout callback: an unguarded sync throw
+    // would crash the pod AND skip done(), disarming the loop forever.
+    const log = makeWarnLog();
+    const capturedResponses = [];
+    runCaptureCycle({
+      physicsCompute: () => { throw new Error('sync boom'); },
+      mlCompute: (cb) => cb(null, { engine: 'ml' }),
+      capture: (response, cb) => { capturedResponses.push(response); cb(null); },
+      log,
+    }, function () {
+      assert.equal(capturedResponses.length, 1, 'the ML capture must still run');
+      assert.equal(capturedResponses[0].engine, 'ml');
+      assert.ok(log.warns.some((m) => /physics/i.test(m)), 'expected a warn for the physics throw');
       done();
     });
   });

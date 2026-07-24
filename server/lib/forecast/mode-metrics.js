@@ -76,6 +76,16 @@ function ratio(num, den) { return den > 0 ? num / den : null; }
  * first transition has unknown mode and simply contributes no coverage,
  * so callers that want full coverage of the first hour should include
  * the latest transition at-or-before the window start.
+ *
+ * Outage caveat: the open-ended extension treats mode as persistent
+ * state, so a telemetry outage (server down, no state_events written)
+ * still yields FULL synthetic coverage from the last pre-outage
+ * transition — windows inside the outage score against a possibly
+ * wrong mode instead of hitting the coverage exclusion. Accepted:
+ * mode genuinely is device-persistent across server outages and the
+ * device keeps running; only a concurrent device restart would make
+ * the carried mode wrong, and those windows are indistinguishable
+ * from valid data here (PR #283 review).
  */
 function buildSegments(transitions, windowStartMs, windowEndMs) {
   const trans = (transitions || [])
@@ -229,7 +239,7 @@ function scoreScheduleWith(predictions, lookup) {
     return perMode[mode];
   };
   const solar = { tp: 0, fp: 0, fn: 0, tn: 0 };
-  const emergency = { predictedHours: 0, actualHours: 0, tp: 0 };
+  const emergency = { predictedSamples: 0, actualSamples: 0, tp: 0 };
   let sampleCount = 0;
 
   for (let i = 0; i < (predictions || []).length; i++) {
@@ -254,11 +264,19 @@ function scoreScheduleWith(predictions, lookup) {
     solar[predSolar ? (actSolar ? 'tp' : 'fp') : (actSolar ? 'fn' : 'tn')]++;
 
     // Emergency: the operationally significant miss (0–4 predicted vs
-    // 56 actual hours in the backtest window) — report hours + recall.
+    // 56 actual DISTINCT hours in the backtest window). These counters
+    // are per JOIN SAMPLE, not per distinct wall-clock hour: every
+    // covered hour is joined by up to 48 prediction rows (one per
+    // horizon from 48 generations), so the counts run up to ~48x the
+    // distinct-hour figures in the findings doc (PR #283 review — 12
+    // distinct emergency hours in a 30 d prod window would read as
+    // several hundred samples here). Named *Samples to make that
+    // unmistakable; recall is per-sample on both sides and therefore
+    // comparable to the doc's per-hour recall.
     const predEmerg = p.mode === 'emergency_heating';
     const actEmerg = (hour.occupancy.emergency_heating || 0) > ACTIVE_MIN_SEC;
-    if (predEmerg) emergency.predictedHours++;
-    if (actEmerg) emergency.actualHours++;
+    if (predEmerg) emergency.predictedSamples++;
+    if (actEmerg) emergency.actualSamples++;
     if (predEmerg && actEmerg) emergency.tp++;
   }
 
@@ -270,7 +288,7 @@ function scoreScheduleWith(predictions, lookup) {
   }
   solar.precision = ratio(solar.tp, solar.tp + solar.fp);
   solar.recall = ratio(solar.tp, solar.tp + solar.fn);
-  emergency.recall = ratio(emergency.tp, emergency.actualHours);
+  emergency.recall = ratio(emergency.tp, emergency.actualSamples);
 
   return {
     sampleCount,

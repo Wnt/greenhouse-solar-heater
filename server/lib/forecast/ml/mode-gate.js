@@ -36,10 +36,17 @@ const modeMetrics = require('../mode-metrics');
 
 const HOUR_MS = 3600 * 1000;
 const HORIZON_HOURS = 48;
-// One episode start every 12 h across the fresh window; a 30-day
-// window's 20 % held-out tail is ~6 days, so the cap of 10 keeps the
-// replay cost bounded while still spanning day AND night starts.
-const EPISODE_SPACING_MS = 12 * HOUR_MS;
+// One episode start every 6 h across the fresh window. The fresh window
+// begins at max(test-split start, serving.trainedAt), and with HEALTHY
+// DAILY promotions serving.trainedAt is only ~24 h old at gate time —
+// 12 h spacing yielded 2-3 starts there, so the guard skipped on every
+// routine run and only came alive after promotions had already stalled
+// ~1.5 days (PR #283 review: exactly not the threat it exists for). At
+// 6 h spacing a ~19 h fresh window fits MIN_EPISODES starts; the 48 h
+// episodes overlap heavily either way and the replay cost is tens of
+// ms, so the extra density is free. MAX_EPISODES still bounds long
+// windows while spanning day AND night starts.
+const EPISODE_SPACING_MS = 6 * HOUR_MS;
 const MAX_EPISODES = 10;
 // Below this the accuracy comparison is episode-lottery noise — skip.
 const MIN_EPISODES = 4;

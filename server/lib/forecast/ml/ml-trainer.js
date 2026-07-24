@@ -318,14 +318,23 @@ function createMlTrainer(opts) {
       // with candidate vs serving forests; a candidate more than 3 pp
       // worse on dominant-mode accuracy is rejected even with better
       // RMSE. Skips (never blocks) on thin data — see mode-gate.js.
-      const modeGuard = evaluateModeGuard({
-        candidate: { tank: candTank, greenhouse: candGh, featureRanges: featureRanges(data.X) },
-        serving: current,
-        points: payload.points,
-        events: payload.events,
-        weather: payload.weather,
-        testStartMs: t0sTe.length ? t0sTe[0] : NaN,
-      });
+      // try/catch makes the "never blocks promotion" contract
+      // STRUCTURAL: a future throw inside mode-gate/mode-metrics would
+      // otherwise escape this async callback — uncaught exception (pod
+      // crash) or a permanently wedged status.running (PR #283 review).
+      let modeGuard;
+      try {
+        modeGuard = evaluateModeGuard({
+          candidate: { tank: candTank, greenhouse: candGh, featureRanges: featureRanges(data.X) },
+          serving: current,
+          points: payload.points,
+          events: payload.events,
+          weather: payload.weather,
+          testStartMs: t0sTe.length ? t0sTe[0] : NaN,
+        });
+      } catch (e) {
+        modeGuard = { pass: true, skipped: true, reason: 'guard threw: ' + e.message };
+      }
       gate.metrics.modeGuard = {
         skipped: modeGuard.skipped,
         reason: modeGuard.reason,
@@ -386,7 +395,11 @@ function createMlTrainer(opts) {
           }
           const ce = Xct.length > 0 ? evalForest(fullCollector, Xct, yct) : null;
           if (!ce || !ce.finite || !Number.isFinite(ce.r2) || ce.r2 < COLLECTOR_R2_FLOOR) {
-            log.warn('ml-trainer: collector forest failed sanity check — omitting', {
+            // Distinguish "no data to judge it on" from "judged and
+            // failed" — with zero held-out samples no check ran at all.
+            log.warn(ce
+              ? 'ml-trainer: collector forest failed sanity check — omitting'
+              : 'ml-trainer: collector forest has no held-out samples to evaluate — omitting', {
               r2: ce && Number.isFinite(ce.r2) ? round(ce.r2) : null,
               samples: Xct.length,
             });

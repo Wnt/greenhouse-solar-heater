@@ -43,6 +43,10 @@ const { jsonResponse } = require('../http-handlers');
 const modeMetrics = require('./mode-metrics');
 
 const ALLOWED_HORIZONS = [1, 6, 12, 24, 48];
+// Bound on the mode-accuracy prediction scan, mirroring the dataset
+// module's MAX_PREDICTION_ROWS: 90 d x 24 generations x 48 horizons
+// exceeds 100k rows per engine.
+const MAX_MODE_ACCURACY_ROWS = 100000;
 const DEFAULT_HORIZON  = 24;
 const MAX_RANGE_DAYS   = 31;
 const DEFAULT_RANGE_MS = 7  * 24 * 60 * 60 * 1000;
@@ -230,12 +234,17 @@ function create(opts) {
     const sinceIso = new Date(since).toISOString();
     const untilIso = new Date(until).toISOString();
     // Mode fields only — temps/components are irrelevant to schedule
-    // scoring and this scans up to 90 d × 48 horizons of rows.
+    // scoring and this scans up to 90 d × 48 horizons of rows. Scoring
+    // is order-independent, so no ORDER BY; the LIMIT mirrors the
+    // dataset module's MAX_PREDICTION_ROWS bound — days=90 can reach
+    // ~100k+ rows per engine and this endpoint is reachable repeatedly
+    // by any authenticated readonly user, so the worst case must be an
+    // intentional cap, not an accident (PR #283 review).
     const predSql =
       'SELECT for_hour, horizon_h, mode, has_solar_overlay ' +
       'FROM forecast_predictions ' +
       'WHERE engine = $1 AND for_hour >= $2 AND for_hour <= $3 ' +
-      'ORDER BY for_hour';
+      'LIMIT ' + MAX_MODE_ACCURACY_ROWS;
     pool.query(predSql, [engine, sinceIso, untilIso], function (err, predResult) {
       if (err) return callback(err);
       const predictions = (predResult.rows || []).map(function (r) {

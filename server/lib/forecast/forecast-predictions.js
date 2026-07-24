@@ -66,32 +66,51 @@ function create(opts) {
 
     // Collapse modeForecast into hour buckets: bucket h-1 holds every
     // entry with ts in [t0+(h-1) h, t0+h h) and describes captured hour
-    // h. Solar-overlay handling matches the old per-ts collapse; the
-    // multi-entry (fine-step) extensions are: a non-idle heat mode wins
-    // the hour over idle entries, and the hour keeps its max duty.
-    const modeByHour = {};
+    // h. The captured label is the MAX-OCCUPANCY mode of the bucket —
+    // an order-dependent last-writer-wins collapse let a single
+    // trailing idle step relabel a 55-minute solar hour as idle,
+    // systematically depressing the ML engine's solar rate in exactly
+    // the diagnostics this capture feeds (PR #283 review). Ties break
+    // by severity (emergency > heating > solar > idle), which also
+    // preserves the physics engine's semantics where a heat-mode entry
+    // and its solar-overlay duplicate share one ts. duty is the max
+    // among entries of the WINNING mode only (a greenhouse-heating
+    // hour must not inherit an emergency blip's heater duty).
+    const MODE_RANK = { emergency_heating: 4, greenhouse_heating: 3, active_drain: 2, solar_charging: 1, idle: 0 };
+    const hourBuckets = {};
     for (let i = 0; i < modeEntries.length; i++) {
       const m = modeEntries[i];
       const mMs = m ? tsToMs(m.ts) : null;
       if (mMs === null || mMs < t0) continue;
       const bucket = Math.floor((mMs - t0) / MS_PER_HOUR);
-      let entry = modeByHour[bucket];
-      if (!entry) {
-        entry = { mode: 'idle', hasSolar: false, duty: null };
-        modeByHour[bucket] = entry;
+      let b = hourBuckets[bucket];
+      if (!b) { b = { counts: {}, dutyMax: {}, solarSeen: false }; hourBuckets[bucket] = b; }
+      b.counts[m.mode] = (b.counts[m.mode] || 0) + 1;
+      if (m.mode === 'solar_charging') b.solarSeen = true;
+      if (typeof m.duty === 'number') {
+        const prev = b.dutyMax[m.mode];
+        if (prev === undefined || m.duty > prev) b.dutyMax[m.mode] = m.duty;
       }
-      if (m.mode === 'solar_charging') {
-        if (entry.mode === 'idle') entry.mode = 'solar_charging';
-        else if (entry.mode !== 'solar_charging') entry.hasSolar = true;
-      } else {
-        if (entry.mode === 'solar_charging') entry.hasSolar = true;
-        if (m.mode !== 'idle' || entry.mode === 'idle' || entry.mode === 'solar_charging') {
-          entry.mode = m.mode;
-        }
-        if (typeof m.duty === 'number' && (entry.duty === null || m.duty > entry.duty)) {
-          entry.duty = m.duty;
+    }
+    const modeByHour = {};
+    for (const bucket of Object.keys(hourBuckets)) {
+      const b = hourBuckets[bucket];
+      let winner = 'idle';
+      let winCount = -1;
+      for (const mode of Object.keys(b.counts)) {
+        const n = b.counts[mode];
+        if (n > winCount || (n === winCount && (MODE_RANK[mode] || 0) > (MODE_RANK[winner] || 0))) {
+          winner = mode;
+          winCount = n;
         }
       }
+      modeByHour[bucket] = {
+        mode: winner,
+        // hasSolar flags solar coexisting with a non-solar label; a
+        // solar-labelled hour keeps it false (unchanged semantics).
+        hasSolar: b.solarSeen && winner !== 'solar_charging',
+        duty: b.dutyMax[winner] !== undefined ? b.dutyMax[winner] : null,
+      };
     }
 
     const generatedAt = response.generatedAt || new Date().toISOString();

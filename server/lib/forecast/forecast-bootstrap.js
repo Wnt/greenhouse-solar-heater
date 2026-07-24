@@ -71,14 +71,24 @@ function runCaptureCycle({ physicsCompute, mlCompute, capture, log }, done) {
       done();
     }
   }
-  physicsCompute(function (err, response) {
-    if (err) {
-      log.warn('forecast-predictions: compute failed', { error: err.message });
-      captureMl();
-      return;
-    }
-    capture(response, captureMl);
-  });
+  // Symmetric throw-guard with the ML side: this runs inside a
+  // setTimeout callback, so a synchronous throw from handler.compute
+  // (computeSustainForecast is invoked unguarded in forecast-handler)
+  // would otherwise be an uncaught exception — pod crash — AND skip
+  // done(), permanently disarming the HH:30 loop (PR #283 review).
+  try {
+    physicsCompute(function (err, response) {
+      if (err) {
+        log.warn('forecast-predictions: compute failed', { error: err.message });
+        captureMl();
+        return;
+      }
+      capture(response, captureMl);
+    });
+  } catch (e) {
+    log.warn('forecast-predictions: physics compute threw', { error: e.message });
+    captureMl();
+  }
 }
 
 function start({ pool, db, log, repoRoot, isPreviewMode }) {

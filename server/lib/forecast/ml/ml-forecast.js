@@ -70,7 +70,12 @@ const DEFAULT_CONFIG = {
   // every other cfg field.
   solarEnterDelta: CONTROL_DEFAULTS.solarEnterDelta,
   solarExitTankDrop: CONTROL_DEFAULTS.solarExitTankDrop,
-  solarStallBypassDelta: CONTROL_DEFAULTS.solarStallBypassDelta,
+  // Stall-exit head band, measured from the SAME tank_bottom reference
+  // as entry (entry: bottom + solarEnterDelta; stall exit: collector at
+  // or below bottom + this). Must stay below solarEnterDelta so the
+  // pair forms a true hysteresis — referencing exit to tank_top instead
+  // opened a spread-wide chatter band (PR #283 review).
+  solarExitHeadDeltaC: 1,
   // Probabilistic emergency entry (findings-doc rec #4): enter
   // emergency_heating when P(gh_true < emergencyEnterC) >= this,
   // instead of the point rule that predicted 0-4 emergency hours vs 56
@@ -221,6 +226,12 @@ function computeMlForecast(opts) {
   const hasCollectorForest = !!model.collector;
   let solarActive = hasCollectorForest && currentMode === 'solar_charging';
   let solarPeakTankAvg = tankAvg;
+  // Rising-edge entry guard: true means entry is armed. Starts true
+  // (a rollout that begins idle with a hot collector may enter
+  // immediately); disarmed by an in-rollout stall/drop exit, and
+  // re-armed only when the prediction dips back to the entry
+  // threshold — a genuine new-session crossing.
+  let collectorSeenBelowEntry = true;
 
   const tankTrajectory = [];
   const greenhouseTrajectory = [];
@@ -334,18 +345,30 @@ function computeMlForecast(opts) {
       simCollector = rf.predictForest(model.collector, collRow);
     }
     if (hasCollectorForest && isFinite(simCollector)) {
+      const entryThreshold = (tankAvg - spread / 2) + cfg.solarEnterDelta;
       if (heatMode !== 'idle') {
         // solar_charging is exclusive — a heating mode pre-empts it
         // (the device drains and switches; sessions don't survive).
         solarActive = false;
+        collectorSeenBelowEntry = true;
       } else if (!solarActive) {
         // ENTRY — the device rule verbatim (control-logic.js):
         // collector > tank_bottom + solarEnterDelta. tank_bottom rides
         // the carried average via the constant stratification spread.
         // The tankMaxC guard is a rollout addition standing in for the
         // device's separate overheat protection.
-        if (simCollector > (tankAvg - spread / 2) + cfg.solarEnterDelta && tankAvg < cfg.tankMaxC) {
+        //
+        // Rising-edge guard: a NEW session requires the collector to
+        // have been at/below the entry threshold since the last exit
+        // (or since rollout start). Without it, a drop-from-peak exit
+        // on a draining tank re-enters on the very next step and
+        // reseeds the peak lower — chaining fake sessions forever
+        // (PR #283 review). The device can't chain like that either:
+        // its stall/min-duration holds impose a real gap.
+        if (simCollector <= entryThreshold) collectorSeenBelowEntry = true;
+        if (collectorSeenBelowEntry && simCollector > entryThreshold && tankAvg < cfg.tankMaxC) {
           solarActive = true;
+          collectorSeenBelowEntry = false;
           solarPeakTankAvg = tankAvg;
         }
       } else {
@@ -355,17 +378,26 @@ function computeMlForecast(opts) {
         //      >= solarExitTankDrop from the session peak;
         //  (b) the device's 300 s no-rise STALL timer can't be
         //      reproduced from ~5-min/1-h simulated steps, so stall is
-        //      approximated as exhausted thermodynamic head:
-        //      collector - tank_top <= 0 (no delivery possible). The
-        //      collector-much-hotter bypass (> solarStallBypassDelta)
-        //      is kept for rule fidelity, though the head proxy makes
-        //      it vacuous — a stalled step can't also be far above
-        //      tank_top the way a timer-stalled device step can.
+        //      approximated as an exhausted collector: the prediction
+        //      falls back to (or below) the ENTRY reference minus a
+        //      hysteresis band — simCollector <= tank_bottom +
+        //      solarExitHeadDeltaC, with solarExitHeadDeltaC <
+        //      solarEnterDelta. Exiting against tank_TOP here while
+        //      entering against tank_BOTTOM opened a chatter band the
+        //      width of the stratification spread (>3 °C ~31% of the
+        //      time in prod) where entry and exit were both satisfied
+        //      on alternating steps (PR #283 review). The device's
+        //      collector-much-hotter stall bypass is intentionally NOT
+        //      mirrored: with the shared bottom reference a "stalled"
+        //      prediction can never simultaneously sit far above the
+        //      tank, so the clause would be dead code.
         if (tankAvg > solarPeakTankAvg) solarPeakTankAvg = tankAvg;
         const droppedFromPeak = (solarPeakTankAvg - tankAvg) >= cfg.solarExitTankDrop;
-        const head = simCollector - tankTop;
-        const stalled = head <= 0 && !(head > cfg.solarStallBypassDelta);
-        if (droppedFromPeak || stalled) solarActive = false;
+        const stalled = simCollector <= (tankAvg - spread / 2) + cfg.solarExitHeadDeltaC;
+        if (droppedFromPeak || stalled) {
+          solarActive = false;
+          collectorSeenBelowEntry = false; // disarm: next entry needs a fresh crossing
+        }
       }
       if (solarActive) mode = 'solar_charging';
     } else if (heatMode === 'idle' && radiation >= cfg.solarChargeRadiationMinWm2 && tankAvg < cfg.tankMaxC) {
