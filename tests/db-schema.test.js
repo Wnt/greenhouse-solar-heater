@@ -58,6 +58,41 @@ describe('db-schema SCHEMA_SQL forecast_predictions shape', () => {
   });
 });
 
+describe('db-schema SCHEMA_SQL as-of index shape (PR #283 index debt)', () => {
+  const all = schema.SCHEMA_SQL.join('\n');
+
+  it('replaces the single-column weather valid_at indexes with the as-of composite', () => {
+    // Prod carried two identical single-column indexes (the explicit
+    // weather_forecasts_valid_at plus the hypertable auto-created
+    // *_valid_at_idx) while the hot as-of/nowcast pattern
+    // (DISTINCT ON (valid_at) ... ORDER BY valid_at, fetched_at DESC)
+    // had no matching composite. The PK leads on fetched_at so it
+    // cannot serve valid_at scans.
+    assert.match(all, /DROP INDEX IF EXISTS weather_forecasts_valid_at_idx/);
+    assert.match(all, /DROP INDEX IF EXISTS weather_forecasts_valid_at\b/);
+    assert.match(all,
+      /CREATE INDEX IF NOT EXISTS weather_forecasts_valid_fetched ON weather_forecasts \(valid_at, fetched_at DESC\)/);
+    assert.doesNotMatch(all,
+      /CREATE INDEX IF NOT EXISTS weather_forecasts_valid_at ON/,
+      'the old single-column index must not be recreated');
+  });
+
+  it('drops both redundant spot_prices valid_at indexes (PK already leads on valid_at)', () => {
+    assert.match(all, /DROP INDEX IF EXISTS spot_prices_valid_at_idx/);
+    assert.match(all, /DROP INDEX IF EXISTS spot_prices_valid_at\b/);
+    assert.doesNotMatch(all, /CREATE INDEX IF NOT EXISTS spot_prices_valid_at ON/,
+      'spot_prices needs no extra index: PRIMARY KEY (valid_at, source) covers the scans');
+  });
+
+  it('orders the weather drops after create_hypertable so fresh installs converge', () => {
+    const stmts = schema.SCHEMA_SQL;
+    const hyper = stmts.findIndex((s) => /create_hypertable\('weather_forecasts'/.test(s));
+    const drop = stmts.findIndex((s) => /DROP INDEX IF EXISTS weather_forecasts_valid_at_idx/.test(s));
+    assert.ok(hyper !== -1 && drop !== -1 && drop > hyper,
+      'auto-index drop must run after create_hypertable creates it on fresh installs');
+  });
+});
+
 describe('db-schema._pkNeedsEngineMigration', () => {
   const fn = schema._pkNeedsEngineMigration;
 

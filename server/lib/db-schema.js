@@ -122,7 +122,19 @@ const SCHEMA_SQL = [
   "ALTER TABLE weather_forecasts ADD COLUMN IF NOT EXISTS wind_gust        DOUBLE PRECISION",
   "ALTER TABLE weather_forecasts ADD COLUMN IF NOT EXISTS pressure         DOUBLE PRECISION",
 
-  "CREATE INDEX IF NOT EXISTS weather_forecasts_valid_at ON weather_forecasts (valid_at DESC)",
+  // 2026-07-24 (PR #283 index debt): prod carried two identical
+  // single-column valid_at indexes — the explicit one below (historic)
+  // plus the auto-created weather_forecasts_valid_at_idx from
+  // create_hypertable — while the hot as-of/nowcast pattern
+  // (DISTINCT ON (valid_at) … ORDER BY valid_at, fetched_at DESC in
+  // forecast-handler/-dataset/ml-handler) had no matching composite and
+  // the PK leads on fetched_at. Replace both with one composite that
+  // serves the DISTINCT ON directly. Drops run after create_hypertable
+  // so fresh installs (where the auto index is recreated) converge to
+  // the same end state; every statement is idempotent per boot.
+  "DROP INDEX IF EXISTS weather_forecasts_valid_at_idx",
+  "DROP INDEX IF EXISTS weather_forecasts_valid_at",
+  "CREATE INDEX IF NOT EXISTS weather_forecasts_valid_fetched ON weather_forecasts (valid_at, fetched_at DESC)",
 
   "CREATE TABLE IF NOT EXISTS spot_prices (\n" +
   "  fetched_at  TIMESTAMPTZ        NOT NULL,\n" +
@@ -134,7 +146,13 @@ const SCHEMA_SQL = [
 
   "SELECT create_hypertable('spot_prices', 'valid_at', if_not_exists => true)",
 
-  "CREATE INDEX IF NOT EXISTS spot_prices_valid_at ON spot_prices (valid_at DESC)",
+  // 2026-07-24 (PR #283 index debt): PRIMARY KEY (valid_at, source)
+  // already leads on valid_at, so BOTH single-column valid_at indexes
+  // (the explicit historic one and create_hypertable's auto
+  // spot_prices_valid_at_idx) were pure write amplification. No
+  // replacement needed.
+  "DROP INDEX IF EXISTS spot_prices_valid_at_idx",
+  "DROP INDEX IF EXISTS spot_prices_valid_at",
 
   // Captured forecast predictions — one row per (engine, generated_at,
   // horizon_h) tuple, written in batches of 48 per engine by the HH:30
