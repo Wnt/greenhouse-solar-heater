@@ -163,6 +163,7 @@ npm run topology-contrast          # WCAG audit of topology drawio
 npm run bootstrap-history          # regenerate pre-baked 12 h sim snapshot
 node scripts/make-icons.mjs        # regenerate PWA + notification icons
 node scripts/generate-liquid-glass.mjs  # regenerate bottom-nav glass PNGs
+node scripts/backtest-mode-forecast.mjs export|run --data <dir>  # offline backtest of the ML mode schedule vs logged history (export needs kubectl; see design/docs/ml-mode-forecast-findings.md)
 ```
 
 ## Generated Files & Drift Checks
