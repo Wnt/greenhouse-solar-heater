@@ -7,7 +7,9 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 
 const rf = require('../server/lib/forecast/ml/random-forest');
-const { evaluateGate, freshTestSubset, MIN_FRESH_SAMPLES } = require('../server/lib/forecast/ml/ml-trainer');
+const {
+  createMlTrainer, evaluateGate, freshTestSubset, buildCollectorTargets, MIN_FRESH_SAMPLES,
+} = require('../server/lib/forecast/ml/ml-trainer');
 const { createModelStore, contractOk } = require('../server/lib/forecast/ml/model-store');
 const { FEATURE_NAMES, MODEL_VERSION } = require('../server/lib/forecast/ml/features');
 
@@ -168,6 +170,140 @@ test('contractOk validates the model feature contract', () => {
   // v2 rollout doesn't double-count the physics step.
   assert.strictEqual(contractOk(Object.assign({}, ok, { version: 1 })), false);
   assert.strictEqual(contractOk(Object.assign({}, ok, { version: undefined })), false);
+});
+
+// ── Lane D: optional collector forest (findings-doc rec #6) ─────────
+// The artifact may carry a third forest — a direct regression of the
+// collector outlet temperature — so the rollout can run the device's
+// real solar entry/exit rules. It is OPTIONAL: old S3/committed models
+// without it must stay loadable, and its presence must not change the
+// promotion gate.
+
+test('contractOk accepts artifacts with and without the optional collector forest', () => {
+  const base = { tank: {}, greenhouse: {}, version: MODEL_VERSION, featureNames: FEATURE_NAMES.slice() };
+  // Old artifacts (no collector key) stay valid — migration safety.
+  assert.strictEqual(contractOk(base), true);
+  assert.strictEqual(contractOk(Object.assign({}, base, { collector: null })), true);
+  // New artifacts carry the third forest.
+  const forest = { trees: [{ leaf: true, value: 40 }], nFeatures: NF };
+  assert.strictEqual(contractOk(Object.assign({}, base, { collector: forest })), true);
+  // A collector key that is not a real forest must be rejected — the
+  // rollout would crash (or NaN-poison) predicting from it.
+  assert.strictEqual(contractOk(Object.assign({}, base, { collector: {} })), false);
+  assert.strictEqual(contractOk(Object.assign({}, base, { collector: 'garbage' })), false);
+  assert.strictEqual(contractOk(Object.assign({}, base, { collector: { trees: 'x' } })), false);
+});
+
+test('buildCollectorTargets interpolates at anchors and NaNs across sensor gaps', () => {
+  const points = [
+    { ts: 0, collector: 10, tank_top: 30, tank_bottom: 28, greenhouse: 15, outdoor: 10 },
+    { ts: 600000, collector: 20, tank_top: 30, tank_bottom: 28, greenhouse: 15, outdoor: 10 },
+    // 50-minute hole to the next reading — anchors inside it must be NaN
+    // (mirrors dataset.js's MAX_GAP sensor-gap rule).
+    { ts: 3600000, collector: 40, tank_top: 30, tank_bottom: 28, greenhouse: 15, outdoor: 10 },
+  ];
+  const y = buildCollectorTargets(points, [0, 300000, 1800000, 3600000]);
+  assert.strictEqual(y[0], 10);
+  assert.strictEqual(y[1], 15); // midpoint interpolation
+  assert.ok(Number.isNaN(y[2]), 'anchor inside a sensor gap must be NaN');
+  assert.strictEqual(y[3], 40);
+  // Rows where the collector column is missing are ignored entirely.
+  const y2 = buildCollectorTargets([{ ts: 0 }, { ts: 1000 }], [0]);
+  assert.ok(Number.isNaN(y2[0]));
+});
+
+// Synthetic 48 h history payload with smooth, noise-free diurnal
+// temperature curves — deterministic targets keep the candidate safely
+// above the gate's R2 floors so retrainOnce reaches promotion.
+// `includeCollector` toggles the collector column in the pivoted points,
+// mimicking a deployment where that sensor never reported.
+function trainerPayload(includeCollector) {
+  const HOURS = 48;
+  const start = Date.parse('2026-06-01T00:00:00Z');
+  const radAt = (hod) => (hod >= 6 && hod <= 20) ? 600 * Math.sin(Math.PI * (hod - 6) / 14) : 0;
+  const points = [];
+  for (let t = start; t <= start + HOURS * 3600000; t += 5 * 60000) {
+    const h = (t - start) / 3600000;
+    const p = {
+      ts: t,
+      tank_top: 32 + 6 * Math.sin(2 * Math.PI * h / 24),
+      tank_bottom: 28 + 6 * Math.sin(2 * Math.PI * h / 24),
+      greenhouse: 15 + 8 * Math.sin(2 * Math.PI * (h - 3) / 24),
+      outdoor: 10 + 5 * Math.sin(2 * Math.PI * (h - 4) / 24),
+    };
+    if (includeCollector) p.collector = 15 + radAt(h % 24) / 10;
+    points.push(p);
+  }
+  const weather = [];
+  for (let h = 0; h <= HOURS; h++) {
+    weather.push({
+      validAt: new Date(start + h * 3600000).toISOString(),
+      temperature: 10 + 5 * Math.sin(2 * Math.PI * (h - 4) / 24),
+      radiationGlobal: radAt(h % 24),
+      windSpeed: 3,
+      precipitation: 0,
+    });
+  }
+  return { points, weather };
+}
+
+function runTrainer(payload, done) {
+  let promoted = null;
+  const warns = [];
+  const trainer = createMlTrainer({
+    db: { getEvents(_range, _type, cb) { cb(null, []); } },
+    log: { info() {}, warn(msg, meta) { warns.push({ msg, meta }); }, error() {} },
+    getForecastDataset: (_opts, cb) => cb(null, { weather: payload.weather, generations: [] }),
+    getTrainingHistory: (_days, _bucket, cb) => cb(null, payload.points),
+    modelStore: { get() { return null; }, set(m, cb) { promoted = m; if (cb) cb(); } },
+  });
+  trainer.retrainOnce(() => done(promoted, trainer.getStatus(), warns));
+}
+
+test('retrainOnce promotes an artifact carrying a collector forest when history has the collector column', async () => {
+  const { promoted, status } = await new Promise((resolve) => {
+    runTrainer(trainerPayload(true), (p, s) => resolve({ promoted: p, status: s }));
+  });
+  assert.ok(promoted, 'gate should promote on the synthetic history: ' + (status.lastError || ''));
+  assert.ok(promoted.collector, 'artifact must carry the collector forest');
+  assert.ok(Array.isArray(promoted.collector.trees) && promoted.collector.trees.length > 0);
+  assert.strictEqual(promoted.collector.nFeatures, NF);
+  assert.strictEqual(contractOk(promoted), true, 'promoted artifact must pass the contract check');
+  // The collector forest predicts an absolute temperature — sanity-check
+  // it emits something finite for an in-distribution row.
+  const someRow = new Array(NF).fill(0);
+  assert.ok(Number.isFinite(rf.predictForest(promoted.collector, someRow)));
+});
+
+test('retrainOnce omits the collector forest when the collector column is absent — artifact stays valid', async () => {
+  const { promoted, status } = await new Promise((resolve) => {
+    runTrainer(trainerPayload(false), (p, s) => resolve({ promoted: p, status: s }));
+  });
+  assert.ok(promoted, 'promotion must not depend on the collector column: ' + (status.lastError || ''));
+  assert.strictEqual(promoted.collector, undefined, 'no collector column -> no collector forest');
+  assert.strictEqual(contractOk(promoted), true, 'collector-less artifact remains contract-valid');
+});
+
+test('retrainOnce omits a degenerate (flatline) collector forest and logs the sanity-check skip', async () => {
+  // A collector sensor stuck at a constant value trains a forest with
+  // zero predictive power (R2 = 0 on the held-out tail). Shipping it
+  // would silently swap the validated 300 W/m2 radiation gate for
+  // garbage device-rule solar rollouts, so the trainer must evaluate
+  // the collector forest before attaching it, omit it on failure, and
+  // log the skip — while promotion of the tank/greenhouse model stays
+  // unaffected.
+  const payload = trainerPayload(true);
+  payload.points.forEach((p) => { p.collector = 20; });
+  const { promoted, status, warns } = await new Promise((resolve) => {
+    runTrainer(payload, (p, s, w) => resolve({ promoted: p, status: s, warns: w }));
+  });
+  assert.ok(promoted, 'promotion must not depend on collector quality: ' + (status.lastError || ''));
+  assert.strictEqual(promoted.collector, undefined,
+    'a degenerate collector forest must not ship in the artifact');
+  assert.strictEqual(promoted.collectorTrainSamples, undefined);
+  assert.strictEqual(contractOk(promoted), true);
+  assert.ok(warns.some((w) => /collector forest failed sanity check/.test(w.msg)),
+    'expected a logged sanity-check skip, got: ' + JSON.stringify(warns.map((w) => w.msg)));
 });
 
 test('model store loads the committed model on init', async () => {

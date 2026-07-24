@@ -3,20 +3,34 @@
 /**
  * Forecast diagnostics — predicted-vs-actual analysis for offline tuning.
  *
- * Two modes, served by the same handler:
+ * Three modes, served by the same handler:
  *
- *   GET /api/forecast/diagnostics?horizon=H&since=ISO&until=ISO
+ *   GET /api/forecast/diagnostics?horizon=H&since=ISO&until=ISO[&engine=...]
  *     "Series" mode. Returns forecast_predictions rows at horizon=H
  *     across [since, until] joined with the closest sensor_readings_30s
  *     bucket per for_hour. Drives the operator-facing predicted-vs-actual
  *     line plot.
  *
- *   GET /api/forecast/diagnostics?generated_at=ISO
+ *   GET /api/forecast/diagnostics?generated_at=ISO[&engine=...]
  *     "Generation" mode. Returns all 1..48 horizon rows for one
  *     generation timestamp plus the actuals out to that horizon — drives
  *     the per-generation drilldown including the per-component breakdown
  *     (solar gain, radiator W, heater kWh, tank loss, cloud factor) and
  *     the fitted coefficients used by that generation.
+ *
+ *   Both pre-existing modes pin engine='physics' unless overridden with
+ *   a validated ?engine=physics|ml — both engines' rows share
+ *   forecast_predictions since dual-engine capture, and without the
+ *   predicate ML rows would interleave into these responses.
+ *
+ *   GET /api/forecast/diagnostics?summary=mode-accuracy[&engine=physics|ml][&days=N]
+ *     "Mode-accuracy" mode (findings doc #3/#7). Scores the captured
+ *     mode schedule (forecast_predictions, per engine) against the mode
+ *     transitions the controller actually logged (state_events), via
+ *     the pure scorer in mode-metrics.js: accuracy by horizon bucket,
+ *     per-mode precision/recall, solar + emergency detection, and the
+ *     hour-of-day climatology baseline the engines must beat (measured:
+ *     63–71 % beyond 4 h vs 71 % climatology).
  *
  * Read-only. Accessible to all authenticated roles (admin + readonly):
  * the table itself contains no operating credentials, only telemetry,
@@ -26,6 +40,7 @@
  */
 
 const { jsonResponse } = require('../http-handlers');
+const modeMetrics = require('./mode-metrics');
 
 const ALLOWED_HORIZONS = [1, 6, 12, 24, 48];
 const DEFAULT_HORIZON  = 24;
@@ -38,6 +53,15 @@ const ACTUAL_WINDOW_MIN = 30; // sensor_readings_30s buckets within ±30 min cou
 // JS-side.
 const SENSOR_IDS = ['greenhouse', 'tank_top', 'tank_bottom', 'outdoor', 't_collector'];
 
+// Valid ?engine= values for all three modes; default 'physics'.
+const ENGINES = ['physics', 'ml'];
+
+// Mode-accuracy summary knobs. 30 days default keeps the sample large
+// enough to be meaningful (≈ 720 hours × up to 48 horizons) without
+// scanning months of hypertable; 90-day cap bounds the query.
+const MODE_ACCURACY_DEFAULT_DAYS = 30;
+const MODE_ACCURACY_MAX_DAYS     = 90;
+
 function create(opts) {
   const pool = opts.pool;
   const log  = opts.log || { info: function () {}, warn: function () {}, error: function () {} };
@@ -48,11 +72,37 @@ function create(opts) {
       return;
     }
     const url = new URL(req.url, 'http://localhost');
+    // `summary` is a new param — requests without it fall through to the
+    // two pre-existing modes untouched.
+    const summaryRaw = url.searchParams.get('summary');
+    if (summaryRaw) {
+      if (summaryRaw !== 'mode-accuracy') {
+        jsonResponse(res, 400, { error: 'summary must be mode-accuracy' });
+        return;
+      }
+      const engine = parseEngine(url.searchParams.get('engine'));
+      if (engine === null) { jsonResponse(res, 400, { error: 'engine must be one of ' + ENGINES.join(',') }); return; }
+      const days = parseDays(url.searchParams.get('days'));
+      if (days === null) { jsonResponse(res, 400, { error: 'Invalid days' }); return; }
+      runModeAccuracyMode(engine, days, function (err, body) {
+        if (err) {
+          log.warn('forecast-diagnostics: mode-accuracy query failed', { error: err.message });
+          jsonResponse(res, 500, { error: 'Diagnostics query failed' });
+          return;
+        }
+        jsonResponse(res, 200, body);
+      });
+      return;
+    }
+    // Engine pinning for the two pre-existing modes: default physics,
+    // optional validated override (see header).
+    const engine = parseEngine(url.searchParams.get('engine'));
+    if (engine === null) { jsonResponse(res, 400, { error: 'engine must be one of ' + ENGINES.join(',') }); return; }
     const generatedAtRaw = url.searchParams.get('generated_at');
     if (generatedAtRaw) {
       const t = parseIso(generatedAtRaw);
       if (!t) { jsonResponse(res, 400, { error: 'Invalid generated_at' }); return; }
-      runGenerationMode(t.toISOString(), function (err, body) {
+      runGenerationMode(t.toISOString(), engine, function (err, body) {
         if (err) {
           log.warn('forecast-diagnostics: generation query failed', { error: err.message });
           jsonResponse(res, 500, { error: 'Diagnostics query failed' });
@@ -68,7 +118,7 @@ function create(opts) {
     const range = parseRange(url.searchParams.get('since'), url.searchParams.get('until'));
     if (!range) { jsonResponse(res, 400, { error: 'Invalid since/until' }); return; }
 
-    runSeriesMode(horizon, range.since, range.until, function (err, body) {
+    runSeriesMode(horizon, range.since, range.until, engine, function (err, body) {
       if (err) {
         log.warn('forecast-diagnostics: series query failed', { error: err.message });
         jsonResponse(res, 500, { error: 'Diagnostics query failed' });
@@ -80,7 +130,7 @@ function create(opts) {
 
   // ── Series mode ────────────────────────────────────────────────────
 
-  function runSeriesMode(horizon, since, until, callback) {
+  function runSeriesMode(horizon, since, until, engine, callback) {
     const predSql =
       'SELECT generated_at, horizon_h, for_hour, mode, has_solar_overlay, duty, ' +
       '  tank_top_c, tank_bottom_c, tank_avg_c, greenhouse_c, ' +
@@ -89,9 +139,9 @@ function create(opts) {
       '  outdoor_c, radiation_w_m2, wind_speed_m_s, precipitation_mm, ' +
       '  price_c_kwh, algorithm_version ' +
       'FROM forecast_predictions ' +
-      'WHERE horizon_h = $1 AND for_hour >= $2 AND for_hour <= $3 ' +
+      'WHERE engine = $1 AND horizon_h = $2 AND for_hour >= $3 AND for_hour <= $4 ' +
       'ORDER BY for_hour';
-    pool.query(predSql, [horizon, since, until], function (err, predResult) {
+    pool.query(predSql, [engine, horizon, since, until], function (err, predResult) {
       if (err) return callback(err);
       const preds = (predResult.rows || []).map(toPredJson);
       if (preds.length === 0) {
@@ -129,7 +179,7 @@ function create(opts) {
 
   // ── Generation mode ────────────────────────────────────────────────
 
-  function runGenerationMode(generatedAtIso, callback) {
+  function runGenerationMode(generatedAtIso, engine, callback) {
     const sql =
       'SELECT generated_at, horizon_h, for_hour, mode, has_solar_overlay, duty, ' +
       '  tank_top_c, tank_bottom_c, tank_avg_c, greenhouse_c, ' +
@@ -138,9 +188,9 @@ function create(opts) {
       '  outdoor_c, radiation_w_m2, wind_speed_m_s, precipitation_mm, ' +
       '  price_c_kwh, algorithm_version, tu, coefficients ' +
       'FROM forecast_predictions ' +
-      'WHERE generated_at = $1 ' +
+      'WHERE engine = $1 AND generated_at = $2 ' +
       'ORDER BY horizon_h';
-    pool.query(sql, [generatedAtIso], function (err, predResult) {
+    pool.query(sql, [engine, generatedAtIso], function (err, predResult) {
       if (err) return callback(err);
       const rawRows = (predResult.rows || []).map(toPredJson);
       if (rawRows.length === 0) {
@@ -167,6 +217,66 @@ function create(opts) {
           algorithm_version: rawRows[0].algorithm_version,
           tu, coefficients,
           horizons,
+        });
+      });
+    });
+  }
+
+  // ── Mode-accuracy mode ─────────────────────────────────────────────
+
+  function runModeAccuracyMode(engine, days, callback) {
+    const until = Date.now();
+    const since = until - days * 24 * 3600 * 1000;
+    const sinceIso = new Date(since).toISOString();
+    const untilIso = new Date(until).toISOString();
+    // Mode fields only — temps/components are irrelevant to schedule
+    // scoring and this scans up to 90 d × 48 horizons of rows.
+    const predSql =
+      'SELECT for_hour, horizon_h, mode, has_solar_overlay ' +
+      'FROM forecast_predictions ' +
+      'WHERE engine = $1 AND for_hour >= $2 AND for_hour <= $3 ' +
+      'ORDER BY for_hour';
+    pool.query(predSql, [engine, sinceIso, untilIso], function (err, predResult) {
+      if (err) return callback(err);
+      const predictions = (predResult.rows || []).map(function (r) {
+        return {
+          forHour: r.for_hour instanceof Date ? r.for_hour.getTime() : new Date(r.for_hour).getTime(),
+          horizonH: r.horizon_h,
+          mode: r.mode,
+          hasSolarOverlay: !!r.has_solar_overlay,
+        };
+      });
+      // Ground truth: mode transitions in the window PLUS the latest one
+      // at-or-before the window start, so the first hours have full
+      // coverage (mode-metrics treats pre-first-transition time as
+      // unknown → uncovered).
+      const evSql =
+        "(SELECT ts, new_value FROM state_events " +
+        " WHERE entity_type = 'mode' AND ts <= $1 ORDER BY ts DESC LIMIT 1) " +
+        'UNION ALL ' +
+        "(SELECT ts, new_value FROM state_events " +
+        " WHERE entity_type = 'mode' AND ts > $1 AND ts <= $2 ORDER BY ts)";
+      pool.query(evSql, [sinceIso, untilIso], function (evErr, evResult) {
+        if (evErr) return callback(evErr);
+        const transitions = (evResult.rows || []).map(function (r) {
+          return { ts: r.ts, mode: r.new_value };
+        });
+        const summary = modeMetrics.summarizeModeAccuracy({
+          predictions,
+          transitions,
+          windowStartMs: since,
+          windowEndMs: until,
+        });
+        callback(null, {
+          engine,
+          windowDays: days,
+          sampleCount: summary.sampleCount,
+          accuracyByHorizon: summary.accuracyByHorizon,
+          perMode: summary.perMode,
+          solar: summary.solar,
+          emergency: summary.emergency,
+          baselines: summary.baselines,
+          generatedAt: new Date().toISOString(),
         });
       });
     });
@@ -233,6 +343,18 @@ function parseRange(sinceRaw, untilRaw) {
     since = until - MAX_RANGE_DAYS * 24 * 3600 * 1000;
   }
   return { since: new Date(since), until: new Date(until) };
+}
+
+function parseEngine(raw) {
+  if (raw === null || raw === undefined || raw === '') return 'physics';
+  return ENGINES.indexOf(raw) !== -1 ? raw : null;
+}
+
+function parseDays(raw) {
+  if (raw === null || raw === undefined || raw === '') return MODE_ACCURACY_DEFAULT_DAYS;
+  const n = parseInt(raw, 10);
+  if (!isFinite(n) || n < 1) return null;
+  return Math.min(n, MODE_ACCURACY_MAX_DAYS);
 }
 
 function parseIso(raw) {
@@ -349,6 +471,8 @@ module.exports = {
   // exposed for unit tests
   _parseHorizon: parseHorizon,
   _parseRange: parseRange,
+  _parseEngine: parseEngine,
+  _parseDays: parseDays,
   _nearestActual: nearestActual,
   _ALLOWED_HORIZONS: ALLOWED_HORIZONS,
 };

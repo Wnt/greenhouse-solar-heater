@@ -126,9 +126,14 @@ function create(opts) {
       '  outdoor_c, radiation_w_m2, wind_speed_m_s, precipitation_mm, ' +
       '  price_c_kwh, algorithm_version, tu, coefficients ' +
       'FROM forecast_predictions' + sinceClause('for_hour', hours);
+    // Pinned to engine='physics' (mirrors listRecent): ML rows share the
+    // table since dual-engine capture and would double row counts against
+    // MAX_PREDICTION_ROWS and inject a second engine's rows into offline
+    // tooling.
+    sql += (sql.indexOf(' WHERE ') === -1 ? ' WHERE ' : ' AND ') + "engine = 'physics'";
     const params = [];
     if (horizon !== null && horizon !== undefined) {
-      sql += (sql.indexOf(' WHERE ') === -1 ? ' WHERE ' : ' AND ') + 'horizon_h = $1';
+      sql += ' AND horizon_h = $1';
       params.push(horizon);
     }
     sql += ' ORDER BY generated_at, horizon_h LIMIT ' + MAX_PREDICTION_ROWS;

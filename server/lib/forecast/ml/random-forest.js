@@ -199,9 +199,29 @@ function predictForest(model, x) {
   return sum / trees.length;
 }
 
+// Per-tree prediction spread for one row: the cheap ensemble variance
+// the probabilistic emergency-entry logic uses (ml-forecast.js,
+// findings-doc rec #4). `mean` equals predictForest's output;
+// predictForest itself stays untouched.
+function predictForestStats(model, x) {
+  const trees = model.trees;
+  const n = trees.length;
+  let sum = 0;
+  let sumSq = 0;
+  for (let i = 0; i < n; i++) {
+    const v = predictTree(trees[i], x);
+    sum += v;
+    sumSq += v * v;
+  }
+  const mean = sum / n;
+  const variance = Math.max(0, sumSq / n - mean * mean);
+  return { mean, std: Math.sqrt(variance) };
+}
+
 module.exports = {
   mulberry32,
   trainForest,
   predictForest,
+  predictForestStats,
   featureThresholds,
 };
