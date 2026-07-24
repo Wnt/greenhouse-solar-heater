@@ -12,8 +12,12 @@
 // FMI weather-forecast value (known ahead of time), a carried model
 // state (tankAvg / greenhouse), a clock value, a controller mode
 // fraction, or the prediction-step length. Tank top/bottom split and
-// the collector sensor are NOT used — they cannot be carried through a
-// recursive 48 h rollout without a second model.
+// the collector sensor are NOT used as FEATURES — they cannot be
+// carried through a recursive 48 h rollout without a second model.
+// (The collector IS the target of the optional third forest — a direct
+// regression trained by ml-trainer.js on this same row so the rollout
+// can run the device's real solar entry/exit rules; that forest adds no
+// column here, so FEATURE_NAMES and MODEL_VERSION are unchanged.)
 //
 // The rollout is multi-resolution: 5-min steps over the near term
 // (FINE_HORIZON_MS), then 1-h steps for the tail — fine near-term mode

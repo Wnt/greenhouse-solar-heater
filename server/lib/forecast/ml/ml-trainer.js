@@ -5,9 +5,11 @@
 // On a daily timer: pulls recent history from the DB, trains a
 // candidate random forest, and promotes it ONLY if it clears a gate
 // (absolute accuracy floors + a regression guard against the model
-// currently serving). A passing model is hot-swapped via the model
-// store and persisted to S3; a failing one is dropped and the current
-// model keeps serving.
+// currently serving + the mode-schedule guard in mode-gate.js, which
+// rejects candidates that degrade the 48 h mode schedule even when
+// their temperature RMSE is better). A passing model is hot-swapped
+// via the model store and persisted to S3; a failing one is dropped
+// and the current model keeps serving.
 //
 // Training is pure CPU and runs off the request path. Disabled in
 // PREVIEW_MODE (preview pods must never overwrite prod's S3 model) and
@@ -19,6 +21,7 @@
 const rf = require('./random-forest');
 const { FEATURE_NAMES, MODEL_VERSION, STEP_FINE_MS, STEP_COARSE_MS, featureRanges } = require('./features');
 const { buildDataset } = require('../../../../scripts/forecast-ml/dataset.js');
+const { evaluateModeGuard } = require('./mode-gate');
 
 const RETRAIN_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
 const INITIAL_DELAY_MS = 3 * 60 * 1000;          // first run 3 min after boot
@@ -150,6 +153,63 @@ function evaluateGate(candTank, candGh, current, Xte, yTankTe, yGhTe, fresh) {
 
 function round(v) { return Math.round(v * 1000) / 1000; }
 
+// ── collector targets (findings-doc rec #6, Lane D) ─────────────────
+// The optional third forest is a DIRECT regression of the collector
+// outlet temperature (absolute degC — NOT a physics residual; there is
+// no collector physics model) from the same feature row the tank and
+// greenhouse forests use. The dataset builder deliberately keeps the
+// collector out of the FEATURES (it can't be carried through a
+// recursive rollout); here it is the TARGET, aligned to the same
+// anchors buildDataset produced (data.t0s). The rollout then simulates
+// the collector each step and runs the device's real solar entry/exit
+// rules instead of the flat radiation gate (ml-forecast.js).
+
+// Mirrors dataset.js MAX_GAP_MS: an anchor further than this from the
+// nearest collector reading is a sensor gap, not a sample.
+const COLLECTOR_MAX_GAP_MS = 8 * 60000;
+
+// Sanity floor for the collector forest — NOT a promotion criterion.
+// Deliberately below the tank/gh floors' bar: those gate PROMOTION on
+// held-out generalization, while this only decides whether the OPTIONAL
+// collector forest ships in the artifact, and it is evaluated on tail
+// samples the full-window forest has already trained on — so any real
+// fit clears it easily. It exists to catch degenerate fits (flatline
+// targets → R2 0, NaN leaves) that would otherwise silently flip the
+// rollout's solar schedule from the validated 300 W/m2 radiation gate
+// to garbage device-rule rollouts.
+const COLLECTOR_R2_FLOOR = 0.3;
+
+// Interpolated collector reading at time t from a sorted, finite-only
+// point list; NaN when t falls in a sensor gap.
+function collectorAt(pts, t) {
+  if (!pts.length) return NaN;
+  if (t <= pts[0].ts) return (pts[0].ts - t) <= COLLECTOR_MAX_GAP_MS ? pts[0].collector : NaN;
+  const last = pts[pts.length - 1];
+  if (t >= last.ts) return (t - last.ts) <= COLLECTOR_MAX_GAP_MS ? last.collector : NaN;
+  let lo = 0;
+  let hi = pts.length - 1;
+  while (lo < hi - 1) {
+    const m = (lo + hi) >> 1;
+    if (pts[m].ts <= t) lo = m; else hi = m;
+  }
+  const a = pts[lo];
+  const b = pts[hi];
+  if ((t - a.ts) > COLLECTOR_MAX_GAP_MS || (b.ts - t) > COLLECTOR_MAX_GAP_MS) return NaN;
+  const w = b.ts === a.ts ? 0 : (t - a.ts) / (b.ts - a.ts);
+  return a.collector + (b.collector - a.collector) * w;
+}
+
+// Per-anchor collector targets aligned with buildDataset's t0s; NaN
+// where the collector column is missing or gapped (those samples are
+// simply excluded from the collector forest's training set).
+function buildCollectorTargets(points, t0s) {
+  const pts = (points || [])
+    .filter(function fin(p) { return p && Number.isFinite(p.ts) && Number.isFinite(p.collector); })
+    .slice()
+    .sort(function cmp(a, b) { return a.ts - b.ts; });
+  return t0s.map(function at(t0) { return collectorAt(pts, t0); });
+}
+
 function createMlTrainer(opts) {
   const db = opts.db;
   const log = opts.log;
@@ -250,6 +310,47 @@ function createMlTrainer(opts) {
         return;
       }
 
+      // Mode-schedule guard (findings-doc rec #3, Lane E): temperature
+      // RMSE alone cannot see schedule quality — the deployed schedule
+      // measured 63-71 % hourly dominant-mode accuracy beyond 4 h vs a
+      // 71 % hour-of-day climatology while the temperature metrics
+      // looked fine. Replay episode rollouts from the held-out tail
+      // with candidate vs serving forests; a candidate more than 3 pp
+      // worse on dominant-mode accuracy is rejected even with better
+      // RMSE. Skips (never blocks) on thin data — see mode-gate.js.
+      // try/catch makes the "never blocks promotion" contract
+      // STRUCTURAL: a future throw inside mode-gate/mode-metrics would
+      // otherwise escape this async callback — uncaught exception (pod
+      // crash) or a permanently wedged status.running (PR #283 review).
+      let modeGuard;
+      try {
+        modeGuard = evaluateModeGuard({
+          candidate: { tank: candTank, greenhouse: candGh, featureRanges: featureRanges(data.X) },
+          serving: current,
+          points: payload.points,
+          events: payload.events,
+          weather: payload.weather,
+          testStartMs: t0sTe.length ? t0sTe[0] : NaN,
+        });
+      } catch (e) {
+        modeGuard = { pass: true, skipped: true, reason: 'guard threw: ' + e.message };
+      }
+      gate.metrics.modeGuard = {
+        skipped: modeGuard.skipped,
+        reason: modeGuard.reason,
+        candidateAccuracy: modeGuard.candidateAccuracy,
+        servingAccuracy: modeGuard.servingAccuracy,
+        episodes: modeGuard.episodes,
+        samples: modeGuard.samples,
+      };
+      if (modeGuard.skipped) {
+        log.warn('ml-trainer: mode-schedule guard skipped', { reason: modeGuard.reason });
+      }
+      if (!modeGuard.pass) {
+        fail('gate rejected candidate: ' + modeGuard.reason, done);
+        return;
+      }
+
       // Gate passed — train the shipped model on the full history.
       let fullTank;
       let fullGh;
@@ -260,6 +361,55 @@ function createMlTrainer(opts) {
         fail('full-model training failed: ' + e.message, done);
         return;
       }
+      // Optional collector forest (findings rec #6): same
+      // hyperparameters as the other forests, trained only on anchors
+      // where the collector sensor actually reported. Deliberately NOT
+      // part of the promotion gate — no new pass/fail floors — so a
+      // window without collector data (or a degenerate collector fit)
+      // can never block a good tank/greenhouse model; the artifact just
+      // ships without the key and the rollout falls back to the
+      // radiation gate.
+      let fullCollector = null;
+      const yColl = buildCollectorTargets(payload.points, data.t0s);
+      const Xc = [];
+      const yc = [];
+      for (let i = 0; i < data.X.length; i++) {
+        if (Number.isFinite(yColl[i])) { Xc.push(data.X[i]); yc.push(yColl[i]); }
+      }
+      if (Xc.length >= MIN_SAMPLES) {
+        try {
+          fullCollector = rf.trainForest(Xc, yc, { seed: 3 });
+        } catch (e) {
+          log.warn('ml-trainer: collector forest training failed — omitting', { error: e.message });
+        }
+        if (fullCollector) {
+          // Evaluate on the same held-out tail the gate uses before
+          // attaching: finite predictions + the COLLECTOR_R2_FLOOR
+          // sanity bar. A failing forest is logged and omitted;
+          // promotion of the tank/greenhouse model is unaffected
+          // either way (the rollout falls back to the radiation gate).
+          const Xct = [];
+          const yct = [];
+          for (let i = split; i < data.X.length; i++) {
+            if (Number.isFinite(yColl[i])) { Xct.push(data.X[i]); yct.push(yColl[i]); }
+          }
+          const ce = Xct.length > 0 ? evalForest(fullCollector, Xct, yct) : null;
+          if (!ce || !ce.finite || !Number.isFinite(ce.r2) || ce.r2 < COLLECTOR_R2_FLOOR) {
+            // Distinguish "no data to judge it on" from "judged and
+            // failed" — with zero held-out samples no check ran at all.
+            log.warn(ce
+              ? 'ml-trainer: collector forest failed sanity check — omitting'
+              : 'ml-trainer: collector forest has no held-out samples to evaluate — omitting', {
+              r2: ce && Number.isFinite(ce.r2) ? round(ce.r2) : null,
+              samples: Xct.length,
+            });
+            fullCollector = null;
+          }
+        }
+      } else if (Xc.length > 0) {
+        log.warn('ml-trainer: collector forest skipped — too few finite samples', { samples: Xc.length });
+      }
+
       const model = {
         version: MODEL_VERSION,
         featureNames: FEATURE_NAMES,
@@ -270,6 +420,10 @@ function createMlTrainer(opts) {
         trainedAt: new Date().toISOString(),
         trainSamples: data.X.length,
       };
+      if (fullCollector) {
+        model.collector = fullCollector;
+        model.collectorTrainSamples = Xc.length;
+      }
       modelStore.set(model, function persisted() {
         status.lastSuccessAt = model.trainedAt;
         status.lastError = null;
@@ -312,4 +466,6 @@ function createMlTrainer(opts) {
   return { start, stop, retrainOnce, getStatus };
 }
 
-module.exports = { createMlTrainer, evaluateGate, freshTestSubset, MIN_FRESH_SAMPLES };
+module.exports = {
+  createMlTrainer, evaluateGate, freshTestSubset, buildCollectorTargets, MIN_FRESH_SAMPLES,
+};

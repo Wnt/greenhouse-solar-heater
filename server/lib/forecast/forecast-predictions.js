@@ -8,7 +8,9 @@
  * actually happened (sensor_readings_30s holds the ground truth) at any
  * horizon — not just +1 h.
  *
- * Each capture writes one row per `(generated_at, horizon_h)` tuple,
+ * Each capture writes one row per `(engine, generated_at, horizon_h)`
+ * tuple — both the physics and the ML engine are captured each cycle
+ * (design/docs/ml-mode-forecast-findings.md, recommendation #2) —
  * with the predicted state at the END of horizon hour h plus the
  * per-hour components (predicted solar gain, radiator W, heater kWh,
  * tank loss, cloud factor) consumed during that hour. Inputs the
@@ -24,6 +26,7 @@
  */
 
 const SECONDS_PER_HOUR = 3600;
+const MS_PER_HOUR = SECONDS_PER_HOUR * 1000;
 const RECENT_DEFAULT_LIMIT = 48;
 const { ALGORITHM_VERSION } = require('./version');
 
@@ -49,44 +52,91 @@ function create(opts) {
     const modeEntries = Array.isArray(fc.modeForecast) ? fc.modeForecast : [];
     if (tank.length < 2 || gh.length < 2) return null;
 
-    // Index modeForecast by ts; collapse solar overlay by setting hasSolar
-    const modeByTs = {};
+    // The ML engine's trajectory is multi-resolution (5-min steps over
+    // the first hours, then hourly); the physics engine's is hourly.
+    // Resample onto the hour grid: horizon hour h reads the point at
+    // exactly t0 + h hours (t0 = first trajectory point), which for the
+    // physics engine's arrays is the identity selection. Compare parsed
+    // ms, not ISO strings, so formatting drift can't break the match.
+    const t0 = tsToMs(tank[0].ts);
+    if (t0 === null) return null;
+    const tankByMs = indexByTsMs(tank);
+    const ghByMs   = indexByTsMs(gh);
+    const cmpByMs  = indexByTsMs(cmp);
+
+    // Collapse modeForecast into hour buckets: bucket h-1 holds every
+    // entry with ts in [t0+(h-1) h, t0+h h) and describes captured hour
+    // h. The captured label is the MAX-OCCUPANCY mode of the bucket —
+    // an order-dependent last-writer-wins collapse let a single
+    // trailing idle step relabel a 55-minute solar hour as idle,
+    // systematically depressing the ML engine's solar rate in exactly
+    // the diagnostics this capture feeds (PR #283 review). Ties break
+    // by severity (emergency > heating > solar > idle), which also
+    // preserves the physics engine's semantics where a heat-mode entry
+    // and its solar-overlay duplicate share one ts. duty is the max
+    // among entries of the WINNING mode only (a greenhouse-heating
+    // hour must not inherit an emergency blip's heater duty).
+    const MODE_RANK = { emergency_heating: 4, greenhouse_heating: 3, active_drain: 2, solar_charging: 1, idle: 0 };
+    const hourBuckets = {};
     for (let i = 0; i < modeEntries.length; i++) {
       const m = modeEntries[i];
-      let entry = modeByTs[m.ts];
-      if (!entry) {
-        entry = { mode: 'idle', hasSolar: false, duty: null };
-        modeByTs[m.ts] = entry;
+      const mMs = m ? tsToMs(m.ts) : null;
+      if (mMs === null || mMs < t0) continue;
+      const bucket = Math.floor((mMs - t0) / MS_PER_HOUR);
+      let b = hourBuckets[bucket];
+      if (!b) { b = { counts: {}, dutyMax: {}, solarSeen: false }; hourBuckets[bucket] = b; }
+      b.counts[m.mode] = (b.counts[m.mode] || 0) + 1;
+      if (m.mode === 'solar_charging') b.solarSeen = true;
+      if (typeof m.duty === 'number') {
+        const prev = b.dutyMax[m.mode];
+        if (prev === undefined || m.duty > prev) b.dutyMax[m.mode] = m.duty;
       }
-      if (m.mode === 'solar_charging') {
-        if (entry.mode === 'idle') entry.mode = 'solar_charging';
-        else entry.hasSolar = true;
-      } else {
-        if (entry.mode === 'solar_charging') entry.hasSolar = true;
-        entry.mode = m.mode;
-        if (typeof m.duty === 'number') entry.duty = m.duty;
+    }
+    const modeByHour = {};
+    for (const bucket of Object.keys(hourBuckets)) {
+      const b = hourBuckets[bucket];
+      let winner = 'idle';
+      let winCount = -1;
+      for (const mode of Object.keys(b.counts)) {
+        const n = b.counts[mode];
+        if (n > winCount || (n === winCount && (MODE_RANK[mode] || 0) > (MODE_RANK[winner] || 0))) {
+          winner = mode;
+          winCount = n;
+        }
       }
+      modeByHour[bucket] = {
+        mode: winner,
+        // hasSolar flags solar coexisting with a non-solar label; a
+        // solar-labelled hour keeps it false (unchanged semantics).
+        hasSolar: b.solarSeen && winner !== 'solar_charging',
+        duty: b.dutyMax[winner] !== undefined ? b.dutyMax[winner] : null,
+      };
     }
 
     const generatedAt = response.generatedAt || new Date().toISOString();
+    // The ML handler stamps engine:'ml' on its response; the physics
+    // handler predates the field, so absent means physics.
+    const engine = typeof response.engine === 'string' && response.engine !== ''
+      ? response.engine : 'physics';
     const algo = response.algorithmVersion || algorithmVersion;
     const tu   = response.tu && typeof response.tu === 'object' ? response.tu : null;
     const coeff = response.coefficients && typeof response.coefficients === 'object'
       ? response.coefficients : null;
 
     const rows = [];
-    const horizon = Math.min(tank.length - 1, gh.length - 1);
-    for (let h = 1; h <= horizon; h++) {
-      const tankAt = tank[h]; const ghAt = gh[h];
-      if (!tankAt || !ghAt) continue;
-      // The mode entry for hour-(h-1) → h is keyed by the hour-(h-1)
-      // trajectory ts (engine pushes mode entries at start-of-hour).
-      const startTs = tank[h - 1] && tank[h - 1].ts;
-      const me = (startTs && modeByTs[startTs]) || { mode: 'idle', hasSolar: false, duty: null };
-      const c  = cmp[h - 1] || {};
+    for (let h = 1; ; h++) {
+      const hourMs = t0 + h * MS_PER_HOUR;
+      const tankAt = tankByMs[hourMs];
+      const ghAt   = ghByMs[hourMs];
+      if (!tankAt || !ghAt) break;
+      const me = modeByHour[h - 1] || { mode: 'idle', hasSolar: false, duty: null };
+      // Physics component entries are keyed by their start-of-hour ts
+      // (ML responses carry no componentTrajectory → all-null columns).
+      const c  = cmpByMs[hourMs - MS_PER_HOUR] || {};
       const wx = nearestRow(response.weather, ghAt.ts, 'validAt', 90 * 60 * 1000);
       const px = nearestRow(response.prices,  ghAt.ts, 'validAt', 90 * 60 * 1000);
       rows.push({
+        engine,
         generatedAt,
         horizonH:        h,
         forHour:         ghAt.ts,
@@ -120,7 +170,7 @@ function create(opts) {
   function persistRows(rows, callback) {
     if (!rows || rows.length === 0) { callback(null); return; }
     const cols = [
-      'generated_at', 'horizon_h', 'for_hour', 'mode', 'has_solar_overlay', 'duty',
+      'engine', 'generated_at', 'horizon_h', 'for_hour', 'mode', 'has_solar_overlay', 'duty',
       'tank_top_c', 'tank_bottom_c', 'tank_avg_c', 'greenhouse_c',
       'pred_solar_gain_kwh', 'pred_rad_delivered_w', 'pred_heater_kwh',
       'pred_tank_loss_w', 'pred_cloud_factor',
@@ -135,7 +185,7 @@ function create(opts) {
       const ph = []; for (let j = 0; j < cols.length; j++) ph.push('$' + (base + j + 1));
       placeholders.push('(' + ph.join(',') + ')');
       values.push(
-        r.generatedAt, r.horizonH, r.forHour, r.mode, r.hasSolarOverlay, r.duty,
+        r.engine, r.generatedAt, r.horizonH, r.forHour, r.mode, r.hasSolarOverlay, r.duty,
         r.tankTopC, r.tankBottomC, r.tankAvgC, r.greenhouseC,
         r.predSolarGainKwh, r.predRadDeliveredW, r.predHeaterKwh,
         r.predTankLossW, r.predCloudFactor,
@@ -145,11 +195,13 @@ function create(opts) {
         r.coefficients ? JSON.stringify(r.coefficients) : null
       );
     }
-    const updateCols = cols.filter(function (c) { return c !== 'generated_at' && c !== 'horizon_h'; });
+    const updateCols = cols.filter(function (c) {
+      return c !== 'engine' && c !== 'generated_at' && c !== 'horizon_h';
+    });
     const sql =
       'INSERT INTO forecast_predictions (' + cols.join(', ') + ') ' +
       'VALUES ' + placeholders.join(', ') + ' ' +
-      'ON CONFLICT (generated_at, horizon_h) DO UPDATE SET ' +
+      'ON CONFLICT (engine, generated_at, horizon_h) DO UPDATE SET ' +
         updateCols.map(function (c) { return c + ' = EXCLUDED.' + c; }).join(', ');
     pool.query(sql, values, callback);
   }
@@ -175,13 +227,17 @@ function create(opts) {
   // Returns the most recent +1 h projections for the System Logs view.
   // The multi-horizon table is for offline analysis; the operator-
   // visible "Prediction History" section keeps showing one row per hour.
+  // Pinned to engine='physics': the section predates dual-engine capture
+  // and its content contract is the physics projection. Follow-up:
+  // surfacing ML rows here is a UX decision (second section? engine
+  // toggle?), not something to sneak in via a shared query.
   function listRecent(limit, callback) {
     const n = Math.max(1, Math.min(parseInt(limit, 10) || RECENT_DEFAULT_LIMIT, 500));
     const sql =
       'SELECT for_hour, generated_at, mode, has_solar_overlay, duty, ' +
       '  tank_avg_c, greenhouse_c, outdoor_c, radiation_w_m2, price_c_kwh, ' +
       '  algorithm_version, tu, coefficients ' +
-      'FROM forecast_predictions WHERE horizon_h = 1 ' +
+      "FROM forecast_predictions WHERE horizon_h = 1 AND engine = 'physics' " +
       'ORDER BY for_hour DESC LIMIT $1';
     pool.query(sql, [n], function (err, result) {
       if (err) return callback(err);
@@ -255,6 +311,23 @@ function create(opts) {
     _buildRows: buildRows,
     _msUntilNextHH30: msUntilNextHH30,
   };
+}
+
+function tsToMs(ts) {
+  const ms = ts instanceof Date ? ts.getTime() : Date.parse(ts);
+  return isNaN(ms) ? null : ms;
+}
+
+// Index trajectory points by their parsed-ms timestamp (last one wins
+// on a duplicate ts — engines never emit duplicates in practice).
+function indexByTsMs(points) {
+  const byMs = {};
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const ms = p && p.ts != null ? tsToMs(p.ts) : null;
+    if (ms !== null) byMs[ms] = p;
+  }
+  return byMs;
 }
 
 function nearestRow(rows, targetIso, key, maxDeltaMs) {

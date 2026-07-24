@@ -121,6 +121,48 @@ describe('forecast-dataset', () => {
     assert.deepEqual(predQ.params, [6]);
   });
 
+  it('pins the predictions query to the physics engine', () => {
+    const pool = makePool();
+    runSync(create({ pool, log: silentLog }), { range: '24h', horizon: 6 });
+    const predQ = pool.queries.find(function (q) {
+      return q.sql.indexOf('forecast_predictions') !== -1;
+    });
+    assert.match(predQ.sql, /engine = 'physics'/);
+    // weather / prices are engine-less tables and stay unfiltered
+    pool.queries.forEach(function (q) {
+      if (q.sql.indexOf('forecast_predictions') === -1) {
+        assert.doesNotMatch(q.sql, /engine/);
+      }
+    });
+  });
+
+  it('yields physics-only rows from a mixed-engine table', () => {
+    // ML rows share forecast_predictions since dual-engine capture —
+    // unfiltered they would double row counts against the row cap and
+    // inject a second engine's rows into offline tooling.
+    const rows = [
+      predRow('2026-05-16T12:00:00.000Z', 1, { engine: 'physics' }),
+      predRow('2026-05-16T12:30:00.000Z', 1, { engine: 'ml', mode: 'solar_charging' }),
+      predRow('2026-05-16T12:30:00.000Z', 2, { engine: 'ml' }),
+    ];
+    // Stub pool that honours an engine predicate like the real table.
+    const pool = {
+      query: function (sql, params, cb) {
+        if (typeof params === 'function') { cb = params; }
+        if (sql.indexOf('forecast_predictions') === -1) { cb(null, { rows: [] }); return; }
+        const out = /engine = 'physics'/.test(sql)
+          ? rows.filter(function (r) { return r.engine === 'physics'; })
+          : rows;
+        cb(null, { rows: out });
+      },
+    };
+    const result = runSync(create({ pool, log: silentLog }), { range: '24h' });
+    assert.equal(result.predictions.length, 1);
+    assert.equal(result.predictions[0].generatedAt, '2026-05-16T12:00:00.000Z');
+    assert.equal(result.predictions[0].mode, 'idle');
+    assert.equal(result.generations.length, 1);
+  });
+
   it('a failing section degrades to [] without sinking the rest', () => {
     const pool = makePool({
       errors: { weather: true },
