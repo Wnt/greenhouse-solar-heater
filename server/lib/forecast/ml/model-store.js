@@ -41,9 +41,22 @@ function s3Config() {
 function contractOk(model) {
   return !!model && !!model.tank && !!model.greenhouse
     && model.version === MODEL_VERSION
+    && collectorOk(model)
     && Array.isArray(model.featureNames)
     && model.featureNames.length === FEATURE_NAMES.length
     && model.featureNames.every(function eq(n, i) { return n === FEATURE_NAMES[i]; });
+}
+
+// The collector forest (findings-doc rec #6) is OPTIONAL: artifacts
+// predating it (old S3 / committed models) must stay loadable, and the
+// trainer may omit it when the collector column has too little history.
+// When the key IS present it must be a real forest — the rollout would
+// crash (or NaN-poison the solar decision) predicting from anything
+// else. Same feature contract as tank/greenhouse, so no extra
+// featureNames check is needed.
+function collectorOk(model) {
+  return model.collector == null
+    || (typeof model.collector === 'object' && Array.isArray(model.collector.trees));
 }
 
 function trainedMs(model) {

@@ -45,14 +45,60 @@ function mlTrainerEnabled(env, isPreviewMode) {
   return true;
 }
 
+// One HH:30 capture cycle over BOTH forecast engines
+// (design/docs/ml-mode-forecast-findings.md, recommendation #2: the ML
+// engine is the UI default, yet only the physics engine's forecasts were
+// persisted, so every ML tuning decision rested on offline backtests).
+// Physics compute+capture runs first, exactly as before dual-engine
+// capture; the ML engine follows. Failures are independent per engine —
+// in particular an ML failure (model not loaded, transient DB error)
+// logs at warn and never blocks the physics capture or the scheduler
+// loop. Extracted from start() so stub handlers can drive it in tests.
+function runCaptureCycle({ physicsCompute, mlCompute, capture, log }, done) {
+  function captureMl() {
+    try {
+      mlCompute(function (mlErr, mlResponse) {
+        if (mlErr) {
+          log.warn('forecast-predictions: ml compute failed; physics capture unaffected',
+            { error: mlErr.message });
+          done();
+          return;
+        }
+        capture(mlResponse, function () { done(); });
+      });
+    } catch (e) {
+      log.warn('forecast-predictions: ml compute threw', { error: e.message });
+      done();
+    }
+  }
+  // Symmetric throw-guard with the ML side: this runs inside a
+  // setTimeout callback, so a synchronous throw from handler.compute
+  // (computeSustainForecast is invoked unguarded in forecast-handler)
+  // would otherwise be an uncaught exception — pod crash — AND skip
+  // done(), permanently disarming the HH:30 loop (PR #283 review).
+  try {
+    physicsCompute(function (err, response) {
+      if (err) {
+        log.warn('forecast-predictions: compute failed', { error: err.message });
+        captureMl();
+        return;
+      }
+      capture(response, captureMl);
+    });
+  } catch (e) {
+    log.warn('forecast-predictions: physics compute threw', { error: e.message });
+    captureMl();
+  }
+}
+
 function start({ pool, db, log, repoRoot, isPreviewMode }) {
   const systemYaml = loadSystemYaml(repoRoot, log);
   const isTestEnv = process.env.NODE_ENV === 'test';
 
   // Predictions service first (no deps on the handler) so we can pass
   // its listRecent into the handler. Capture is unidirectional via the
-  // scheduler below (handler.compute → predictions.captureFromForecast)
-  // so there's no circular dep.
+  // scheduler below (each engine's compute → predictions.
+  // captureFromForecast) so there's no circular dep.
   const predictions = createForecastPredictions({
     pool, log,
     // Disable in PREVIEW_MODE (don't write through to prod's table) AND
@@ -84,20 +130,6 @@ function start({ pool, db, log, repoRoot, isPreviewMode }) {
     spotPriceClient,
   });
   refresher.start();
-
-  // Predictions scheduler — runs at HH:30 every hour. Computes a fresh
-  // forecast and persists the first-hour prediction so we accumulate a
-  // history of "what the algorithm thought" for later tuning.
-  predictions.start(function (done) {
-    handler.compute(function (err, response) {
-      if (err) {
-        log.warn('forecast-predictions: compute failed', { error: err.message });
-        done();
-        return;
-      }
-      predictions.captureFromForecast(response, function () { done(); });
-    });
-  });
 
   // Eagerly populate the engine's 14d coefficient cache so the first user
   // request after pod restart doesn't pay the ~1.5s history-fit cost.
@@ -137,6 +169,20 @@ function start({ pool, db, log, repoRoot, isPreviewMode }) {
     getTrainerStatus: trainer.getStatus,
   });
 
+  // Predictions scheduler — runs at HH:30 every hour. Computes a fresh
+  // forecast from EACH engine and persists the 48 h trajectories so
+  // predicted-vs-actual history accrues for both. Armed here (after the
+  // ML handler exists) because a test-injected scheduleNow fires the
+  // capture callback synchronously.
+  predictions.start(function (done) {
+    runCaptureCycle({
+      physicsCompute: handler.compute,
+      mlCompute: mlHandler.compute,
+      capture: predictions.captureFromForecast,
+      log,
+    }, done);
+  });
+
   // Dispatch /api/forecast on the `engine` query param — the user's
   // Settings toggle drives this. Default (and any unknown value) is the
   // physics engine.
@@ -157,4 +203,4 @@ function start({ pool, db, log, repoRoot, isPreviewMode }) {
   };
 }
 
-module.exports = { start, mlTrainerEnabled };
+module.exports = { start, mlTrainerEnabled, runCaptureCycle };

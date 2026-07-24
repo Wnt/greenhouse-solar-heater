@@ -457,9 +457,15 @@ async function persistPredictionRows(rows) {
     );
   }
   const updateCols = cols.filter(c => c !== 'generated_at' && c !== 'horizon_h');
+  // The PK is (engine, generated_at, horizon_h) since the dual-engine
+  // capture migration (PR #283); the insert omits the engine column, so
+  // every backfilled row lands on the 'physics' default — which is what
+  // this script computes. The conflict target must name the full PK: the
+  // old (generated_at, horizon_h) pair no longer has a unique index and
+  // fails with 42P10 on a migrated database.
   const sql =
     'INSERT INTO forecast_predictions (' + cols.join(', ') + ') VALUES ' +
-    placeholders.join(', ') + ' ON CONFLICT (generated_at, horizon_h) DO UPDATE SET ' +
+    placeholders.join(', ') + ' ON CONFLICT (engine, generated_at, horizon_h) DO UPDATE SET ' +
     updateCols.map(c => c + ' = EXCLUDED.' + c).join(', ');
   await pool.query(sql, values);
   return rows.length;
