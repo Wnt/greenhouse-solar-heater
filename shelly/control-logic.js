@@ -82,6 +82,20 @@ var VALVE_TIMING = {
   minOpenMs: 60000
 };
 
+// Valve-command retry window. The valve hosts (Pro 2PMs) sit at the edge of
+// WiFi range and flap: connected for 2–20 s windows every ~30–60 s
+// (2026-07-28 field incident, Valve Control 1 at -75…-77 dBm). Back-to-back
+// attempts inside one connect gap can never succeed, so on a failed valve
+// batch the shell keeps the staged transition alive and re-plans every
+// delayMs until windowMs has elapsed since transition entry, and only then
+// falls back to the fail-safe (pump off, IDLE, cause="failed"). Lives here
+// (not control.js) so the server's valve-failure push notification can quote
+// the same window without duplicating the constant.
+var VALVE_RETRY = {
+  windowMs: 5 * 60 * 1000,
+  delayMs: 10000
+};
+
 var DEFAULT_CONFIG = {
   // Collector must exceed tank_bottom by this many K to start a solar
   // charging session. Raised from 5 → 10 in early testing to avoid
@@ -1169,6 +1183,7 @@ if (typeof module !== "undefined" && module.exports) {
     DEFAULT_CONFIG: DEFAULT_CONFIG,
     VALVE_NAMES_SORTED: VALVE_NAMES_SORTED,
     VALVE_TIMING: VALVE_TIMING,
+    VALVE_RETRY: VALVE_RETRY,
     planValveTransition: planValveTransition,
     buildSnapshotFromState: buildSnapshotFromState,
     buildMinPayload: buildMinPayload,

@@ -2,17 +2,19 @@
  * Shelly transition failure path.
  *
  * When a valve HTTP.GET fails twice in a row, setValve invokes its
- * callback with ok=false, setValves short-circuits to
- * finalizeTransitionFail which resets state to IDLE. Exercises the
- * path the happy-path tests never reach.
+ * callback with ok=false. The staged transition then keeps re-planning
+ * and retrying the batch (flaky-WiFi valve hosts — see VALVE_RETRY in
+ * control-logic.js) until the transition deadline passes, after which
+ * finalizeTransitionFail resets state to IDLE with cause="failed".
+ * Exercises the path the happy-path tests never reach.
  *
  * Observable side-effects (cannot read script's internal state across
  * the new Function boundary):
- *   - published greenhouse/state shows mode=idle after the attempted
- *     transition (vs mode=solar_charging on success),
- *   - published state has transitioning=false,
- *   - each attempted valve actuation generated 2 HTTP.GET calls
- *     (initial + retry).
+ *   - published greenhouse/state shows an idle, cause=failed snapshot
+ *     after the retry window (vs mode=solar_charging on success),
+ *   - that snapshot has transitioning=false,
+ *   - each retry cycle generated 2 HTTP.GET calls per valve
+ *     (initial + retry), repeated across the window.
  */
 const { describe, it, before } = require('node:test');
 const assert = require('node:assert');
@@ -129,12 +131,15 @@ describe('Shelly transition: valve HTTP failure → finalizeTransitionFail', () 
     loadScripts(rt);
     await settleBoot(rt);
     bootCompletedAt = now;
-    // Let a few controlLoop ticks run — each tick's evaluate() will
-    // return fm=SC and transitionTo() will be called, hitting the
-    // failing switch commands and returning via finalizeTransitionFail.
-    for (let tick = 0; tick < 5; tick++) {
-      rt.advance(30000);
-      await drainImmediates(30);
+    // Let controlLoop ticks run past the full valve-retry window — the first
+    // tick's evaluate() returns fm=SC, transitionTo() is called, and the
+    // failing switch commands are retried every VALVE_RETRY.delayMs until
+    // the deadline (5 min) finally routes through finalizeTransitionFail.
+    // Fine-grained advance/drain interleaving lets each retry timer's HTTP
+    // callbacks resolve (they settle on setImmediate, not the fake clock).
+    for (let tick = 0; tick < 75; tick++) {
+      rt.advance(5000);
+      await drainImmediates(10);
     }
   });
 
@@ -153,12 +158,18 @@ describe('Shelly transition: valve HTTP failure → finalizeTransitionFail', () 
       `expected transition to fail and mode to stay idle; observed modes: [${[...modes].join(', ')}]`);
   });
 
-  it('final published state is idle and not transitioning', () => {
+  it('publishes an idle, not-transitioning, cause=failed state after the retry window', () => {
     assert.ok(stateEvents.length > 0, 'expected at least one state publish');
-    const last = stateEvents[stateEvents.length - 1];
-    assert.strictEqual(last.mode, 'idle',
-      'expected mode=idle after failure; got ' + last.mode);
-    assert.strictEqual(last.transitioning, false,
+    // The tick after the fail-safe may legitimately start a fresh transition
+    // attempt (fm=SC persists), so assert on the terminal failed snapshot
+    // rather than whatever happens to be last.
+    const failed = stateEvents.filter(e => e.cause === 'failed');
+    assert.ok(failed.length > 0,
+      'expected a cause=failed publish once the retry window is exhausted');
+    const f = failed[0];
+    assert.strictEqual(f.mode, 'idle',
+      'expected mode=idle after failure; got ' + f.mode);
+    assert.strictEqual(f.transitioning, false,
       'expected transitioning=false after finalizeTransitionFail');
   });
 

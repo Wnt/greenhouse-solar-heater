@@ -347,8 +347,9 @@ describe('Shelly WiFi hardening (#262): valve retry + fail-safe', () => {
 
   it('exhausted valve attempts bail the transition to IDLE (fail-safe preserved)', async () => {
     // Boot closes succeed, device settles in IDLE, then a clean IDLE→SOLAR
-    // transition is attempted whose valve opens ALWAYS fail. setValves must
-    // bail: pump off, mode IDLE, cause=failed.
+    // transition is attempted whose valve opens ALWAYS fail. The staged
+    // transition retries the batch across the VALVE_RETRY window (5 min);
+    // once exhausted the fail-safe fires: pump off, mode IDLE, cause=failed.
     let phase = 'boot';
     const rt = createRuntime({
       kvs: { config: DEVICE_CONFIG, sensor_config: SENSOR_CONFIG },
@@ -376,10 +377,15 @@ describe('Shelly WiFi hardening (#262): valve retry + fail-safe', () => {
     // repeatedly to let the whole chain resolve, not a single advance.
     phase = 'solar';
     rt.advance(30000);
-    for (let k = 0; k < 20; k++) { await rt.drain(20); rt.advance(2000); }
-    const st = rt.lastState();
-    assert.strictEqual(st.mode, 'idle', 'failed valve opens must leave mode IDLE (fail-safe)');
-    assert.strictEqual(st.cause, 'failed', 'lastTransitionCause must be "failed" after a valve bail');
-    assert.strictEqual(st.transitioning, false, 'transitioning must be cleared after the bail');
+    // Run well past the 5 min VALVE_RETRY window so the retrying transition
+    // reaches the deadline and the fail-safe fires.
+    for (let k = 0; k < 120; k++) { await rt.drain(10); rt.advance(3000); }
+    const failed = rt.publishes
+      .filter(function (p) { return p.topic === 'greenhouse/state/min'; })
+      .map(function (p) { try { return JSON.parse(p.payload); } catch (_e) { return null; } })
+      .filter(function (s) { return s && s.cause === 'failed'; });
+    assert.ok(failed.length > 0, 'expected a cause=failed publish after the retry window');
+    assert.strictEqual(failed[0].mode, 'idle', 'failed valve opens must leave mode IDLE (fail-safe)');
+    assert.strictEqual(failed[0].transitioning, false, 'transitioning must be cleared after the bail');
   });
 });

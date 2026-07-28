@@ -18,6 +18,8 @@
  *   - notif-overheat.png      (overheat_warning)
  *   - notif-freeze.png        (freeze_warning)
  *   - notif-offline.png       (offline_warning)
+ *   - notif-script-crash.png  (script_crash)
+ *   - notif-valve.png         (valve_failure)
  */
 
 import { chromium } from 'playwright';
@@ -48,6 +50,7 @@ const APP_GLYPH = 'solar_power';
 //   freeze_warning  → ac_unit     (sky — outdoor cold)
 //   offline_warning → cloud_off   (coral — controller unreachable)
 //   script-crash    → bug_report  (coral — control script stopped)
+//   valve_failure   → valve       (coral — valve command failed after retries)
 const NOTIF_ICONS = [
   { slug: 'evening',      glyph: 'wb_sunny',              color: GOLD  },
   { slug: 'noon',         glyph: 'bedtime',               color: TEAL  },
@@ -55,6 +58,7 @@ const NOTIF_ICONS = [
   { slug: 'freeze',       glyph: 'ac_unit',               color: SKY   },
   { slug: 'offline',      glyph: 'cloud_off',             color: CORAL },
   { slug: 'script-crash', glyph: 'bug_report',            color: CORAL },
+  { slug: 'valve',        glyph: 'valve',                 color: CORAL },
 ];
 
 function renderHtml(config) {

@@ -8,6 +8,9 @@ const log = createLogger('notifications');
 // Pull thresholds from control-logic so the notification body always
 // matches what the device actually does (freeze 4°C, overheat 95°C).
 const CONTROL_DEFAULTS = require('../../shelly/control-logic.js').DEFAULT_CONFIG;
+// Same source-of-truth rule for the valve-failure alert: the quoted retry
+// duration is the device's actual retry window, not a hardcoded copy.
+const VALVE_RETRY = require('../../shelly/control-logic.js').VALVE_RETRY;
 
 const {
   HEATING_MODES,
@@ -35,6 +38,12 @@ let offlineNotified = false;
 let onlineSince = 0;
 let onlineNotified = false;
 let tickTimer = null;
+
+// Valve-failure alert arming. A terminal cause="failed" snapshot only
+// counts when this session actually observed the transition attempt
+// (transitioning=true) that produced it — a steady idle state carrying a
+// stale failed cause (e.g. right after a server restart) must not fire.
+let valveFailureArmed = false;
 
 // Day-of-year of last send so we don't double-fire in the same window.
 let lastEveningReport = 0;
@@ -185,8 +194,55 @@ function evaluate(payload) {
   checkOverheatWarning(temps, collectorsDrained);
   checkFreezeWarning(temps, collectorsDrained);
 
+  checkValveFailure(payload);
+
   checkEveningReport();
   checkNoonReport();
+}
+
+// Target-mode labels for the valve-failure body, keyed by the evaluator
+// reason that started the failed transition (payload.eval_reason survives
+// the bail because the control loop is paused while transitioning).
+const VALVE_FAILURE_TARGETS = {
+  greenhouse_enter: 'Greenhouse Heating',
+  solar_enter: 'Solar Charging',
+  solar_refill: 'Solar Charging',
+  freeze_drain: 'Active Drain',
+  overheat_drain: 'Active Drain',
+};
+
+// The device retries failed valve commands across VALVE_RETRY.windowMs
+// (5 min — flaky-WiFi valve hosts) before bailing to IDLE with
+// cause="failed". Detect that terminal bail: arm on an observed transition
+// attempt (transitioning=true), fire when the attempt ends in a failed
+// cause, disarm on any settled state. Force-delivered like script_crash —
+// an uncommandable valve also blocks the freeze/overheat drains, and
+// existing subscriptions predate the category. The push module's
+// 1-per-type-per-hour rate limit throttles repeated retry cycles.
+function checkValveFailure(payload) {
+  if (payload.transitioning) {
+    valveFailureArmed = true;
+    return;
+  }
+  const fired = valveFailureArmed && payload.cause === 'failed';
+  valveFailureArmed = false;
+  if (!fired) return;
+
+  const minutes = Math.round(VALVE_RETRY.windowMs / 60000);
+  const target = VALVE_FAILURE_TARGETS[payload.eval_reason] || null;
+  const body = 'A valve did not respond after ' + minutes + ' minutes of retries. ' +
+    (target
+      ? 'The controller could not enter ' + target + ' and returned to Idle.'
+      : 'The controller returned to Idle.') +
+    ' Check the valve controllers’ WiFi in System Logs.';
+  pushRef.sendNotification('valve_failure', {
+    title: 'Valve Command Failed',
+    body,
+    tag: 'valve-failure',
+    icon: pushRef.iconFor('valve_failure'),
+    url: '/#status',
+  }, { force: true });
+  log.info('sent valve failure notification', { eval_reason: payload.eval_reason || null });
 }
 
 // Runs every 60s to detect offline/online transitions that evaluate()
@@ -446,6 +502,7 @@ function _reset() {
   offlineNotified = false;
   onlineSince = 0;
   onlineNotified = false;
+  valveFailureArmed = false;
   lastEveningReport = 0;
   lastNoonReport = 0;
   dailyEnergyWh = 0;

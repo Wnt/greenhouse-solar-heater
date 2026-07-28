@@ -130,6 +130,7 @@ test.describe('Settings view — desktop', () => {
       'notif-cat-offline_warning',
       'notif-cat-watchdog_fired',
       'notif-cat-script_crash',
+      'notif-cat-valve_failure',
     ];
     for (const id of ids) {
       await expect(page.locator('#' + id)).toHaveCount(1);
@@ -145,6 +146,7 @@ test.describe('Settings view — desktop', () => {
       'offline_warning',
       'watchdog_fired',
       'script_crash',
+      'valve_failure',
     ];
     for (const cat of cats) {
       const btn = page.locator('[data-test-category="' + cat + '"]');

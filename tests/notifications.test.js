@@ -614,4 +614,70 @@ describe('notifications', () => {
       assert.match(body, /Greenhouse heating is resting/);
     });
   });
+
+  describe('valve-failure alert', () => {
+    let sent;
+    let mockPush;
+
+    beforeEach(() => {
+      sent = [];
+      mockPush = {
+        sendNotification: function (type, payload, opts) { sent.push({ type, payload, opts }); },
+        iconFor: function () { return 'assets/notif-valve.png'; },
+      };
+      notifications.init({ push: mockPush, deviceConfig: null });
+    });
+
+    function valveFailures() {
+      return sent.filter(n => n.type === 'valve_failure');
+    }
+
+    it('fires when a transition ends with cause=failed', () => {
+      // Device enters a staged transition (pump_stop emit)...
+      notifications.evaluate({ temps: {}, mode: 'idle', transitioning: true, cause: 'automation', eval_reason: 'greenhouse_enter' });
+      // ...and the retry window exhausts: terminal failed snapshot.
+      notifications.evaluate({ temps: {}, mode: 'idle', transitioning: false, cause: 'failed', eval_reason: 'greenhouse_enter' });
+      assert.strictEqual(valveFailures().length, 1);
+      const n = valveFailures()[0];
+      assert.match(n.payload.body, /5 minutes/);
+      assert.match(n.payload.body, /Greenhouse Heating/);
+      assert.strictEqual(n.payload.tag, 'valve-failure');
+      // Delivered like script_crash: forced, so the user gets it without
+      // having re-saved their subscription categories.
+      assert.ok(n.opts && n.opts.force === true, 'valve failure must be force-delivered');
+    });
+
+    it('does NOT fire on a steady idle state carrying a stale failed cause', () => {
+      // Server (re)start while the device idles with a leftover cause=failed:
+      // no transition was observed, so no alert.
+      notifications.evaluate({ temps: {}, mode: 'idle', transitioning: false, cause: 'failed' });
+      notifications.evaluate({ temps: {}, mode: 'idle', transitioning: false, cause: 'failed' });
+      assert.strictEqual(valveFailures().length, 0);
+    });
+
+    it('does NOT fire when a transition completes successfully', () => {
+      notifications.evaluate({ temps: {}, mode: 'idle', transitioning: true, cause: 'automation' });
+      notifications.evaluate({ temps: {}, mode: 'solar_charging', transitioning: false, cause: 'automation' });
+      // A later failed-looking steady state must not retroactively fire either.
+      notifications.evaluate({ temps: {}, mode: 'solar_charging', transitioning: false, cause: 'automation' });
+      assert.strictEqual(valveFailures().length, 0);
+    });
+
+    it('fires once per failed transition cycle (re-arms on the next attempt)', () => {
+      for (let i = 0; i < 3; i++) {
+        notifications.evaluate({ temps: {}, mode: 'idle', transitioning: true, cause: 'automation' });
+        notifications.evaluate({ temps: {}, mode: 'idle', transitioning: false, cause: 'failed' });
+      }
+      // Each cycle dispatches; the push module's 1-per-type-per-hour rate
+      // limit (not mocked here) is what throttles real delivery.
+      assert.strictEqual(valveFailures().length, 3);
+    });
+
+    it('falls back to a generic body for unknown eval reasons', () => {
+      notifications.evaluate({ temps: {}, mode: 'idle', transitioning: true, cause: 'forced' });
+      notifications.evaluate({ temps: {}, mode: 'idle', transitioning: false, cause: 'failed', eval_reason: null });
+      assert.strictEqual(valveFailures().length, 1);
+      assert.match(valveFailures()[0].payload.body, /returned to Idle/);
+    });
+  });
 });
