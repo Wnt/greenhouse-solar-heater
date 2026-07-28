@@ -40,6 +40,19 @@ let liveSource = null;
 
 let connectionStatus = 'disconnected';
 let lastDataTime = 0;
+// Device-authored timestamp (epoch ms) of the newest state payload seen.
+// Distinct from lastDataTime (frame ARRIVAL clock, reset by resyncs for
+// flash suppression): the server replays its last-known state to every
+// freshly connected client, so arrival time alone gives a silent
+// controller a fresh green "Live" on each app open (2026-07-28 incident).
+// Falls back to arrival time when a payload carries no ts.
+let lastPayloadTs = 0;
+// Payload older than this flips the Status view into the LOUD staleness
+// variant and the connection indicator to "Stale" — no grace, no
+// resync suppression. Well past the device's 30 s publish cadence and the
+// longest staged transition (5 min valve-retry window) so it can't fire
+// during normal operation.
+const LONG_STALE_MS = 6 * 60 * 1000;
 let stalenessTimer = null;
 
 let _setRunning = () => {};
@@ -152,20 +165,40 @@ function refreshConnectionIndicator() {
   }
 }
 
+// True when the newest state payload's own timestamp is long past —
+// the controller has genuinely gone silent (or the server is replaying
+// old data). Overrides every grace/suppression: this is the state the
+// operator must see immediately, not after a 60 s countdown.
+function isLongStale() {
+  return lastPayloadTs > 0 && (Date.now() - lastPayloadTs) > LONG_STALE_MS;
+}
+
+const STALE_DEFAULT_TEXT = 'No data received for over 60 seconds. The device may be offline.';
+
 function checkStaleness() {
   if (store.get('phase') !== 'live') return;
   const banner = document.getElementById('staleness-banner');
   if (banner) {
-    // Suppress the banner while a resync is in flight — the
-    // unified syncing overlay already communicates the catch-up
-    // state. Otherwise the banner would briefly show "stale" right
-    // before fresh data arrives, repeating the old two-step UX.
-    const syncing = !!store.get('syncing');
-    const elapsed = Date.now() - lastDataTime;
-    banner.classList.toggle(
-      'visible',
-      !syncing && elapsed > 60000 && lastDataTime > 0,
-    );
+    if (isLongStale()) {
+      const min = Math.round((Date.now() - lastPayloadTs) / 60000);
+      banner.textContent = 'No data from the controller for ' + min +
+        ' min. Everything shown here is stale — valve or heating failures may be hidden.';
+      banner.classList.add('staleness-banner--long');
+      banner.classList.add('visible');
+    } else {
+      // Classic short-staleness path. Suppress while a resync is in
+      // flight — the unified syncing overlay already communicates the
+      // catch-up state. Otherwise the banner would briefly show "stale"
+      // right before fresh data arrives, repeating the old two-step UX.
+      banner.textContent = STALE_DEFAULT_TEXT;
+      banner.classList.remove('staleness-banner--long');
+      const syncing = !!store.get('syncing');
+      const elapsed = Date.now() - lastDataTime;
+      banner.classList.toggle(
+        'visible',
+        !syncing && elapsed > 60000 && lastDataTime > 0,
+      );
+    }
   }
   refreshConnectionIndicator();
   updateConnectionOverlays();
@@ -219,6 +252,9 @@ function getConnectionDisplayState() {
       return 'device_offline';
     }
     if (hasData) {
+      // Long-stale payloads override the arrival-time grace: a replayed
+      // hour-old state must never render a green "Live".
+      if (isLongStale()) return 'stale';
       if (lastDataTime > 0 && (Date.now() - lastDataTime) > 60000) return 'stale';
       return 'active';
     }
@@ -339,6 +375,7 @@ function ensureLiveSource() {
     liveSource.onCommandResponse(handleOverrideResponse);
     liveSource.onUpdate(function (state, result) {
       lastDataTime = Date.now();
+      lastPayloadTs = (result && typeof result.ts === 'number') ? result.ts : Date.now();
       if (store.get('phase') !== 'live') return;
       setLiveFrameSeen(true);
       // Defense-in-depth: each step is independent. A bug in

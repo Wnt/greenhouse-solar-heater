@@ -204,6 +204,11 @@ export class LiveSource extends DataSource {
     };
 
     const result = {
+      // Device-authored timestamp of this snapshot (epoch ms). Drives the
+      // controller-silence staleness check in connection.js: the server
+      // replays its last-known state to a freshly connected client, so
+      // arrival time alone would make hour-old data look fresh.
+      ts: typeof data.ts === 'number' ? data.ts : null,
       mode: data.mode || 'idle',
       valves: data.valves || {},
       actuators: data.actuators || {},
