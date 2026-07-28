@@ -55,19 +55,28 @@ function propKeyName(prop) {
 }
 
 // Find `var VALVES = { ... }` and return { name: { ip, id } }, where `ip`
-// is the WiFi address — VALVES entries carry a dual-path host array
-// `h: [ethIp, wifiIp]` (wired control path, system.yaml networking), and
-// the server's RELAY_MAP identity stays the WiFi IP because that is what
-// each device publishes as its MQTT topic_prefix.
+// is the WiFi address. VALVES entries carry a per-valve host octet `o`
+// plus the shared EP (eth island) / WP (WiFi) prefix constants — the
+// wired control path stores no per-valve IP strings (JsVar-pool budget,
+// 2026-07-28 OOM). The server's RELAY_MAP identity stays the WiFi IP
+// because that is what each device publishes as its MQTT topic_prefix.
 function extractValves(ast) {
   let valvesNode = null;
+  const prefixes = {};
   walk(ast, (n) => {
     if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && n.id.name === 'VALVES'
         && n.init && n.init.type === 'ObjectExpression') {
       valvesNode = n.init;
     }
+    if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier'
+        && (n.id.name === 'EP' || n.id.name === 'WP')
+        && n.init && n.init.type === 'Literal') {
+      prefixes[n.id.name === 'EP' ? 'eth' : 'wifi'] = n.init.value;
+    }
   });
   assert.ok(valvesNode, 'could not find `var VALVES = {…}` in control.js');
+  assert.strictEqual(prefixes.wifi, '192.168.30.', 'WP prefix must be the WiFi VLAN 30 subnet');
+  assert.strictEqual(prefixes.eth, '192.168.31.', 'EP prefix must be the wired island subnet');
   const out = {};
   valvesNode.properties.forEach((prop) => {
     const name = propKeyName(prop);
@@ -76,24 +85,12 @@ function extractValves(ast) {
     const entry = {};
     prop.value.properties.forEach((p) => {
       const k = propKeyName(p);
-      if (p.value.type === 'ArrayExpression') {
-        entry[k] = p.value.elements.map(literalValue);
-      } else {
-        entry[k] = literalValue(p.value);
-      }
+      entry[k] = literalValue(p.value);
     });
-    assert.ok(Array.isArray(entry.h) && entry.h.length === 2,
-      'VALVES.' + name + '.h must be a [ethIp, wifiIp] literal array');
-    const ethIp = entry.h[0];
-    const wifiIp = entry.h[1];
-    assert.strictEqual(typeof ethIp, 'string', 'VALVES.' + name + '.h[0] (eth) must be a string literal');
-    assert.strictEqual(typeof wifiIp, 'string', 'VALVES.' + name + '.h[1] (wifi) must be a string literal');
-    // The two paths must address the SAME physical device: last octet match.
-    assert.strictEqual(ethIp.split('.')[3], wifiIp.split('.')[3],
-      'VALVES.' + name + ': eth and wifi addresses must share the device octet');
-    assert.match(ethIp, /^192\.168\.31\./, 'VALVES.' + name + ': eth address must be on the wired island subnet');
+    assert.strictEqual(typeof entry.o, 'string', 'VALVES.' + name + '.o must be a string host-octet literal');
+    assert.match(entry.o, /^\d{1,3}$/, 'VALVES.' + name + '.o must be a bare last octet');
     assert.strictEqual(typeof entry.id, 'number', 'VALVES.' + name + '.id must be a number literal');
-    out[name] = { ip: wifiIp, id: entry.id };
+    out[name] = { ip: prefixes.wifi + entry.o, id: entry.id };
   });
   return out;
 }
