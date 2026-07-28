@@ -178,6 +178,7 @@ var state = {
   targetResult: null,       // full evaluate() result held for end-of-transition finalization
   transitionTimer: null,    // transition-scoped timer handle
   transitionFromMode: null, // mode snapshot at transitionTo() entry; drives drain-exit branch
+  transitionDeadline: 0,    // epoch-ms; failed valve batches retry until this, then fail-safe
   transition_step: null,
   // What triggered the most recent mode transition. One of:
   //   boot | automation | forced | watchdog_auto | user_shutdown |
@@ -822,6 +823,27 @@ function scheduleStep() {
     state.transitionTimer = Timer.set(delay, false, resumeTransition);
   }
 
+  // Failed-batch handling (flaky-WiFi valve hosts). The valve Pro 2PMs can
+  // flap WiFi in 2–20 s connect windows (2026-07-28 incident), so a batch
+  // whose VSA attempts all failed is retried on a fresh re-plan every
+  // VALVE_RETRY.delayMs until state.transitionDeadline. Opening-window
+  // bookkeeping for valves that never actually energized (valve_states
+  // still false) is rolled back so the re-plan re-issues them immediately
+  // instead of waiting out a 20 s window the valve never started. Past the
+  // deadline the pre-existing fail-safe fires unchanged. Drain-exit runs
+  // with the pump on while valves close; a retry wait must not extend that
+  // into minutes of dry-running, so the pump is stopped first there —
+  // residual-water evacuation is best-effort, pump protection is not.
+  function retryOrFail() {
+    if (Date.now() >= state.transitionDeadline) { finalizeTransitionFail(); return; }
+    if (state.transitionFromMode === MODES.ACTIVE_DRAIN) setPump(false);
+    for (var fi = 0; fi < openPairs.length; fi++) {
+      if (!state.valve_states[openPairs[fi][0]]) delete state.valveOpening[openPairs[fi][0]];
+    }
+    clearTransitionTimer();
+    state.transitionTimer = Timer.set(VALVE_RETRY.delayMs, false, resumeTransition);
+  }
+
   // No work to actuate this tick: all closes are deferred by
   // minOpenMs and no new opens fit in the slot budget. Skip the
   // runValveBatch chain entirely — calling it with empty pairs still
@@ -840,7 +862,7 @@ function scheduleStep() {
   function runOpens() {
     if (openPairs.length === 0) { scheduleResume(); return; }
     runValveBatch(openPairs, function(okO) {
-      if (!okO) { finalizeTransitionFail(); return; }
+      if (!okO) { retryOrFail(); return; }
       scheduleResume();
     });
   }
@@ -848,7 +870,7 @@ function scheduleStep() {
   if (closePairs.length === 0) { runOpens(); return; }
 
   runValveBatch(closePairs, function(okC) {
-    if (!okC) { finalizeTransitionFail(); return; }
+    if (!okC) { retryOrFail(); return; }
     // Defer runOpens to a fresh Timer.set frame. Without this the chain
     // {Shelly.call cb (last close) → setValve cb → onItem → done(okC) →
     // cb1 → runOpens → runValveBatch(opens) → runBoundedPool → drain →
@@ -906,7 +928,9 @@ function transitionTo(result, cause) {
       state.targetValves = result.valves;
       state.targetResult = result;
       // Do not interrupt any live opening windows — the next resume will
-      // re-plan against the new target.
+      // re-plan against the new target. A retarget is a fresh intent, so
+      // it also gets a fresh valve-retry deadline.
+      state.transitionDeadline = Date.now() + VALVE_RETRY.windowMs;
     }
     return;
   }
@@ -917,6 +941,7 @@ function transitionTo(result, cause) {
   state.transitioning = true;
   state.targetResult = result;
   state.targetValves = result.valves;
+  state.transitionDeadline = Date.now() + VALVE_RETRY.windowMs;
 
   if (state.drain_timer !== null) {
     Timer.clear(state.drain_timer);

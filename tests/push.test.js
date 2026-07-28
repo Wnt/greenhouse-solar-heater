@@ -141,7 +141,7 @@ describe('push', () => {
   describe('VALID_CATEGORIES', () => {
     it('contains all seven categories', () => {
       assert.deepStrictEqual(push.VALID_CATEGORIES, [
-        'evening_report', 'noon_report', 'overheat_warning', 'freeze_warning', 'offline_warning', 'watchdog_fired', 'script_crash'
+        'evening_report', 'noon_report', 'overheat_warning', 'freeze_warning', 'offline_warning', 'watchdog_fired', 'script_crash', 'valve_failure'
       ]);
     });
   });

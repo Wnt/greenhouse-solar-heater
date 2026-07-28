@@ -55,6 +55,8 @@ Physical facts about the hardware that are NOT discoverable from code:
 
 Generally true, enforced by `transitionTo()` in `shelly/control.js` (stops pump/fan/heaters, then actuates valves). **The one named exception is exit from `ACTIVE_DRAIN`**, which reverses the order (close valves → wait 20 s via `DRAIN_EXIT_PUMP_RUN_MS` → stop pump) so the pump evacuates residual water from the manifold before the valves seal. Don't simplify the transition scheduler assuming pump-first is always safe.
 
+Failed valve batches don't bail the transition immediately: the valve Pro 2PMs flap WiFi at range, so the staged transition re-plans and retries every `VALVE_RETRY.delayMs` until `VALVE_RETRY.windowMs` (5 min, constants in `control-logic.js`) has elapsed, then falls back to the fail-safe (pump off, IDLE, `cause="failed"`). One caveat to the drain-exit exception above: a failed drain-exit close batch stops the pump *before* the retry wait — best-effort water evacuation never justifies minutes of dry-running. The server (`notifications.js` `checkValveFailure`) turns an observed transition-attempt → `cause="failed"` sequence into a force-delivered `valve_failure` web push.
+
 ### Only edit `shelly/control-logic.js` for control decisions
 
 `shelly/control-logic.js` is pure ES5 decision logic (no side effects, no Shelly APIs). It runs on the device AND in the browser — the playground simulator loads it via `playground/js/control-logic-loader.js` with a CommonJS shim. When changing control logic, **edit this file only** — the playground picks it up automatically, and the bootstrap-history drift test ensures the pre-baked snapshot stays in sync.

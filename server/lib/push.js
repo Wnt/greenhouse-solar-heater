@@ -15,7 +15,7 @@ let pushData = null;
 let lastSentAt = {};
 const RATE_LIMIT_MS = 3600000;
 
-const VALID_CATEGORIES = ['evening_report', 'noon_report', 'overheat_warning', 'freeze_warning', 'offline_warning', 'watchdog_fired', 'script_crash'];
+const VALID_CATEGORIES = ['evening_report', 'noon_report', 'overheat_warning', 'freeze_warning', 'offline_warning', 'watchdog_fired', 'script_crash', 'valve_failure'];
 
 const S3_KEY = 'push-config.json';
 const LOCAL_PATH = process.env.PUSH_CONFIG_PATH || path.join(__dirname, '..', 'push-config.json');
@@ -217,6 +217,7 @@ const CATEGORY_ICONS = {
   offline_warning:  'assets/notif-offline.png',
   watchdog_fired:   'assets/notif-watchdog.png',
   script_crash:     'assets/notif-script-crash.png',
+  valve_failure:    'assets/notif-valve.png',
 };
 
 function iconFor(category) {
@@ -301,6 +302,22 @@ function buildMockPayload(category) {
         { action: 'restart', type: 'button', title: 'Restart script' },
       ],
       data: { kind: 'script_crash', test: true, url: '/#status' },
+    };
+  }
+  if (category === 'valve_failure') {
+    // Mirrors the real body built in notifications.js checkValveFailure,
+    // quoting the device's actual retry window.
+    return {
+      title: '[Test] Valve Command Failed',
+      body: (function () {
+        const win = require('../../shelly/control-logic.js').VALVE_RETRY.windowMs;
+        return 'A valve did not respond after ' + Math.round(win / 60000) +
+               ' minutes of retries. The controller could not enter Greenhouse Heating ' +
+               'and returned to Idle. Check the valve controllers’ WiFi in System Logs.';
+      })(),
+      tag: 'test-valve-failure',
+      icon: iconFor(category),
+      url: '/#status',
     };
   }
   if (category === 'watchdog_fired') {
