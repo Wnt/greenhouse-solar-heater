@@ -198,7 +198,7 @@ wait_reachable() {
   return 1
 }
 
-provision_mqtt() {
+provision_mqtt_once() {
   local device_ip="$1"
   # Idempotency: MQTT config persists across reboots, and CD runs on every
   # merge — so reconfigure + reboot ONLY when something actually differs.
@@ -220,13 +220,39 @@ sys.exit(0 if ok else 1)
     return 0
   fi
   echo "Provisioning MQTT status reporting on $device_ip (topic_prefix=$device_ip, status_ntf=true)..."
-  # -sf: fail loud on any non-2xx so set -e aborts the deploy before scripts.
+  # Explicit `|| return 1` on each step (NOT bare set -e): the retry wrapper
+  # below calls this function inside an `if`, which suspends errexit — a
+  # mid-function curl failure would otherwise fall through to the reboot.
   curl -sf -m 10 -X POST "http://$device_ip/rpc/Mqtt.SetConfig" \
     -H "Content-Type: application/json" \
-    -d "{\"config\":{\"enable\":true,\"server\":\"$MQTT_BROKER_HOST:${MQTT_BROKER_PORT:-1883}\",\"status_ntf\":true,\"topic_prefix\":\"$device_ip\"}}" > /dev/null
+    -d "{\"config\":{\"enable\":true,\"server\":\"$MQTT_BROKER_HOST:${MQTT_BROKER_PORT:-1883}\",\"status_ntf\":true,\"topic_prefix\":\"$device_ip\"}}" > /dev/null || return 1
   echo "  rebooting to apply MQTT config..."
   curl -sf -m 10 "http://$device_ip/rpc/Shelly.Reboot" > /dev/null || true
-  wait_reachable "$device_ip"
+  wait_reachable "$device_ip" || return 1
+}
+
+# The valve Pro 2PMs sit at the edge of WiFi range and flap (2026-07-28
+# incident: .51 connected in 2–20 s windows at -75 dBm, its Mqtt.SetConfig
+# timed out and aborted the whole deploy BEFORE the control script was
+# touched — blocking the deploy of the on-device fix for that very flap).
+# Retry each device a bounded number of times so a reconnect window can be
+# caught; only after MQTT_PROVISION_ATTEMPTS failures does the deploy fail,
+# preserving the fail-loud-before-scripts invariant.
+MQTT_PROVISION_ATTEMPTS="${MQTT_PROVISION_ATTEMPTS:-12}"
+MQTT_PROVISION_RETRY_DELAY="${MQTT_PROVISION_RETRY_DELAY:-10}"
+
+provision_mqtt() {
+  local device_ip="$1" attempt=1
+  while true; do
+    if provision_mqtt_once "$device_ip"; then return 0; fi
+    if [ "$attempt" -ge "$MQTT_PROVISION_ATTEMPTS" ]; then
+      echo "Error: could not provision MQTT on $device_ip after $MQTT_PROVISION_ATTEMPTS attempts" >&2
+      return 1
+    fi
+    echo "  provisioning $device_ip failed (attempt $attempt/$MQTT_PROVISION_ATTEMPTS) — retrying in ${MQTT_PROVISION_RETRY_DELAY}s..."
+    attempt=$((attempt + 1))
+    sleep "$MQTT_PROVISION_RETRY_DELAY"
+  done
 }
 
 if [ -z "$USER_TARGET" ] && [ -n "${MQTT_BROKER_HOST:-}" ]; then

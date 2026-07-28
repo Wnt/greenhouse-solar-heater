@@ -313,7 +313,7 @@ function buildMockPayload(category) {
         const win = require('../../shelly/control-logic.js').VALVE_RETRY.windowMs;
         return 'A valve did not respond after ' + Math.round(win / 60000) +
                ' minutes of retries. The controller could not enter Greenhouse Heating ' +
-               'and returned to Idle. Check the valve controllers’ WiFi in System Logs.';
+               'and returned to Idle. Check that the valve controllers are powered and reachable on the network.';
       })(),
       tag: 'test-valve-failure',
       icon: iconFor(category),

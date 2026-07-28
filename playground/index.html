@@ -156,6 +156,18 @@
       </div>
     </div>
 
+    <!-- Global valve-failure banner: shown across every view while the
+         latest controller snapshot carries cause="failed" — the device
+         retried valve commands for the full VALVE_RETRY window and gave
+         up. Clears itself on the next successful transition. -->
+    <div id="valve-failure-banner" class="script-crash-banner" style="display:none;" role="alert">
+      <div class="script-crash-banner-header">
+        <span class="material-symbols-outlined">valve</span>
+        <h3>Valve command failed</h3>
+      </div>
+      <p id="valve-failure-banner-msg" class="script-crash-banner-msg"></p>
+    </div>
+
     <!-- ═══ STATUS VIEW ═══ -->
     <section id="view-status" class="view active">
       <div class="staleness-banner" id="staleness-banner">No data received for over 60 seconds. The device may be offline.</div>

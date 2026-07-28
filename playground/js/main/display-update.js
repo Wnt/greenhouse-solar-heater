@@ -12,6 +12,7 @@ import { modeAt } from './mode-events.js';
 import { formatHeldLines } from './logs-clipboard.js';
 import { formatReasonLabel } from './time-format.js';
 import { relayIsStale } from '../actions/relay-health.js';
+import { updateValveFailureBanner } from './valve-failure-banner.js';
 
 // Live data may have null sensors when a role is unassigned — show "—".
 const TEMP_PLACEHOLDER = '—';
@@ -204,6 +205,9 @@ export function updateDisplay(state, result) {
       }));
     }
   }
+
+  // Valve-failure banner — see valve-failure-banner.js.
+  updateValveFailureBanner(result);
 
   // Inactive modes
   const inactiveEl = document.getElementById('inactive-modes');

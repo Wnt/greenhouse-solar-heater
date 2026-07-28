@@ -234,7 +234,7 @@ function checkValveFailure(payload) {
     (target
       ? 'The controller could not enter ' + target + ' and returned to Idle.'
       : 'The controller returned to Idle.') +
-    ' Check the valve controllers’ WiFi in System Logs.';
+    ' Check that the valve controllers are powered and reachable on the network.';
   pushRef.sendNotification('valve_failure', {
     title: 'Valve Command Failed',
     body,

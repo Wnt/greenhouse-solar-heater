@@ -30,13 +30,13 @@ process.on('exit', () => {
   try { fs.writeFileSync(CONF_PATH, ORIGINAL_CONF); } catch (_) {}
 });
 
-function spawnDeploy(args) {
+function spawnDeploy(args, envOverrides) {
   return new Promise((resolve, reject) => {
     const child = spawn('bash', [DEPLOY_SH, ...args], {
       cwd: SCRIPTS_DIR,
       // MQTT_BROKER_HOST drives the native-status provisioning phase (Epic
       // #254). Set it so deploy runs exercise that path against the mock.
-      env: { ...process.env, DEPLOY_STOP_DELAY: '0', MQTT_BROKER_HOST: '10.10.10.1' },
+      env: { ...process.env, DEPLOY_STOP_DELAY: '0', MQTT_BROKER_HOST: '10.10.10.1', ...(envOverrides || {}) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -134,6 +134,7 @@ function createMockServer(handler) {
   return {
     server,
     calls,
+    defaultHandler,
     getUploadedCode: (id) => uploadedCodes[id || 1] || '',
   };
 }
@@ -566,5 +567,72 @@ describe('deploy.sh error handling', () => {
     const result = await runDeploy(`127.0.0.1:${port}`);
     assert.ok(result.code !== 0, 'should exit with non-zero status');
     assert.ok(result.stdout.includes('ERROR'), 'should print error message');
+  });
+});
+
+// ── Flaky valve-host provisioning retries (2026-07-28 incident) ──
+// Valve Control 1 flapped WiFi and its Mqtt.SetConfig timed out, aborting
+// the whole deploy BEFORE the control script was uploaded — which blocked
+// shipping the on-device fix for that very flapping. provision_mqtt now
+// retries each device a bounded number of times before failing the deploy.
+describe('deploy.sh flaky relay provisioning', () => {
+  let mock;
+  let port;
+  let setConfigFailures;
+
+  before(async () => {
+    setConfigFailures = 2; // first two Mqtt.SetConfig calls fail, then recover
+    mock = createMockServer((req, res, body) => {
+      if (req.url.includes('Mqtt.SetConfig') && setConfigFailures > 0) {
+        setConfigFailures--;
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ code: -114, message: 'unreachable' }));
+        return;
+      }
+      // Fall through to the default behavior for everything else.
+      mock.defaultHandler(req, res, body);
+    });
+    await new Promise((resolve) => {
+      mock.server.listen(0, '127.0.0.1', () => {
+        port = mock.server.address().port;
+        resolve();
+      });
+    });
+    const addr = `127.0.0.1:${port}`;
+    fs.writeFileSync(CONF_PATH, [
+      `PRO4PM=${addr}`, `PRO2PM_1=${addr}`, `PRO2PM_2=${addr}`,
+      `PRO2PM_3=${addr}`, `PRO2PM_4=${addr}`, `PRO2PM_5=${addr}`,
+      `SENSOR_1=${addr}`, `SENSOR_2=${addr}`, `PRO4PM_VPN=${addr}`, '',
+    ].join('\n'));
+  });
+
+  after(async () => {
+    fs.writeFileSync(CONF_PATH, ORIGINAL_CONF);
+    await new Promise((resolve) => mock.server.close(resolve));
+  });
+
+  it('rides out transient provisioning failures and still deploys the script', async () => {
+    const result = await spawnDeploy([], {
+      MQTT_PROVISION_ATTEMPTS: '5',
+      MQTT_PROVISION_RETRY_DELAY: '0',
+    });
+    assert.strictEqual(result.code, 0,
+      'deploy must succeed once the flapping device recovers\nstdout: ' + result.stdout + '\nstderr: ' + result.stderr);
+    assert.ok(result.stdout.includes('retrying'),
+      'should log the provisioning retry');
+    assert.ok(mock.getUploadedCode(1).length > 0,
+      'control script must be uploaded after provisioning succeeds');
+  });
+
+  it('fails the deploy (before script upload) when a device never recovers', async () => {
+    setConfigFailures = Infinity;
+    const uploadedBefore = mock.getUploadedCode(1).length;
+    const result = await spawnDeploy([], {
+      MQTT_PROVISION_ATTEMPTS: '2',
+      MQTT_PROVISION_RETRY_DELAY: '0',
+    });
+    assert.ok(result.code !== 0, 'deploy must fail when provisioning never succeeds');
+    assert.strictEqual(mock.getUploadedCode(1).length, uploadedBefore,
+      'control script must NOT be re-uploaded when provisioning fails');
   });
 });
