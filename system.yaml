@@ -344,6 +344,27 @@ control:
       12 relay outputs needed: 8 motorized valves + pump + fan + 2 heaters.
       5–7 DS18B20 temperature sensors on 1-Wire bus via Add-on.
 
+    networking:
+      note: >
+        Two control paths. WiFi ("Kasvihuone IoT", VLAN 30, 192.168.30.0/24,
+        DHCP reservations) carries server/VPN/MQTT traffic and sensor-hub
+        polling. The Pro devices additionally share an isolated Ethernet
+        switch (no upstream, no DHCP) carrying the 4PM→valve-2PM command
+        path on STATIC IPs in a dedicated subnet — valve commands try the
+        wire first and fall back to WiFi (VALVES map in shelly/control.js).
+        The wired subnet is deliberately different from the WiFi /24: two
+        interfaces in the same subnet would make a device route LAN traffic
+        (sensor polls, MQTT) into the isolated switch.
+      wired_subnet: 192.168.31.0/24  # no gateway — island network
+      devices:
+        pro4pm:   { wifi: 192.168.30.50, eth: 192.168.31.50 }
+        pro2pm_1: { wifi: 192.168.30.51, eth: 192.168.31.51 }
+        pro2pm_2: { wifi: 192.168.30.52, eth: 192.168.31.52 }
+        pro2pm_3: { wifi: 192.168.30.53, eth: 192.168.31.53 }
+        pro2pm_4: { wifi: 192.168.30.54, eth: 192.168.31.54 }
+        pro2pm_5: { wifi: 192.168.30.55, eth: 192.168.31.55 }  # spare unit
+        sensor_hubs: WiFi only (Shelly 1 Gen3 has no Ethernet port)
+
     shelly_pro_4pm:
       quantity: 1
       role: main controller + high-power actuator outputs

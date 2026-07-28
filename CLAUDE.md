@@ -48,6 +48,7 @@ Physical facts about the hardware that are NOT discoverable from code:
 - **Valve manifold.** 7 motorized on/off DN15 valves around a single pump: 3 input (VI-btm, VI-top, VI-coll), 3 output (VO-coll, VO-rad, VO-tank), plus V_air at the collector top with a passive T joint permanently connecting the collector-top pipe to the canister (entering at a bottom fitting, automatically below the water line so the siphon cannot ingest air).
 - **Operating modes** (plus `idle`): `solar_charging`, `greenhouse_heating`, `active_drain`. Each opens a specific subset of valves — see the `modes` section in `system.yaml`.
 - **Hardware**: Shelly Pro 4PM main controller, 4× Pro 2PM for valves (`.51`–`.54`; 7 valve relays + 1 reserved spare relay), Plus 1 with Add-on for sensors.
+- **Two control paths.** WiFi (192.168.30.0/24) carries server/VPN/MQTT and sensor polling; the Pro devices additionally share an **isolated Ethernet switch** (no upstream, no DHCP) with **static IPs on 192.168.31.0/24** for the 4PM→valve-2PM command path. Valve commands try the wire first, WiFi second (`VALVES[name].h` in `shelly/control.js`); `deploy.sh` provisions the static eth IPs (`ETH_*` in `devices.conf`). The wired subnet is deliberately distinct from the WiFi /24 — two interfaces in one subnet would misroute LAN traffic into the island. See `system.yaml` `shelly_components.networking`.
 
 ## Critical Rules
 

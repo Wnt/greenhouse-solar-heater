@@ -99,6 +99,13 @@ function createMockServer(handler) {
     } else if (url.includes('Sys.SetConfig') || url.includes('Switch.SetConfig')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ restart_required: false }));
+    } else if (url.includes('Eth.GetConfig')) {
+      // Default: DHCP (unprovisioned), so provision_eth proceeds.
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ enable: true, ipv4mode: 'dhcp', ip: null, netmask: null, gw: null }));
+    } else if (url.includes('Eth.SetConfig')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ restart_required: true }));
     } else if (url.includes('Mqtt.GetConfig')) {
       // Default: not yet provisioned, so provision_mqtt proceeds. The
       // idempotency describe below overrides this with a matching config.
@@ -634,5 +641,65 @@ describe('deploy.sh flaky relay provisioning', () => {
     assert.ok(result.code !== 0, 'deploy must fail when provisioning never succeeds');
     assert.strictEqual(mock.getUploadedCode(1).length, uploadedBefore,
       'control script must NOT be re-uploaded when provisioning fails');
+  });
+});
+
+// ── Wired control-path provisioning (static eth IPs) ──
+// The Pro devices share an isolated Ethernet switch (no upstream/DHCP);
+// deploy.sh provisions static IPv4 addresses on their Ethernet interfaces
+// when ETH_* vars are present in devices.conf. Gated exactly like the MQTT
+// phase: full deploys only, and skipped entirely when the conf carries no
+// ETH_* entries (which also keeps the other test suites' confs inert).
+describe('deploy.sh ethernet provisioning', () => {
+  let mock;
+  let port;
+
+  before(async () => {
+    mock = createMockServer();
+    await new Promise((resolve) => {
+      mock.server.listen(0, '127.0.0.1', () => {
+        port = mock.server.address().port;
+        resolve();
+      });
+    });
+    const addr = `127.0.0.1:${port}`;
+    fs.writeFileSync(CONF_PATH, [
+      `PRO4PM=${addr}`, `PRO2PM_1=${addr}`, `PRO2PM_2=${addr}`,
+      `PRO2PM_3=${addr}`, `PRO2PM_4=${addr}`, `PRO2PM_5=${addr}`,
+      `SENSOR_1=${addr}`, `SENSOR_2=${addr}`, `PRO4PM_VPN=${addr}`,
+      'ETH_PRO4PM=192.168.31.50',
+      'ETH_PRO2PM_1=192.168.31.51', 'ETH_PRO2PM_2=192.168.31.52',
+      'ETH_PRO2PM_3=192.168.31.53', 'ETH_PRO2PM_4=192.168.31.54',
+      '',
+    ].join('\n'));
+  });
+
+  after(async () => {
+    fs.writeFileSync(CONF_PATH, ORIGINAL_CONF);
+    await new Promise((resolve) => mock.server.close(resolve));
+  });
+
+  it('provisions a static eth IP on the 4PM and each valve 2PM before the script upload', async () => {
+    const result = await spawnDeploy([], { MQTT_PROVISION_RETRY_DELAY: '0' });
+    assert.strictEqual(result.code, 0,
+      'deploy should succeed\nstdout: ' + result.stdout + '\nstderr: ' + result.stderr);
+
+    const ethSets = mock.calls.filter(c => c.url.includes('Eth.SetConfig'));
+    assert.ok(ethSets.length >= 5,
+      `expected static-eth provisioning on >=5 devices, got ${ethSets.length}`);
+    const ips = ethSets.map(c => JSON.parse(c.body).config).map(cfg => {
+      assert.strictEqual(cfg.ipv4mode, 'static', 'eth must be provisioned static');
+      assert.strictEqual(cfg.enable, true, 'eth must be enabled');
+      assert.strictEqual(cfg.netmask, '255.255.255.0');
+      return cfg.ip;
+    });
+    for (const ip of ['192.168.31.50', '192.168.31.51', '192.168.31.52', '192.168.31.53', '192.168.31.54']) {
+      assert.ok(ips.includes(ip), `expected static eth IP ${ip} to be provisioned`);
+    }
+
+    const firstEthIdx = mock.calls.findIndex(c => c.url.includes('Eth.SetConfig'));
+    const firstPutIdx = mock.calls.findIndex(c => c.url.includes('Script.PutCode'));
+    assert.ok(firstEthIdx >= 0 && firstPutIdx > firstEthIdx,
+      'eth provisioning must run before the control script upload');
   });
 });

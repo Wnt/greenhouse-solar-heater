@@ -52,10 +52,11 @@ var HTO = 3;
 var pIF = false;
 var vIF = false;
 
-// VSA — total Switch.Set attempts per valve command (initial + retries).
-// Bounded so a genuinely unreachable valve bails the transition (existing
-// fail-safe: pump off, IDLE, cause="failed") instead of spinning forever; a
-// single transient drop is ridden out by the second attempt.
+// VSA — total Switch.Set attempts per valve command. Attempts alternate
+// between the valve's two addresses (VALVES[name].h — wired first, WiFi
+// second), so one cycle of VSA=2 covers both control paths. Bounded so an
+// unreachable valve fails the batch; the transition-level retry window
+// (VALVE_RETRY in control-logic.js) handles the longer wait.
 var VSA = 2;
 
 // Device uptime past which the script triggers a full reboot to defragment
@@ -89,15 +90,20 @@ var SENSOR_CONFIG_KVS_KEY = "sensor_config";
 // translate a watchdog id to the mode code stored in wb.
 var WATCHDOG_MODE = { sng: "SC", scs: "SC", ggr: "GH" };
 
+// Each valve has TWO addresses (h[0] wired, h[1] WiFi): the Pro devices
+// share an isolated Ethernet switch with static IPs on 192.168.31.0/24
+// (see system.yaml shelly_components.networking). setValve alternates
+// h[n % 2] per attempt, so the wire is tried first and a dead cable or
+// unprovisioned device degrades to WiFi-only behaviour — never worse.
 var VALVES = {
-  vi_btm:  {ip: "192.168.30.51", id: 0},
-  vi_top:  {ip: "192.168.30.51", id: 1},
-  vi_coll: {ip: "192.168.30.52", id: 0},
-  vo_coll: {ip: "192.168.30.52", id: 1},
-  vo_rad:  {ip: "192.168.30.53", id: 0},
-  vo_tank: {ip: "192.168.30.53", id: 1},
-  // 192.168.30.54 id 1 is a reserved spare (passive T joint at collector top — spec 024)
-  v_air:   {ip: "192.168.30.54", id: 0},
+  vi_btm:  {h: ["192.168.31.51", "192.168.30.51"], id: 0},
+  vi_top:  {h: ["192.168.31.51", "192.168.30.51"], id: 1},
+  vi_coll: {h: ["192.168.31.52", "192.168.30.52"], id: 0},
+  vo_coll: {h: ["192.168.31.52", "192.168.30.52"], id: 1},
+  vo_rad:  {h: ["192.168.31.53", "192.168.30.53"], id: 0},
+  vo_tank: {h: ["192.168.31.53", "192.168.30.53"], id: 1},
+  // .54 id 1 is a reserved spare (passive T joint at collector top — spec 024)
+  v_air:   {h: ["192.168.31.54", "192.168.30.54"], id: 0},
 };
 
 // Canonical valve-name list, hoisted once (was duplicated in
@@ -278,8 +284,10 @@ function setActuators(states, cb) {
 function setValve(name, open, cb) {
   if (open && (!deviceConfig.ce || !(deviceConfig.ea & EA_VALVES))) { if (cb) cb(true); return; }
   var v = VALVES[name];
-  var url = "http://" + v.ip + "/rpc/Switch.Set?id=" + v.id +
-    "&on=" + (open ? "true" : "false");
+  // Query string only — the host is picked per attempt below: attempt 1
+  // goes to h[0] (wired), attempt 2 to h[1] (WiFi fallback). With VSA=2
+  // one full cycle covers both paths.
+  var q = "/rpc/Switch.Set?id=" + v.id + "&on=" + (open ? "true" : "false");
   vIF = true;
   var n = 0;
   function done(ok) {
@@ -290,6 +298,7 @@ function setValve(name, open, cb) {
   function tryOnce(res, err) {
     if (res !== undefined && !err && res && res.code === 200) { done(true); return; }
     if (n >= VSA) { done(false); return; }
+    var url = "http://" + v.h[n % v.h.length] + q;
     n++;
     Shelly.call("HTTP.GET", {url: url, timeout: HTO}, tryOnce);
   }
