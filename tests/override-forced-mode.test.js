@@ -300,11 +300,12 @@ describe('override-forced-mode :: mo.fm drives transitionTo', function() {
         // window + settle, well under the 5-min min-duration hold.
         rt.advance(30000, function() {
           const evts = rt.events();
-          // GH valves: vi_top (192.168.30.51 id=1) and vo_rad (192.168.30.53 id=0)
+          // GH valves: vi_top (host .51 id=1) and vo_rad (host .53 id=0) —
+          // either the wired (192.168.31.x) or WiFi (192.168.30.x) address.
           const ghValves = evts.filter(function(e) {
             return e.kind === 'http_get' && e.detail.url.indexOf('/rpc/Switch.Set') >= 0 &&
-              ((e.detail.url.indexOf('192.168.30.51') >= 0 && e.detail.url.indexOf('id=1') >= 0) ||
-               (e.detail.url.indexOf('192.168.30.53') >= 0 && e.detail.url.indexOf('id=0') >= 0));
+              ((/192\.168\.3[01]\.51/.test(e.detail.url) && e.detail.url.indexOf('id=1') >= 0) ||
+               (/192\.168\.3[01]\.53/.test(e.detail.url) && e.detail.url.indexOf('id=0') >= 0));
           });
           assert.ok(ghValves.length > 0,
             'GH valve commands (vi_top or vo_rad) must appear within 30 s — min-duration bypassed');

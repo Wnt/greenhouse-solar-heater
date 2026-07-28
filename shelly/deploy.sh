@@ -198,7 +198,7 @@ wait_reachable() {
   return 1
 }
 
-provision_mqtt() {
+provision_mqtt_once() {
   local device_ip="$1"
   # Idempotency: MQTT config persists across reboots, and CD runs on every
   # merge — so reconfigure + reboot ONLY when something actually differs.
@@ -220,14 +220,99 @@ sys.exit(0 if ok else 1)
     return 0
   fi
   echo "Provisioning MQTT status reporting on $device_ip (topic_prefix=$device_ip, status_ntf=true)..."
-  # -sf: fail loud on any non-2xx so set -e aborts the deploy before scripts.
+  # Explicit `|| return 1` on each step (NOT bare set -e): the retry wrapper
+  # below calls this function inside an `if`, which suspends errexit — a
+  # mid-function curl failure would otherwise fall through to the reboot.
   curl -sf -m 10 -X POST "http://$device_ip/rpc/Mqtt.SetConfig" \
     -H "Content-Type: application/json" \
-    -d "{\"config\":{\"enable\":true,\"server\":\"$MQTT_BROKER_HOST:${MQTT_BROKER_PORT:-1883}\",\"status_ntf\":true,\"topic_prefix\":\"$device_ip\"}}" > /dev/null
+    -d "{\"config\":{\"enable\":true,\"server\":\"$MQTT_BROKER_HOST:${MQTT_BROKER_PORT:-1883}\",\"status_ntf\":true,\"topic_prefix\":\"$device_ip\"}}" > /dev/null || return 1
   echo "  rebooting to apply MQTT config..."
   curl -sf -m 10 "http://$device_ip/rpc/Shelly.Reboot" > /dev/null || true
-  wait_reachable "$device_ip"
+  wait_reachable "$device_ip" || return 1
 }
+
+# The valve Pro 2PMs sit at the edge of WiFi range and flap (2026-07-28
+# incident: .51 connected in 2–20 s windows at -75 dBm, its Mqtt.SetConfig
+# timed out and aborted the whole deploy BEFORE the control script was
+# touched — blocking the deploy of the on-device fix for that very flap).
+# Retry each device a bounded number of times so a reconnect window can be
+# caught; only after MQTT_PROVISION_ATTEMPTS failures does the deploy fail,
+# preserving the fail-loud-before-scripts invariant. The knobs apply to
+# every provisioning phase (MQTT and Ethernet alike).
+MQTT_PROVISION_ATTEMPTS="${MQTT_PROVISION_ATTEMPTS:-12}"
+MQTT_PROVISION_RETRY_DELAY="${MQTT_PROVISION_RETRY_DELAY:-10}"
+
+# retry_provision <label> <fn> [args...] — run <fn> until it succeeds or
+# MQTT_PROVISION_ATTEMPTS is exhausted, sleeping MQTT_PROVISION_RETRY_DELAY
+# between attempts. NOTE: <fn> runs in an `if` context, which suspends
+# errexit — provision_*_once functions must use explicit `|| return 1` on
+# every step.
+retry_provision() {
+  local label="$1"; shift
+  local attempt=1
+  while true; do
+    if "$@"; then return 0; fi
+    if [ "$attempt" -ge "$MQTT_PROVISION_ATTEMPTS" ]; then
+      echo "Error: could not provision $label after $MQTT_PROVISION_ATTEMPTS attempts" >&2
+      return 1
+    fi
+    echo "  provisioning $label failed (attempt $attempt/$MQTT_PROVISION_ATTEMPTS) — retrying in ${MQTT_PROVISION_RETRY_DELAY}s..."
+    attempt=$((attempt + 1))
+    sleep "$MQTT_PROVISION_RETRY_DELAY"
+  done
+}
+
+provision_mqtt() {
+  retry_provision "MQTT on $1" provision_mqtt_once "$1"
+}
+
+# ── Wired control-path provisioning (static eth IPs) ──
+# The Pro devices share an isolated Ethernet switch with no upstream and no
+# DHCP; the 4PM→valve-2PM command path runs over static IPs on a dedicated
+# subnet (system.yaml shelly_components.networking, ETH_* in devices.conf).
+# The WiFi subnet must NOT be reused here: two interfaces in the same /24
+# would make a device route LAN traffic (sensor polls, MQTT, VPN) into the
+# isolated switch. No gateway — it's an island network.
+provision_eth_once() {
+  local device_ip="$1" eth_ip="$2"
+  local cur
+  cur=$(curl -sf -m 10 "http://$device_ip/rpc/Eth.GetConfig" 2>/dev/null) || cur=""
+  if [ -n "$cur" ] && printf '%s' "$cur" | python3 -c "
+import json, sys
+try:
+    c = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+ok = c.get('enable') is True and c.get('ipv4mode') == 'static' and c.get('ip') == '$eth_ip'
+sys.exit(0 if ok else 1)
+"; then
+    echo "Ethernet already provisioned on $device_ip (static $eth_ip) — skipping reconfigure/reboot"
+    return 0
+  fi
+  echo "Provisioning static Ethernet IP $eth_ip on $device_ip..."
+  curl -sf -m 10 -X POST "http://$device_ip/rpc/Eth.SetConfig" \
+    -H "Content-Type: application/json" \
+    -d "{\"config\":{\"enable\":true,\"ipv4mode\":\"static\",\"ip\":\"$eth_ip\",\"netmask\":\"255.255.255.0\",\"gw\":null,\"nameserver\":null}}" > /dev/null || return 1
+  echo "  rebooting to apply Ethernet config..."
+  curl -sf -m 10 "http://$device_ip/rpc/Shelly.Reboot" > /dev/null || true
+  wait_reachable "$device_ip" || return 1
+}
+
+provision_eth() {
+  retry_provision "Ethernet on $1" provision_eth_once "$1" "$2"
+}
+
+if [ -z "$USER_TARGET" ] && [ -n "${ETH_PRO4PM:-}" ]; then
+  echo ""
+  echo "Provisioning static-IP Ethernet control path..."
+  eth_wifi_ips=("$PRO4PM" "${PRO2PM_1:-}" "${PRO2PM_2:-}" "${PRO2PM_3:-}" "${PRO2PM_4:-}")
+  eth_static_ips=("${ETH_PRO4PM:-}" "${ETH_PRO2PM_1:-}" "${ETH_PRO2PM_2:-}" "${ETH_PRO2PM_3:-}" "${ETH_PRO2PM_4:-}")
+  for ei in 0 1 2 3 4; do
+    if [ -n "${eth_wifi_ips[$ei]}" ] && [ -n "${eth_static_ips[$ei]}" ]; then
+      provision_eth "${eth_wifi_ips[$ei]}" "${eth_static_ips[$ei]}"
+    fi
+  done
+fi
 
 if [ -z "$USER_TARGET" ] && [ -n "${MQTT_BROKER_HOST:-}" ]; then
   echo ""

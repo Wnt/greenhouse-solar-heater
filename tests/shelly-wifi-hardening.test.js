@@ -320,12 +320,16 @@ describe('Shelly WiFi hardening (#262): valve retry + fail-safe', () => {
   it('a single transient valve Set drop is ridden out by the retry', async () => {
     // First Set on a given relay drops; the retry succeeds. Boot should still
     // complete (all valves close) — i.e. closeAllValves does not bail.
+    // The drop is keyed on the PHYSICAL relay (device number + switch id),
+    // not the address: each valve now has a wired + WiFi address and the
+    // retry alternates between them, so "one transient drop per relay"
+    // means the wired attempt drops and the WiFi attempt succeeds.
     const dropped = {};
     const rt = createRuntime({
       kvs: { config: DEVICE_CONFIG, sensor_config: SENSOR_CONFIG },
       valveResponder: function (kind, url, id, host) {
         if (kind !== 'set') return null;
-        const key = host + ':' + id;
+        const key = String(host).replace(/^192\.168\.3[01]\./, '') + ':' + id;
         if (!dropped[key]) { dropped[key] = true; return { drop: true }; }
         return { code: 200, body: '{}' };
       },

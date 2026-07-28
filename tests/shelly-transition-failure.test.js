@@ -93,7 +93,7 @@ describe('Shelly transition: valve HTTP failure → finalizeTransitionFail', () 
         const sensor = CID[m ? parseInt(m[1], 10) : 0] || 'x';
         return { code: 200, body: JSON.stringify({ tC: temp(sensor) }) };
       }
-      if (url.indexOf('Switch.Set') >= 0 && url.indexOf('192.168.30.5') >= 0) {
+      if (url.indexOf('Switch.Set') >= 0 && /192\.168\.3[01]\.5/.test(url)) {
         // Only count failures AFTER boot completes — boot runs
         // closeAllValves which we don't want to fail (the boot loop
         // retries forever on failure).
