@@ -71,6 +71,8 @@ Shelly runs a restricted Espruino runtime. The linter (`shelly/lint/`) enforces:
 
 Convention (not linter-enforced): use `var`, not `const`/`let`. The `SH-014` array-method list is **empirical** — each banned method has a device-crash incident comment. Add to the list if you hit another missing method on-device and document the incident.
 
+**Memory budget is a hard CI gate.** The per-script JsVar pool is fixed (25,186 B) and the transition peak is the historical OOM point (2026-07-28 crash-loop: +0.5 KB resident tipped it over). `npm run check:shelly-size` (CI static-checks + pre-push hook) caps the deploy-shape bytes of `control-logic.js`+`control.js` per `shelly/script-budget.json`; `deploy.sh` additionally fails when post-start idle `mem_free` is under `SCRIPT_MEM_FLOOR` (3 KB). **Raising the cap requires a fresh on-device calibration** (transition `mem_peak` via `Script.GetStatus`, or `scripts/spare-2pm-memcheck.mjs`) recorded in the budget file in the same commit — shrink first, then grow.
+
 ### Device communication flows through MQTT (two exceptions: sensor discovery and sensor apply)
 
 No direct HTTP RPC to Shelly from the server for state, config pushes, or relay commands. The `mqtt-bridge` routes all of those through `greenhouse/*` topics. Adding a new mutating or stateful device operation = new MQTT topic, not a new HTTP endpoint.

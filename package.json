@@ -23,7 +23,8 @@
     "lint:fix": "eslint . --fix",
     "check:file-size": "node scripts/check-file-size.mjs",
     "check:assets": "node scripts/check-unused-assets.mjs",
-    "lint:debt": "npm run check:file-size && npm run knip && npm run check:assets"
+    "check:shelly-size": "node scripts/check-shelly-script-size.mjs",
+    "lint:debt": "npm run check:file-size && npm run knip && npm run check:assets && npm run check:shelly-size"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

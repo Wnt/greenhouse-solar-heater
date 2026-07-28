@@ -99,6 +99,11 @@ function createMockServer(handler) {
     } else if (url.includes('Sys.SetConfig') || url.includes('Switch.SetConfig')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ restart_required: false }));
+    } else if (url.includes('Script.GetStatus')) {
+      // Healthy idle memory — the post-start floor check (2026-07-28 OOM
+      // postmortem) passes. The memory-floor describe overrides this.
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ id: 1, running: true, mem_used: 19000, mem_peak: 21000, mem_free: 6000 }));
     } else if (url.includes('Eth.GetConfig')) {
       // Default: DHCP (unprovisioned), so provision_eth proceeds.
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -701,5 +706,55 @@ describe('deploy.sh ethernet provisioning', () => {
     const firstPutIdx = mock.calls.findIndex(c => c.url.includes('Script.PutCode'));
     assert.ok(firstEthIdx >= 0 && firstPutIdx > firstEthIdx,
       'eth provisioning must run before the control script upload');
+  });
+});
+
+// ── Post-start script memory floor (2026-07-28 OOM postmortem) ──
+// After starting the control script, deploy.sh reads Script.GetStatus and
+// fails loudly when idle mem_free is under SCRIPT_MEM_FLOOR — a resident-
+// memory regression the static size budget missed. Responses without
+// mem_free (mocks / old firmware) are skipped, which the other suites in
+// this file exercise implicitly via the healthy default handler.
+describe('deploy.sh script memory floor', () => {
+  let mock;
+  let port;
+
+  before(async () => {
+    mock = createMockServer((req, res, body) => {
+      if (req.url.includes('Script.GetStatus')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ id: 1, running: true, mem_used: 23500, mem_peak: 24900, mem_free: 1600 }));
+        return;
+      }
+      mock.defaultHandler(req, res, body);
+    });
+    await new Promise((resolve) => {
+      mock.server.listen(0, '127.0.0.1', () => {
+        port = mock.server.address().port;
+        resolve();
+      });
+    });
+    const addr = `127.0.0.1:${port}`;
+    fs.writeFileSync(CONF_PATH, [
+      `PRO4PM=${addr}`, `PRO2PM_1=${addr}`, `SENSOR_1=${addr}`, `PRO4PM_VPN=${addr}`, '',
+    ].join('\n'));
+  });
+
+  after(async () => {
+    fs.writeFileSync(CONF_PATH, ORIGINAL_CONF);
+    await new Promise((resolve) => mock.server.close(resolve));
+  });
+
+  it('fails the deploy when post-start mem_free is under the floor', async () => {
+    const result = await spawnDeploy([`127.0.0.1:${port}`]);
+    assert.ok(result.code !== 0, 'deploy must fail on a memory-floor breach');
+    assert.ok(/mem_free|memory floor/.test(result.stdout + result.stderr),
+      'should explain the floor breach\n' + result.stdout + result.stderr);
+  });
+
+  it('passes when the floor is explicitly lowered (operator override)', async () => {
+    const result = await spawnDeploy([`127.0.0.1:${port}`], { SCRIPT_MEM_FLOOR: '1000' });
+    assert.strictEqual(result.code, 0,
+      'deploy should succeed with a lowered floor\n' + result.stdout + result.stderr);
   });
 });

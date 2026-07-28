@@ -342,6 +342,36 @@ echo "Control script auto-start enabled"
 curl -s "http://$DEVICE/rpc/Script.Start?id=$CONTROL_SCRIPT_ID" > /dev/null
 echo "Control script started on $DEVICE"
 
+# ── Post-start memory floor (2026-07-28 OOM crash-loop postmortem) ──
+# The Gen2 per-script JsVar pool is fixed (25,186 B — see
+# shelly/script-budget.json) and the transition peak is the script's
+# historical OOM point. Read Script.GetStatus after start and fail the
+# deploy loudly when idle mem_free is below SCRIPT_MEM_FLOOR — a
+# resident-memory regression the static size budget (CI
+# check-shelly-script-size) missed. Responses without a mem_free field
+# (mocks / old firmware) skip the check.
+SCRIPT_MEM_FLOOR="${SCRIPT_MEM_FLOOR:-3000}"
+sleep "$DEPLOY_STOP_DELAY"
+mem_status=$(curl -sf -m 10 "http://$DEVICE/rpc/Script.GetStatus?id=$CONTROL_SCRIPT_ID" 2>/dev/null) || mem_status=""
+if [ -n "$mem_status" ]; then
+  printf '%s' "$mem_status" | python3 -c "
+import json, sys
+floor = int('$SCRIPT_MEM_FLOOR')
+try:
+    s = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+mf = s.get('mem_free')
+if mf is None:
+    print('  memory floor: Script.GetStatus has no mem_free (mock/old fw) — skipped')
+    sys.exit(0)
+print('  script memory after start: used=%s peak=%s free=%s (floor %d)' % (s.get('mem_used'), s.get('mem_peak'), mf, floor))
+if mf < floor:
+    print('ERROR: idle mem_free %d B is below the %d B floor — resident-memory regression; see shelly/script-budget.json for the recalibration procedure' % (mf, floor), file=sys.stderr)
+    sys.exit(1)
+" || { echo "Deploy FAILED: script memory floor breached on $DEVICE" >&2; exit 1; }
+fi
+
 # ── Device + channel naming ──
 # Sets the device-level name (shown in Shelly app under "All Devices") and
 # per-relay labels, all derived from the hardware layout in system.yaml.

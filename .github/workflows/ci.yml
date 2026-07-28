@@ -26,6 +26,8 @@ jobs:
         run: npm run check:file-size -- --strict
       - name: Check unused assets
         run: npm run check:assets -- --strict
+      - name: Check Shelly script memory budget
+        run: npm run check:shelly-size
 
   unit-tests:
     runs-on: ubuntu-latest
