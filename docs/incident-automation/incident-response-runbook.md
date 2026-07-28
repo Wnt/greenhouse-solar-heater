@@ -6,7 +6,7 @@ Approach every run **fresh, from the evidence in front of you.** This runbook gi
 
 Your job on every run: **diagnose from evidence, decide the least-risky effective remediation, apply it, verify it worked, and always notify the operator** — whatever the incident turns out to be.
 
-Work the loop in order: materialize access, **check the guardrails**, diagnose, decide, act, verify, notify. Never act before you have read the guardrails and diagnosed; never finish without notifying.
+Work the loop in order: materialize access, **check the guardrails**, diagnose, **complete the §1.5 system-health checks**, decide, act, verify, notify. Never act before you have read the guardrails and finished §1.5; never finish without notifying. "Script running: true" is not the finish line — always complete §1.5 before concluding self-healed, and never let a benign "self-healed" cooldown suppress the guardrail write for a later real failure (use distinct `kind` slugs — see §1.5).
 
 ---
 
@@ -67,6 +67,20 @@ curl -s https://greenhouse.madekivi.fi/api/script/status
 # Talk to a device over the app pod's VPN — read-only RPCs for inspection
 # (the Pro 4PM controller is 192.168.30.50; RPC needs no device auth)
 kubectl exec deploy/app -c app -n default -- curl -sS http://192.168.30.50/rpc/Shelly.GetDeviceInfo
+
+# System liveness — every Shelly host reachable? Any timeout below is a §1.5 flag.
+# .50 = Pro 4PM controller; .51–.54 = valve Pro 2PMs (the ones that flap WiFi at range); .55 = spare.
+for ip in 192.168.30.50 192.168.30.51 192.168.30.52 192.168.30.53 192.168.30.54 192.168.30.55; do
+  echo "=== $ip ==="
+  kubectl exec deploy/app -c app -n default -- curl -sS -m 5 http://$ip/rpc/Shelly.GetDeviceInfo 2>&1 | head -c 200
+  echo
+done
+
+# Watchdog bans — deviceConfig lives as JSON in a single KVS key called "config".
+# .wb is a map of mode short code (GH = greenhouse_heating, SC = solar_charging,
+# AD = active_drain) → unix-seconds expiry; a future value blocks that mode.
+kubectl exec deploy/app -c app -n default -- \
+  curl -sS 'http://192.168.30.50/rpc/KVS.Get?key=config'
 ```
 
 **Querying the database** (e.g. recent control-script crashes, or the current mode). Use the app pod's DB connection — `resolveUrl` first, then `getPool().query(sql, paramsArray, cb)` (the params array is required):
@@ -82,7 +96,35 @@ kubectl exec deploy/app -c app -n default -- node -e '
 '
 ```
 
-Useful tables/columns: `script_crashes(ts, error_msg, error_trace, sys_status, resolved_at)`; `state_events(ts, entity_type, new_value)` — the latest row with `entity_type = 'mode'` is the last-known operating mode. Treat the mode as **context for your notification only — it does NOT gate any remediation** (see §3), and it can be stale, since no mode events are written while the controller is down or the app is offline.
+Useful tables/columns: `script_crashes(ts, error_msg, error_trace, sys_status, resolved_at)`; `state_events(ts, entity_type, new_value)` — the latest row with `entity_type = 'mode'` is the last-known operating mode; `sensor_readings(ts, sensor_id, value_c)` for raw readings and `sensor_readings_30s(bucket, sensor_id, avg_value, min_value, max_value)` for the 30 s aggregate (raw prunes at 48 h; use the aggregate for anything older). **Mode still does NOT gate remediation** — controller restart is allowed in any mode (§3). Mode IS a §1.5 diagnostic signal for mode-vs-conditions sanity, but treat it as potentially stale: no mode events are written while the controller is down or the app is offline.
+
+Sensor-freshness one-liner (§1.5 uses this):
+
+```bash
+kubectl exec deploy/app -c app -n default -- node -e "
+  const db = require('./server/lib/db');
+  db.resolveUrl(function (err) {
+    if (err) { console.error(err.message); process.exit(1); }
+    db.getPool().query(\"SELECT max(ts) AS latest_raw FROM sensor_readings\", [],
+      function (e, r) { if (e) { console.error(e.message); process.exit(1); } console.log(JSON.stringify(r.rows)); process.exit(0); });
+  });
+"
+```
+
+## 1.5. System-level health after script check — never stop at "script running: true"
+
+A running control script is necessary but not sufficient. The controller can be up while sensors are silent, valve hosts are offline, a watchdog ban blocks the active mode, or the system is sitting in `idle` under conditions that call for heating. Complete **every** check below before concluding the incident is self-healed; any single red flag reframes the incident as active and drives the notification tone in §5.
+
+- **All Shelly hosts reachable.** Use the reachability loop in §1. A timeout on any valve Pro 2PM (`.51`–`.54`) is the classic "flaps WiFi at range" case — transitions that need a valve on that host will fail and the fail-safe kicks the mode back to `idle`. Name the offline device in the notification.
+- **Sensor data freshness.** Run the `max(ts)` query above. If older than **5 min**, the sensor path (hub or MQTT) is dark even if the controller script is up, so the controller is running blind (or against stale readings). Note the age in the notification.
+- **Mode vs. current conditions.** Read the latest greenhouse temperature and the latest `mode` event. `idle` while `greenhouse < setpoint` is a stuck controller — nighttime is exactly when heating should run, not a reason to accept `idle`. Similarly, daylight with collector plausibly above tank and mode `idle` deserves a look. Cross-check with the reachability and watchdog-ban results before concluding "stuck".
+- **Recent failed transitions.** Scan the last hour for anything with `cause = "failed"` (the fail-safe path in `control-logic.js` — pump off, IDLE fallback after the 5-min valve-retry window). Repeated failures pinned to specific valves point straight back to the reachability check.
+- **Watchdog bans (`wb`).** Read `KVS.Get?key=config` on `.50` and parse `.wb`. A future unix-seconds expiry on `wb.GH` (greenhouse_heating), `wb.SC` (solar_charging), or `wb.AD` (active_drain) means that mode is banned until then — a valid explanation for a stuck `idle` even when everything else looks fine. Convert to local time and surface it ("Greenhouse Heating banned until 12:32 UTC").
+
+If **all five** checks pass, the incident is self-healed and the §5 notification can be observational. If **any** check flags, the incident is active — §5 must lead with what is broken and its operational impact, and the guardrail log entry must use a distinct `kind` so the 30-min cooldown does not suppress a later escalation:
+
+- Post-crash checks pass → log `kind: "observe-post-crash-checks-passed"`.
+- Post-crash checks reveal a broader failure → log `kind: "crash-symptom-of-broader-failure"` (or a more specific slug like `valve-host-offline`). Different `kind` = independent cooldown window.
 
 ## 2. Decide
 
@@ -122,6 +164,8 @@ Escalate from the lightest action:
 
 Software-only cluster actions (rollout restart, env changes) carry no physical risk — apply them freely.
 
+**Device unreachable over HTTP — do NOT attempt an RPC reboot on it.** If the §1.5 reachability check timed out on a device (a valve Pro 2PM, the sensor hub, or the Pro 4PM itself), an RPC-triggered `Shelly.Reboot` can't land either — its request goes over the same WiFi/HTTP path that just failed. The remediation is physical: on-site power-cycle or WiFi recovery. Notify and hand off; do not loop retrying the RPC.
+
 ## 4. Act, then verify
 
 Apply the chosen remedy, then confirm before doing anything else:
@@ -142,7 +186,14 @@ Prefer a script restart first; if it does not hold, you may escalate **once** to
 
 ## 5. Notify — every run, success or not
 
-Send a push to the operator's phone. This reuses the app's Web Push pipe from inside the app pod; `force` delivers to every subscription (incident alerts must reach the operator even if they never opted into a category) and `ignoreRateLimit` bypasses the throttle. The `type` string is only the rate-limit key:
+Send a push to the operator's phone. This reuses the app's Web Push pipe from inside the app pod; `force` delivers to every subscription (incident alerts must reach the operator even if they never opted into a category) and `ignoreRateLimit` bypasses the throttle. The `type` string is only the rate-limit key.
+
+**Tone is set by §1.5**, not by the trigger label:
+
+- **Any §1.5 check flagged.** The notification is alertive. Lead with the broken thing and its operational impact, then what you did (or why you held off), then current state. Example body: *"Greenhouse 14 °C, heating NOT running: valve controller .51 offline (WiFi), sensors silent 35 min. Script auto-restarted but end-to-end system is down. Manual attention needed on-site."* Set the title to something the operator can't ignore on a phone banner (e.g. `"Greenhouse HEATING DOWN"`), not the generic `"Greenhouse incident"`.
+- **All §1.5 checks passed.** The notification is observational — one to two sentences. Example body: *"Control script briefly stopped at 21:58 UTC, auto-restarted within 30 s. All post-crash checks passed (reachability, sensor freshness, mode-vs-conditions, no failed transitions, no watchdog bans)."*
+
+Don't ever describe a state as "self-healed" without spelling out that §1.5 passed — the phrase reassures the operator, and the reassurance must be earned.
 
 ```bash
 kubectl exec deploy/app -c app -n default -- node -e '
@@ -150,8 +201,8 @@ kubectl exec deploy/app -c app -n default -- node -e '
   push.init(function (err) {
     if (err) { console.error("push init failed:", err.message); process.exit(1); }
     push.sendNotification("script_crash", {
-      title: "Greenhouse incident",
-      body: "ONE or two sentences: what happened, what you did (or why you held off), current status",
+      title: "Greenhouse incident",          // → "Greenhouse HEATING DOWN" (or similar) when §1.5 flagged
+      body: "<see tone guidance above>",
       tag: "incident",
       data: { url: "/#status" }
     }, { force: true, ignoreRateLimit: true });
