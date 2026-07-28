@@ -1686,6 +1686,18 @@ button.primary:disabled {
 
 .staleness-banner.visible { display: block; }
 
+/* Loud variant: the controller has been silent for several minutes and
+   everything on screen is stale. Full-strength error styling so the
+   condition can't be missed at a glance (2026-07-28 incident: silent
+   controller behind a calm green "Live" Status view). */
+.staleness-banner--long {
+  background: var(--error);
+  color: #1c0e0d;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 14px 16px;
+}
+
 /* ── Update Toast (top-right, compact) ── */
 .update-toast {
   position: fixed;
