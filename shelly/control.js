@@ -90,20 +90,27 @@ var SENSOR_CONFIG_KVS_KEY = "sensor_config";
 // translate a watchdog id to the mode code stored in wb.
 var WATCHDOG_MODE = { sng: "SC", scs: "SC", ggr: "GH" };
 
-// Each valve has TWO addresses (h[0] wired, h[1] WiFi): the Pro devices
-// share an isolated Ethernet switch with static IPs on 192.168.31.0/24
-// (see system.yaml shelly_components.networking). setValve alternates
-// h[n % 2] per attempt, so the wire is tried first and a dead cable or
-// unprovisioned device degrades to WiFi-only behaviour — never worse.
+// Each valve has TWO addresses (wired-first, WiFi fallback): the Pro
+// devices share an isolated Ethernet switch with static IPs on
+// 192.168.31.0/24 (system.yaml shelly_components.networking). setValve
+// alternates the subnet prefix per attempt (even → EP wire, odd → WP
+// WiFi), so a dead cable or unprovisioned device degrades to WiFi-only
+// behaviour — never worse. Stored as two shared prefix constants + a
+// per-valve host octet, NOT per-valve IP strings/arrays: the h:[eth,wifi]
+// array form added ~0.5 KB resident JsVars and OOM-crash-looped the 4PM
+// during the first post-recovery transition (2026-07-28 21:58/23:32/23:37
+// UTC). This shape is smaller than even the original one-IP-per-valve map.
+var EP = "192.168.31.";
+var WP = "192.168.30.";
 var VALVES = {
-  vi_btm:  {h: ["192.168.31.51", "192.168.30.51"], id: 0},
-  vi_top:  {h: ["192.168.31.51", "192.168.30.51"], id: 1},
-  vi_coll: {h: ["192.168.31.52", "192.168.30.52"], id: 0},
-  vo_coll: {h: ["192.168.31.52", "192.168.30.52"], id: 1},
-  vo_rad:  {h: ["192.168.31.53", "192.168.30.53"], id: 0},
-  vo_tank: {h: ["192.168.31.53", "192.168.30.53"], id: 1},
+  vi_btm:  {o: "51", id: 0},
+  vi_top:  {o: "51", id: 1},
+  vi_coll: {o: "52", id: 0},
+  vo_coll: {o: "52", id: 1},
+  vo_rad:  {o: "53", id: 0},
+  vo_tank: {o: "53", id: 1},
   // .54 id 1 is a reserved spare (passive T joint at collector top — spec 024)
-  v_air:   {h: ["192.168.31.54", "192.168.30.54"], id: 0},
+  v_air:   {o: "54", id: 0},
 };
 
 // Canonical valve-name list, hoisted once (was duplicated in
@@ -298,7 +305,7 @@ function setValve(name, open, cb) {
   function tryOnce(res, err) {
     if (res !== undefined && !err && res && res.code === 200) { done(true); return; }
     if (n >= VSA) { done(false); return; }
-    var url = "http://" + v.h[n % v.h.length] + q;
+    var url = "http://" + (n % 2 === 0 ? EP : WP) + v.o + q;
     n++;
     Shelly.call("HTTP.GET", {url: url, timeout: HTO}, tryOnce);
   }
@@ -654,10 +661,13 @@ function handleForcedModeChange(prev, next) {
 // e2e code that reads this field keeps working.
 
 // Bounded-parallelism actuation. Shelly scripts have a 5-concurrent-HTTP
-// limit; we reserve one slot for telemetry / relay-command queue and cap
-// the actuation pool at 4 (T050b). The pool logic is in control-logic.js
-// (runBoundedPool) so it is unit-testable.
-var VALVE_PARALLELISM = 4;
+// limit; we reserve one slot for telemetry / relay-command queue. Capped
+// at 2 (down from 4 — 2026-07-28 OOM crash-loop): each in-flight HTTP call
+// holds a firmware buffer + callback graph, and the transition peak is the
+// script's historical OOM point. maxConcurrentOpens is 2 and per-mode
+// valve sets are ≤3, so the wall-clock cost of the smaller pool is nil.
+// The pool logic is in control-logic.js (runBoundedPool), unit-testable.
+var VALVE_PARALLELISM = 2;
 
 function runValveBatch(pairs, cb) {
   runBoundedPool(pairs, VALVE_PARALLELISM, function(pair, inner) {
