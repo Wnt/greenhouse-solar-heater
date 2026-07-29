@@ -1,0 +1,14 @@
+{
+  "_comment": "Memory budget for the on-device control script (2026-07-28 OOM crash-loop postmortem). The Gen2 per-script JsVar pool is FIXED at 25,186 bytes (used+free, same on the 4PM and the spare 2PM); resident usage tracks the deploy-shape (minified) source size, so CI caps that size here. scripts/check-shelly-script-size.mjs enforces it (CI static-checks + pre-push hook). RAISING maxMinifiedBytes requires a fresh on-device calibration: deploy the candidate, drive (or wait for) a mode transition, read Script.GetStatus mem_peak — or run scripts/spare-2pm-memcheck.mjs — and record the numbers below. Growth is only allowed while measured transition-peak headroom stays healthy; at the 2026-07-29 calibration the peak headroom was 294 bytes, so effectively: shrink first, then grow.",
+  "files": ["control-logic.js", "control.js"],
+  "maxMinifiedBytes": 47600,
+  "jsvarPoolBytes": 25186,
+  "calibration": {
+    "date": "2026-07-29",
+    "minifiedBytes": 47469,
+    "idleMemUsed": 19558,
+    "idleMemFree": 5628,
+    "transitionMemPeak": 24892,
+    "note": "Measured live on the Pro 4PM right after the slimmed dual-path script entered GREENHOUSE_HEATING over the wired path. Peak headroom 25186-24892=294 B."
+  }
+}

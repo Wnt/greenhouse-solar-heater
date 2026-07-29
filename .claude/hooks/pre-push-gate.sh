@@ -203,6 +203,7 @@ run_step "lint"                 npm run lint --silent
 run_step "knip"                 npm run knip --silent
 run_step "file-size (strict)"   npm run check:file-size --silent -- --strict
 run_step "assets (strict)"      npm run check:assets --silent -- --strict
+run_step "shelly-mem-budget"    npm run check:shelly-size --silent
 
 # ── Unit tests, then Playwright (sequential, ~65 s total) ─────────────
 # CI runs these in parallel, but on the Claude Cloud sandbox the
