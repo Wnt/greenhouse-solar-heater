@@ -305,9 +305,9 @@ provision_eth() {
 if [ -z "$USER_TARGET" ] && [ -n "${ETH_PRO4PM:-}" ]; then
   echo ""
   echo "Provisioning static-IP Ethernet control path..."
-  eth_wifi_ips=("$PRO4PM" "${PRO2PM_1:-}" "${PRO2PM_2:-}" "${PRO2PM_3:-}" "${PRO2PM_4:-}")
-  eth_static_ips=("${ETH_PRO4PM:-}" "${ETH_PRO2PM_1:-}" "${ETH_PRO2PM_2:-}" "${ETH_PRO2PM_3:-}" "${ETH_PRO2PM_4:-}")
-  for ei in 0 1 2 3 4; do
+  eth_wifi_ips=("$PRO4PM" "${PRO2PM_1:-}" "${PRO2PM_2:-}" "${PRO2PM_3:-}" "${PRO2PM_4:-}" "${SENSOR_1:-}" "${SENSOR_2:-}")
+  eth_static_ips=("${ETH_PRO4PM:-}" "${ETH_PRO2PM_1:-}" "${ETH_PRO2PM_2:-}" "${ETH_PRO2PM_3:-}" "${ETH_PRO2PM_4:-}" "${ETH_SENSOR_1:-}" "${ETH_SENSOR_2:-}")
+  for ei in 0 1 2 3 4 5 6; do
     if [ -n "${eth_wifi_ips[$ei]}" ] && [ -n "${eth_static_ips[$ei]}" ]; then
       provision_eth "${eth_wifi_ips[$ei]}" "${eth_static_ips[$ei]}"
     fi
@@ -441,16 +441,12 @@ apply_device_names() {
     # switch 1 = reserved spare (spec 024 removed the collector-top return valve).
     # Left unnamed so any future manual label in the Shelly app survives deploys.
   fi
-  if [ -n "${PRO2PM_5:-}" ]; then
-    echo "Pro 2PM #5 @ $PRO2PM_5:"
-    set_device_name  "$PRO2PM_5" "GH Valves 5 (spare)"
-  fi
-
-  # Sensor hubs (Plus 1 + Add-on). Device-level name only; temperature
-  # components are named by sensor-apply when roles are assigned.
+  # Sensor hub (Pro 2PM + 1-Wire Add-on — the former valve-spare unit).
+  # Device-level name only; temperature components are named by
+  # sensor-apply when roles are assigned.
   if [ -n "${SENSOR_1:-}" ]; then
-    echo "Sensor hub 1 @ $SENSOR_1:"
-    set_device_name  "$SENSOR_1" "GH Sensors 1"
+    echo "Sensor hub @ $SENSOR_1:"
+    set_device_name  "$SENSOR_1" "GH Sensors"
   fi
   if [ -n "${SENSOR_2:-}" ]; then
     echo "Sensor hub 2 @ $SENSOR_2:"

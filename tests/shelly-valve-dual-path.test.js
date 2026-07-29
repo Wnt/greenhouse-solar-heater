@@ -38,6 +38,9 @@ function createRuntime(opts) {
   // valveResponder(url, host, atMs) → { code } | null (null = 200 OK)
   const valveResponder = opts.valveResponder || null;
   const sensorTemps = opts.sensorTemps || (() => SOLAR_TEMPS);
+  // sensorHostOk(host) → false to fail sensor polls on that host (dual-path
+  // sensor-hub tests). Default: every host answers.
+  const sensorHostOk = opts.sensorHostOk || (() => true);
 
   function shellyCall(method, params, cb) {
     params = params || {};
@@ -47,6 +50,10 @@ function createRuntime(opts) {
       const kind = isSensor ? 'sensor' : (url.indexOf('Switch.Set') >= 0 ? 'set' : 'other');
       httpCalls.push({ url, host: urlHost(url), atMs: now, kind });
       if (isSensor) {
+        if (!sensorHostOk(urlHost(url))) {
+          setImmediate(() => { if (cb) cb({ code: 500, body: '{}' }, 'fail'); });
+          return;
+        }
         let sensor = 'collector';
         const m = url.match(/id=(\d+)/);
         if (m) sensor = CID_TO_SENSOR[parseInt(m[1], 10)] || 'collector';
@@ -150,7 +157,7 @@ const SENSOR_CONFIG = JSON.stringify({
     collector: { h: 0, i: 100 }, tank_top: { h: 0, i: 101 }, tank_bottom: { h: 0, i: 102 },
     greenhouse: { h: 0, i: 103 }, outdoor: { h: 0, i: 104 },
   },
-  h: ['192.168.30.20'], v: 1,
+  h: ['192.168.30.55'], v: 1,
 });
 const DEVICE_CONFIG = JSON.stringify({ ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, tu: {}, v: 1 });
 
@@ -209,5 +216,47 @@ describe('dual-path valve actuation: Ethernet primary', () => {
     const wifiUsed = rt.httpCalls.filter(c => c.kind === 'set' && isWifi(c.host));
     assert.ok(ethTried.length > 0, 'the wired address must be attempted first');
     assert.ok(wifiUsed.length > 0, 'the WiFi address must be used as fallback');
+  });
+});
+
+// ── Dual-path sensor polling (Pro 2PM + Add-on hubs, 2026-07 migration) ──
+// The sensor hubs moved from WiFi-only Shelly 1 Gen3 to Ethernet-capable
+// Pro 2PM + Add-on. pollSensor derives the wired address (192.168.31.<hub
+// octet>) and tries it first, falling back to the WiFi address from
+// sensor-config — sensing survives a WiFi outage entirely.
+describe('dual-path sensor polling: Ethernet primary', () => {
+  it('polls temps over the wire when WiFi sensor hosts are dead', async () => {
+    const rt = createRuntime({
+      kvs: { config: DEVICE_CONFIG, sensor_config: SENSOR_CONFIG },
+      sensorTemps: () => SOLAR_TEMPS,
+      // WiFi hub address dead; wired answers.
+      sensorHostOk: (host) => !/^192\.168\.30\./.test(host || ''),
+    });
+    await boot(rt);
+    await rt.run(90000);
+
+    const ethPolls = rt.httpCalls.filter(c => c.kind === 'sensor' && isEth(c.host));
+    assert.ok(ethPolls.length >= 5, 'sensor polls must go to the wired island, got ' + ethPolls.length);
+    // Temps arrived → the evaluator saw SOLAR conditions and left idle.
+    assert.strictEqual(rt.lastState().mode, 'solar_charging',
+      'control must run on wired-only sensor data');
+  });
+
+  it('falls back to the WiFi hub address when the wire is down (pre-swap hubs)', async () => {
+    const rt = createRuntime({
+      kvs: { config: DEVICE_CONFIG, sensor_config: SENSOR_CONFIG },
+      sensorTemps: () => SOLAR_TEMPS,
+      // Wired island has no sensor hub yet (old WiFi-only hardware).
+      sensorHostOk: (host) => !isEth(host),
+    });
+    await boot(rt);
+    await rt.run(90000);
+
+    const ethTried = rt.httpCalls.filter(c => c.kind === 'sensor' && isEth(c.host));
+    const wifiUsed = rt.httpCalls.filter(c => c.kind === 'sensor' && /^192\.168\.30\.55$/.test(c.host || ''));
+    assert.ok(ethTried.length > 0, 'the wired hub address must be attempted first');
+    assert.ok(wifiUsed.length >= 5, 'polls must fall back to the WiFi hub address');
+    assert.strictEqual(rt.lastState().mode, 'solar_charging',
+      'control must keep running on the WiFi fallback');
   });
 });
