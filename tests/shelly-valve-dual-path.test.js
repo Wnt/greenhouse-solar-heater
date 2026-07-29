@@ -219,44 +219,31 @@ describe('dual-path valve actuation: Ethernet primary', () => {
   });
 });
 
-// ── Dual-path sensor polling (Pro 2PM + Add-on hubs, 2026-07 migration) ──
-// The sensor hubs moved from WiFi-only Shelly 1 Gen3 to Ethernet-capable
-// Pro 2PM + Add-on. pollSensor derives the wired address (192.168.31.<hub
-// octet>) and tries it first, falling back to the WiFi address from
-// sensor-config — sensing survives a WiFi outage entirely.
-describe('dual-path sensor polling: Ethernet primary', () => {
-  it('polls temps over the wire when WiFi sensor hosts are dead', async () => {
+// ── Sensor polling stays WiFi-only (firmware-crash regression pin) ──
+// A wired-first sensor poll (eth island first, WiFi fallback) was deployed
+// 2026-07-29 and hard-reboot-looped the Pro 4PM: HTTP.GET to an eth-island
+// address with no live host (ARP never resolves) crashes fw 1.7.x within
+// one poll cycle. These tests PIN the revert: sensor polls must go only to
+// the configured (WiFi) host. Do not resurrect eth-first polling without
+// first understanding that firmware behavior on the spare hub — see
+// design/docs/sensor-hub-pro-migration.md.
+describe('sensor polling is single-path (firmware-crash regression pin)', () => {
+  it('polls only the configured host — never a derived eth-island address', async () => {
     const rt = createRuntime({
       kvs: { config: DEVICE_CONFIG, sensor_config: SENSOR_CONFIG },
       sensorTemps: () => SOLAR_TEMPS,
-      // WiFi hub address dead; wired answers.
-      sensorHostOk: (host) => !/^192\.168\.30\./.test(host || ''),
     });
     await boot(rt);
     await rt.run(90000);
 
-    const ethPolls = rt.httpCalls.filter(c => c.kind === 'sensor' && isEth(c.host));
-    assert.ok(ethPolls.length >= 5, 'sensor polls must go to the wired island, got ' + ethPolls.length);
-    // Temps arrived → the evaluator saw SOLAR conditions and left idle.
-    assert.strictEqual(rt.lastState().mode, 'solar_charging',
-      'control must run on wired-only sensor data');
-  });
-
-  it('falls back to the WiFi hub address when the wire is down (pre-swap hubs)', async () => {
-    const rt = createRuntime({
-      kvs: { config: DEVICE_CONFIG, sensor_config: SENSOR_CONFIG },
-      sensorTemps: () => SOLAR_TEMPS,
-      // Wired island has no sensor hub yet (old WiFi-only hardware).
-      sensorHostOk: (host) => !isEth(host),
-    });
-    await boot(rt);
-    await rt.run(90000);
-
-    const ethTried = rt.httpCalls.filter(c => c.kind === 'sensor' && isEth(c.host));
-    const wifiUsed = rt.httpCalls.filter(c => c.kind === 'sensor' && /^192\.168\.30\.55$/.test(c.host || ''));
-    assert.ok(ethTried.length > 0, 'the wired hub address must be attempted first');
-    assert.ok(wifiUsed.length >= 5, 'polls must fall back to the WiFi hub address');
-    assert.strictEqual(rt.lastState().mode, 'solar_charging',
-      'control must keep running on the WiFi fallback');
+    const sensorPolls = rt.httpCalls.filter(c => c.kind === 'sensor');
+    assert.ok(sensorPolls.length >= 5, 'expected sensor polls, got ' + sensorPolls.length);
+    const ethPolls = sensorPolls.filter(c => isEth(c.host));
+    assert.strictEqual(ethPolls.length, 0,
+      'sensor polls must NEVER dial the eth island (fw hard-reboot, 2026-07-29): ' +
+      ethPolls.map(c => c.url).join(', '));
+    assert.ok(sensorPolls.every(c => c.host === '192.168.30.55'),
+      'every sensor poll goes to the configured WiFi host');
+    assert.strictEqual(rt.lastState().mode, 'solar_charging', 'control runs normally');
   });
 });

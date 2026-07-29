@@ -364,11 +364,18 @@ control:
         pro2pm_4: { wifi: 192.168.30.54, eth: 192.168.31.54 }
         pro2pm_5: { wifi: 192.168.30.55, eth: 192.168.31.55 }  # sensor hub (former valve spare, carries the 1-Wire Add-on)
       sensor_polling: >
-        The 4PM polls the sensor hub wired-first (eth island, derived as
-        192.168.31.<last octet of the WiFi IP>) with WiFi fallback — same
-        dual-path pattern as valve commands. The server's sensor-discovery
-        and sensor-config-apply talk to the hub over its WiFi address
-        (the pod's VPN cannot route into the isolated island).
+        The 4PM polls the sensor hub over WiFi (single-path). Wired-first
+        polling was deployed 2026-07-29 and hard-reboot-looped the 4PM:
+        an HTTP.GET to an eth-island address with no live host behind it
+        (ARP never resolves) crashes fw 1.7.x within one poll cycle —
+        reverted the same night, regression-pinned in
+        tests/shelly-valve-dual-path.test.js. Re-attempt only after the
+        firmware behavior is understood on the spare hub. The valve
+        dual-path is stable because every valve eth endpoint is
+        provisioned and alive — but it carries the same latent risk if a
+        valve unit's cable dies while its WiFi answers. The server's
+        sensor-discovery and sensor-config-apply talk to the hub over its
+        WiFi address (the pod's VPN cannot route into the island).
 
     shelly_pro_4pm:
       quantity: 1
