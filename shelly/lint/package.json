@@ -10,7 +10,7 @@
     "lint": "node bin/shelly-lint.js"
   },
   "dependencies": {
-    "acorn": "^8.17.0",
+    "acorn": "^8.18.0",
     "js-yaml": "^5.2.2"
   }
 }
