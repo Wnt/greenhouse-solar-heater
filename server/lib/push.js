@@ -305,16 +305,10 @@ function buildMockPayload(category) {
     };
   }
   if (category === 'valve_failure') {
-    // Mirrors the real body built in notifications.js checkValveFailure,
-    // quoting the device's actual retry window.
     return {
       title: '[Test] Valve Command Failed',
-      body: (function () {
-        const win = require('../../shelly/control-logic.js').VALVE_RETRY.windowMs;
-        return 'A valve did not respond after ' + Math.round(win / 60000) +
-               ' minutes of retries. The controller could not enter Greenhouse Heating ' +
-               'and returned to Idle. Check that the valve controllers are powered and reachable on the network.';
-      })(),
+      body: 'A valve did not respond. The controller could not enter Greenhouse Heating ' +
+            'and returned to Idle. Check that the valve controllers are powered and reachable on the network.',
       tag: 'test-valve-failure',
       icon: iconFor(category),
       url: '/#status',

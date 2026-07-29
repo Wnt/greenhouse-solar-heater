@@ -635,11 +635,10 @@ describe('notifications', () => {
     it('fires when a transition ends with cause=failed', () => {
       // Device enters a staged transition (pump_stop emit)...
       notifications.evaluate({ temps: {}, mode: 'idle', transitioning: true, cause: 'automation', eval_reason: 'greenhouse_enter' });
-      // ...and the retry window exhausts: terminal failed snapshot.
+      // ...and the valve batch fail-safes: terminal failed snapshot.
       notifications.evaluate({ temps: {}, mode: 'idle', transitioning: false, cause: 'failed', eval_reason: 'greenhouse_enter' });
       assert.strictEqual(valveFailures().length, 1);
       const n = valveFailures()[0];
-      assert.match(n.payload.body, /5 minutes/);
       assert.match(n.payload.body, /Greenhouse Heating/);
       assert.strictEqual(n.payload.tag, 'valve-failure');
       // Delivered like script_crash: forced, so the user gets it without

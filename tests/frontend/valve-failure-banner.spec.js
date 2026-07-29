@@ -5,11 +5,10 @@
  * Field incident 2026-07-28: Valve Control 1 flapped WiFi, every Greenhouse
  * Heating entry died with cause="failed" — yet the Status view read
  * "Greenhouse cold — heating" with a calm STABLE gauge, so the failure was
- * invisible at first glance. The device now retries for 5 minutes before
- * bailing (VALVE_RETRY), and when it does bail the UI must shout: a global
- * banner (visible on every view, like the script-crash banner) appears while
- * the latest snapshot carries cause="failed" and disappears as soon as a
- * transition succeeds.
+ * invisible at first glance. When the transition does bail the UI must shout:
+ * a global banner (visible on every view, like the script-crash banner)
+ * appears while the latest snapshot carries cause="failed" and disappears as
+ * soon as a transition succeeds.
  */
 import { test, expect } from './fixtures.js';
 

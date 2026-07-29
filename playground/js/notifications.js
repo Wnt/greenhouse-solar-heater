@@ -18,7 +18,7 @@ const CATEGORIES = [
   { id: 'freeze_warning', label: 'Freeze warning', desc: '15 min before freeze protection' },
   { id: 'offline_warning', label: 'Controller offline', desc: 'Offline/online after 15 min' },
   { id: 'watchdog_fired', label: 'Watchdog fired', desc: 'Expected temperature change failed to materialize' },
-  { id: 'valve_failure', label: 'Valve failure', desc: 'Valve unreachable after 5 min of retries' },
+  { id: 'valve_failure', label: 'Valve failure', desc: 'Valve did not respond; controller returned to Idle' },
 ];
 
 function $(id) {
