@@ -362,8 +362,13 @@ control:
         pro2pm_2: { wifi: 192.168.30.52, eth: 192.168.31.52 }
         pro2pm_3: { wifi: 192.168.30.53, eth: 192.168.31.53 }
         pro2pm_4: { wifi: 192.168.30.54, eth: 192.168.31.54 }
-        pro2pm_5: { wifi: 192.168.30.55, eth: 192.168.31.55 }  # spare unit
-        sensor_hubs: WiFi only (Shelly 1 Gen3 has no Ethernet port)
+        pro2pm_5: { wifi: 192.168.30.55, eth: 192.168.31.55 }  # sensor hub (former valve spare, carries the 1-Wire Add-on)
+      sensor_polling: >
+        The 4PM polls the sensor hub wired-first (eth island, derived as
+        192.168.31.<last octet of the WiFi IP>) with WiFi fallback — same
+        dual-path pattern as valve commands. The server's sensor-discovery
+        and sensor-config-apply talk to the hub over its WiFi address
+        (the pod's VPN cannot route into the isolated island).
 
     shelly_pro_4pm:
       quantity: 1
@@ -402,24 +407,31 @@ control:
           O1: v_air (collector top → open air, drain air intake)
           O2: unassigned  # reserved spare — passive T joint connects collector top to reservoir (spec 024 removed the previous collector-top return valve)
 
-    shelly_1_gen3_addon:
+    pro_2pm_sensor_hub:
       quantity: 1
-      role: temperature sensor hub
-      model: Shelly 1 Gen3 (replaces discontinued Shelly Plus 1)
-      addon: Shelly Plus Add-on (1-Wire interface)
+      role: temperature sensor hub (Ethernet-capable)
+      model: Shelly Pro 2PM + sensor Add-on (1-Wire interface)
+      device: the former valve-spare unit ("GH Valves 5", 192.168.30.55 / 192.168.31.55)
+      replaces: >
+        2× Shelly 1 Gen3 + Plus Add-on (WiFi-only — no Ethernet port).
+        Replaced 2026-07 so sensing survives WiFi outages: the 4PM polls the
+        hub wired-first over the Ethernet island, WiFi fallback (see
+        design/docs/sensor-hub-pro-migration.md for the swap runbook).
+        There is no valve-spare unit anymore (only the spare relay on
+        Pro 2PM unit_4 output 2).
+      relay_outputs: 2 (unused — sensor duty only)
       sensors_connected:
         - t_collector (collector outlet, 280cm)
         - t_tank_top (tank upper region)
         - t_tank_bottom (tank lower region)
         - t_greenhouse (greenhouse air)
         - t_outdoor (outside, shaded)
-      optional_sensors:
-        - t_radiator_in (radiator inlet)
-        - t_radiator_out (radiator outlet)
       note: >
-        DS18B20 sensors share a single 1-Wire bus. Add-on supports up to 5
-        sensors natively. If 7 sensors are needed, a second Add-on may be
-        required or sensors can be split across two hubs.
+        All 5 DS18B20 probes share the hub's single 1-Wire bus — exactly at
+        the Add-on's 5-sensor limit, so the optional radiator pair
+        (t_radiator_in/out) cannot be connected without a second Add-on or
+        hub. The authoritative live role→address mapping is the server's
+        sensor-config (Settings → Sensors), not this file.
 
   shopping_list:
     note: >

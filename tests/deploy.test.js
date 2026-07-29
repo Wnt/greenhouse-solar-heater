@@ -382,12 +382,13 @@ describe('deploy.sh', () => {
     const deviceNames = sysCalls
       .map(c => { try { return JSON.parse(c.body).config.device.name; } catch (_) { return null; } })
       .filter(Boolean);
+    // No "GH Valves 5 (spare)" anymore — the former spare unit is the
+    // sensor hub (SENSOR_1, named "GH Sensors" below).
     for (const expected of [
       'GH Valves 1 (input low)',
       'GH Valves 2 (input/coll)',
       'GH Valves 3 (output)',
       'GH Valves 4 (collector top)',
-      'GH Valves 5 (spare)',
     ]) {
       assert.ok(deviceNames.includes(expected),
         `expected device name "${expected}", got: ${deviceNames.join(', ')}`);
@@ -404,13 +405,12 @@ describe('deploy.sh', () => {
     }
   });
 
-  it('names both sensor hubs at the device level only (no switch rename)', () => {
+  it('names the sensor hub at the device level only (no switch rename)', () => {
     const sysCalls = mock.calls.filter(c => c.url.includes('Sys.SetConfig'));
     const deviceNames = sysCalls
       .map(c => { try { return JSON.parse(c.body).config.device.name; } catch (_) { return null; } })
       .filter(Boolean);
-    assert.ok(deviceNames.includes('GH Sensors 1'), 'sensor hub 1 should be named');
-    assert.ok(deviceNames.includes('GH Sensors 2'), 'sensor hub 2 should be named');
+    assert.ok(deviceNames.includes('GH Sensors'), 'the sensor hub should be named');
   });
 });
 
@@ -675,6 +675,7 @@ describe('deploy.sh ethernet provisioning', () => {
       'ETH_PRO4PM=192.168.31.50',
       'ETH_PRO2PM_1=192.168.31.51', 'ETH_PRO2PM_2=192.168.31.52',
       'ETH_PRO2PM_3=192.168.31.53', 'ETH_PRO2PM_4=192.168.31.54',
+      'ETH_SENSOR_1=192.168.31.55',
       '',
     ].join('\n'));
   });
@@ -684,7 +685,7 @@ describe('deploy.sh ethernet provisioning', () => {
     await new Promise((resolve) => mock.server.close(resolve));
   });
 
-  it('provisions a static eth IP on the 4PM and each valve 2PM before the script upload', async () => {
+  it('provisions a static eth IP on the 4PM, valve 2PMs and the sensor hub before the script upload', async () => {
     const result = await spawnDeploy([], { MQTT_PROVISION_RETRY_DELAY: '0' });
     assert.strictEqual(result.code, 0,
       'deploy should succeed\nstdout: ' + result.stdout + '\nstderr: ' + result.stderr);
@@ -698,7 +699,7 @@ describe('deploy.sh ethernet provisioning', () => {
       assert.strictEqual(cfg.netmask, '255.255.255.0');
       return cfg.ip;
     });
-    for (const ip of ['192.168.31.50', '192.168.31.51', '192.168.31.52', '192.168.31.53', '192.168.31.54']) {
+    for (const ip of ['192.168.31.50', '192.168.31.51', '192.168.31.52', '192.168.31.53', '192.168.31.54', '192.168.31.55']) {
       assert.ok(ips.includes(ip), `expected static eth IP ${ip} to be provisioned`);
     }
 

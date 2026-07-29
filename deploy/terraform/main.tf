@@ -334,7 +334,11 @@ resource "kubernetes_config_map" "app_config" {
     SETUP_WINDOW_MINUTES        = "30"
     NODE_ENV                    = "production"
     MQTT_HOST                   = "localhost"
-    SENSOR_HOST_IPS             = "192.168.30.20,192.168.30.21"
+    # Single Pro 2PM + Add-on sensor hub (the former valve-spare .55) —
+    # replaced the two WiFi-only Gen3 hubs (.20/.21), see
+    # design/docs/sensor-hub-pro-migration.md. Apply AT the cutover: the
+    # server derives sensor-config hosts from this list on boot.
+    SENSOR_HOST_IPS             = "192.168.30.55"
     # Resolves each relay's native-status topic prefix back to a device IP so
     # the server can reassemble greenhouse/state (Epic #254). deploy.sh sets
     # every relay device's topic_prefix to its own IP, so this is an identity

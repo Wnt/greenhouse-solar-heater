@@ -360,18 +360,27 @@ function seedValveOpenSinceOnBoot() {
   state.transitionTimer = null;
 }
 
+// Dual-path like setValve: attempt 1 goes to the wired island (EP + the
+// hub's host octet — the Pro 2PM sensor hubs are cabled like the valve
+// units), attempt 2 to the full WiFi address from sensor-config. A hub
+// that is WiFi-only (pre-migration) just costs one HTO timeout per poll
+// until the swap. Explicit short timeout (#262) on both attempts: a
+// dropped/partial response fails fast instead of holding a firmware
+// connection buffer on the long default.
 function pollSensor(name, hostIp, componentId, cb) {
-  var url = "http://" + hostIp + "/rpc/Temperature.GetStatus?id=" + componentId;
-  // Explicit short timeout (#262): a dropped/partial response fails fast
-  // instead of holding a firmware connection buffer on the long default.
-  Shelly.call("HTTP.GET", {url: url, timeout: HTO}, function(res, err) {
-    if (err || !res || res.code !== 200 || !res.body || res.body.indexOf("tC") < 0) {
-      if (cb) cb(name, null);
+  var q = "/rpc/Temperature.GetStatus?id=" + componentId;
+  var n = 0;
+  function go(res, err) {
+    if (res !== undefined && !err && res && res.code === 200 && res.body && res.body.indexOf("tC") >= 0) {
+      if (cb) cb(name, JSON.parse(res.body).tC);
       return;
     }
-    var data = JSON.parse(res.body);
-    if (cb) cb(name, data.tC);
-  });
+    if (n >= 2) { if (cb) cb(name, null); return; }
+    var u = "http://" + (n === 0 ? EP + hostIp.substring(hostIp.lastIndexOf(".") + 1) : hostIp) + q;
+    n++;
+    Shelly.call("HTTP.GET", {url: u, timeout: HTO}, go);
+  }
+  go(undefined, null);
 }
 
 function pollAllSensors(cb) {
@@ -1027,11 +1036,10 @@ function stopDrain(_reason) {
   // hold (FR-007) — same hardware rules as any other mode transition.
   var idleResult = {
     nextMode: MODES.IDLE,
-    valves: {
-      vi_btm: false, vi_top: false, vi_coll: false,
-      vo_coll: false, vo_rad: false, vo_tank: false,
-      v_air: false
-    },
+    // MODE_VALVES.IDLE is exactly the all-closed map; reusing it saves
+    // ~120 B of bytecode vs an inline literal (JsVar budget, see
+    // shelly/script-budget.json).
+    valves: MODE_VALVES[MODES.IDLE],
     actuators: { pump: false, fan: false, space_heater: false, immersion_heater: false },
     flags: {
       collectorsDrained: true,
