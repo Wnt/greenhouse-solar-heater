@@ -1,8 +1,8 @@
 // Loud valve-failure warning banner — global (sibling of the script-crash
 // banner, outside the view sections, so it shows on every view). The device
-// only publishes cause="failed" after exhausting its VALVE_RETRY window
-// (5 min of valve-command retries), and the cause persists in every snapshot
-// until the next successful transition — so the banner tracks the live cause
+// publishes cause="failed" when a staged transition bails after its VSA
+// attempts are exhausted, and the cause persists in every snapshot until
+// the next successful transition — so the banner tracks the live cause
 // directly: no arm/disarm state needed. Without this the Status view read
 // "Greenhouse cold — heating" over a STABLE gauge while every heating
 // attempt was dying (2026-07-28 Valve Control 1 WiFi-flap incident).
@@ -25,7 +25,7 @@ export function updateValveFailureBanner(result) {
   }
   const target = (result.eval_reason && FAILED_TARGET_LABELS[result.eval_reason]) || null;
   msgEl.textContent =
-    'A valve did not respond after 5 minutes of retries' +
+    'A valve did not respond' +
     (target ? ' — the controller could not enter ' + target : '') +
     ' and fell back to Idle. Check that the valve controllers are powered and reachable on the network.';
   bannerEl.style.display = '';

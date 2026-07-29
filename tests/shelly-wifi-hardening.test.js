@@ -19,9 +19,10 @@
  *   3. Last-good staleness cache: a transient failed poll leaves the prior
  *      temp + timestamp in place (no thrash); a sustained loss ages sensorAge
  *      past control-logic's threshold and degrades to IDLE.
- *   4. Valve actuation: short timeout + bounded retry (VSA=2 attempts), and on
- *      exhausted attempts the EXISTING fail-safe is preserved (setValves bails:
- *      pump off, IDLE, lastTransitionCause="failed").
+ *   4. Valve actuation: short timeout + bounded VSA=2 attempts (one wired,
+ *      one WiFi), and on exhausted attempts the fail-safe fires: setValves
+ *      bails to pump off, IDLE, lastTransitionCause="failed" with no retry
+ *      loop.
  *
  * control-logic.js stays pure; all of this lives in control.js.
  */
@@ -351,9 +352,9 @@ describe('Shelly WiFi hardening (#262): valve retry + fail-safe', () => {
 
   it('exhausted valve attempts bail the transition to IDLE (fail-safe preserved)', async () => {
     // Boot closes succeed, device settles in IDLE, then a clean IDLE→SOLAR
-    // transition is attempted whose valve opens ALWAYS fail. The staged
-    // transition retries the batch across the VALVE_RETRY window (5 min);
-    // once exhausted the fail-safe fires: pump off, mode IDLE, cause=failed.
+    // transition is attempted whose valve opens ALWAYS fail. VSA attempts
+    // (wired + WiFi) exhaust immediately and the fail-safe fires: pump off,
+    // mode IDLE, cause=failed.
     let phase = 'boot';
     const rt = createRuntime({
       kvs: { config: DEVICE_CONFIG, sensor_config: SENSOR_CONFIG },
@@ -376,19 +377,17 @@ describe('Shelly WiFi hardening (#262): valve retry + fail-safe', () => {
 
     // Flip the world to SOLAR; the next tick attempts IDLE→SC and the opens
     // fail. The staged transition defers each step (setActuators stop → 1 s
-    // VALVE_SETTLE timer → scheduleStep → bounded valve opens → retry) onto a
-    // fresh timer/setImmediate frame, so we must interleave advance + drain
-    // repeatedly to let the whole chain resolve, not a single advance.
+    // VALVE_SETTLE timer → scheduleStep → VSA-bounded valve opens) onto a
+    // fresh timer/setImmediate frame, so interleave advance + drain
+    // repeatedly to let the whole chain resolve.
     phase = 'solar';
     rt.advance(30000);
-    // Run well past the 5 min VALVE_RETRY window so the retrying transition
-    // reaches the deadline and the fail-safe fires.
-    for (let k = 0; k < 120; k++) { await rt.drain(10); rt.advance(3000); }
+    for (let k = 0; k < 20; k++) { await rt.drain(10); rt.advance(3000); }
     const failed = rt.publishes
       .filter(function (p) { return p.topic === 'greenhouse/state/min'; })
       .map(function (p) { try { return JSON.parse(p.payload); } catch (_e) { return null; } })
       .filter(function (s) { return s && s.cause === 'failed'; });
-    assert.ok(failed.length > 0, 'expected a cause=failed publish after the retry window');
+    assert.ok(failed.length > 0, 'expected a cause=failed publish after VSA attempts exhaust');
     assert.strictEqual(failed[0].mode, 'idle', 'failed valve opens must leave mode IDLE (fail-safe)');
     assert.strictEqual(failed[0].transitioning, false, 'transitioning must be cleared after the bail');
   });

@@ -157,9 +157,9 @@
     </div>
 
     <!-- Global valve-failure banner: shown across every view while the
-         latest controller snapshot carries cause="failed" — the device
-         retried valve commands for the full VALVE_RETRY window and gave
-         up. Clears itself on the next successful transition. -->
+         latest controller snapshot carries cause="failed" — the staged
+         transition exhausted its VSA attempts (wired + WiFi) and fell
+         back to Idle. Clears itself on the next successful transition. -->
     <div id="valve-failure-banner" class="script-crash-banner" style="display:none;" role="alert">
       <div class="script-crash-banner-header">
         <span class="material-symbols-outlined">valve</span>
@@ -939,7 +939,7 @@
             <div class="notif-cat-row">
               <label class="notif-cat-label">
                 <input type="checkbox" id="notif-cat-valve_failure" checked>
-                <span><strong>Valve failure</strong> &mdash; valve unreachable after 5 min of retries</span>
+                <span><strong>Valve failure</strong> &mdash; valve did not respond; controller returned to Idle</span>
               </label>
               <button class="notif-test-btn" type="button" data-test-category="valve_failure" title="Send test notification">
                 <span class="material-symbols-outlined">send</span>

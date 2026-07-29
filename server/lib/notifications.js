@@ -8,9 +8,6 @@ const log = createLogger('notifications');
 // Pull thresholds from control-logic so the notification body always
 // matches what the device actually does (freeze 4°C, overheat 95°C).
 const CONTROL_DEFAULTS = require('../../shelly/control-logic.js').DEFAULT_CONFIG;
-// Same source-of-truth rule for the valve-failure alert: the quoted retry
-// duration is the device's actual retry window, not a hardcoded copy.
-const VALVE_RETRY = require('../../shelly/control-logic.js').VALVE_RETRY;
 
 const {
   HEATING_MODES,
@@ -211,14 +208,15 @@ const VALVE_FAILURE_TARGETS = {
   overheat_drain: 'Active Drain',
 };
 
-// The device retries failed valve commands across VALVE_RETRY.windowMs
-// (5 min — flaky-WiFi valve hosts) before bailing to IDLE with
-// cause="failed". Detect that terminal bail: arm on an observed transition
+// The device bails a staged transition to IDLE with cause="failed" when
+// a valve batch cannot be actuated (wired path down + WiFi fallback
+// down). Detect that terminal bail: arm on an observed transition
 // attempt (transitioning=true), fire when the attempt ends in a failed
-// cause, disarm on any settled state. Force-delivered like script_crash —
-// an uncommandable valve also blocks the freeze/overheat drains, and
-// existing subscriptions predate the category. The push module's
-// 1-per-type-per-hour rate limit throttles repeated retry cycles.
+// cause, disarm on any settled state — the arming keeps a stale failed
+// cause from firing after a server restart. Force-delivered like
+// script_crash — an uncommandable valve also blocks the freeze/overheat
+// drains, and existing subscriptions predate the category. The push
+// module's 1-per-type-per-hour rate limit throttles repeated failures.
 function checkValveFailure(payload) {
   if (payload.transitioning) {
     valveFailureArmed = true;
@@ -228,9 +226,8 @@ function checkValveFailure(payload) {
   valveFailureArmed = false;
   if (!fired) return;
 
-  const minutes = Math.round(VALVE_RETRY.windowMs / 60000);
   const target = VALVE_FAILURE_TARGETS[payload.eval_reason] || null;
-  const body = 'A valve did not respond after ' + minutes + ' minutes of retries. ' +
+  const body = 'A valve did not respond. ' +
     (target
       ? 'The controller could not enter ' + target + ' and returned to Idle.'
       : 'The controller returned to Idle.') +
