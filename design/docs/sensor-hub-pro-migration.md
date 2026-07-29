@@ -3,9 +3,9 @@
 Replaces the two WiFi-only sensor hubs (`.20`/`.21`) with a single
 Ethernet-capable hub: the former valve-spare Pro 2PM (**"GH Valves 5"**,
 WiFi `192.168.30.55` / eth `192.168.31.55`) carrying the 1-Wire sensor
-Add-on. Temperature sensing then rides the wired island and the control
-loop survives WiFi outages entirely — companion to the wired valve-command
-path (PR #285).
+Add-on. The hub is dual-homed (WiFi + the wired island); polling is
+WiFi-only for now (see "Sensor polling" below) — companion to the wired
+valve-command path (PR #285).
 
 ## Decisions (confirmed 2026-07-29)
 
@@ -19,16 +19,21 @@ path (PR #285).
   (`192.168.31.55`) is already provisioned. `SENSOR_HOST_IPS` in
   `deploy/terraform/main.tf` becomes `192.168.30.55` — applied at cutover.
 
-## How wired sensing works after the swap
+## Sensor polling: WiFi for now (wired-first ON HOLD)
 
-`pollSensor` in `shelly/control.js` derives the wired address from the
-configured WiFi address (`192.168.31.<same last octet>`), tries it first,
-falls back to WiFi — identical dual-path pattern to valve commands. No
-sensor-config schema change; the 256-byte KVS cap is untouched.
+A wired-first `pollSensor` (eth island first, WiFi fallback) was deployed
+2026-07-29 and **hard-reboot-looped the Pro 4PM**: an HTTP.GET to an
+eth-island address with no live host behind it (the old hubs — ARP never
+resolves) crashes firmware 1.7.x within one poll cycle. Reverted the same
+night; regression-pinned in `tests/shelly-valve-dual-path.test.js`.
 
-**Transitional cost:** while the merged control script runs against the old
-WiFi-only hubs, every poll pays one 3 s wired-attempt timeout before the
-WiFi fallback answers. Harmless (fits the 30 s tick), but don't linger.
+So after the swap the 4PM polls the hub over **WiFi** (`.30.55`). The hub
+is still dual-homed (eth provisioned at `.31.55`) — once the firmware
+behavior is understood (test on the hub itself: from the 4PM, HTTP.GET a
+deliberately-dead island address, e.g. `192.168.31.99`, and see whether it
+reboots), wired-first polling can be re-attempted. Until then a full WiFi
+outage still stales sensors and parks control in Idle (safe, but not
+autonomous) — valve commands stay wired regardless.
 
 ## Runbook
 
@@ -73,15 +78,15 @@ component ids, so discovery + apply must re-run:
 
 ### 4. Verify
 1. Status view shows live temps within a minute; graphs resume.
-2. Wired-path proof / full WiFi-outage drill (recommended): with heating
-   active, disable the IoT SSID for 5+ minutes. Expected: control keeps
-   running — valve commands AND sensor polls on the wire; the app shows the
-   loud stale banner + eventually the Controller Offline push (the 4PM's
-   uplink is WiFi — you lose telemetry, the greenhouse does not lose heat).
-   Re-enable and confirm recovery.
+2. NOTE: the WiFi-outage drill is on hold with wired-first polling
+   reverted — a WiFi outage stales sensors and parks control in Idle
+   (safe degrade). Verify instead that temps flow and heating re-enters
+   normally after the swap.
 
 ## What still depends on WiFi after this migration
+- Sensor polling (wired-first on hold — see above), so a full WiFi outage
+  still parks control in Idle via the sensor-stale degrade.
 - The 4PM's uplink: MQTT/VPN/telemetry/app/script deploys (the island has
   no upstream).
 - Server→hub management (sensor discovery / config apply) via `.30.55`.
-Heating autonomy no longer does.
+Valve actuation no longer does.

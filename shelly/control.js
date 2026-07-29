@@ -360,27 +360,29 @@ function seedValveOpenSinceOnBoot() {
   state.transitionTimer = null;
 }
 
-// Dual-path like setValve: attempt 1 goes to the wired island (EP + the
-// hub's host octet — the Pro 2PM sensor hubs are cabled like the valve
-// units), attempt 2 to the full WiFi address from sensor-config. A hub
-// that is WiFi-only (pre-migration) just costs one HTO timeout per poll
-// until the swap. Explicit short timeout (#262) on both attempts: a
-// dropped/partial response fails fast instead of holding a firmware
-// connection buffer on the long default.
+// SENSOR POLLING IS DELIBERATELY WiFi-ONLY (single-path). A wired-first
+// dual-path variant (eth island first, WiFi fallback — mirroring setValve)
+// was deployed 2026-07-29 and HARD-REBOOTED the Pro 4PM in a loop: an
+// HTTP.GET to an eth-island address with no live host behind it (the old
+// WiFi-only hubs, so ARP never resolved) crashed the firmware (1.7.x)
+// within one poll cycle, ~25 s after every boot. Rolled back on-device the
+// same night. Do NOT re-add eth-first polling until that firmware behavior
+// is understood on the spare hub — and note the valve dual-path carries
+// the same latent risk if a valve unit's cable ever dies while its WiFi
+// answers; the valve endpoints' eth is provisioned and alive, which is
+// why that path has been stable.
 function pollSensor(name, hostIp, componentId, cb) {
-  var q = "/rpc/Temperature.GetStatus?id=" + componentId;
-  var n = 0;
-  function go(res, err) {
-    if (res !== undefined && !err && res && res.code === 200 && res.body && res.body.indexOf("tC") >= 0) {
-      if (cb) cb(name, JSON.parse(res.body).tC);
+  var url = "http://" + hostIp + "/rpc/Temperature.GetStatus?id=" + componentId;
+  // Explicit short timeout (#262): a dropped/partial response fails fast
+  // instead of holding a firmware connection buffer on the long default.
+  Shelly.call("HTTP.GET", {url: url, timeout: HTO}, function(res, err) {
+    if (err || !res || res.code !== 200 || !res.body || res.body.indexOf("tC") < 0) {
+      if (cb) cb(name, null);
       return;
     }
-    if (n >= 2) { if (cb) cb(name, null); return; }
-    var u = "http://" + (n === 0 ? EP + hostIp.substring(hostIp.lastIndexOf(".") + 1) : hostIp) + q;
-    n++;
-    Shelly.call("HTTP.GET", {url: u, timeout: HTO}, go);
-  }
-  go(undefined, null);
+    var data = JSON.parse(res.body);
+    if (cb) cb(name, data.tC);
+  });
 }
 
 function pollAllSensors(cb) {
