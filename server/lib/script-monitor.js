@@ -20,7 +20,13 @@ const DEFAULT_RECENT_STATES = 100;
 // JsVar memory guard (spec 025). Evaluated every 5 min off the freshest 30 s
 // poll — no extra HTTP call, no second timer.
 const DEFAULT_MEM_CHECK_INTERVAL_MS = 5 * 60 * 1000;
-const DEFAULT_MEM_PEAK_RATIO = 0.97;
+// 0.99, not 0.97: the first production firing (2026-08-12 15:06 UTC) showed
+// the script's *routine* post-boot peak is 24528 / 25186 B = 97.4 %, while the
+// starved state that truncated telemetry and stalled mode switching was
+// mem_peak == 25186 == the whole pool. 0.97 cannot tell those apart and would
+// burn the daily reboot budget on normal operation; 0.99 (≈250 B of headroom
+// left at peak) sits above the routine peak and below a fully consumed pool.
+const DEFAULT_MEM_PEAK_RATIO = 0.99;
 const DEFAULT_MEM_CONSECUTIVE_HIGH = 2;
 const DEFAULT_MEM_REBOOT_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 const DEFAULT_MAX_MEM_REBOOTS_PER_DAY = 4;

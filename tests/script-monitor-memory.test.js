@@ -84,6 +84,21 @@ describe('script-monitor memory guard', () => {
     assert.strictEqual(mem.rebootCount, 0);
   });
 
+  // Regression pin for the first production firing: the routine post-boot
+  // peak (24528 of 25186 B = 97.4 %) must NOT count as exhaustion, or the
+  // guard spends its daily budget on healthy operation.
+  it('does not reboot at the routine post-boot peak of 97.4 %', () => {
+    const { monitor, clock, rpc } = setup({ getPeak: () => 24528 });
+    runChecks(monitor, clock, 6);
+    assert.strictEqual(reboots(rpc), 0);
+  });
+
+  it('reboots when the pool is fully consumed', () => {
+    const { monitor, clock, rpc } = setup({ getPeak: () => POOL });
+    runChecks(monitor, clock, 2);
+    assert.strictEqual(reboots(rpc), 1);
+  });
+
   it('does not reboot below the peak ratio threshold', () => {
     const { monitor, clock, rpc } = setup({ getPeak: () => Math.floor(POOL * 0.9) });
     runChecks(monitor, clock, 6);
