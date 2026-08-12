@@ -157,9 +157,25 @@ jobs:
 
       - name: Deploy to Kubernetes
         run: |
-          kubectl set image deployment/app \
-            app=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            openvpn=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-openvpn:${{ github.sha }}
+          # The openvpn sidecar is part of the UpCloud-managed-K8s pod shape.
+          # Cluster shapes that reach the home LAN without an in-pod tunnel run
+          # app+mosquitto only, and `set image` on a container that isn't there
+          # is a hard error — which aborted the deploy *after* patching the app
+          # container, skipping every later step (rollout wait, Shelly deploy).
+          # Build the container list from what the Deployment actually has, and
+          # keep it to ONE set-image call so the Recreate strategy causes one
+          # rollout, not two.
+          IMAGES="app=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          if kubectl get deployment/app \
+               -o jsonpath='{.spec.template.spec.containers[*].name}' \
+               | tr ' ' '\n' | grep -qx openvpn; then
+            IMAGES="$IMAGES openvpn=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-openvpn:${{ github.sha }}"
+          else
+            echo "deployment/app has no openvpn container — skipping its image update"
+          fi
+          # Word-splitting is intended: $IMAGES is a list of container=image args.
+          # shellcheck disable=SC2086
+          kubectl set image deployment/app $IMAGES
           kubectl set image deployment/watcher watcher=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} || true
 
       - name: Wait for rollout
