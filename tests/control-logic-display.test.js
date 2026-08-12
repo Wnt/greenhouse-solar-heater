@@ -2,11 +2,23 @@
 // 2026-04-23 to keep the main test file under the 1200-line hard cap.
 // formatDuration / formatTemp / buildDisplayLabels are pure helpers that
 // don't touch the evaluator state machine, so they make a natural split.
+// They live in shelly/display-labels.js (not control-logic.js): the device
+// never calls them and each top-level declaration costs ~85 B of its JsVar
+// pool — see that file's header for the on-device measurements.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { MODES, formatDuration, formatTemp, buildDisplayLabels } =
-  require('../shelly/control-logic.js');
+const { MODES } = require('../shelly/control-logic.js');
+const { formatDuration, formatTemp, buildDisplayLabels, IDLE_MODE } =
+  require('../shelly/display-labels.js');
+
+describe('display-labels/control-logic coupling', () => {
+  it('IDLE_MODE matches MODES.IDLE', () => {
+    // display-labels.js inlines this string instead of importing control-logic
+    // (see its header). Pin them together so a rename cannot drift silently.
+    assert.strictEqual(IDLE_MODE, MODES.IDLE);
+  });
+});
 
 describe('formatDuration', () => {
   it('formats seconds', () => {

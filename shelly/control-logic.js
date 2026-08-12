@@ -1078,44 +1078,16 @@ function buildSnapshotFromState(st, dc, now) {
 
 // ── Display label helpers (pure, no Shelly calls) ──
 
-var MODE_SHORT = {
-  IDLE: "IDLE",
-  SOLAR_CHARGING: "SOLAR",
-  GREENHOUSE_HEATING: "HEAT",
-  ACTIVE_DRAIN: "DRAIN",
-  EMERGENCY_HEATING: "EMERG",
-};
 
-function formatDuration(ms) {
-  var s = Math.floor(ms / 1000);
-  if (s < 60) return s + "s";
-  var m = Math.floor(s / 60);
-  if (m < 60) return m + "m";
-  var h = Math.floor(m / 60);
-  return h + "h" + (m % 60) + "m";
-}
 
-function formatTemp(t) {
-  if (t === null || t === undefined) return "--";
-  return Math.round(t) + "C";
-}
 
-function buildDisplayLabels(displayState) {
-  var dur = formatDuration(displayState.modeDurationMs);
-  var prefix = MODE_SHORT[displayState.mode] || displayState.mode;
-  var ch0 = prefix + " " + dur;
-  if (displayState.lastError) ch0 = "!" + ch0;
-  if (displayState.collectorsDrained && displayState.mode === MODES.IDLE) ch0 = ch0 + " D";
 
-  var t = displayState.temps;
-  var ch1 = "Coll " + formatTemp(t.collector)
-    + " Tk" + formatTemp(t.tank_top)
-    + "/" + formatTemp(t.tank_bottom);
-  var ch2 = "GH " + formatTemp(t.greenhouse);
-  var ch3 = "Out " + formatTemp(t.outdoor);
-
-  return [ch0, ch1, ch2, ch3];
-}
+// Display-label helpers (formatDuration / formatTemp / buildDisplayLabels /
+// MODE_SHORT) live in shelly/display-labels.js, NOT here. control.js never
+// references them, and every top-level declaration in this file costs ~85 B of
+// the device's fixed 25,186 B JsVar pool just by existing — measured on the
+// spare Pro 2PM 2026-08-12: removing those four dropped the tick peak from
+// 22,932 B to 22,386 B. Keep UI-only helpers out of this file.
 
 // ── Watchdog anomaly detection ──
 //
@@ -1173,10 +1145,6 @@ if (typeof module !== "undefined" && module.exports) {
     buildSnapshotFromState: buildSnapshotFromState,
     buildMinPayload: buildMinPayload,
     runBoundedPool: runBoundedPool,
-    formatDuration: formatDuration,
-    formatTemp: formatTemp,
-    buildDisplayLabels: buildDisplayLabels,
-    MODE_SHORT: MODE_SHORT,
     MODE_CODE: MODE_CODE,
     EA_VALVES: EA_VALVES,
     EA_PUMP: EA_PUMP,

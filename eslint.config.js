@@ -165,11 +165,16 @@ module.exports = [
   // Shelly device scripts — ES5 on Espruino. `shelly/lint/` enforces the
   // platform-specific bans (class, async/await, array methods, etc.); here
   // we just turn off rules that conflict with the ES5 dialect.
+  // display-labels.js is NOT uploaded (each top-level declaration would cost
+  // ~85 B of the device's JsVar pool for code the device never calls), but it
+  // is kept in the same ES5 dialect so it can move onto a device — or into the
+  // browser bundle — unchanged if a display feature ever needs it.
   {
     files: [
       'shelly/control.js',
       'shelly/control-logic.js',
       'shelly/watchdogs-meta.js',
+      'shelly/display-labels.js',
     ],
     languageOptions: {
       ecmaVersion: 5,
