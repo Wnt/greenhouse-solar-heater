@@ -9,6 +9,7 @@ const tracer = trace.getTracer('mqtt-bridge');
 const notifications = require('./notifications');
 const relayStatus = require('./relay-status');
 const stateEvents = require('./state-events');
+const { createTelemetryHealth } = require('./telemetry-health');
 
 // Topic the device publishes its slimmed decision-state payload on
 // (Epic #254). The server assembles the full byte-compatible greenhouse/state
@@ -28,6 +29,8 @@ let sensorConfigRef = null;
 let pushRef = null;
 let anomalyManagerRef = null;
 let stateSnapshotListener = null;
+// Corrupt-telemetry tracker (spec 025 FR-1) — created in start().
+let telemetryHealth = null;
 let previousState = null;
 // Per-relay freshness from the PREVIOUS assembled tick (logical-name →
 // { status, ageMs }). Threaded into detectStateChanges so a valve/actuator
@@ -49,6 +52,12 @@ function isPreviewMode() {
 // throw (start() aborts), so this stays { ok:true } there; it exists for
 // preview mode, where we warn-and-continue but still expose the gap.
 let relayTopicCoverage = { ok: true, missing: [] };
+
+// Corrupt-telemetry status for /api/script-status. Null-safe: the tracker
+// only exists once start() has run.
+function getTelemetryHealth() {
+  return telemetryHealth ? telemetryHealth.getStatus() : null;
+}
 
 function getRelayTopicCoverage() {
   return relayTopicCoverage;
@@ -89,6 +98,12 @@ function start(options) {
   assertRelayTopicCoverage();
 
   notifications.init({ push: pushRef, deviceConfig: deviceConfigRef, db });
+
+  // Corrupt-telemetry guard (spec 025): a starved JsVar pool makes the device
+  // publish truncated state payloads. Preview pods track but never push.
+  telemetryHealth = createTelemetryHealth({
+    push: isPreviewMode() ? null : pushRef,
+  });
 
   const host = options.mqttHost || process.env.MQTT_HOST || '127.0.0.1';
   const port = options.mqttPort || process.env.MQTT_PORT || 1883;
@@ -184,10 +199,12 @@ function start(options) {
       minPayload = JSON.parse(message.toString());
     } catch (e) {
       log.warn('invalid JSON on ' + STATE_MIN_TOPIC, { error: e.message });
+      if (telemetryHealth) telemetryHealth.recordInvalid(e.message);
       span.end();
       return;
     }
 
+    if (telemetryHealth) telemetryHealth.recordValid();
     handleStateMin(minPayload);
     span.end();
   });
@@ -549,6 +566,7 @@ module.exports = {
   publishDiscoveryRequest,
   handleStateMessage,
   handleStateMin,
+  getTelemetryHealth,
   detectStateChanges,
   assertRelayTopicCoverage,
   getRelayTopicCoverage,
@@ -567,6 +585,7 @@ module.exports = {
     previousState = null;
     previousFreshness = null;
     stateSnapshotListener = null;
+    telemetryHealth = null;
     connectionStatus = 'disconnected';
     relayTopicCoverage = { ok: true, missing: [] };
     notifications._reset();

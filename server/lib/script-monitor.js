@@ -17,6 +17,14 @@ const log = createLogger('script-monitor');
 const DEFAULT_POLL_INTERVAL_MS = 30 * 1000;
 const DEFAULT_RPC_TIMEOUT_MS = 5000;
 const DEFAULT_RECENT_STATES = 100;
+// JsVar memory guard (spec 025). Evaluated every 5 min off the freshest 30 s
+// poll — no extra HTTP call, no second timer.
+const DEFAULT_MEM_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+const DEFAULT_MEM_PEAK_RATIO = 0.97;
+const DEFAULT_MEM_CONSECUTIVE_HIGH = 2;
+const DEFAULT_MEM_REBOOT_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+const DEFAULT_MAX_MEM_REBOOTS_PER_DAY = 4;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function rpcCall(host, method, params, timeoutMs, callback) {
   const body = JSON.stringify({ id: 1, method, params: params || {} });
@@ -96,8 +104,36 @@ function createScriptMonitor(options) {
   const rebootBackoffMs = options.rebootBackoffMs != null ? options.rebootBackoffMs : 5 * 60 * 1000;
   const maxBackoffMs = options.maxBackoffMs != null ? options.maxBackoffMs : 30 * 60 * 1000;
 
+  // ── JsVar memory guard (spec 025) ──
+  // Espruino's per-script JsVar pool fragments over days of uptime; mem_peak
+  // is a high-water mark that only resets on script restart / device reboot.
+  // When the peak sits at the pool ceiling the script OOMs at its transition
+  // peak: it publishes truncated telemetry and can stop switching modes
+  // entirely (2026-08-12 — 48 min idle with the collector at 71.7 °C). A
+  // device reboot is the only way to reclaim the pool; a Script restart is
+  // not. Off unless explicitly enabled (previews/tests must not actuate).
+  const memGuardEnabled = options.memGuard === true;
+  const memCheckIntervalMs = options.memCheckIntervalMs != null
+    ? options.memCheckIntervalMs : DEFAULT_MEM_CHECK_INTERVAL_MS;
+  const memPeakRebootRatio = options.memPeakRebootRatio != null
+    ? options.memPeakRebootRatio : DEFAULT_MEM_PEAK_RATIO;
+  const memConsecutiveHigh = options.memConsecutiveHigh != null
+    ? options.memConsecutiveHigh : DEFAULT_MEM_CONSECUTIVE_HIGH;
+  const memRebootCooldownMs = options.memRebootCooldownMs != null
+    ? options.memRebootCooldownMs : DEFAULT_MEM_REBOOT_COOLDOWN_MS;
+  const maxMemRebootsPerDay = options.maxMemRebootsPerDay != null
+    ? options.maxMemRebootsPerDay : DEFAULT_MAX_MEM_REBOOTS_PER_DAY;
+  const push = options.push || null;
+
   let timer = null;
   let inflight = false;
+  let memLastCheckAt = 0;         // epoch-ms of the last 5-min evaluation
+  let memConsecutive = 0;         // consecutive high-peak evaluations
+  let memLastRebootAt = 0;        // epoch-ms of the last memory-triggered reboot
+  let memRebootCount = 0;         // memory reboots since process start
+  let memRebootTimes = [];        // trailing-24 h reboot timestamps
+  let memGuardExhausted = false;  // latched once the daily cap is hit
+  const memStats = { used: null, peak: null, free: null, total: null, peakRatio: null, checkedAt: null };
   let recentStates = []; // newest-last
   let restartAttempts = 0;        // script restarts this crash episode (reset on recovery)
   let autoRestartExhausted = false; // informational: in backoff / escalating
@@ -133,6 +169,21 @@ function createScriptMonitor(options) {
       crashId: lastStatus.crashId,
       host,
       scriptId,
+      memory: {
+        used: memStats.used,
+        peak: memStats.peak,
+        free: memStats.free,
+        total: memStats.total,
+        peakRatio: memStats.peakRatio,
+        checkedAt: memStats.checkedAt,
+        guardEnabled: memGuardEnabled,
+        threshold: memPeakRebootRatio,
+        consecutiveHigh: memConsecutive,
+        lastRebootAt: memLastRebootAt || null,
+        rebootCount: memRebootCount,
+        rebootsToday: memRebootTimes.length,
+        exhausted: memGuardExhausted,
+      },
       autoRestart: {
         enabled: autoRestartEnabled,
         attempts: restartAttempts,
@@ -213,6 +264,121 @@ function createScriptMonitor(options) {
     });
   }
 
+  // Latest device-authored snapshot, or null before the first one arrives.
+  function latestSnapshot() {
+    return recentStates.length ? recentStates[recentStates.length - 1] : null;
+  }
+
+  // Safety gates for a memory-triggered reboot. A boot re-closes every valve
+  // and turns all actuators off (boot() in shelly/control.js), so rebooting
+  // out of solar/greenhouse costs at most one 30 s tick — strictly better
+  // than a starved pool. ACTIVE_DRAIN is the exception that must never be
+  // interrupted: aborting a freeze or overheat drain is a hardware risk.
+  // Manual override means the operator is driving; don't yank the device.
+  // No snapshot at all → we don't know the mode → don't reboot.
+  function memRebootBlockedBy() {
+    const snap = latestSnapshot();
+    if (!snap || !snap.mode) return 'no_mode_observation';
+    if (snap.mode === 'active_drain') return 'active_drain';
+    if (snap.transitioning) return 'transitioning';
+    const mo = snap.manual_override;
+    if (mo && (mo === true || mo.active)) return 'manual_override';
+    return null;
+  }
+
+  function sendMemPush(kind, title, body) {
+    if (!push || typeof push.sendNotification !== 'function') return;
+    // Forced + rate-limit-bypassing for the same reason script_crash is: the
+    // controller's ability to decide is safety-critical.
+    push.sendNotification('script_crash', {
+      title,
+      body,
+      tag: 'controller-' + kind,
+      icon: 'assets/notif-script-crash.png',
+      badge: 'assets/badge-72.png',
+      url: '/#status',
+      requireInteraction: true,
+      renotify: true,
+      data: { kind, url: '/#status' },
+    }, { force: true, ignoreRateLimit: true });
+  }
+
+  // Called from the poll success path with a running script. Records memory
+  // stats every poll (cheap, already in hand) but only *evaluates* on the
+  // memCheckIntervalMs cadence.
+  function memoryTick(result) {
+    const used = typeof result.mem_used === 'number' ? result.mem_used : null;
+    const peak = typeof result.mem_peak === 'number' ? result.mem_peak : null;
+    const free = typeof result.mem_free === 'number' ? result.mem_free : null;
+    // The pool is fixed: mem_used + mem_free is its size (25186 B on the
+    // Pro 4PM, see shelly/script-budget.json).
+    const total = used !== null && free !== null ? used + free : null;
+    memStats.used = used;
+    memStats.peak = peak;
+    memStats.free = free;
+    memStats.total = total;
+    memStats.peakRatio = (peak !== null && total) ? peak / total : null;
+    memStats.checkedAt = now();
+
+    if (!memGuardEnabled) return;
+    const t = now();
+    if (memLastCheckAt && t - memLastCheckAt < memCheckIntervalMs) return;
+    memLastCheckAt = t;
+    if (memStats.peakRatio === null) return;
+
+    if (memStats.peakRatio < memPeakRebootRatio) {
+      memConsecutive = 0;
+      return;
+    }
+    memConsecutive += 1;
+    if (memConsecutive < memConsecutiveHigh) {
+      log.warn('script memory peak high', {
+        peak, total, ratio: Number(memStats.peakRatio.toFixed(4)), consecutive: memConsecutive,
+      });
+      return;
+    }
+
+    const blocked = memRebootBlockedBy();
+    if (blocked) {
+      log.warn('memory reboot deferred', { blockedBy: blocked, peak, total });
+      return;
+    }
+    if (memLastRebootAt && t - memLastRebootAt < memRebootCooldownMs) return;
+
+    // Trailing-24 h cap. A controller needing more than this many reboots a
+    // day needs a smaller script, not a reboot loop — escalate to a human
+    // once and stop rebooting until the window drains.
+    memRebootTimes = memRebootTimes.filter(function (ts) { return t - ts < DAY_MS; });
+    if (memRebootTimes.length >= maxMemRebootsPerDay) {
+      if (!memGuardExhausted) {
+        memGuardExhausted = true;
+        log.error('memory guard exhausted — not rebooting', {
+          rebootsToday: memRebootTimes.length, peak, total,
+        });
+        sendMemPush('memory_guard_exhausted', 'Controller memory guard exhausted',
+          'The control script has exhausted its memory ' + memRebootTimes.length
+          + ' times in 24 h. Reboots have stopped — the script needs to be shrunk.');
+      }
+      return;
+    }
+
+    memGuardExhausted = false;
+    memLastRebootAt = t;
+    memRebootCount += 1;
+    memRebootTimes.push(t);
+    memConsecutive = 0;
+    log.warn('rebooting controller — script memory pool exhausted', {
+      peak, total, ratio: Number(memStats.peakRatio.toFixed(4)), rebootCount: memRebootCount,
+    });
+    rpc(host, 'Shelly.Reboot', {}, rpcTimeoutMs, function (err) {
+      if (err) log.error('memory reboot failed', { error: err.message });
+    });
+    sendMemPush('memory_reboot', 'Controller rebooted — script memory exhausted',
+      'The control script hit its JsVar pool ceiling (' + peak + ' of ' + total
+      + ' B). Rebooted the Pro 4PM to reclaim memory; automation resumes within a minute.');
+    emitStatus();
+  }
+
   function onStatusChange(cb) {
     statusListeners.push(cb);
     return function unsubscribe() {
@@ -233,6 +399,7 @@ function createScriptMonitor(options) {
       valves: payload.valves || null,
       actuators: payload.actuators || null,
       flags: payload.flags || null,
+      manual_override: payload.manual_override || null,
     };
     recentStates.push(snap);
     if (recentStates.length > bufferSize) {
@@ -300,6 +467,7 @@ function createScriptMonitor(options) {
       lastStatus.running = isRunning;
 
       if (isRunning) {
+        memoryTick(result);
         // Clear stuck crash fields on recovery. DB row is preserved;
         // crashId still points at it for the resolved-incident UI.
         if (wasRunning !== true) {

@@ -328,7 +328,7 @@ const server = http.createServer(function (req, res) {
         });
     });
   } else if (urlPath === '/api/script/status' && req.method === 'GET') {
-    jsonResponse(res, 200, scriptMonitor ? scriptMonitor.getStatus() : { running: null, reachable: false });
+    jsonResponse(res, 200, Object.assign(scriptMonitor ? scriptMonitor.getStatus() : { running: null, reachable: false }, { telemetry: mqttBridge.getTelemetryHealth() }));
   } else if (urlPath === '/api/script/crashes' && req.method === 'GET') {
     if (!db) { jsonResponse(res, 503, { error: 'Database not available' }); return; }
     const limit = parseInt(new URL(req.url, 'http://localhost').searchParams.get('limit'), 10) || 50;
@@ -501,14 +501,15 @@ function startMqttBridge() {
 
   const ws = initWebSocket();
 
-  // Script monitor runs alongside the MQTT bridge so its snapshot buffer
-  // is fed by the same stream. Status changes broadcast "script-status"
-  // (drives the in-app banner) and feed the push notifier.
-  // PREVIEW_MODE: db=null + skip crashNotifier. Auto-restart is prod-only
-  // (previews/tests must not actuate the real device).
+  // Script monitor runs alongside the MQTT bridge so its snapshot buffer is fed
+  // by the same stream. Status changes broadcast "script-status" (in-app banner)
+  // and feed the push notifier. PREVIEW_MODE: db=null + skip crashNotifier.
+  // Auto-restart and the JsVar memory guard (spec 025) are prod-only.
+  const liveDevice = !PREVIEW_MODE && process.env.NODE_ENV !== 'test';
   scriptMonitor = createScriptMonitor({
     db: PREVIEW_MODE ? null : db,
-    autoRestart: !PREVIEW_MODE && process.env.NODE_ENV !== 'test',
+    autoRestart: liveDevice, memGuard: liveDevice,
+    push: PREVIEW_MODE ? null : push,
   });
   const crashNotifier = PREVIEW_MODE ? null : createScriptCrashNotifier(push);
   scriptMonitor.onStatusChange(function (s) {
