@@ -9,8 +9,8 @@
   "calibration": {
     "date": "2026-08-12",
     "minifiedBytes": 45521,
-    "transitionMemPeak": 24556,
-    "transitionMemPeakSource": "live Pro 4PM, read via Script.GetStatus after the server-side memory guard rebooted it on 2026-08-12. This is the PRE-change baseline (the deployed script still carried the display helpers); headroom 25186-24556=630 B. Re-read and update this block after the display-helper move reaches the device \u2014 the spare predicts about -546 B.",
+    "transitionMemPeak": 24262,
+    "transitionMemPeakSource": "live Pro 4PM, read via Script.GetStatus immediately after the idle -> greenhouse_heating transition at 19:38:15 EEST on 2026-08-12, with the display-helper move deployed. Headroom 25186-24262=924 B, vs 294 B at the 2026-07-29 calibration. Steady/boot peak on the same script was 24010 B, so this transition cost +252 B. CAVEAT: greenhouse_enter opens fewer valves than solar_enter, and the historical OOM point is the SOLAR transition \u2014 refine this figure from a solar_charging entry (mem_used dropped 19390 -> 18844 and the peak 24556 -> 24010 on deploy, matching the spare's -546 B prediction exactly).",
     "liveCeilingObserved": 25186,
     "liveCeilingNote": "Same device earlier the same day, after 2.7 days uptime: mem_peak == the entire pool. That is the starved state that truncated telemetry and left the controller idle for 48 min while the collector stagnated to 71.7 C. Recorded as an incident observation, NOT as a calibration \u2014 a zero-headroom figure permits no growth at all.",
     "spareTickPeakBefore": 22932,
@@ -20,6 +20,7 @@
       "transitionMemPeak": 24892,
       "minifiedBytes": 47469
     },
-    "note": "Spare Pro 2PM (.55) per-stage profile, PAD=58, control-logic.js loaded without control.js \u2014 so these are the harness's absolute numbers, comparable to each other rather than to the 4PM. Stage costs: control-logic.js resident 8,204 B; evaluate() transient +2,898 B; planValveTransition +0 B (inside evaluate's peak); buildMinPayload +266 B; the five per-tick JSON.parse(sensor body) calls +0 B, and PR #265's indexOf/parseFloat scrape also +0 B (that PR buys the silent-latch fix, NOT headroom). Moving the four device-dead display declarations to shelly/display-labels.js took the tick peak 22,932 -> 22,386 B (-546 B) for -1,157 B of source. Prior live 4PM reference: 2026-07-29 transition mem_peak 24,892 B (headroom 294 B); on 2026-08-12 the live 4PM was found at mem_peak 25,186 B \u2014 the entire pool \u2014 which is what the server-side memory guard now reboots on."
+    "note": "Spare Pro 2PM (.55) per-stage profile, PAD=58, control-logic.js loaded without control.js \u2014 so these are the harness's absolute numbers, comparable to each other rather than to the 4PM. Stage costs: control-logic.js resident 8,204 B; evaluate() transient +2,898 B; planValveTransition +0 B (inside evaluate's peak); buildMinPayload +266 B; the five per-tick JSON.parse(sensor body) calls +0 B, and PR #265's indexOf/parseFloat scrape also +0 B (that PR buys the silent-latch fix, NOT headroom). Moving the four device-dead display declarations to shelly/display-labels.js took the tick peak 22,932 -> 22,386 B (-546 B) for -1,157 B of source. Prior live 4PM reference: 2026-07-29 transition mem_peak 24,892 B (headroom 294 B); on 2026-08-12 the live 4PM was found at mem_peak 25,186 B \u2014 the entire pool \u2014 which is what the server-side memory guard now reboots on.",
+    "preChangeLivePeak": 24556
   }
 }
