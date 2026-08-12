@@ -212,6 +212,36 @@ const SCHEMA_SQL = [
   "CREATE INDEX IF NOT EXISTS forecast_predictions_horizon ON forecast_predictions (horizon_h, generated_at DESC)",
 ];
 
+// ── id-sequence realignment ──
+// A restore or cross-cluster copy that inserts rows with explicit ids (as
+// `\copy … FROM STDOUT` does) leaves the owning sequence untouched, so the next
+// INSERT collides with an existing primary key. That happened in the 2026-08-02
+// on-prem migration: script_crashes_id_seq sat at 3 against max(id) 473 and
+// routine_fires_id_seq at 4 against 109, and both tables silently stopped
+// accepting rows for ten days (the errors were logged and swallowed).
+//
+// Run on every schema init. Idempotent on a healthy database:
+//   - GREATEST against last_value never rewinds a sequence that is already
+//     ahead of max(id) (ids can be consumed and rolled back),
+//   - COALESCE(MAX(id), 0) + 1 with is_called=false handles an empty table,
+//     since setval() rejects values below the sequence minimum,
+//   - to_regclass guards a table that does not exist yet.
+const SEQUENCE_SYNC_SQL = ['script_crashes', 'routine_fires', 'watchdog_events'].map(
+  function (table) {
+    return "DO $$\n"
+      + "DECLARE seq TEXT; cur BIGINT; hi BIGINT;\n"
+      + "BEGIN\n"
+      + "  IF to_regclass('public." + table + "') IS NULL THEN RETURN; END IF;\n"
+      + "  seq := pg_get_serial_sequence('public." + table + "', 'id');\n"
+      + "  IF seq IS NULL THEN RETURN; END IF;\n"
+      + "  EXECUTE format('SELECT COALESCE(MAX(id), 0) + 1 FROM %s', 'public." + table + "') INTO hi;\n"
+      + "  cur := COALESCE((SELECT last_value FROM pg_sequences\n"
+      + "                   WHERE schemaname || '.' || sequencename = seq), 1);\n"
+      + "  PERFORM setval(seq, GREATEST(hi, cur), false);\n"
+      + "END $$";
+  }
+);
+
 // Pre-aggregated 30-second buckets, used by getHistory for ranges ≥ 24 h.
 //
 // History: this used to be a regular MATERIALIZED VIEW refreshed by
@@ -326,7 +356,7 @@ function migrateForecastPredictionsEnginePk(client, log, callback) {
 }
 
 module.exports = {
-  SCHEMA_SQL, AGGREGATE_SQL, migrateLegacyForecastPredictions,
+  SCHEMA_SQL, AGGREGATE_SQL, SEQUENCE_SYNC_SQL, migrateLegacyForecastPredictions,
   // exported for tests
   _pkNeedsEngineMigration: pkNeedsEngineMigration,
 };

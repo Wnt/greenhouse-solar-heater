@@ -66,6 +66,10 @@ require.cache[schemaPath] = {
       'CREATE VIEW sensor_readings_30s AS SELECT ts AS bucket, sensor_id, value AS avg_value, value AS min_value, value AS max_value FROM sensor_readings',
     ],
     AGGREGATE_SQL: [],
+    // pg-mem cannot run the DO blocks that realign id sequences, and a fresh
+    // in-memory db has nothing to realign. db.js also tolerates this being
+    // absent; listed explicitly so the stub's shape mirrors the real module.
+    SEQUENCE_SYNC_SQL: [],
     // No-op: the e2e harness starts with an empty pg-mem db, so there's
     // never a legacy forecast_predictions table to migrate. Match the
     // (client, log, callback) shape db.js expects.
