@@ -80,7 +80,7 @@ function getPool() {
   return pool;
 }
 
-const { SCHEMA_SQL, AGGREGATE_SQL, migrateLegacyForecastPredictions } = require('./db-schema');
+const { SCHEMA_SQL, AGGREGATE_SQL, SEQUENCE_SYNC_SQL, migrateLegacyForecastPredictions } = require('./db-schema');
 const maintenance = require('./db-maintenance').create(getPool, log);
 
 function initSchema(callback) {
@@ -98,8 +98,15 @@ function initSchema(callback) {
         if (schemaErr) { release(); callback(schemaErr); return; }
         runStatements(client, AGGREGATE_SQL, 0, function (aggErr) {
           if (aggErr) log.warn('aggregate creation skipped (may already exist)', { error: aggErr.message });
-          release();
-          callback(null);
+          // Realign id sequences after a restore/copy — see SEQUENCE_SYNC_SQL.
+          // Non-fatal: a database that rejects this is still serviceable.
+          // `|| []` because the e2e harness swaps this module for a plain-SQL
+          // stub (tests/e2e/_setup/start.cjs) that need not carry every export.
+          runStatements(client, SEQUENCE_SYNC_SQL || [], 0, function (seqErr) {
+            if (seqErr) log.warn('id sequence realignment skipped', { error: seqErr.message });
+            release();
+            callback(null);
+          });
         });
       });
     });
