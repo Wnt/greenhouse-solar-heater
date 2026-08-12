@@ -1,104 +1,115 @@
 # Deployment
 
+The workload runs **on-prem** on a single-node **k3s** cluster (a VM on the
+Proxmox host `pve-nvme`), fronted by a small public edge box. It moved off
+UpCloud Managed Kubernetes on **2026-08-02**; the OpenVPN tunnel that used to
+carry Shelly traffic is **gone** — the k3s node sits on the device VLAN.
+
 ## Architecture
 
 ```
-Internet → Caddy (:443, TLS) → Node.js app (:3000) → S3 Object Storage (credentials)
-                                                    → OpenVPN (optional) → Shelly devices
+                    DNS: greenhouse.madekivi.fi  A → edge box (public IP)
+                                 │
+Internet ──:443/:80──▶ edge box: HAProxy
+                       ├─ SNI pass-through for greenhouse hosts ──┐
+                       └─ everything else → Caddy (lab.* sites)   │
+                                                                  │ WireGuard
+                                                                  │ (home dials out,
+                                                                  │  keepalive 25 s)
+                                                                  ▼
+                       k3s VM (on-prem, no inbound ports at home)
+                         ├─ vNIC1  LAN 192.168.1.x — mgmt + WireGuard client
+                         │         ingress-nginx (hostNetwork DaemonSet) :80/:443
+                         │         cert-manager + letsencrypt-prod (HTTP-01)
+                         ├─ vNIC2  VLAN 30 — Shelly 192.168.30.50–.55, reached natively
+                         ├─ app Deployment: app (:3000) + mosquitto sidecar
+                         │         mosquitto hostPort 1883 bound to 192.168.30.5
+                         ├─ watcher Deployment
+                         ├─ CloudNativePG + TimescaleDB (greenhouse-db-*)
+                         └─ k8s-api-proxy Ingress → kubernetes.default.svc (CI kubectl)
 
-Update flow:
-  git push → CI builds app + deployer images → GHCR
-  systemd timer (5 min) → pulls deployer → writes config → docker compose up -d
+S3 = Garage LXC (path-style SigV4) — server/lib/s3-client.js works unchanged.
 ```
 
-All service configuration lives in the **deployer image** (`deploy/deployer/`), not in cloud-init.
-Config changes are applied by pushing to main — no server recreation, no SSH, no manual steps.
+TLS terminates **in-cluster**: the edge does SNI pass-through, so certificate
+keys never leave home. HTTP-01 challenges work because the edge forwards :80.
 
-## Prerequisites
+## How devices are reached (no VPN)
 
-- UpCloud account with API token
-- Terraform >= 1.5
-- Domain name with DNS access
+- The k3s node has a **VLAN-30 interface**, so `192.168.30.50–.55` are directly
+  reachable from pods — sensor discovery, sensor apply and the `script-monitor`
+  poll are plain HTTP on the LAN.
+- The Shelly devices publish MQTT to **`192.168.30.5:1883`**, the mosquitto
+  sidecar's `hostPort` on the node's VLAN-30 address. Same subnet, layer-2 — no
+  firewall rule and no tunnel involved. The app container reaches the same
+  broker on `localhost:1883` (`MQTT_HOST=localhost`).
+- `shelly/deploy.sh` provisions that broker address (`MQTT_BROKER_HOST`, set by
+  the CD workflow) and treats it as part of the desired state, so a device left
+  pointing at the retired VPN broker gets corrected on the next deploy.
 
-## Quick Start
+Because the mosquitto `hostPort` can only be bound by one pod at a time, the
+`app` Deployment keeps `strategy: Recreate` (brief downtime per deploy).
+
+## Deploy flow
+
+```
+push to main → GitHub Actions (.github/workflows/deploy.yml)
+  → test + build app image → GHCR
+  → preflight: relay topic-map coverage (throwaway Job on the new image)
+  → kubectl set image deployment/app (+ watcher)
+  → rollout status
+  → gate on Shelly RPC reachability
+  → kubectl exec → shelly/deploy.sh  (control script + MQTT/eth provisioning)
+```
+
+CI reaches the cluster through `https://k8s.greenhouse.madekivi.fi` (edge → WG →
+`k8s-api-proxy` Ingress), authenticating with the `KUBE_CONFIG_DATA` secret — a
+scoped deployer ServiceAccount (`deploy/k8s/deployer-rbac.yaml`) that can patch
+the `app`/`watcher` Deployments and exec into pods, nothing more.
+
+Manifests live in `deploy/k8s/` and are applied with kustomize:
 
 ```bash
-cd deploy/terraform
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-
-export UPCLOUD_TOKEN="your-api-token"
-
-terraform init
-terraform plan
-terraform apply
+kubectl apply -k deploy/k8s/
 ```
 
-After apply, create a DNS A record pointing your domain to the `server_ip` output.
+`deploy/k8s/preview/` holds the PR-preview templates (see the root CLAUDE.md).
 
-The server boots, cloud-init installs Docker and starts a systemd timer. The timer pulls the deployer image, which writes config and starts all services. The app should be accessible at `https://your-domain` within ~5 minutes.
+## Config delivery
 
-## How Updates Work
+- `app-config` ConfigMap — PORT, AUTH_ENABLED, RPID, ORIGIN, DOMAIN,
+  MQTT_HOST, SENSOR_HOST_IPS, RELAY_TOPIC_MAP, OTEL_*.
+- `app-secrets` Secret — DATABASE_URL (CNPG), SESSION_SECRET, S3_* (Garage),
+  NEW_RELIC_LICENSE_KEY.
 
-1. Push to `main`
-2. GitHub Actions builds two images: **app** + **deployer** (in parallel)
-3. Both are pushed to GHCR as `:latest`
-4. The systemd timer on the server fires every 5 minutes
-5. It pulls the deployer image and runs it
-6. The deployer copies config, validates, pulls service images, and runs `docker compose up -d`
+Both are cluster objects now, **not** Terraform-managed. Edit them with
+`kubectl edit configmap/app-config` / `kubectl edit secret/app-secrets` (or
+apply from your own private manifests) and restart the Deployment.
 
-No SSH, no Watchtower, no manual steps.
+## `deploy/terraform/` is retired
 
-## Changing Config
+It describes the destroyed-to-be UpCloud stack (UKS cluster, Managed
+PostgreSQL, Object Storage) and is **not** the source of truth for anything
+running today. It is kept only while the old cluster remains as a rollback
+path. Do not `terraform apply` it, and do not read prod config values out of
+it.
 
-Edit files in `deploy/deployer/`:
-- `docker-compose.yml` — service definitions
-- `Caddyfile` — reverse proxy rules
+## Node-level firewalling
 
-Push to main. The deployer image is rebuilt and the server picks it up within 5 minutes.
+Handled outside the cluster: the edge box's nftables/UpCloud firewall for public
+ports, and the UDM Pro for LAN/VLAN policy. The old in-cluster `node-firewall`
+DaemonSet (which existed to protect a public UpCloud worker) was removed with
+the migration — applying it to the home node would have filtered LAN services.
 
-## Terraform Variables
+## Operating notes
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `ssh_public_key` | Yes | — | SSH public key (required by UpCloud, SSH port NOT exposed) |
-| `domain` | Yes | — | Domain name for the monitoring UI |
-| `github_repo` | Yes | — | GitHub repo in `owner/name` format |
-| `session_secret` | Yes | — | HMAC secret for cookies (`openssl rand -hex 32`) |
-| `upcloud_zone` | No | `fi-hel1` | UpCloud zone |
-| `server_plan` | No | `DEV-1xCPU-1GB-10GB` | Server plan (€3/month, limit 2/account) |
-| `objsto_region` | No | `europe-1` | Object Storage region (~€5/month) |
-| `enable_vpn` | No | `false` | Enable OpenVPN firewall rule (UDP 1194) |
-
-## Enabling VPN
-
-1. Generate OpenVPN config: `cd deploy/openvpn && ./setup.sh`
-2. Copy the generated `openvpn.conf` to `/opt/app/openvpn.conf` on the server
-3. Enter the printed values in UniFi UI: Settings → VPN → Create New VPN → OpenVPN (set cipher to AES-256-CBC)
-4. In Terraform: `enable_vpn = true` then `terraform apply` (adds firewall rule for UDP 1194)
-5. On the next deployer run (~5 min), the OpenVPN container starts and the tunnel establishes
-
-The deployer automatically uploads `openvpn.conf` to S3 for recovery after server recreation.
-
-## Emergency Access
-
-Use the **UpCloud Control Panel web console** (HTML5) — always available regardless of firewall rules.
-
-## Deployer Status
-
-Via UpCloud web console:
 ```bash
-systemctl status deployer.service     # last run
-journalctl -u deployer.service -n 50  # logs
-systemctl list-timers deployer.timer  # schedule
+kubectl get pods                                  # app, watcher, greenhouse-db-*
+kubectl logs deployment/app -c app --tail=100
+kubectl exec deployment/app -c app -- sh -c 'curl -s http://192.168.30.50/rpc/Shelly.GetStatus'
+kubectl exec greenhouse-db-1 -c postgres -- psql -d greenhouse -c '\dt'
 ```
 
-## Container Stack
-
-| Container | Image | Purpose | Hardening |
-|-----------|-------|---------|-----------|
-| app | `ghcr.io/<repo>:latest` | Monitoring UI | Non-root (UID 1000), RO root |
-| caddy | `caddy:2-alpine` | TLS termination | RO root, writable cert volumes |
-| openvpn | `ghcr.io/<repo>-openvpn:latest` | VPN tunnel | NET_ADMIN cap |
-
-The deployer runs as a **one-shot container** via systemd — it is not a long-lived service.
+Migration record, credentials and the restore runbook live **outside this repo**
+in the private `upcloud_migrate` working copy (`MIGRATION-PLAN.md`,
+`DISASTER-RECOVERY.md`).

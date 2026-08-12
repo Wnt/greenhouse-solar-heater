@@ -1,3 +1,13 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# RETIRED (2026-08-02). This stack describes the UpCloud Managed Kubernetes
+# cluster, Managed PostgreSQL and Object Storage that the workload ran on BEFORE
+# the on-prem migration. It is NOT the source of truth for anything running
+# today, and the prod app-config / app-secrets are now plain cluster objects.
+#
+# Do not `terraform apply`. It is kept only while the old cluster remains as a
+# rollback path — see deploy/README.md and the private upcloud_migrate notes.
+# ─────────────────────────────────────────────────────────────────────────────
+
 terraform {
   required_version = ">= 1.5"
   required_providers {

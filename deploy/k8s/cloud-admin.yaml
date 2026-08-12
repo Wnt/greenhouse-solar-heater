@@ -2,7 +2,7 @@
 #
 # These resources give the Claude cloud env full cluster-admin access so it can
 # auto-remediate incidents (restart pods, inspect logs, exec into the app container
-# to run Shelly RPC commands over the VPN, etc.).
+# to run Shelly RPC commands against 192.168.30.x, etc.).
 #
 # SECURITY NOTES — treat this token as a crown-jewel secret:
 #   - The cloud-admin-token Secret holds a long-lived, cluster-admin bearer token.

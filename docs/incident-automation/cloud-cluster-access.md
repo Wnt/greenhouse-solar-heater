@@ -57,7 +57,7 @@ The kubeconfig points at `https://k8s.greenhouse.madekivi.fi` (public LE cert â€
 
 ## Device RPC Recipe (Validated)
 
-The cloud env cannot reach Shelly devices directly. The `app` container's `openvpn` sidecar creates a VPN tunnel to the home LAN, so executing a command inside the `app` container reaches any LAN device.
+Since the 2026-08-02 on-prem migration the cluster node has a VLAN-30 interface, so pods reach `192.168.30.0/24` natively â€” there is no VPN tunnel. Executing a command inside the `app` container reaches any device on that subnet.
 
 ```bash
 # Shelly Pro 4PM is at 192.168.30.50, auth disabled (auth_en: false)

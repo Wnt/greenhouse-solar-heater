@@ -56,8 +56,8 @@ function spawnDeploy(args, envOverrides) {
 
 // Run deploy.sh with no argument so it takes the full default path
 // (USER_TARGET=""), which includes the multi-device naming phase.
-function runDeployNoArg() {
-  return spawnDeploy([]);
+function runDeployNoArg(envOverrides) {
+  return spawnDeploy([], envOverrides);
 }
 
 // Run deploy.sh with an explicit target IP. This path skips the naming
@@ -179,7 +179,6 @@ describe('deploy.sh', () => {
       `PRO2PM_5=${addr}`,
       `SENSOR_1=${addr}`,
       `SENSOR_2=${addr}`,
-      `PRO4PM_VPN=${addr}`,
       '',
     ].join('\n'));
     deployResult = await runDeployNoArg();
@@ -418,8 +417,11 @@ describe('deploy.sh', () => {
 // persists across reboots, so a device already carrying the desired config must
 // NOT be reconfigured + rebooted. Otherwise routine deploys would reboot the
 // whole valve manifold mid-operation. When Mqtt.GetConfig already reports
-// enable+status_ntf+topic_prefix matching, provision_mqtt must skip both
-// Mqtt.SetConfig and Shelly.Reboot for that device.
+// enable+status_ntf+topic_prefix+server matching, provision_mqtt must skip both
+// Mqtt.SetConfig and Shelly.Reboot for that device. `server` is compared too, so
+// a device pointing at a stale broker (the address moved from the VPN's
+// 10.10.10.1 to the VLAN-30 192.168.30.5 in the 2026-08-02 on-prem migration)
+// is corrected rather than reported as already provisioned.
 describe('deploy.sh MQTT provisioning idempotency', () => {
   let mock;
   let port;
@@ -431,7 +433,10 @@ describe('deploy.sh MQTT provisioning idempotency', () => {
       const addr = `127.0.0.1:${port}`;
       if (url.includes('Mqtt.GetConfig')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ enable: true, status_ntf: true, topic_prefix: addr }));
+        res.end(JSON.stringify({
+          enable: true, status_ntf: true, topic_prefix: addr,
+          server: '10.10.10.1:1883', // == MQTT_BROKER_HOST in runDeployNoArg
+        }));
       } else if (url.includes('Script.List')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ scripts: [{ id: 1 }] }));
@@ -459,7 +464,6 @@ describe('deploy.sh MQTT provisioning idempotency', () => {
       `PRO2PM_2=${addr}`,
       `PRO2PM_3=${addr}`,
       `PRO2PM_4=${addr}`,
-      `PRO4PM_VPN=${addr}`,
       '',
     ].join('\n'));
     await runDeployNoArg();
@@ -489,6 +493,69 @@ describe('deploy.sh MQTT provisioning idempotency', () => {
   });
 });
 
+// Regression pin for the 2026-08-02 on-prem migration: the broker address moved
+// from the OpenVPN tunnel (10.10.10.1) to the VLAN-30 hostPort (192.168.30.5).
+// A device still pointing at the old broker matches on every other field, so if
+// `server` were not compared it would be left publishing into the void forever.
+describe('deploy.sh MQTT provisioning corrects a stale broker address', () => {
+  let mock;
+  let port;
+
+  before(async () => {
+    mock = createMockServer((req, res) => {
+      const url = req.url;
+      const addr = `127.0.0.1:${port}`;
+      if (url.includes('Mqtt.GetConfig')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          enable: true, status_ntf: true, topic_prefix: addr,
+          server: '10.10.10.1:1883', // stale: the old VPN broker
+        }));
+      } else if (url.includes('Script.List')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ scripts: [{ id: 1 }] }));
+      } else if (url.includes('Script.PutCode')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ len: 1 }));
+      } else {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('{}');
+      }
+    });
+    await new Promise((resolve) => {
+      mock.server.listen(0, '127.0.0.1', () => {
+        port = mock.server.address().port;
+        resolve();
+      });
+    });
+    const addr = `127.0.0.1:${port}`;
+    fs.writeFileSync(CONF_PATH, [
+      `PRO4PM=${addr}`,
+      `PRO2PM_1=${addr}`,
+      `PRO2PM_2=${addr}`,
+      `PRO2PM_3=${addr}`,
+      `PRO2PM_4=${addr}`,
+      '',
+    ].join('\n'));
+    await runDeployNoArg({ MQTT_BROKER_HOST: '192.168.30.5' });
+  });
+
+  after(async () => {
+    fs.writeFileSync(CONF_PATH, ORIGINAL_CONF);
+    await new Promise((resolve) => mock.server.close(resolve));
+  });
+
+  it('reconfigures every relay device onto the new broker', () => {
+    const setCalls = mock.calls.filter(c => c.url.includes('Mqtt.SetConfig'));
+    assert.ok(setCalls.length >= 5,
+      `stale broker must be rewritten on each relay device, got ${setCalls.length}`);
+    const body = setCalls[0].body ? JSON.parse(setCalls[0].body) : null;
+    if (body) {
+      assert.strictEqual(body.config.server, '192.168.30.5:1883');
+    }
+  });
+});
+
 describe('deploy.sh naming opt-out', () => {
   let mock;
   let port;
@@ -505,7 +572,6 @@ describe('deploy.sh naming opt-out', () => {
     fs.writeFileSync(CONF_PATH, [
       `PRO4PM=${addr}`,
       `PRO2PM_1=${addr}`,
-      `PRO4PM_VPN=${addr}`,
       '',
     ].join('\n'));
   });
@@ -566,7 +632,7 @@ describe('deploy.sh error handling', () => {
       });
     });
     fs.writeFileSync(CONF_PATH,
-      `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\nPRO4PM_VPN=127.0.0.1:${port}\n`
+      `PRO4PM=127.0.0.1:${port}\nPRO2PM_1=127.0.0.1\nSENSOR=127.0.0.1\n`
     );
   });
 
@@ -614,7 +680,7 @@ describe('deploy.sh flaky relay provisioning', () => {
     fs.writeFileSync(CONF_PATH, [
       `PRO4PM=${addr}`, `PRO2PM_1=${addr}`, `PRO2PM_2=${addr}`,
       `PRO2PM_3=${addr}`, `PRO2PM_4=${addr}`, `PRO2PM_5=${addr}`,
-      `SENSOR_1=${addr}`, `SENSOR_2=${addr}`, `PRO4PM_VPN=${addr}`, '',
+      `SENSOR_1=${addr}`, `SENSOR_2=${addr}`, '',
     ].join('\n'));
   });
 
@@ -671,7 +737,7 @@ describe('deploy.sh ethernet provisioning', () => {
     fs.writeFileSync(CONF_PATH, [
       `PRO4PM=${addr}`, `PRO2PM_1=${addr}`, `PRO2PM_2=${addr}`,
       `PRO2PM_3=${addr}`, `PRO2PM_4=${addr}`, `PRO2PM_5=${addr}`,
-      `SENSOR_1=${addr}`, `SENSOR_2=${addr}`, `PRO4PM_VPN=${addr}`,
+      `SENSOR_1=${addr}`, `SENSOR_2=${addr}`,
       'ETH_PRO4PM=192.168.31.50',
       'ETH_PRO2PM_1=192.168.31.51', 'ETH_PRO2PM_2=192.168.31.52',
       'ETH_PRO2PM_3=192.168.31.53', 'ETH_PRO2PM_4=192.168.31.54',
@@ -737,7 +803,7 @@ describe('deploy.sh script memory floor', () => {
     });
     const addr = `127.0.0.1:${port}`;
     fs.writeFileSync(CONF_PATH, [
-      `PRO4PM=${addr}`, `PRO2PM_1=${addr}`, `SENSOR_1=${addr}`, `PRO4PM_VPN=${addr}`, '',
+      `PRO4PM=${addr}`, `PRO2PM_1=${addr}`, `SENSOR_1=${addr}`, '',
     ].join('\n'));
   });
 
