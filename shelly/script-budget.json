@@ -1,14 +1,25 @@
 {
-  "_comment": "Memory budget for the on-device control script (2026-07-28 OOM crash-loop postmortem). The Gen2 per-script JsVar pool is FIXED at 25,186 bytes (used+free, same on the 4PM and the spare 2PM); resident usage tracks the deploy-shape (minified) source size, so CI caps that size here. scripts/check-shelly-script-size.mjs enforces it (CI static-checks + pre-push hook). RAISING maxMinifiedBytes requires a fresh on-device calibration: deploy the candidate, drive (or wait for) a mode transition, read Script.GetStatus mem_peak — or run scripts/spare-2pm-memcheck.mjs — and record the numbers below. Growth is only allowed while measured transition-peak headroom stays healthy; at the 2026-07-29 calibration the peak headroom was 294 bytes, so effectively: shrink first, then grow.",
-  "files": ["control-logic.js", "control.js"],
-  "maxMinifiedBytes": 47600,
+  "_comment": "Memory budget for the on-device control script (2026-07-28 OOM crash-loop postmortem). The Gen2 per-script JsVar pool is FIXED at 25,186 bytes (used+free, same on the 4PM and the spare 2PM). Resident usage tracks the deploy-shape (minified) source, but NOT linearly: measured on the spare 2026-08-12, 1 KB of source as ONE function costs +84 B of pool while the same 1 KB as 14 small functions costs +1,274 B \u2014 roughly 85 B per TOP-LEVEL DECLARATION plus ~0.08 B per byte. So the lever is the number of declarations shipped, not the byte count, and splitting a hot function into helpers makes the pool WORSE. Keep UI-only helpers out of control-logic.js entirely (see shelly/display-labels.js). CI caps the deploy-shape size here via scripts/check-shelly-script-size.mjs (static-checks + pre-push hook). RAISING maxMinifiedBytes requires a fresh on-device calibration: deploy the candidate, drive (or wait for) a mode transition, read Script.GetStatus mem_peak \u2014 or run scripts/spare-2pm-memcheck.mjs \u2014 and record the numbers below. Shrink first, then grow.",
+  "files": [
+    "control-logic.js",
+    "control.js"
+  ],
+  "maxMinifiedBytes": 46000,
   "jsvarPoolBytes": 25186,
   "calibration": {
-    "date": "2026-07-29",
-    "minifiedBytes": 47469,
-    "idleMemUsed": 19558,
-    "idleMemFree": 5628,
-    "transitionMemPeak": 24892,
-    "note": "Measured live on the Pro 4PM right after the slimmed dual-path script entered GREENHOUSE_HEATING over the wired path. Peak headroom 25186-24892=294 B."
+    "date": "2026-08-12",
+    "minifiedBytes": 45521,
+    "transitionMemPeak": 24556,
+    "transitionMemPeakSource": "live Pro 4PM, read via Script.GetStatus after the server-side memory guard rebooted it on 2026-08-12. This is the PRE-change baseline (the deployed script still carried the display helpers); headroom 25186-24556=630 B. Re-read and update this block after the display-helper move reaches the device \u2014 the spare predicts about -546 B.",
+    "liveCeilingObserved": 25186,
+    "liveCeilingNote": "Same device earlier the same day, after 2.7 days uptime: mem_peak == the entire pool. That is the starved state that truncated telemetry and left the controller idle for 48 min while the collector stagnated to 71.7 C. Recorded as an incident observation, NOT as a calibration \u2014 a zero-headroom figure permits no growth at all.",
+    "spareTickPeakBefore": 22932,
+    "spareTickPeakAfter": 22386,
+    "previousLive": {
+      "date": "2026-07-29",
+      "transitionMemPeak": 24892,
+      "minifiedBytes": 47469
+    },
+    "note": "Spare Pro 2PM (.55) per-stage profile, PAD=58, control-logic.js loaded without control.js \u2014 so these are the harness's absolute numbers, comparable to each other rather than to the 4PM. Stage costs: control-logic.js resident 8,204 B; evaluate() transient +2,898 B; planValveTransition +0 B (inside evaluate's peak); buildMinPayload +266 B; the five per-tick JSON.parse(sensor body) calls +0 B, and PR #265's indexOf/parseFloat scrape also +0 B (that PR buys the silent-latch fix, NOT headroom). Moving the four device-dead display declarations to shelly/display-labels.js took the tick peak 22,932 -> 22,386 B (-546 B) for -1,157 B of source. Prior live 4PM reference: 2026-07-29 transition mem_peak 24,892 B (headroom 294 B); on 2026-08-12 the live 4PM was found at mem_peak 25,186 B \u2014 the entire pool \u2014 which is what the server-side memory guard now reboots on."
   }
 }
