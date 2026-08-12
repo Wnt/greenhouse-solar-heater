@@ -88,8 +88,9 @@ corrupt payloads were a `warn` line nobody reads, and nothing anywhere watches
 
 Fire `Shelly.Reboot` on the Pro 4PM when **all** of these hold:
 
-1. `peakRatio >= 0.97` (default, configurable) on **2 consecutive** 5-minute
-   checks — i.e. the condition has persisted ~10 minutes.
+1. `peakRatio >= 0.99` (default, configurable) on **2 consecutive** 5-minute
+   checks — i.e. the condition has persisted ~10 minutes. Originally specced at
+   0.97; corrected to 0.99 after the first production firing (see below).
 2. The script is observed `running` and reachable (a crashed script is the
    crash-recovery loop's business, and it already escalates to reboots).
 3. The last observed mode is **not** `active_drain` and the device is **not**
@@ -122,11 +123,32 @@ within one 30 s tick. This is the same reasoning the device's own
 only, while the server guard also permits solar/greenhouse modes (losing ≤1
 tick of pumping is strictly better than a starved pool), but never a drain.
 
+## Field result and threshold correction (2026-08-12)
+
+The guard shipped at 15:01 UTC, logged `ratio 1` on its first evaluation, and
+rebooted the controller at 15:06:33. Effect:
+
+| | `mem_peak` | of pool |
+|---|---|---|
+| before reboot | 25186 B | **100 %** |
+| ~40 s after reboot | 24528 B | 97.4 % |
+
+The controller resumed publishing within a minute (readings continuous, one
+30 s tick lost), so the reboot cost is as designed.
+
+The second number is the important one: the script's *routine* post-boot peak
+is 97.4 %, which the originally specced 0.97 threshold would have treated as
+exhaustion — burning the 4-per-day budget on healthy operation and then firing
+the "guard exhausted" push for no reason. The state that actually broke the
+controller was a **fully consumed** pool (`mem_peak == mem_used + mem_free`).
+The default is therefore 0.99: above the routine peak, below a full pool,
+≈250 B of headroom at the firing point. Pinned by a regression test.
+
 ## Accepted trade-off
 
 `mem_peak` is a high-water mark that only resets on script restart or device
 reboot. On this device it currently sits at the ceiling, so the guard will fire
-its first reboot shortly after deploy, and may fire again on days whose
+its first reboot shortly after deploy (it did), and may fire again on days whose
 transition peak touches the cap — bounded by the 2 h cooldown and the 4/day cap
 (worst case 4 reboots/day, each a ~30 s control gap from IDLE). That is
 deliberate: a reboot costs one tick, while a starved pool costs 48 minutes of
