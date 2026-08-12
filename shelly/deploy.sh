@@ -32,13 +32,9 @@ fi
 # shellcheck source=/dev/null
 source "$CONF"
 
-# Select device IP: VPN or LAN
-if [ "${DEPLOY_VIA_VPN:-false}" = "true" ]; then
-  DEVICE="${1:-$PRO4PM_VPN}"
-  echo "Using VPN IP: $DEVICE"
-else
-  DEVICE="${1:-$PRO4PM}"
-fi
+# The cluster reaches 192.168.30.0/24 natively (VLAN-30 interface on the k3s
+# node) — there is no tunnel and no separate VPN address any more.
+DEVICE="${1:-$PRO4PM}"
 
 EXPECTED_SLOT_COUNT=1  # slot 1: merged control+telemetry
 
@@ -204,7 +200,11 @@ provision_mqtt_once() {
   # merge — so reconfigure + reboot ONLY when something actually differs.
   # Without this guard every deploy would reboot the whole valve manifold
   # (.50–.54) out from under the running control loop. Skip when enable,
-  # status_ntf and topic_prefix already match the desired values.
+  # status_ntf, topic_prefix AND server already match the desired values.
+  # `server` is part of the compared state on purpose: the broker address moved
+  # once already (VPN 10.10.10.1 → VLAN-30 192.168.30.5 at the 2026-08-02
+  # on-prem migration), and a device left pointing at the old broker publishes
+  # into the void while looking healthy on every other field.
   local cur
   cur=$(curl -sf -m 10 "http://$device_ip/rpc/Mqtt.GetConfig" 2>/dev/null) || cur=""
   if [ -n "$cur" ] && printf '%s' "$cur" | python3 -c "
@@ -213,10 +213,13 @@ try:
     c = json.load(sys.stdin)
 except Exception:
     sys.exit(1)
-ok = c.get('enable') is True and c.get('status_ntf') is True and c.get('topic_prefix') == '$device_ip'
+want_server = '$MQTT_BROKER_HOST:${MQTT_BROKER_PORT:-1883}'
+ok = (c.get('enable') is True and c.get('status_ntf') is True
+      and c.get('topic_prefix') == '$device_ip'
+      and (not want_server.startswith(':') and c.get('server') == want_server))
 sys.exit(0 if ok else 1)
 "; then
-    echo "MQTT already provisioned on $device_ip (enable+status_ntf+topic_prefix match) — skipping reconfigure/reboot"
+    echo "MQTT already provisioned on $device_ip (enable+status_ntf+topic_prefix+server match) — skipping reconfigure/reboot"
     return 0
   fi
   echo "Provisioning MQTT status reporting on $device_ip (topic_prefix=$device_ip, status_ntf=true)..."

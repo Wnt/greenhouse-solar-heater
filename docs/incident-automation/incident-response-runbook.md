@@ -58,13 +58,13 @@ Read the trigger `text`, then corroborate with live evidence before forming any 
 # Pods, restart counts, and why a container is unhealthy
 kubectl get pods -n default
 kubectl describe pod <pod> -n default            # restart reason, last state, probe failures, events
-kubectl logs deploy/app -c <app|openvpn|mosquitto> -n default --tail=80
+kubectl logs deploy/app -c <app|mosquitto> -n default --tail=80
 
-# Application + VPN tunnel + MQTT health (unauthenticated)
-curl -s https://greenhouse.madekivi.fi/health      # {status, vpn, mqtt}; non-200 / refused = app down
+# Application + MQTT health (unauthenticated)
+curl -s https://greenhouse.madekivi.fi/health      # non-200 / refused = app down
 curl -s https://greenhouse.madekivi.fi/api/script/status
 
-# Talk to a device over the app pod's VPN — read-only RPCs for inspection
+# Talk to a device from the app pod (on-prem cluster, VLAN-30 — no tunnel)
 # (the Pro 4PM controller is 192.168.30.50; RPC needs no device auth)
 kubectl exec deploy/app -c app -n default -- curl -sS http://192.168.30.50/rpc/Shelly.GetDeviceInfo
 ```

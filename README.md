@@ -46,7 +46,7 @@ A hash-routed SPA/PWA deployed via GitHub Pages. In simulator mode it runs entir
 | `shelly/` | Shelly control software — control logic, telemetry, deploy script, platform linter |
 | `playground/` | SPA/PWA — status, components, controls, device, settings views |
 | `server/` | Node.js API — HTTP + WebSocket + MQTT bridge + WebAuthn auth + history (PostgreSQL/TimescaleDB) |
-| `deploy/` | Cloud deployment — Terraform (UpCloud K8s + Postgres + S3), Docker, OpenVPN sidecar, K8s manifests |
+| `deploy/` | Deployment — on-prem k3s manifests, app Dockerfile, retired UpCloud Terraform (see `deploy/README.md`) |
 | `design/docs/` | Design documentation — architecture, modes, safety rules, BOM |
 | `design/diagrams/` | SVG schematics + Mermaid state/sequence diagrams |
 | `design/construction/` | Physical build instructions |

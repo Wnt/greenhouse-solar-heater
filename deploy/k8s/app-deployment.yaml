@@ -7,9 +7,10 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    # Recreate is required because the openvpn sidecar uses hostPort 1194.
-    # Two pods cannot bind the same hostPort on a single node, so the old
-    # pod must be terminated before the new one can schedule.
+    # Recreate is required because the mosquitto sidecar binds hostPort 1883 on
+    # the VLAN-30 address (192.168.30.5) so the Shelly devices can reach the
+    # broker. Two pods cannot bind the same hostPort on a single node, so the
+    # old pod must terminate before the new one can schedule.
     type: Recreate
   selector:
     matchLabels:
@@ -20,40 +21,6 @@ spec:
         app: greenhouse
     spec:
       terminationGracePeriodSeconds: 5
-      # ── Init: VPN firewall ──
-      # Sets iptables rules in the pod's network namespace to restrict
-      # UDP 1194 (hostPort) to whitelisted CIDRs only. This is kernel-level
-      # filtering — works regardless of CNI/Cilium host-firewall settings.
-      # CiliumNetworkPolicy does NOT reliably filter hostPort traffic.
-      initContainers:
-        - name: vpn-firewall
-          image: alpine:3.21
-          command:
-            - sh
-            - -c
-            - |
-              apk add --no-cache iptables > /dev/null 2>&1
-              # VPN port: allow only whitelisted CIDRs
-              IFS=',' ; for cidr in $VPN_ALLOWED_CIDRS; do
-                iptables -A INPUT -p udp --dport 1194 -s "$cidr" -j ACCEPT
-                echo "iptables: ACCEPT udp/1194 from $cidr"
-              done
-              iptables -A INPUT -p udp --dport 1194 -j DROP
-              echo "iptables: DROP udp/1194 from all other sources"
-              # MQTT port: allow localhost (app) and VPN subnet (Shelly devices), drop external
-              iptables -A INPUT -p tcp --dport 1883 -s 127.0.0.0/8 -j ACCEPT
-              iptables -A INPUT -p tcp --dport 1883 -s 192.168.0.0/16 -j ACCEPT
-              iptables -A INPUT -p tcp --dport 1883 -j DROP
-              echo "iptables: ACCEPT tcp/1883 from localhost + 192.168.0.0/16, DROP rest"
-              iptables -L INPUT -n -v
-          envFrom:
-            - configMapRef:
-                name: vpn-firewall
-          securityContext:
-            capabilities:
-              add:
-                - NET_ADMIN
-
       # ── App container ──
       containers:
         - name: app
@@ -96,46 +63,17 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
 
-        # ── OpenVPN sidecar ──
-        - name: openvpn
-          image: ghcr.io/wnt/greenhouse-solar-heater-openvpn:latest
-          ports:
-            - name: openvpn
-              containerPort: 1194
-              hostPort: 1194
-              protocol: UDP
-          securityContext:
-            capabilities:
-              add:
-                - NET_ADMIN
-            readOnlyRootFilesystem: true
-          volumeMounts:
-            - name: tun-device
-              mountPath: /dev/net/tun
-            - name: openvpn-config
-              mountPath: /etc/openvpn
-              readOnly: true
-            - name: openvpn-tmp
-              mountPath: /tmp
-          resources:
-            requests:
-              cpu: 10m
-              memory: 16Mi
-            limits:
-              cpu: 100m
-              memory: 64Mi
-          livenessProbe:
-            exec:
-              command: ["pgrep", "openvpn"]
-            initialDelaySeconds: 10
-            periodSeconds: 30
-
         # ── Mosquitto sidecar ──
         - name: mosquitto
           image: eclipse-mosquitto:2-openssl
           ports:
+            # hostPort on the node's VLAN-30 interface: the Shelly devices sit
+            # on 192.168.30.0/24 and publish straight to it (layer-2, no VPN,
+            # no firewall rule). The app container reaches it on localhost.
             - name: mqtt
               containerPort: 1883
+              hostIP: 192.168.30.5
+              hostPort: 1883
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -166,16 +104,6 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
-        - name: tun-device
-          hostPath:
-            path: /dev/net/tun
-            type: CharDevice
-        - name: openvpn-config
-          secret:
-            secretName: openvpn-config
-        - name: openvpn-tmp
-          emptyDir:
-            sizeLimit: 8Mi
         - name: mosquitto-config
           configMap:
             name: mosquitto-config
