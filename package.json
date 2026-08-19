@@ -32,11 +32,11 @@
     "acorn": "^8.18.0",
     "aedes": "^1.1.1",
     "eslint": "^10.8.1",
-    "globals": "^17.9.0",
+    "globals": "^17.11.0",
     "istanbul-lib-coverage": "^3.2.2",
     "istanbul-lib-report": "^3.0.1",
     "istanbul-reports": "^3.2.0",
-    "knip": "^6.32.0",
+    "knip": "^6.32.2",
     "pg-mem": "^3.0.14",
     "serve": "^14.2.6",
     "v8-to-istanbul": "^9.3.0"
