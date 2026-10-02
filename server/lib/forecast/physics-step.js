@@ -41,9 +41,9 @@ const DEFAULT_CONFIG = {
   ghVentOpenC:              33,
   ghVentTauH:               0.3,
   cloudReferenceWm2:        500,
-  // Used by emergency-mode duty estimate: target GH temp the heater
-  // tries to hold = midpoint(ehE, ehX). The caller passes the
-  // thresholds the controller is using.
+  // Emergency-heater hysteresis inside a step: the heater runs at full
+  // power until gh > ehX, then stays off until gh < ehE (the device's
+  // own rule). The caller passes the thresholds the controller is using.
   emergencyEnterC:          9,
   emergencyExitC:           12,
 };
@@ -72,18 +72,23 @@ const SOLAR_GAIN_KWH_BY_HOUR = defaultSolarGainByHour();
  *   args.stepHours   — step length in hours (e.g. 1/12 for 5-min, 1 for hourly)
  *   args.hourOfDayHelsinki — 0..23 hour-of-day (Helsinki) for solar profile
  *   args.cfg         — optional override of DEFAULT_CONFIG fields
- * @returns { dTankC, dGhC, heaterDuty }
+ * @returns { dTankC, dGhC, heaterDuty, heaterOnAtEnd }
+ *   heaterDuty    — fraction of the step the 1 kW space heater was ON
+ *                   (it has no thermostat: ON means full power, so
+ *                   energy = heaterDuty × spaceHeaterKw × stepHours)
+ *   heaterOnAtEnd — false once the heater passed the exit threshold and
+ *                   stayed off; the caller leaves emergency mode then
  */
 function physicsStep(args) {
   const cfg = Object.assign({}, DEFAULT_CONFIG, args.cfg || {});
   const stepH = Math.max(0, Number(args.stepHours) || 0);
-  if (stepH === 0) return { dTankC: 0, dGhC: 0, heaterDuty: 0 };
+  const mode = String(args.mode || 'idle');
+  if (stepH === 0) return { dTankC: 0, dGhC: 0, heaterDuty: 0, heaterOnAtEnd: mode === 'emergency_heating' };
 
   const tankAvg = Number(args.tankAvg);
   const gh = Number(args.gh);
   const outdoor = Number(args.outdoor) || 0;
   const radiation = Math.max(0, Number(args.radiation) || 0);
-  const mode = String(args.mode || 'idle');
   const hod = ((args.hourOfDayHelsinki | 0) % 24 + 24) % 24;
 
   // ── Radiator delivery (only active in heating modes) ──
@@ -91,17 +96,16 @@ function physicsStep(args) {
   const radPeakW = cfg.radiatorPowerKw * 1000;
   const radDeliveredW = Math.min(radPeakW, cfg.radiatorUaWPerK * radDeltaT);
 
-  // ── Heater duty (only active in emergency mode) ──
-  let heaterDuty = 0;
-  let heaterHeatToGhW = 0;
-  if (mode === 'emergency_heating') {
-    const ghTarget = (cfg.emergencyEnterC + cfg.emergencyExitC) / 2;
-    const ghLossAtTargetW = cfg.greenhouseLossWPerK * Math.max(0, ghTarget - outdoor);
-    const heaterW = cfg.spaceHeaterKw * 1000;
-    const heaterNeededW = Math.max(0, ghLossAtTargetW - radDeliveredW);
-    heaterDuty = Math.min(1, heaterNeededW / heaterW);
-    heaterHeatToGhW = heaterDuty * heaterW;
-  }
+  // ── Space heater (emergency mode only) ──
+  // The 1 kW fan heater has no thermostat: the device switches it fully
+  // ON on entry and fully OFF once gh > ehX (control-logic.js). It is
+  // simulated bang-bang in the substep loop below, so heaterDuty is the
+  // fraction of the step it actually ran — never a proportional sliver
+  // sized to hold some target (that model latched the mode for hours at
+  // ~5 % duty on mild nights while the chart showed it 100 % on).
+  const heaterW = cfg.spaceHeaterKw * 1000;
+  let heaterOn = mode === 'emergency_heating';
+  let heaterOnSubsteps = 0;
 
   // ── Tank energy balance (Joules over the step) ──
   let tankDeltaJ = 0;
@@ -140,15 +144,22 @@ function physicsStep(args) {
     const ghSolar = cfg.ghSolarAlphaCPerWm2 * radiation;
     const ghVent = newGh > cfg.ghVentOpenC
       ? -(newGh - cfg.ghVentOpenC) / cfg.ghVentTauH : 0;
+    if (mode === 'emergency_heating') {
+      if (heaterOn && newGh > cfg.emergencyExitC) heaterOn = false;
+      else if (!heaterOn && newGh < cfg.emergencyEnterC) heaterOn = true;
+      if (heaterOn) heaterOnSubsteps += 1;
+    }
+    const heaterNowW = heaterOn ? heaterW : 0;
     const ghActive = (cfg.ghTimeConstantH > 0 && cfg.greenhouseLossWPerK > 0)
-      ? (radHeatToGhW + heaterHeatToGhW) / (cfg.ghTimeConstantH * cfg.greenhouseLossWPerK) : 0;
+      ? (radHeatToGhW + heaterNowW) / (cfg.ghTimeConstantH * cfg.greenhouseLossWPerK) : 0;
     newGh += (ghPassive + ghSolar + ghVent + ghActive) * dtH;
   }
+  const heaterDuty = heaterOnSubsteps / SUBSTEPS;
   let dGhC = newGh - gh;
   // Hard floor — gh can't drop below outdoor mathematically.
   if (gh + dGhC < outdoor) dGhC = outdoor - gh;
 
-  return { dTankC, dGhC, heaterDuty };
+  return { dTankC, dGhC, heaterDuty, heaterOnAtEnd: heaterOn };
 }
 
 module.exports = {

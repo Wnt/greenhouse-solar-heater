@@ -28,6 +28,7 @@ const {
 } = require('./features');
 const { physicsStep } = require('../physics-step');
 const { tankStoredEnergyKwh } = require('../../energy-balance');
+const { heaterStartNote } = require('../sustain-forecast-notes');
 // The device's own solar entry/exit thresholds. Server-side require of
 // shelly/control-logic.js is established precedent (device-config.js);
 // pulling the constants from the controller's DEFAULT_CONFIG keeps the
@@ -133,12 +134,6 @@ function normalQuantile(p) {
     if (normalCdf(mid) < p) lo = mid; else hi = mid;
   }
   return (lo + hi) / 2;
-}
-
-function helsinkiHHMM(ms) {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Helsinki', hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(new Date(ms));
 }
 
 const HELSINKI_HH = new Intl.DateTimeFormat('en-GB', {
@@ -414,13 +409,21 @@ function computeMlForecast(opts) {
       tankAvg, gh, outdoor: outdoorC, radiation,
       mode, stepHours: stepH,
       hourOfDayHelsinki: helsinkiHour(tMs),
-      cfg: { emergencyEnterC: cfg.emergencyEnterC, emergencyExitC: cfg.emergencyExitC },
+      cfg: {
+        emergencyEnterC: cfg.emergencyEnterC,
+        emergencyExitC: cfg.emergencyExitC,
+        spaceHeaterKw: cfg.spaceHeaterKw,
+      },
     });
 
-    // Backup electricity (emergency steps only). Driven by the physics
-    // heater duty so the cost figure tracks the same model the trees
-    // were trained against.
+    // Backup electricity (emergency steps only). The heater has no
+    // thermostat — it runs at full power while the mode is latched — so
+    // the physics duty is the fraction of the step it was ON and the
+    // energy is duty × spaceHeaterKw × step length. Once the physics
+    // step saw the greenhouse pass the exit threshold the heater stays
+    // off and the rollout leaves emergency (device exit hysteresis).
     const duty = mode === 'emergency_heating' ? phys.heaterDuty : null;
+    if (mode === 'emergency_heating' && !phys.heaterOnAtEnd) heatMode = 'idle';
     if (mode === 'emergency_heating') {
       const kwh = phys.heaterDuty * cfg.spaceHeaterKw * stepH;
       if (kwh > 0) {
@@ -522,11 +525,9 @@ function computeMlForecast(opts) {
   // ── Notes ──
   const ghTemps = greenhouseTrajectory.map(function temp(p) { return p.temp; });
   const ghMin = Math.min.apply(null, ghTemps);
-  const ghMinIdx = ghTemps.indexOf(ghMin);
-  const ghMinTs = Date.parse(greenhouseTrajectory[ghMinIdx].ts);
   const tankAvgNow = tankTrajectory[0].avg;
   const notes = buildNotes({
-    confidence, ghMin, ghMinTs, electricKwh, electricCostEur,
+    confidence, ghMin, electricKwh, electricCostEur, now, modeForecast, greenhouseTrajectory,
     hoursUntilBackupNeeded, tankStoredKwhNow: tankStoredEnergyKwh(tankAvgNow),
   });
 
@@ -557,12 +558,10 @@ function buildNotes(ctx) {
     notes.push('ML forecast is extrapolating beyond its trained conditions — treat as indicative.');
   }
   if (notes.length < 3) {
-    const hhmm = helsinkiHHMM(ctx.ghMinTs);
-    notes.push(ctx.electricKwh > 0
-      ? 'Greenhouse cools to ' + ctx.ghMin.toFixed(1) + ' °C around ' + hhmm
-        + ', when the space heater takes over.'
-      : 'Greenhouse holds above ' + ctx.ghMin.toFixed(1) + ' °C the whole window'
-        + ' — tank covers it without backup.');
+    const heaterNote = ctx.electricKwh > 0
+      ? heaterStartNote(ctx.modeForecast, ctx.greenhouseTrajectory, ctx.now) : null;
+    notes.push(heaterNote || ('Greenhouse holds above ' + ctx.ghMin.toFixed(1) + ' °C the whole window'
+      + ' — tank covers it without backup.'));
   }
   if (notes.length < 3) {
     const stored = ctx.tankStoredKwhNow.toFixed(1);
