@@ -67,11 +67,9 @@ const DEFAULT_CONFIG = {
   radiatorPowerKw:          2.4,
   // Greenhouse heat-loss coefficient (W/K). Derived from observed
   // overnight cooldown: tank delivered ~6 kWh to the greenhouse over 10 h
-  // at avg ΔT ~5 K → 600 W → 120 W/K. Used to estimate the space-heater
-  // duty cycle during emergency mode (heater needs to cover ghLossW =
-  // greenhouseLossWPerK × (target − outdoor); duty = needed/heater_kW).
-  // Without this, the engine assumes 100% duty for every emergency hour,
-  // which over-counts backup energy by ~30-40% in spring/fall conditions.
+  // at avg ΔT ~5 K → 600 W → 120 W/K. Also sets the greenhouse air's
+  // heat capacity in the substep balance (C ≈ τ·loss), i.e. how fast the
+  // full-power space heater lifts gh past ehX in emergency mode.
   greenhouseLossWPerK:      120,
   // GH-air heat balance defaults; sustain-forecast-fit overrides.
   ghTimeConstantH:          2.0,   // passive cooling τ (hours)
@@ -287,11 +285,13 @@ function computeSustainForecast(opts) {
     // Active power injected into GH air this hour. Each mode branch
     // sets these; the unified heat balance converts to ΔT. Idle = 0.
     let radHeatToGhW = 0;
-    let heaterHeatToGhW = 0;
     // Radiator output while the thermostat has it ON during
     // greenhouse_heating; the substep loop cycles it bang-bang and the
     // resulting duty scales the tank draw. 0 for every other mode.
     let radWhenOnW = 0;
+    // Space-heater output while ON during emergency_heating (bang-bang in
+    // the substep loop, like the radiator). 0 for every other mode.
+    let heaterWhenOnW = 0;
     // Components captured per-hour for forecast_predictions storage.
     let hourHeaterKwh = 0;
     let hourTankLossW = 0;
@@ -310,40 +310,22 @@ function computeSustainForecast(opts) {
       // The real device overlays the heater on the active pump mode
       // (system.yaml overlays.emergency_heating: "the space heater is
       // overlaid on the active pump mode"). When the tank is hot enough
-      // to drive the radiator, the radiator delivers most of the heat and
-      // the heater fills only the remaining gap.
+      // to drive the radiator it keeps delivering alongside the heater.
       const radDeliveredW = Math.min(radPeakW, radUaWPerK * radDeltaT);
-      const ghTarget = (cfg.emergencyEnterC + cfg.emergencyExitC) / 2;
-      const ghLossAtTargetW = cfg.greenhouseLossWPerK * Math.max(0, ghTarget - outdoorC);
-      const heaterW  = cfg.spaceHeaterKw * 1000;
-      // Heater fills the gap left by the radiator. When rad ≥ loss,
-      // duty=0 and the heater stays idle.
-      const heaterNeededW = Math.max(0, ghLossAtTargetW - radDeliveredW);
-      const heaterDuty = Math.min(1, heaterNeededW / heaterW);
-      const heaterEnergyKwh = heaterDuty * cfg.spaceHeaterKw;
-      if (heaterEnergyKwh > 0) {
-        electricKwh += heaterEnergyKwh;
-        const costEur = heaterEnergyKwh * (priceCKwh + cfg.transferFeeCKwh) / 100;
-        electricCostEur += costEur;
-        costBreakdown.push({
-          ts:            hourDate,
-          kWh:           round4(heaterEnergyKwh),
-          priceCKwh,
-          eurInclTransfer: round4(costEur),
-        });
-      }
+      // The 1 kW space heater has no thermostat: ON means full power
+      // until gh > ehX (control-logic.js). The substep loop below runs
+      // that bang-bang; energy and cost are booked after it from the
+      // fraction of the hour the heater actually ran. (A proportional
+      // "duty to hold the band midpoint" used to latch the mode for
+      // hours at ~5 % on mild nights while the chart drew it 100 % on.)
+      heaterWhenOnW = cfg.spaceHeaterKw * 1000;
       // Radiator extracts heat from the tank (mirroring the real overlay).
       tankDeltaJ -= radDeliveredW * SECONDS_PER_HOUR;
       // Tank still leaks slowly during emergency.
       const tankLossW = tankLeakageWPerK * Math.max(0, tankAvg - curGhTemp);
       tankDeltaJ -= tankLossW * SECONDS_PER_HOUR;
       radHeatToGhW = radDeliveredW;
-      heaterHeatToGhW = heaterDuty * heaterW;
-      hourHeaterKwh = heaterEnergyKwh;
       hourTankLossW = tankLossW;
-      // Carry the duty fraction so the chart can render <100% bars instead
-      // of solid orange across hours where the heater barely cycles.
-      modeForecast.push({ ts: hourDate, mode: simMode, duty: round2(heaterDuty) });
     } else {
       // Idle: only tank leakage on the tank side; the unified heat
       // balance below handles the GH update.
@@ -370,12 +352,22 @@ function computeSustainForecast(opts) {
     // the duty so the tank draw and component capture can be scaled.
     let radOn = simMode === 'greenhouse_heating' && curGhTemp < cfg.greenhouseExitC;
     let radOnSubsteps = 0;
+    // Space heater: latched ON on entry, OFF once gh > ehX, back ON if gh
+    // drops below ehE again within the hour (device hysteresis).
+    let heaterOn = simMode === 'emergency_heating';
+    let heaterOnSubsteps = 0;
     for (let s = 0; s < SUBSTEPS; s++) {
       if (simMode === 'greenhouse_heating') {
         if (newGhTemp >= cfg.greenhouseExitC) radOn = false;
         else if (newGhTemp <= cfg.greenhouseEnterC) radOn = true;
         if (radOn) radOnSubsteps += 1;
       }
+      if (simMode === 'emergency_heating') {
+        if (heaterOn && newGhTemp > cfg.emergencyExitC) heaterOn = false;
+        else if (!heaterOn && newGhTemp < cfg.emergencyEnterC) heaterOn = true;
+        if (heaterOn) heaterOnSubsteps += 1;
+      }
+      const heaterHeatToGhW = heaterOn ? heaterWhenOnW : 0;
       const radNowW = simMode === 'greenhouse_heating'
         ? (radOn ? radWhenOnW : 0) : radHeatToGhW;
       const ghPassive = (outdoorC - newGhTemp) / cfg.ghTimeConstantH;
@@ -392,6 +384,29 @@ function computeSustainForecast(opts) {
     if (simMode === 'greenhouse_heating') {
       radHeatToGhW = radWhenOnW * (radOnSubsteps / SUBSTEPS);
       tankDeltaJ -= radHeatToGhW * SECONDS_PER_HOUR;
+    }
+    if (simMode === 'emergency_heating') {
+      // Book the heater energy: full power × the time it was ON.
+      const heaterDuty = heaterOnSubsteps / SUBSTEPS;
+      const heaterEnergyKwh = heaterDuty * cfg.spaceHeaterKw;
+      if (heaterEnergyKwh > 0) {
+        electricKwh += heaterEnergyKwh;
+        const costEur = heaterEnergyKwh * (priceCKwh + cfg.transferFeeCKwh) / 100;
+        electricCostEur += costEur;
+        costBreakdown.push({
+          ts:            hourDate,
+          kWh:           round4(heaterEnergyKwh),
+          priceCKwh,
+          eurInclTransfer: round4(costEur),
+        });
+      }
+      hourHeaterKwh = heaterEnergyKwh;
+      // duty = fraction of the hour the heater ran, so the chart bar and
+      // the kWh figure are the same quantity (1 kW heater).
+      modeForecast.push({ ts: hourDate, mode: simMode, duty: round2(heaterDuty) });
+      // Heater switched off past ehX and stayed off: the device has left
+      // emergency. The next hour's decision re-enters only below ehE.
+      if (!heaterOn) simMode = 'idle';
     }
 
     // ── 3. Solar charging credit ──

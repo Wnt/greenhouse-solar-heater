@@ -414,13 +414,21 @@ function computeMlForecast(opts) {
       tankAvg, gh, outdoor: outdoorC, radiation,
       mode, stepHours: stepH,
       hourOfDayHelsinki: helsinkiHour(tMs),
-      cfg: { emergencyEnterC: cfg.emergencyEnterC, emergencyExitC: cfg.emergencyExitC },
+      cfg: {
+        emergencyEnterC: cfg.emergencyEnterC,
+        emergencyExitC: cfg.emergencyExitC,
+        spaceHeaterKw: cfg.spaceHeaterKw,
+      },
     });
 
-    // Backup electricity (emergency steps only). Driven by the physics
-    // heater duty so the cost figure tracks the same model the trees
-    // were trained against.
+    // Backup electricity (emergency steps only). The heater has no
+    // thermostat — it runs at full power while the mode is latched — so
+    // the physics duty is the fraction of the step it was ON and the
+    // energy is duty × spaceHeaterKw × step length. Once the physics
+    // step saw the greenhouse pass the exit threshold the heater stays
+    // off and the rollout leaves emergency (device exit hysteresis).
     const duty = mode === 'emergency_heating' ? phys.heaterDuty : null;
+    if (mode === 'emergency_heating' && !phys.heaterOnAtEnd) heatMode = 'idle';
     if (mode === 'emergency_heating') {
       const kwh = phys.heaterDuty * cfg.spaceHeaterKw * stepH;
       if (kwh > 0) {

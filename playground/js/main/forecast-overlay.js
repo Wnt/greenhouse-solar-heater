@@ -108,32 +108,31 @@ export function drawForecastOverlay(ctx, data, nowSec, cutoffSec, tMin, tMax, vi
 // [segStart, segEnd). Each entry is the mode active from its own
 // timestamp until the next entry's — derived here rather than assumed,
 // so this works for both the hourly physics engine and the ML engine's
-// multi-resolution output (5-min near-term entries, 1-h tail). The last
-// entry has no successor and falls back to a 1-h span. A bucket smaller
-// than an entry's span gets its overlap fraction rather than the whole
-// span, which is what keeps sub-hour zoom levels from rendering empty
-// every-other bucket.
+// multi-resolution output (5-min near-term entries, 1-h tail). An entry
+// never spans more than 1 h: the physics engine emits nothing for idle
+// hours, so stretching to the next entry would paint idle gaps. A
+// bucket smaller than an entry's span gets its overlap fraction rather
+// than the whole span, which is what keeps sub-hour zoom levels from
+// rendering empty every-other bucket.
 //
-// Emergency entries carry an optional `duty` (0..1). The aggregator
-// returns BOTH `emergencyHours` (duty-scaled — used for kWh/cost
-// accounting in the inspector) AND `emergencyPresenceHours` (full
-// overlap whenever mode='emergency_heating', regardless of duty —
-// used for bar visibility). Pre-split, a duty=0 emergency hour
-// vanished from the chart entirely; the bar now reflects "the engine
-// predicts the heater mode is on" even when the physics duty formula
-// happens to compute 0.
+// Emergency entries carry `duty` (0..1): the fraction of the entry the
+// 1 kW space heater was ON. The heater has no thermostat — the device
+// runs it at full power for as long as emergency heating is active — so
+// `emergencyHours` (duty-scaled) is both the bar height and, × 1 kW,
+// the kWh in the inspector. Same meaning as the historical bars.
 export function aggregateForecastBucket(modeForecast, segStart, segEnd) {
   const HOUR_SEC = 3600;
-  let chargingHours = 0, heatingHours = 0, emergencyHours = 0, emergencyPresenceHours = 0;
+  let chargingHours = 0, heatingHours = 0, emergencyHours = 0;
   for (let i = 0; i < modeForecast.length; i++) {
     const e = modeForecast[i];
     const t = Math.floor(new Date(e.ts).getTime() / 1000);
     // Entry span runs to the next distinct timestamp (entries are
-    // time-ordered; some engines emit a solar overlay sharing a ts).
+    // time-ordered; some engines emit a solar overlay sharing a ts),
+    // capped at 1 h.
     let eEnd = t + HOUR_SEC;
     for (let j = i + 1; j < modeForecast.length; j++) {
       const tj = Math.floor(new Date(modeForecast[j].ts).getTime() / 1000);
-      if (tj > t) { eEnd = tj; break; }
+      if (tj > t) { eEnd = Math.min(eEnd, tj); break; }
     }
     const overlap = Math.max(0, Math.min(eEnd, segEnd) - Math.max(t, segStart));
     if (overlap <= 0) continue;
@@ -143,10 +142,9 @@ export function aggregateForecastBucket(modeForecast, segStart, segEnd) {
     else if (e.mode === 'emergency_heating') {
       const duty = typeof e.duty === 'number' ? e.duty : 1;
       emergencyHours += duty * oh;
-      emergencyPresenceHours += oh;
     }
   }
-  return { chargingHours, heatingHours, emergencyHours, emergencyPresenceHours };
+  return { chargingHours, heatingHours, emergencyHours };
 }
 
 // Render predicted mode bars past "now" using the same x-bucketing AND
@@ -174,7 +172,7 @@ function drawForecastModeBars(ctx, modeForecast, nowSec, cutoffSec, tMin, tMax, 
     const segEnd   = Math.min(hrEnd, cutoffSec);
     if (segEnd <= segStart) continue;
 
-    const { chargingHours, heatingHours, emergencyPresenceHours } =
+    const { chargingHours, heatingHours, emergencyHours } =
       aggregateForecastBucket(modeForecast, segStart, segEnd);
     // Per-bucket fraction = hours-on / hours-in-the-post-now slice of this
     // bucket. For the partial bucket straddling "now" we measure against
@@ -185,11 +183,9 @@ function drawForecastModeBars(ctx, modeForecast, nowSec, cutoffSec, tMin, tMax, 
     const segHours    = Math.max(1 / 60, segLen / HOURS); // avoid div-by-0
     const chargingFrac  = Math.min(1, chargingHours  / segHours);
     const heatingFrac   = Math.min(1, heatingHours   / segHours);
-    // Emergency bar height tracks mode PRESENCE — duty-scaled bars
-    // would disappear whenever the radiator already covers the loss
-    // even though the engine still ran the heater mode. Cost/kWh
-    // accounting still uses the duty-scaled emergencyHours field.
-    const emergencyFrac = Math.min(1, emergencyPresenceHours / segHours);
+    // Emergency bar height = heater-on time, the same quantity the
+    // inspector shows as kWh (1 kW heater) and the history bars draw.
+    const emergencyFrac = Math.min(1, emergencyHours / segHours);
     if (chargingFrac + heatingFrac + emergencyFrac === 0) continue;
 
     // Render using segStart..segEnd (post-now slice), not the full clock-

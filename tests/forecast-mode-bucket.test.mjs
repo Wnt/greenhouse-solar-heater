@@ -7,7 +7,9 @@
  * the sparse-bar look the user reported on the 24h-with-forecast view.
  *
  * The fix treats each entry as the mode active for [t, t+1h) and adds
- * its overlap with the bucket. Emergency duty scales proportionally.
+ * its overlap with the bucket. Emergency duty scales proportionally:
+ * duty is the fraction of the entry the 1 kW heater was ON, so the
+ * bar height and the kWh figure are the same quantity.
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
@@ -72,26 +74,27 @@ describe('aggregateForecastBucket', () => {
     const events = [{ ts: tsAt(10), mode: 'greenhouse_heating' }];
     const r = aggregateForecastBucket(events, 0, 5 * HOUR);
     assert.deepEqual(r, {
-      chargingHours: 0, heatingHours: 0, emergencyHours: 0, emergencyPresenceHours: 0,
+      chargingHours: 0, heatingHours: 0, emergencyHours: 0,
     });
   });
 
-  it('emergency presence reports the full overlap even when duty is 0', () => {
-    // ML engine quirk: when the radiator alone covers the greenhouse
-    // loss, the physics duty formula returns 0 even though the engine
-    // still ran emergency mode. Bars driven by duty disappeared in
-    // this case — emergencyPresenceHours surfaces the mode regardless.
-    const events = [{ ts: tsAt(2), mode: 'emergency_heating', duty: 0 }];
-    const r = aggregateForecastBucket(events, 2 * HOUR, 3 * HOUR);
-    assert.equal(r.emergencyHours, 0);
-    assert.equal(r.emergencyPresenceHours, 1);
+  it('an entry spans at most 1 h — idle gaps between entries stay empty', () => {
+    // The physics engine emits no entry for idle hours, so an emergency
+    // hour followed by idle hours must not be stretched to the next
+    // entry: that would draw (and bill) heater time that never happens.
+    const events = [
+      { ts: tsAt(2), mode: 'emergency_heating', duty: 0.25 },
+      { ts: tsAt(6), mode: 'emergency_heating', duty: 1 },
+    ];
+    const r = aggregateForecastBucket(events, 2 * HOUR, 6 * HOUR);
+    assert.ok(Math.abs(r.emergencyHours - 0.25) < 1e-9, 'got ' + r.emergencyHours);
   });
 
   it('events with unknown mode are ignored (forward-compat with future modes)', () => {
     const events = [{ ts: tsAt(0), mode: 'experimental_future_mode' }];
     const r = aggregateForecastBucket(events, 0, 1 * HOUR);
     assert.deepEqual(r, {
-      chargingHours: 0, heatingHours: 0, emergencyHours: 0, emergencyPresenceHours: 0,
+      chargingHours: 0, heatingHours: 0, emergencyHours: 0,
     });
   });
 });

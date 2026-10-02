@@ -57,7 +57,22 @@ describe('computeSustainForecast — tank destratification', () => {
     const noMix   = computeSustainForecast(Object.assign({}, baseOpts, {
       config: { tankMixTauH: 0 },
     }));
-    for (let i = 0; i < withMix.tankTrajectory.length; i++) {
+    // Mixing moves tank_top, and the greenhouse-heating entry gate reads
+    // tank_top — so once emergency heating exits (gh > ehX) the two runs
+    // may legitimately pick different modes. Compare averages only while
+    // the mode schedules agree, and require that window to be substantial.
+    function sig(fc, ts) {
+      return fc.modeForecast.filter(m => m.ts === ts)
+        .map(m => m.mode + ':' + (m.duty === undefined ? '' : m.duty)).join(',');
+    }
+    let agree = 0;
+    while (agree < withMix.tankTrajectory.length - 1) {
+      const ts = withMix.tankTrajectory[agree].ts;
+      if (sig(withMix, ts) !== sig(noMix, ts)) break;
+      agree++;
+    }
+    assert.ok(agree >= 18, 'mode schedules should agree for at least 18 h; got ' + agree);
+    for (let i = 0; i <= agree; i++) {
       assert.ok(Math.abs(withMix.tankTrajectory[i].avg - noMix.tankTrajectory[i].avg) < 1e-6,
         'avg identical with/without mixing at h=' + i);
     }
