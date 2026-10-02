@@ -519,7 +519,6 @@ function computeSustainForecast(opts) {
   // Compute summary metrics for the notes.
   const ghTemps        = ghTrajectory.map(function (p) { return p.temp; });
   const ghMin          = Math.min.apply(null, ghTemps);
-  const ghMinIdx       = ghTemps.indexOf(ghMin);
   const tankAvgs       = tankTrajectory.map(function (p) { return p.avg; });
   const tankMin        = Math.min.apply(null, tankAvgs);
   const tankAvgNow     = tankAvgs[0];
@@ -542,7 +541,8 @@ function computeSustainForecast(opts) {
     weather48h:              weather,
     solarGainByDay,
     ghMin,
-    ghMinIdx,
+    modeForecast,
+    ghTrajectory,
     tankMin,
     tankAvgNow,
     tankStoredKwhNow,

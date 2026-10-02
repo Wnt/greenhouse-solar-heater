@@ -6,6 +6,34 @@
 
 const { helsinkiHHMM } = require('./sustain-forecast-fit-base');
 
+const HELSINKI_WEEKDAY_FMT = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Helsinki', weekday: 'short',
+});
+
+// "When does the space heater first switch on?" — shared by both
+// engines. Reads the first emergency entry in which the heater actually
+// ran (duty > 0) and the greenhouse temperature at that timestamp. A
+// time within 24 h of `now` is a bare HH:MM; later ones get the weekday
+// so a 48 h window can't be misread. Returns null when the heater never
+// runs. (The note used to name the 48 h greenhouse MINIMUM, which with
+// the heater cycling is just the bottom of some later cycle.)
+function heaterStartNote(modeForecast, ghTrajectory, now) {
+  const first = (modeForecast || []).find(function (m) {
+    return m.mode === 'emergency_heating' && typeof m.duty === 'number' && m.duty > 0;
+  });
+  if (!first) return null;
+  const point = (ghTrajectory || []).find(function (p) { return p.ts === first.ts; });
+  const tempTxt = point ? point.temp.toFixed(1) + ' °C' : null;
+  const startMs = Date.parse(first.ts);
+  if (startMs <= now) {
+    return 'Space heater is cycling on from now' + (tempTxt ? ' — greenhouse at ' + tempTxt : '') + '.';
+  }
+  const when = (startMs - now < 24 * 3600 * 1000 ? '' : HELSINKI_WEEKDAY_FMT.format(startMs) + ' ')
+    + helsinkiHHMM(startMs);
+  return (tempTxt ? 'Greenhouse cools to ' + tempTxt + ' around ' + when : 'Around ' + when)
+    + ', when the space heater first switches on.';
+}
+
 // Notes are ordered by operational relevance: GH min temp, tank stored
 // kWh + sustain hours, backup electric usage, solar gain. Capped at 3.
 function buildNotes(ctx) {
@@ -15,15 +43,13 @@ function buildNotes(ctx) {
     notes.push('Forecast based on default coefficients — model still warming up with limited history.');
   }
 
-  // 1. Greenhouse minimum temperature.
+  // 1. When the space heater first switches on — or, with no backup in
+  //    the window, the greenhouse minimum the tank holds it above.
   if (ctx.ghMin !== undefined && notes.length < 3) {
-    const minDate = new Date(ctx.now + ctx.ghMinIdx * 3600 * 1000);
-    const hhmm    = helsinkiHHMM(minDate);
-    if (ctx.electricKwh > 0) {
-      notes.push(
-        'Greenhouse cools to ' + ctx.ghMin.toFixed(1) + ' °C around ' + hhmm +
-        ', when the space heater takes over to hold it there.'
-      );
+    const heaterNote = ctx.electricKwh > 0
+      ? heaterStartNote(ctx.modeForecast, ctx.ghTrajectory, ctx.now) : null;
+    if (heaterNote) {
+      notes.push(heaterNote);
     } else {
       notes.push(
         'Greenhouse holds above ' + ctx.ghMin.toFixed(1) + ' °C the whole window — tank covers it without backup.'
@@ -86,4 +112,4 @@ function buildNotes(ctx) {
   return notes;
 }
 
-module.exports = { buildNotes };
+module.exports = { buildNotes, heaterStartNote };
