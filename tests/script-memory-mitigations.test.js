@@ -40,7 +40,8 @@ const MODE_ACTUATORS = {
   GREENHOUSE_HEATING: { pump:true, fan:true, space_heater:false, immersion_heater:false },
 };
 
-function createRuntime() {
+function createRuntime(opts) {
+  opts = opts || {};
   let now = 1700000000000;
   let sysUptime = 0;
   let timers = [];
@@ -52,7 +53,14 @@ function createRuntime() {
   function shellyCall(method, params, cb) {
     params = params || {};
     calls.push(method);
-    if (method === 'HTTP.GET') { setImmediate(function () { if (cb) cb({ code: 200, body: '{"tC":20}' }, null); }); return; }
+    if (method === 'HTTP.GET') {
+      // Sensor-poll responder. opts.httpBody overrides the body so tests can
+      // inject a truncated/corrupt 200 (realistic on a flaky link) — the scrape
+      // in pollSensor must yield null (sensor unavailable) rather than throw.
+      const body = opts.httpBody !== undefined ? opts.httpBody : '{"tC":20}';
+      setImmediate(function () { if (cb) cb({ code: 200, body }, null); });
+      return;
+    }
     if (method === 'KVS.Get') { const v = kvs[params.key] || null; setImmediate(function () { if (cb) cb(v ? { value: v } : null, null); }); return; }
     if (method === 'KVS.Set') { kvs[params.key] = params.value; setImmediate(function () { if (cb) cb({}, null); }); return; }
     setImmediate(function () { if (cb) cb({}, null); });
@@ -129,7 +137,7 @@ function createRuntime() {
 function loadScript(rt, cfg) {
   rt.kvs.config = JSON.stringify(Object.assign({ ce: true, ea: 31, fm: null, we: {}, wz: {}, wb: {}, v: 1 }, cfg || {}));
   rt.kvs.drained = '0';
-  rt.kvs.sensor_config = JSON.stringify({ s: {}, h: {}, version: 1 });
+  rt.kvs.sensor_config = JSON.stringify((cfg && cfg.__sensorConfig) || { s: {}, h: {}, version: 1 });
   const src = fs.readFileSync(path.join(SHELLY_DIR, 'control-logic.js'), 'utf8') + '\n' +
               fs.readFileSync(path.join(SHELLY_DIR, 'control.js'), 'utf8');
   const g = rt.globals;
@@ -207,6 +215,46 @@ describe('periodic JsVar-defrag reboot (uptime-gated, IDLE-only)', function () {
       rt.globals.Shelly.__test_controlTick();
       assert.strictEqual(rt.rebootCount(), 0,
         'manual override suspends automation — a reboot would break deterministic manual control');
+      done();
+    });
+  });
+});
+
+// ── 3. Sensor-poll robustness: scrape, never JSON.parse(res.body) ──
+//
+// pollSensor scrapes tC out of the response instead of JSON.parse(res.body).
+// JSON.parse both (a) materializes the whole response object AND needs a
+// contiguous working block — the per-tick transient implicated in the
+// out_of_memory episode — and (b) THROWS on a truncated/corrupt 200 body
+// (realistic on a flaky link). The throw was uncaught inside the poll
+// callback, so the poll-cycle continuation never ran and the in-flight guard
+// latched: the control loop silently stopped ticking. The scrape yields null
+// for that sensor and lets the cycle finish.
+
+describe('sensor poll robustness (scrape, not JSON.parse)', function () {
+  const SENSOR_CFG = { s: { collector: { h: 'h0', i: 100 } }, h: { h0: '10.0.0.1' }, version: 1 };
+
+  it('a truncated/corrupt 200 body does not throw or latch the poll loop', function (t, done) {
+    // Body contains the "tC" marker (passes the old substring guard) but is
+    // not valid JSON — the exact case that made JSON.parse throw.
+    const rt = createRuntime({ httpBody: '{"tC":' });
+    boot(rt, { __sensorConfig: SENSOR_CFG }, function () {
+      const snaps = rt.stateSnapshots();
+      // Reaching a published decision snapshot proves the poll cycle ran to
+      // completion (pollAllSensors -> buildEvalState -> emit) despite the
+      // corrupt sensor body. With the old JSON.parse this threw mid-cycle and
+      // no snapshot was ever produced.
+      assert.ok(snaps.length >= 1,
+        'control loop must complete a tick despite a corrupt sensor body ' +
+        '(JSON.parse would have thrown and latched the poll guard)');
+      done();
+    });
+  });
+
+  it('a well-formed body still yields the temperature', function (t, done) {
+    const rt = createRuntime({ httpBody: '{"id":100,"tC":21.5,"tF":70.7}' });
+    boot(rt, { __sensorConfig: SENSOR_CFG }, function () {
+      assert.ok(rt.stateSnapshots().length >= 1, 'control loop must run with a valid sensor body');
       done();
     });
   });
