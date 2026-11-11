@@ -28,17 +28,17 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "1.64.1",
+    "@playwright/test": "1.65.0",
     "acorn": "^8.19.0",
     "aedes": "^1.2.0",
     "eslint": "^10.14.0",
-    "globals": "^17.13.0",
+    "globals": "^17.14.0",
     "istanbul-lib-coverage": "^3.2.2",
     "istanbul-lib-report": "^3.0.1",
     "istanbul-reports": "^3.2.0",
-    "knip": "^6.44.1",
+    "knip": "^6.44.2",
     "pg-mem": "^3.0.14",
-    "serve": "^14.2.6",
+    "serve": "^14.2.7",
     "v8-to-istanbul": "^9.3.0"
   },
   "overrides": {
