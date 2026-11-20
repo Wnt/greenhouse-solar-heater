@@ -295,11 +295,7 @@ Important: preview pods deliberately omit the `app=greenhouse` label so the prod
 
 Optional OpenTelemetry → New Relic. Disabled by default (zero overhead). `server/lib/tracing.js` is loaded via `--require` before `server.js` and no-ops when `NEW_RELIC_LICENSE_KEY` is unset.
 
-Enable:
-```bash
-cd deploy/terraform
-terraform apply -var="new_relic_license_key=NRAK-..."
-```
+Enable: set `NEW_RELIC_LICENSE_KEY` in the `app-secrets` Secret (a plain cluster object — not via the retired `deploy/terraform/`) and restart the `app` Deployment.
 
 `server/lib/logger.js` injects `trace.id` / `span.id` into JSON log entries. MQTT operations have manual spans in `server/lib/mqtt-bridge.js`. HTTP, `pg`, and AWS SDK calls are auto-instrumented. The license-key region selects the OTLP endpoint (EU vs US) automatically.
 
