@@ -21,7 +21,8 @@ const { emitConfigEvents } = require('./config-events');
 const createLogger = require('./logger');
 
 const log = createLogger('http');
-const APP_VERSION = process.env.GIT_COMMIT || 'unknown';
+const { resolvePlaygroundDir, readAppVersion } = require('./playground-dir');
+const PLAYGROUND_DIR = resolvePlaygroundDir(process.env, require('path').join(__dirname, '..', '..', 'playground'));
 const VPN_CHECK_HOST = process.env.VPN_CHECK_HOST || '';
 const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
 
@@ -79,7 +80,7 @@ function createHandlers(deps) {
 
   function handleVersion(req, res) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ hash: APP_VERSION }));
+    res.end(JSON.stringify({ hash: readAppVersion(process.env, PLAYGROUND_DIR) }));
   }
 
   // Public deploy-time runtime metadata, used by the frontend (and the

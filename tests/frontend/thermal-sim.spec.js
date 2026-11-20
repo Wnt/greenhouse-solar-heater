@@ -158,7 +158,7 @@ test.describe('Thermal Simulation UI', () => {
     expect(box.height).toBeGreaterThan(50);
 
     const sidebarLinks = page.locator('.sidebar-nav a');
-    // status, components (merged system), controls, device (live-only),
+    // controls, status, components (merged system), device (live-only),
     // diagnostics (live-only), crashes (live-only), settings
     await expect(sidebarLinks).toHaveCount(7);
     await expect(page.locator('.sidebar-nav a.active')).toContainText('Status');
