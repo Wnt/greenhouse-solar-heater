@@ -278,6 +278,10 @@ Runs **on-prem** since 2026-08-02 (migrated off UpCloud Managed Kubernetes). **T
 
 Add the `preview` label to a PR → `.github/workflows/preview-deploy.yml` builds the branch, pushes a `preview-<sha>` image to GHCR, and applies `deploy/k8s/preview/` (templated via `envsubst`) into the `default` namespace. URL: `https://pr-<n>.greenhouse.madekivi.fi`. Requires the wildcard `*.greenhouse.madekivi.fi` CNAME (already set up). Each push refreshes the preview; removing the label or closing the PR triggers `preview-teardown.yml`.
 
+**Frontend hot-sync fast path.** A push whose diff (vs. the previous head, fast-forward only) touches only `playground/` skips the image build and rollout: the `preflight` job tars `playground/` into the running pod via `kubectl exec` (the pod serves from the writable `PLAYGROUND_DIR=/tmp/playground`, seeded from the image at pod start; `server/lib/playground-dir.js`) and writes the SHA to `.preview-version`, which `/version` reports so open PWAs get the update toast. ~15 s from push to live instead of ~2 min. Anything else — a non-`playground/` file, a force-push, no running preview, a pod predating `PLAYGROUND_DIR` — falls back to the full build + deploy. Runs are serialized per PR (`concurrency`) so a sync never lands on a pod an in-flight full deploy is about to replace.
+
+**When the user wants a change previewed as fast as possible** (demo / UI iteration): edit directly, commit, `SKIP_PUSH_GATE=1 git push`, and skip local test runs and incidental cleanups — CI on the PR still runs the full gate. Keep frontend-only iterations inside `playground/` so they take the hot-sync path. Verify the result without auth via `/public/*` (e.g. `curl …/public/login.html`) or `/version` (returns the synced SHA); the rest of the app is behind the passkey login. Wait with a backgrounded `until curl … | grep -q …; do sleep 3; done` instead of a scheduled check-in.
+
 Preview pod = app container only (no `mosquitto` sidecar), `replicas: 1`. Critical environment overrides set by the manifest:
 
 - `PREVIEW_MODE=true` — see below.

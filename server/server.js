@@ -26,7 +26,7 @@ const forecastBootstrap = require('./lib/forecast/forecast-bootstrap');
 
 const log = createLogger('server');
 const PORT = parseInt(process.env.PORT || process.argv[2] || '3000', 10);
-const PLAYGROUND_DIR = path.join(__dirname, '..', 'playground');
+const PLAYGROUND_DIR = require('./lib/playground-dir').resolvePlaygroundDir(process.env, path.join(__dirname, '..', 'playground')); // env override: preview hot-sync
 const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
 const MQTT_HOST = process.env.MQTT_HOST || '';
 const PREVIEW_MODE = process.env.PREVIEW_MODE === 'true';
