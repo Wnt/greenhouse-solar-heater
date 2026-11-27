@@ -48,6 +48,14 @@ spec:
       containers:
         - name: app
           image: ghcr.io/wnt/greenhouse-solar-heater:${IMAGE_TAG}
+          # Serve the playground from a writable copy in the /tmp emptyDir so
+          # preview-deploy.yml can hot-sync frontend-only pushes (kubectl exec
+          # + tar) without an image rebuild. Seeded once per pod; a container
+          # restart keeps the synced copy, a new pod starts from the image.
+          command:
+            - sh
+            - -c
+            - "[ -d /tmp/playground ] || cp -r /app/playground /tmp/playground; exec node --require ./server/lib/tracing.js server/server.js"
           ports:
             - name: http
               containerPort: 3000
@@ -62,6 +70,8 @@ spec:
           env:
             - name: PREVIEW_MODE
               value: "true"
+            - name: PLAYGROUND_DIR
+              value: /tmp/playground
             - name: PR_NUMBER
               value: "${PR_NUMBER}"
             - name: BRANCH_NAME

@@ -19,6 +19,12 @@ on:
         required: true
         default: 'main'
 
+# Serialize runs per PR: a frontend hot-sync must not land on a pod that an
+# in-flight full deploy (built from an older commit) is about to replace.
+concurrency:
+  group: preview-deploy-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   PREVIEW_LABEL: preview
@@ -42,6 +48,7 @@ jobs:
       pr_number: ${{ steps.gate.outputs.pr_number }}
       ref: ${{ steps.gate.outputs.ref }}
       sha: ${{ steps.gate.outputs.sha }}
+      hot_synced: ${{ steps.hot-done.outputs.hot_synced }}
     steps:
       - id: gate
         env:
@@ -75,9 +82,83 @@ jobs:
           echo "should_deploy=$should_deploy" >> "$GITHUB_OUTPUT"
           echo "Decision: should_deploy=$should_deploy"
 
+      # ── Fast path: frontend-only push → hot-sync into the running pod ──
+      # A push that only touches playground/ needs no image rebuild: the
+      # preview pod serves the playground from a writable copy
+      # (PLAYGROUND_DIR=/tmp/playground), so we tar the new files into it
+      # (~10 s instead of ~2 min for build + Recreate rollout). Any failure
+      # (no running preview yet, pod predates PLAYGROUND_DIR, force-push,
+      # non-frontend file) leaves hot_synced unset and the full
+      # build + deploy jobs run as before.
+      - name: Detect frontend-only push
+        id: scope
+        if: steps.gate.outputs.should_deploy == 'true' && github.event.action == 'synchronize'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          files=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${BEFORE}...${AFTER}" \
+            --jq 'if .status == "ahead" and (.files | length) < 300 then .files[].filename else "NOT_FAST_FORWARD" end')
+          echo "$files"
+          if [ -n "$files" ] && ! echo "$files" | grep -qv '^playground/'; then
+            echo "frontend_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.scope.outputs.frontend_only == 'true'
+        with:
+          ref: ${{ steps.gate.outputs.sha }}
+          sparse-checkout: |
+            playground
+            .github/scripts
+
+      - name: Hot-sync playground into the preview pod
+        id: sync
+        if: steps.scope.outputs.frontend_only == 'true'
+        continue-on-error: true
+        env:
+          PR_NUMBER: ${{ steps.gate.outputs.pr_number }}
+          SHA: ${{ steps.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+          DEPLOY="deployment/app-preview-pr-${PR_NUMBER}"
+          dir=$(kubectl get "$DEPLOY" -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="PLAYGROUND_DIR")].value}')
+          [ "$dir" = "/tmp/playground" ] || { echo "preview pod has no hot-sync dir — full deploy"; exit 1; }
+          kubectl rollout status "$DEPLOY" --timeout=20s
+          # Unpack beside the live copy, then swap, so deletions propagate and
+          # requests never see a half-written tree for longer than two renames.
+          tar -C playground -cf - . | kubectl exec -i "$DEPLOY" -c app -- sh -c "
+            set -e; rm -rf /tmp/playground.new /tmp/playground.old
+            mkdir /tmp/playground.new && tar -xf - -C /tmp/playground.new
+            echo '${SHA}' > /tmp/playground.new/.preview-version
+            mv /tmp/playground /tmp/playground.old && mv /tmp/playground.new /tmp/playground
+            rm -rf /tmp/playground.old"
+          EXPIRES_AT=$(date -u -d "+${TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)
+          kubectl annotate --overwrite deployment,service,ingress \
+            -l "preview-pr=${PR_NUMBER}" "preview.greenhouse/expires-at=${EXPIRES_AT}"
+
+      - name: Comment on PR (hot-synced)
+        if: steps.sync.outcome == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v8.0.0
+        with:
+          script: |
+            await require('./.github/scripts/preview-comment.js')({
+              github, context, sha: '${{ steps.gate.outputs.sha }}',
+              ttl: process.env.TTL_HOURS, hotSynced: true,
+            });
+
+      - id: hot-done
+        if: steps.sync.outcome == 'success'
+        run: echo "hot_synced=true" >> "$GITHUB_OUTPUT"
+
   build:
     needs: preflight
-    if: needs.preflight.outputs.should_deploy == 'true'
+    if: needs.preflight.outputs.should_deploy == 'true' && needs.preflight.outputs.hot_synced != 'true'
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.tag.outputs.image_tag }}
@@ -248,39 +329,10 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v8.0.0
         with:
           script: |
-            const pr = context.issue.number;
-            const url = `https://pr-${pr}.greenhouse.madekivi.fi`;
-            const ttl = process.env.TTL_HOURS;
-            const sha = '${{ needs.preflight.outputs.sha }}'.slice(0, 7);
-            const body = [
-              '### Preview deploy ready',
-              '',
-              `🌐 ${url}`,
-              '',
-              `Commit: \`${sha}\` · TTL: ${ttl}h (refreshed on every push) · ` +
-              `Remove the \`preview\` label or close the PR to tear down immediately.`,
-              '',
-              '<!-- preview-deploy-marker -->',
-            ].join('\n');
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: pr,
-              per_page: 100,
+            await require('./.github/scripts/preview-comment.js')({
+              github, context, sha: '${{ needs.preflight.outputs.sha }}',
+              ttl: process.env.TTL_HOURS, hotSynced: false,
             });
-            const existing = comments.find(c => c.body && c.body.includes('<!-- preview-deploy-marker -->'));
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner, repo: context.repo.repo,
-                comment_id: existing.id, body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo,
-                issue_number: pr, body,
-              });
-            }
 
       # If any prior step in this job failed, flip the GH Deployment to
       # failure so the sidebar doesn't show "Deploying" forever.
